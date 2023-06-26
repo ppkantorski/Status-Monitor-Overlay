@@ -573,6 +573,31 @@ void formatButtonCombination(std::string& line) {
 }
 
 
+// button map
+std::map<std::string, HidNpadButton> buttonMap = {
+	{"A", static_cast<HidNpadButton>(HidNpadButton_A)},
+	{"B", static_cast<HidNpadButton>(HidNpadButton_B)},
+	{"X", static_cast<HidNpadButton>(HidNpadButton_X)},
+	{"Y", static_cast<HidNpadButton>(HidNpadButton_Y)},
+	{"L", static_cast<HidNpadButton>(HidNpadButton_L)},
+	{"R", static_cast<HidNpadButton>(HidNpadButton_R)},
+	{"ZL", static_cast<HidNpadButton>(HidNpadButton_ZL)},
+	{"ZR", static_cast<HidNpadButton>(HidNpadButton_ZR)},
+	{"PLUS", static_cast<HidNpadButton>(HidNpadButton_Plus)},
+	{"MINUS", static_cast<HidNpadButton>(HidNpadButton_Minus)},
+	{"DUP", static_cast<HidNpadButton>(HidNpadButton_Up)},
+	{"DDOWN", static_cast<HidNpadButton>(HidNpadButton_Down)},
+	{"DLEFT", static_cast<HidNpadButton>(HidNpadButton_Left)},
+	{"DRIGHT", static_cast<HidNpadButton>(HidNpadButton_Right)},
+	{"SL", static_cast<HidNpadButton>(HidNpadButton_AnySL)},
+	{"SR", static_cast<HidNpadButton>(HidNpadButton_AnySR)},
+	{"LSTICK", static_cast<HidNpadButton>(HidNpadButton_StickL)},
+	{"RSTICK", static_cast<HidNpadButton>(HidNpadButton_StickR)},
+	{"UP", static_cast<HidNpadButton>(HidNpadButton_Up | HidNpadButton_StickLUp | HidNpadButton_StickRUp)},
+	{"DOWN", static_cast<HidNpadButton>(HidNpadButton_Down | HidNpadButton_StickLDown | HidNpadButton_StickRDown)},
+	{"LEFT", static_cast<HidNpadButton>(HidNpadButton_Left | HidNpadButton_StickLLeft | HidNpadButton_StickRLeft)},
+	{"RIGHT", static_cast<HidNpadButton>(HidNpadButton_Right | HidNpadButton_StickLRight | HidNpadButton_StickRRight)}
+};
 
 // Base class with virtual function
 class ButtonMapper {
@@ -584,31 +609,6 @@ public:
 class ButtonMapperImpl : public ButtonMapper {
 public:
 	std::list<HidNpadButton> MapButtons(const std::string& buttonCombo) override {
-		std::map<std::string, HidNpadButton> buttonMap = {
-			{"A", static_cast<HidNpadButton>(HidNpadButton_A)},
-			{"B", static_cast<HidNpadButton>(HidNpadButton_B)},
-			{"X", static_cast<HidNpadButton>(HidNpadButton_X)},
-			{"Y", static_cast<HidNpadButton>(HidNpadButton_Y)},
-			{"L", static_cast<HidNpadButton>(HidNpadButton_L)},
-			{"R", static_cast<HidNpadButton>(HidNpadButton_R)},
-			{"ZL", static_cast<HidNpadButton>(HidNpadButton_ZL)},
-			{"ZR", static_cast<HidNpadButton>(HidNpadButton_ZR)},
-			{"PLUS", static_cast<HidNpadButton>(HidNpadButton_Plus)},
-			{"MINUS", static_cast<HidNpadButton>(HidNpadButton_Minus)},
-			{"DUP", static_cast<HidNpadButton>(HidNpadButton_Up)},
-			{"DDOWN", static_cast<HidNpadButton>(HidNpadButton_Down)},
-			{"DLEFT", static_cast<HidNpadButton>(HidNpadButton_Left)},
-			{"DRIGHT", static_cast<HidNpadButton>(HidNpadButton_Right)},
-			{"SL", static_cast<HidNpadButton>(HidNpadButton_AnySL)},
-			{"SR", static_cast<HidNpadButton>(HidNpadButton_AnySR)},
-			{"LSTICK", static_cast<HidNpadButton>(HidNpadButton_StickL)},
-			{"RSTICK", static_cast<HidNpadButton>(HidNpadButton_StickR)},
-			{"UP", static_cast<HidNpadButton>(HidNpadButton_Up | HidNpadButton_StickLUp | HidNpadButton_StickRUp)},
-			{"DOWN", static_cast<HidNpadButton>(HidNpadButton_Down | HidNpadButton_StickLDown | HidNpadButton_StickRDown)},
-			{"LEFT", static_cast<HidNpadButton>(HidNpadButton_Left | HidNpadButton_StickLLeft | HidNpadButton_StickRLeft)},
-			{"RIGHT", static_cast<HidNpadButton>(HidNpadButton_Right | HidNpadButton_StickLRight | HidNpadButton_StickRRight)}
-		};
-
 		std::list<HidNpadButton> mappedButtons;
 		std::string comboCopy = buttonCombo;  // Make a copy of buttonCombo
 
@@ -631,9 +631,8 @@ public:
 
 // Custom utility function for parsing an ini file
 void ParseIniFile() {
-	std::string overlayName, configIniPath, sectionName, keyName;
+	std::string overlayName, configIniPath;
 	std::string directoryPath = "sdmc:/config/status-monitor/";
-	std::string defaultKeyCombo = "ZL+ZR+DDOWN";
 
 	struct stat st;
 	if (stat(directoryPath.c_str(), &st) != 0) {
@@ -647,10 +646,8 @@ void ParseIniFile() {
 	if (!configFileIn) {
 		// Write the default INI file
 		FILE* configFileOut = fopen(configIniPath.c_str(), "w");
-		fprintf(configFileOut, "[status-monitor]\nkey_combo=%s\n", defaultKeyCombo.c_str());
+		fprintf(configFileOut, "[status-monitor]\nkey_combo=%s\n", keyCombo.c_str());
 		fclose(configFileOut);
-
-		keyCombo = defaultKeyCombo; // load keyCombo variable
 		return;
 	}
 
@@ -666,14 +663,12 @@ void ParseIniFile() {
 	fclose(configFileIn);
 
 	// Parse the INI data
-    std::string fileDataString(fileData, fileSize);
-    tsl::hlp::ini::IniData parsedData = tsl::hlp::ini::parseIni(fileDataString);
+	std::string fileDataString(fileData, fileSize);
+	tsl::hlp::ini::IniData parsedData = tsl::hlp::ini::parseIni(fileDataString);
 
 	// Access and use the parsed data as needed
 	// For example, print the value of a specific section and key
-	sectionName = "status-monitor";
-	keyName = "key_combo";
-	keyCombo = parsedData[sectionName][keyName]; // load keyCombo variable
+	keyCombo = parsedData["status-monitor"]["key_combo"]; // load keyCombo variable
 	removeSpaces(keyCombo); // format combo
 	convertToUpper(keyCombo);
 	
