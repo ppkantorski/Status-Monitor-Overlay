@@ -573,31 +573,6 @@ void formatButtonCombination(std::string& line) {
 }
 
 
-// button map
-std::map<std::string, HidNpadButton> buttonMap = {
-	{"A", static_cast<HidNpadButton>(HidNpadButton_A)},
-	{"B", static_cast<HidNpadButton>(HidNpadButton_B)},
-	{"X", static_cast<HidNpadButton>(HidNpadButton_X)},
-	{"Y", static_cast<HidNpadButton>(HidNpadButton_Y)},
-	{"L", static_cast<HidNpadButton>(HidNpadButton_L)},
-	{"R", static_cast<HidNpadButton>(HidNpadButton_R)},
-	{"ZL", static_cast<HidNpadButton>(HidNpadButton_ZL)},
-	{"ZR", static_cast<HidNpadButton>(HidNpadButton_ZR)},
-	{"PLUS", static_cast<HidNpadButton>(HidNpadButton_Plus)},
-	{"MINUS", static_cast<HidNpadButton>(HidNpadButton_Minus)},
-	{"DUP", static_cast<HidNpadButton>(HidNpadButton_Up)},
-	{"DDOWN", static_cast<HidNpadButton>(HidNpadButton_Down)},
-	{"DLEFT", static_cast<HidNpadButton>(HidNpadButton_Left)},
-	{"DRIGHT", static_cast<HidNpadButton>(HidNpadButton_Right)},
-	{"SL", static_cast<HidNpadButton>(HidNpadButton_AnySL)},
-	{"SR", static_cast<HidNpadButton>(HidNpadButton_AnySR)},
-	{"LSTICK", static_cast<HidNpadButton>(HidNpadButton_StickL)},
-	{"RSTICK", static_cast<HidNpadButton>(HidNpadButton_StickR)},
-	{"UP", static_cast<HidNpadButton>(HidNpadButton_Up | HidNpadButton_StickLUp | HidNpadButton_StickRUp)},
-	{"DOWN", static_cast<HidNpadButton>(HidNpadButton_Down | HidNpadButton_StickLDown | HidNpadButton_StickRDown)},
-	{"LEFT", static_cast<HidNpadButton>(HidNpadButton_Left | HidNpadButton_StickLLeft | HidNpadButton_StickRLeft)},
-	{"RIGHT", static_cast<HidNpadButton>(HidNpadButton_Right | HidNpadButton_StickLRight | HidNpadButton_StickRRight)}
-};
 
 // Base class with virtual function
 class ButtonMapper {
@@ -609,6 +584,31 @@ public:
 class ButtonMapperImpl : public ButtonMapper {
 public:
 	std::list<HidNpadButton> MapButtons(const std::string& buttonCombo) override {
+		std::map<std::string, HidNpadButton> buttonMap = {
+			{"A", static_cast<HidNpadButton>(HidNpadButton_A)},
+			{"B", static_cast<HidNpadButton>(HidNpadButton_B)},
+			{"X", static_cast<HidNpadButton>(HidNpadButton_X)},
+			{"Y", static_cast<HidNpadButton>(HidNpadButton_Y)},
+			{"L", static_cast<HidNpadButton>(HidNpadButton_L)},
+			{"R", static_cast<HidNpadButton>(HidNpadButton_R)},
+			{"ZL", static_cast<HidNpadButton>(HidNpadButton_ZL)},
+			{"ZR", static_cast<HidNpadButton>(HidNpadButton_ZR)},
+			{"PLUS", static_cast<HidNpadButton>(HidNpadButton_Plus)},
+			{"MINUS", static_cast<HidNpadButton>(HidNpadButton_Minus)},
+			{"DUP", static_cast<HidNpadButton>(HidNpadButton_Up)},
+			{"DDOWN", static_cast<HidNpadButton>(HidNpadButton_Down)},
+			{"DLEFT", static_cast<HidNpadButton>(HidNpadButton_Left)},
+			{"DRIGHT", static_cast<HidNpadButton>(HidNpadButton_Right)},
+			{"SL", static_cast<HidNpadButton>(HidNpadButton_AnySL)},
+			{"SR", static_cast<HidNpadButton>(HidNpadButton_AnySR)},
+			{"LSTICK", static_cast<HidNpadButton>(HidNpadButton_StickL)},
+			{"RSTICK", static_cast<HidNpadButton>(HidNpadButton_StickR)},
+			{"UP", static_cast<HidNpadButton>(HidNpadButton_Up | HidNpadButton_StickLUp | HidNpadButton_StickRUp)},
+			{"DOWN", static_cast<HidNpadButton>(HidNpadButton_Down | HidNpadButton_StickLDown | HidNpadButton_StickRDown)},
+			{"LEFT", static_cast<HidNpadButton>(HidNpadButton_Left | HidNpadButton_StickLLeft | HidNpadButton_StickRLeft)},
+			{"RIGHT", static_cast<HidNpadButton>(HidNpadButton_Right | HidNpadButton_StickLRight | HidNpadButton_StickRRight)}
+		};
+
 		std::list<HidNpadButton> mappedButtons;
 		std::string comboCopy = buttonCombo;  // Make a copy of buttonCombo
 
@@ -663,8 +663,8 @@ void ParseIniFile() {
 	fclose(configFileIn);
 
 	// Parse the INI data
-	std::string fileDataString(fileData, fileSize);
-	tsl::hlp::ini::IniData parsedData = tsl::hlp::ini::parseIni(fileDataString);
+    std::string fileDataString(fileData, fileSize);
+    tsl::hlp::ini::IniData parsedData = tsl::hlp::ini::parseIni(fileDataString);
 
 	// Access and use the parsed data as needed
 	// For example, print the value of a specific section and key
