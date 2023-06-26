@@ -1,15 +1,21 @@
+#define NDEBUG
+#define STBTT_STATIC
 #define TESLA_INIT_IMPL
 #include <tesla.hpp>
 #include "Utils.hpp"
 
+ButtonMapperImpl buttonMapper;
+
 //FPS Counter mode
 class com_FPS : public tsl::Gui {
+private:
+	std::list<HidNpadButton> mappedButtons = buttonMapper.MapButtons(keyCombo); // map buttons
 public:
-    com_FPS() { }
+	com_FPS() { }
 
 	s16 base_y = 0;
 
-    virtual tsl::elm::Element* createUI() override {
+	virtual tsl::elm::Element* createUI() override {
 		auto rootFrame = new tsl::elm::OverlayFrame("", "");
 
 		auto Status = new tsl::elm::CustomDrawer([this](tsl::gfx::Renderer *renderer, u16 x, u16 y, u16 w, u16 h) {
@@ -32,7 +38,16 @@ public:
 		
 	}
 	virtual bool handleInput(uint64_t keysDown, uint64_t keysHeld, touchPosition touchInput, JoystickPosition leftJoyStick, JoystickPosition rightJoyStick) override {
-		if ((keysHeld & KEY_LSTICK) && (keysHeld & KEY_RSTICK)) {
+
+		bool allButtonsHeld = true;
+		for (const HidNpadButton& button : mappedButtons) {
+			if (!(keysHeld & static_cast<uint64_t>(button))) {
+				allButtonsHeld = false;
+				break;
+			}
+		}
+
+		if (allButtonsHeld) {
 			EndFPSCounterThread();
 			tsl::goBack();
 			return true;
@@ -51,8 +66,10 @@ public:
 
 //FPS Counter mode
 class com_FPSGraph : public tsl::Gui {
+private:
+	std::list<HidNpadButton> mappedButtons = buttonMapper.MapButtons(keyCombo); // map buttons
 public:
-    com_FPSGraph() { }
+	com_FPSGraph() { }
 
 	struct stats {
 		s16 value;
@@ -77,7 +94,7 @@ public:
 	s16 y_60FPS = rectangle_y;
 	bool isAbove = false;
 
-    virtual tsl::elm::Element* createUI() override {
+	virtual tsl::elm::Element* createUI() override {
 		auto rootFrame = new tsl::elm::OverlayFrame("", "");
 
 		auto Status = new tsl::elm::CustomDrawer([this](tsl::gfx::Renderer *renderer, u16 x, u16 y, u16 w, u16 h) {
@@ -170,7 +187,16 @@ public:
 		
 	}
 	virtual bool handleInput(uint64_t keysDown, uint64_t keysHeld, touchPosition touchInput, JoystickPosition leftJoyStick, JoystickPosition rightJoyStick) override {
-		if ((keysHeld & KEY_LSTICK) && (keysHeld & KEY_RSTICK)) {
+
+		bool allButtonsHeld = true;
+		for (const HidNpadButton& button : mappedButtons) {
+			if (!(keysHeld & static_cast<uint64_t>(button))) {
+				allButtonsHeld = false;
+				break;
+			}
+		}
+
+		if (allButtonsHeld) {
 			EndFPSCounterThread();
 			tsl::goBack();
 			return true;
@@ -189,10 +215,12 @@ public:
 
 //Full mode
 class FullOverlay : public tsl::Gui {
+private:
+	std::list<HidNpadButton> mappedButtons = buttonMapper.MapButtons(keyCombo); // map buttons
 public:
-    FullOverlay() { }
+	FullOverlay() { }
 
-    virtual tsl::elm::Element* createUI() override {
+	virtual tsl::elm::Element* createUI() override {
 		auto rootFrame = new tsl::elm::OverlayFrame("Status Monitor", APP_VERSION);
 
 		auto Status = new tsl::elm::CustomDrawer([](tsl::gfx::Renderer *renderer, u16 x, u16 y, u16 w, u16 h) {
@@ -240,9 +268,14 @@ public:
 				renderer->drawString(FPS_var_compressed_c, false, 295, 120, 20, renderer->a(0xFFFF));
 			}
 			
-			if (refreshrate == 5) renderer->drawString("Hold Left Stick & Right Stick to Exit\nHold ZR + R + D-Pad Down to slow down refresh", false, 20, 675, 15, renderer->a(0xFFFF));
-			else if (refreshrate == 1) renderer->drawString("Hold Left Stick & Right Stick to Exit\nHold ZR + R + D-Pad Up to speed up refresh", false, 20, 675, 15, renderer->a(0xFFFF));
-		
+			std::string formattedKeyCombo = keyCombo;
+			formatButtonCombination(formattedKeyCombo);
+			
+			std::string messageOne = "Hold " + formattedKeyCombo + " to Exit\nHold ZR + R + DDOWN to slow down refresh";
+			std::string messageTwo = "Hold " + formattedKeyCombo + " to Exit\nHold ZR + R + DDOWN to slow down refresh";
+			
+			if (refreshrate == 5) renderer->drawString(messageOne.c_str(), false, 20, 675, 15, renderer->a(0xFFFF));
+			else if (refreshrate == 1) renderer->drawString(messageTwo.c_str(), false, 20, 675, 15, renderer->a(0xFFFF));
 		});
 
 		rootFrame->setContent(Status);
@@ -314,7 +347,16 @@ public:
 		
 	}
 	virtual bool handleInput(uint64_t keysDown, uint64_t keysHeld, touchPosition touchInput, JoystickPosition leftJoyStick, JoystickPosition rightJoyStick) override {
-		if ((keysHeld & KEY_LSTICK) && (keysHeld & KEY_RSTICK)) {
+
+		bool allButtonsHeld = true;
+		for (const HidNpadButton& button : mappedButtons) {
+			if (!(keysHeld & static_cast<uint64_t>(button))) {
+				allButtonsHeld = false;
+				break;
+			}
+		}
+
+		if (allButtonsHeld) {
 			CloseThreads();
 			tsl::goBack();
 			return true;
@@ -325,10 +367,12 @@ public:
 
 //Mini mode
 class MiniOverlay : public tsl::Gui {
+private:
+	std::list<HidNpadButton> mappedButtons = buttonMapper.MapButtons(keyCombo); // map buttons
 public:
-    MiniOverlay() { }
+	MiniOverlay() { }
 
-    virtual tsl::elm::Element* createUI() override {
+	virtual tsl::elm::Element* createUI() override {
 
 		auto rootFrame = new tsl::elm::OverlayFrame("", "");
 
@@ -408,7 +452,16 @@ public:
 
 	}
 	virtual bool handleInput(uint64_t keysDown, uint64_t keysHeld, touchPosition touchInput, JoystickPosition leftJoyStick, JoystickPosition rightJoyStick) override {
-		if ((keysHeld & KEY_LSTICK) && (keysHeld & KEY_RSTICK)) {
+		
+		bool allButtonsHeld = true;
+		for (const HidNpadButton& button : mappedButtons) {
+			if (!(keysHeld & static_cast<uint64_t>(button))) {
+				allButtonsHeld = false;
+				break;
+			}
+		}
+
+		if (allButtonsHeld) {
 			CloseThreads();
 			tsl::goBack();
 			return true;
@@ -417,44 +470,55 @@ public:
 	}
 };
 
-//Mini mode
+//Micro mode
 class MicroOverlay : public tsl::Gui {
+private:
+	ButtonMapperImpl buttonMapper; // Create an instance of the ButtonMapperImpl class
+	std::list<HidNpadButton> mappedButtons = buttonMapper.MapButtons(keyCombo); // map buttons
 public:
-    MicroOverlay() { }
-
-    virtual tsl::elm::Element* createUI() override {
+	MicroOverlay() {}
+	
+	char batteryCharge[10]; // Declare the batteryCharge variable
+	
+	virtual tsl::elm::Element* createUI() override {
 
 		auto rootFrame = new tsl::elm::OverlayFrame("", "");
 
-		auto Status = new tsl::elm::CustomDrawer([](tsl::gfx::Renderer *renderer, u16 x, u16 y, u16 w, u16 h) {
+		auto Status = new tsl::elm::CustomDrawer([this](tsl::gfx::Renderer *renderer, u16 x, u16 y, u16 w, u16 h) {
 			
 			if (!GameRunning) {
-				uint32_t size = 18;
+				uint32_t size = 16;
 				uint32_t offset1 = 0;
-				uint32_t offset2 = offset1 + 355;
-				uint32_t offset3 = offset2 + 210;
-				uint32_t offset4 = offset3 + 275;
-				uint32_t offset5 = offset4 + 320;
+				uint32_t offset2 = offset1 + 290;
+				uint32_t offset3 = offset2 + 198;  // Adjusted offset for RAM
+				uint32_t offset4 = offset3 + 266;  // Adjusted offset for BRD
+				uint32_t offset5 = offset4 + 282;  // Adjusted offset for FAN
+				uint32_t offset6 = offset5 + 146;  // Adjusted offset for BAT
 				renderer->drawRect(0, 0, tsl::cfg::FramebufferWidth, 22, a(0x7111));
 				renderer->drawString("CPU", false, offset1, size, size, renderer->a(0xFCCF));
 				renderer->drawString("GPU", false, offset2, size, size, renderer->a(0xFCCF));
 				renderer->drawString("RAM", false, offset3, size, size, renderer->a(0xFCCF));
 				renderer->drawString("BRD", false, offset4, size, size, renderer->a(0xFCCF));
 				renderer->drawString("FAN", false, offset5, size, size, renderer->a(0xFCCF));
+				renderer->drawString("BAT", false, offset6, size, size, renderer->a(0xFCCF));
 				renderer->drawString(CPU_compressed_c, false, offset1+42, size, size, renderer->a(0xFFFF));
 				renderer->drawString(GPU_Load_c, false, offset2+45, size, size, renderer->a(0xFFFF));
 				renderer->drawString(RAM_var_compressed_c, false, offset3+47, size, size, renderer->a(0xFFFF));
-				renderer->drawString(skin_temperature_c, false, offset4+45, size, size, renderer->a(0xFFFF));
+				renderer->drawString(skin_temperature_c, false, offset4+43, size, size, renderer->a(0xFFFF));
 				renderer->drawString(Rotation_SpeedLevel_c, false, offset5+43, size, size, renderer->a(0xFFFF));
+				// Add the following line to display the battery raw charge
+				renderer->drawString(batteryCharge, false, offset6+40, size, size, renderer->a(0xFFFF));
+				
 			}
 			else {
-				uint32_t size = 18;
+				uint32_t size = 16;
 				uint32_t offset1 = 0;
-				uint32_t offset2 = offset1 + 355;
-				uint32_t offset3 = offset2 + 200;
-				uint32_t offset4 = offset3 + 265;
-				uint32_t offset5 = offset4 + 245;
-				uint32_t offset6 = offset5 + 130;
+				uint32_t offset2 = offset1 + 290;
+				uint32_t offset3 = offset2 + 180;  // Adjusted offset for RAM
+				uint32_t offset4 = offset3 + 255;  // Adjusted offset for BRD
+				uint32_t offset5 = offset4 + 240;  // Adjusted offset for FAN
+				uint32_t offset6 = offset5 + 120;  // Adjusted offset for FPS
+				uint32_t offset7 = offset6 + 90;  // Adjusted offset for BAT
 				renderer->drawRect(0, 0, tsl::cfg::FramebufferWidth, 22, a(0x7111));
 				renderer->drawString("CPU", false, offset1, size, size, renderer->a(0xFCCF));
 				renderer->drawString("GPU", false, offset2, size, size, renderer->a(0xFCCF));
@@ -462,12 +526,15 @@ public:
 				renderer->drawString("BRD", false, offset4, size, size, renderer->a(0xFCCF));
 				renderer->drawString("FAN", false, offset5, size, size, renderer->a(0xFCCF));
 				renderer->drawString("FPS", false, offset6, size, size, renderer->a(0xFCCF));
+				renderer->drawString("BAT", false, offset7, size, size, renderer->a(0xFCCF));
 				renderer->drawString(CPU_compressed_c, false, offset1+42, size, size, renderer->a(0xFFFF));
 				renderer->drawString(GPU_Load_c, false, offset2+45, size, size, renderer->a(0xFFFF));
 				renderer->drawString(RAM_var_compressed_c, false, offset3+47, size, size, renderer->a(0xFFFF));
-				renderer->drawString(skin_temperature_c, false, offset4+45, size, size, renderer->a(0xFFFF));
+				renderer->drawString(skin_temperature_c, false, offset4+44, size, size, renderer->a(0xFFFF));
 				renderer->drawString(Rotation_SpeedLevel_c, false, offset5+43, size, size, renderer->a(0xFFFF));
-				renderer->drawString(FPS_var_compressed_c, false, offset6+40, size, size, renderer->a(0xFFFF));
+				renderer->drawString(FPS_var_compressed_c, false, offset6+37, size, size, renderer->a(0xFFFF));
+				// Add the following line to display the battery raw charge
+				renderer->drawString(batteryCharge, false, offset7+40, size, size, renderer->a(0xFFFF));
 			}
 		});
 
@@ -536,7 +603,12 @@ public:
 		
 		///FPS
 		snprintf(FPS_var_compressed_c, sizeof FPS_var_compressed_c, "%2.1f", FPSavg);
-
+		
+		// Calculate battery charge value
+		// Update the battery temperature value here
+		float batteryChargeValue = static_cast<float>(_batteryChargeInfoFields.RawBatteryCharge) / 1000;
+		snprintf(batteryCharge, sizeof(batteryCharge), "%.1f%s", batteryChargeValue, "%");
+		
 		//Debug
 		/*
 		snprintf(CPU_compressed_c, sizeof CPU_compressed_c, "[100%s,100%s,100%s,100%s]@1785.0", "%", "%", "%", "%");
@@ -551,10 +623,22 @@ public:
 		*/
 	}
 	virtual bool handleInput(uint64_t keysDown, uint64_t keysHeld, touchPosition touchInput, JoystickPosition leftJoyStick, JoystickPosition rightJoyStick) override {
-		if ((keysHeld & KEY_LSTICK) && (keysHeld & KEY_RSTICK)) {
+		//std::list<HidNpadButton> mappedButtons;
+		//ButtonMapperImpl buttonMapper; // Create an instance of the ButtonMapperImpl class
+		//mappedButtons = buttonMapper.MapButtons(keyCombo); // map buttons
+		
+		bool allButtonsHeld = true;
+		for (const HidNpadButton& button : mappedButtons) {
+			if (!(keysHeld & static_cast<uint64_t>(button))) {
+				allButtonsHeld = false;
+				break;
+			}
+		}
+
+		if (allButtonsHeld) {
 			TeslaFPS = 60;
 			refreshrate = 60;
-			tsl::setNextOverlay(filepath);
+			tsl::setNextOverlay(filepath.c_str());
 			tsl::Overlay::get()->close();
 			return true;
 		}
@@ -565,9 +649,9 @@ public:
 //Battery
 class BatteryOverlay : public tsl::Gui {
 public:
-    BatteryOverlay() { }
+	BatteryOverlay() { }
 
-    virtual tsl::elm::Element* createUI() override {
+	virtual tsl::elm::Element* createUI() override {
 		auto rootFrame = new tsl::elm::OverlayFrame("Status Monitor", APP_VERSION);
 
 		auto Status = new tsl::elm::CustomDrawer([](tsl::gfx::Renderer *renderer, u16 x, u16 y, u16 w, u16 h) {
@@ -652,9 +736,9 @@ void EndMiscThread() {
 
 class MiscOverlay : public tsl::Gui {
 public:
-    MiscOverlay() { }
+	MiscOverlay() { }
 
-    virtual tsl::elm::Element* createUI() override {
+	virtual tsl::elm::Element* createUI() override {
 		auto rootFrame = new tsl::elm::OverlayFrame("Status Monitor", APP_VERSION);
 
 		auto Status = new tsl::elm::CustomDrawer([](tsl::gfx::Renderer *renderer, u16 x, u16 y, u16 w, u16 h) {
@@ -737,9 +821,9 @@ public:
 //Graphs
 class GraphsMenu : public tsl::Gui {
 public:
-    GraphsMenu() { }
+	GraphsMenu() { }
 
-    virtual tsl::elm::Element* createUI() override {
+	virtual tsl::elm::Element* createUI() override {
 		auto rootFrame = new tsl::elm::OverlayFrame("Status Monitor", "Graphs");
 		auto list = new tsl::elm::List();
 
@@ -775,22 +859,22 @@ public:
 		}
 	}
 
-    virtual bool handleInput(uint64_t keysDown, uint64_t keysHeld, touchPosition touchInput, JoystickPosition leftJoyStick, JoystickPosition rightJoyStick) override {
+	virtual bool handleInput(uint64_t keysDown, uint64_t keysHeld, touchPosition touchInput, JoystickPosition leftJoyStick, JoystickPosition rightJoyStick) override {
 		if (keysHeld & KEY_B) {
 			svcSleepThread(300'000'000);
 			tsl::goBack();
 			return true;
 		}
 		return false;
-    }
+	}
 };
 
 //Other
 class OtherMenu : public tsl::Gui {
 public:
-    OtherMenu() { }
+	OtherMenu() { }
 
-    virtual tsl::elm::Element* createUI() override {
+	virtual tsl::elm::Element* createUI() override {
 		auto rootFrame = new tsl::elm::OverlayFrame("Status Monitor", "Other");
 		auto list = new tsl::elm::List();
 
@@ -826,22 +910,22 @@ public:
 
 	virtual void update() override {}
 
-    virtual bool handleInput(uint64_t keysDown, uint64_t keysHeld, touchPosition touchInput, JoystickPosition leftJoyStick, JoystickPosition rightJoyStick) override {
+	virtual bool handleInput(uint64_t keysDown, uint64_t keysHeld, touchPosition touchInput, JoystickPosition leftJoyStick, JoystickPosition rightJoyStick) override {
 		if (keysHeld & KEY_B) {
 			svcSleepThread(300'000'000);
 			tsl::goBack();
 			return true;
 		}
 		return false;
-    }
+	}
 };
 
 //Main Menu
 class MainMenu : public tsl::Gui {
 public:
-    MainMenu() { }
+	MainMenu() { }
 
-    virtual tsl::elm::Element* createUI() override {
+	virtual tsl::elm::Element* createUI() override {
 		auto rootFrame = new tsl::elm::OverlayFrame("Status Monitor", APP_VERSION);
 		auto list = new tsl::elm::List(6);
 		
@@ -952,13 +1036,13 @@ public:
 			systemtickfrequency = 19200000;
 		}
 	}
-    virtual bool handleInput(uint64_t keysDown, uint64_t keysHeld, touchPosition touchInput, JoystickPosition leftJoyStick, JoystickPosition rightJoyStick) override {
+	virtual bool handleInput(uint64_t keysDown, uint64_t keysHeld, touchPosition touchInput, JoystickPosition leftJoyStick, JoystickPosition rightJoyStick) override {
 		if (keysHeld & KEY_B) {
 			tsl::goBack();
 			return true;
 		}
 		return false;
-    }
+	}
 };
 
 class MonitorOverlay : public tsl::Overlay {
@@ -1021,12 +1105,12 @@ public:
 		audsnoopExit();
 	}
 
-    virtual void onShow() override {}    // Called before overlay wants to change from invisible to visible state
-    virtual void onHide() override {}    // Called before overlay wants to change from visible to invisible state
+	virtual void onShow() override {}	// Called before overlay wants to change from invisible to visible state
+	virtual void onHide() override {}	// Called before overlay wants to change from visible to invisible state
 
-    virtual std::unique_ptr<tsl::Gui> loadInitialGui() override {
-        return initially<MainMenu>();  // Initial Gui to load. It's possible to pass arguments to it's constructor like this
-    }
+	virtual std::unique_ptr<tsl::Gui> loadInitialGui() override {
+		return initially<MainMenu>();  // Initial Gui to load. It's possible to pass arguments to it's constructor like this
+	}
 };
 
 class MicroMode : public tsl::Overlay {
@@ -1080,18 +1164,20 @@ public:
 		nvExit();
 	}
 
-    virtual void onShow() override {}    // Called before overlay wants to change from invisible to visible state
-    virtual void onHide() override {}    // Called before overlay wants to change from visible to invisible state
+	virtual void onShow() override {}	// Called before overlay wants to change from invisible to visible state
+	virtual void onHide() override {}	// Called before overlay wants to change from visible to invisible state
 
-    virtual std::unique_ptr<tsl::Gui> loadInitialGui() override {
+	virtual std::unique_ptr<tsl::Gui> loadInitialGui() override {
 		StartThreads();
 		refreshrate = 1;
-        return initially<MicroOverlay>();  // Initial Gui to load. It's possible to pass arguments to it's constructor like this
-    }
+		return initially<MicroOverlay>();  // Initial Gui to load. It's possible to pass arguments to it's constructor like this
+	}
 };
 
 // This function gets called on startup to create a new Overlay object
 int main(int argc, char **argv) {
+	ParseIniFile(); // parse INI from file
+	
 	if (argc > 0) {
 		filename = argv[0];
 	}
@@ -1116,5 +1202,5 @@ int main(int argc, char **argv) {
 			return tsl::loop<MicroMode>(argc, argv);
 		}
 	}
-    return tsl::loop<MonitorOverlay>(argc, argv);
+	return tsl::loop<MonitorOverlay>(argc, argv);
 }
