@@ -663,8 +663,8 @@ void ParseIniFile() {
 	fclose(configFileIn);
 
 	// Parse the INI data
-    std::string fileDataString(fileData, fileSize);
-    tsl::hlp::ini::IniData parsedData = tsl::hlp::ini::parseIni(fileDataString);
+	std::string fileDataString(fileData, fileSize);
+	tsl::hlp::ini::IniData parsedData = tsl::hlp::ini::parseIni(fileDataString);
 
 	// Access and use the parsed data as needed
 	// For example, print the value of a specific section and key
