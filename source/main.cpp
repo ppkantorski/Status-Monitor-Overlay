@@ -4,7 +4,8 @@
 #include <tesla.hpp>
 #include "Utils.hpp"
 
-ButtonMapperImpl buttonMapper;
+ButtonMapperImpl buttonMapper; // Custom button mapper implementation
+bool returningFromSelection = false; // for removing the necessity of svcSleepThread
 
 //FPS Counter mode
 class com_FPS : public tsl::Gui {
@@ -714,7 +715,8 @@ public:
 	virtual bool handleInput(uint64_t keysDown, uint64_t keysHeld, touchPosition touchInput, JoystickPosition leftJoyStick, JoystickPosition rightJoyStick) override {
 		if (keysHeld & KEY_B) {
 			CloseThreads();
-			svcSleepThread(500'000'000);
+			//svcSleepThread(500'000'000);
+			returningFromSelection = true;
 			tsl::goBack();
 			return true;
 		}
@@ -810,7 +812,8 @@ public:
 		if (keysHeld & KEY_B) {
 			EndMiscThread();
 			nifmExit();
-			svcSleepThread(500'000'000);
+			//svcSleepThread(500'000'000);
+			returningFromSelection = true;
 			tsl::goBack();
 			return true;
 		}
@@ -861,7 +864,8 @@ public:
 
 	virtual bool handleInput(uint64_t keysDown, uint64_t keysHeld, touchPosition touchInput, JoystickPosition leftJoyStick, JoystickPosition rightJoyStick) override {
 		if (keysHeld & KEY_B) {
-			svcSleepThread(300'000'000);
+			//svcSleepThread(300'000'000);
+			returningFromSelection = true;
 			tsl::goBack();
 			return true;
 		}
@@ -911,10 +915,14 @@ public:
 	virtual void update() override {}
 
 	virtual bool handleInput(uint64_t keysDown, uint64_t keysHeld, touchPosition touchInput, JoystickPosition leftJoyStick, JoystickPosition rightJoyStick) override {
-		if (keysHeld & KEY_B) {
-			svcSleepThread(300'000'000);
+		if (!returningFromSelection && (keysHeld & KEY_B)) {
+			//svcSleepThread(300'000'000);
+			returningFromSelection = true;
 			tsl::goBack();
 			return true;
+		}
+		if (returningFromSelection && !(keysHeld & KEY_B)) {
+			returningFromSelection = false;
 		}
 		return false;
 	}
@@ -1037,9 +1045,12 @@ public:
 		}
 	}
 	virtual bool handleInput(uint64_t keysDown, uint64_t keysHeld, touchPosition touchInput, JoystickPosition leftJoyStick, JoystickPosition rightJoyStick) override {
-		if (keysHeld & KEY_B) {
+		if (!returningFromSelection && (keysHeld & KEY_B)) {
 			tsl::goBack();
 			return true;
+		}
+		if (returningFromSelection && !(keysHeld & KEY_B)) {
+			returningFromSelection = false;
 		}
 		return false;
 	}
