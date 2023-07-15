@@ -30,7 +30,7 @@ FanController g_ICon;
 std::string folderpath = "sdmc:/switch/.overlays/";
 std::string filename = "";
 std::string filepath = "";
-std::string keyCombo = "ZL+ZR+DDOWN";;
+std::string keyCombo = "L+DDOWN+RSTICK"; // default Tesla Menu combo
 
 //Misc2
 NvChannel nvdecChannel;
@@ -631,23 +631,52 @@ public:
 
 // Custom utility function for parsing an ini file
 void ParseIniFile() {
-	std::string overlayName, configIniPath;
+	std::string overlayName, configIniPath, teslaConfigIniPath;
 	std::string directoryPath = "sdmc:/config/status-monitor/";
-
+	std::string teslaDirectoryPath = "sdmc:/config/tesla/";
+	tsl::hlp::ini::IniData parsedData;
+	
 	struct stat st;
 	if (stat(directoryPath.c_str(), &st) != 0) {
 		mkdir(directoryPath.c_str(), 0777);
 	}
 
 	configIniPath = directoryPath + "config.ini";
+	teslaConfigIniPath = teslaDirectoryPath + "config.ini";
 
 	// Open the INI file
 	FILE* configFileIn = fopen(configIniPath.c_str(), "r");
 	if (!configFileIn) {
-		// Write the default INI file
-		FILE* configFileOut = fopen(configIniPath.c_str(), "w");
-		fprintf(configFileOut, "[status-monitor]\nkey_combo=%s\n", keyCombo.c_str());
-		fclose(configFileOut);
+		FILE* teslaConfigFileIn = fopen(teslaConfigIniPath.c_str(), "r");
+		if (!teslaConfigFileIn) {
+			// Write the default INI file
+			FILE* configFileOut = fopen(configIniPath.c_str(), "w");
+			fprintf(configFileOut, "[status-monitor]\nkey_combo=%s\n", keyCombo.c_str());
+			fclose(configFileOut);
+			return;
+		} else {
+			// load keyCombo from teslaConfig
+			std::string teslaFileData;
+			char buffer[256];
+			while (fgets(buffer, sizeof(buffer), teslaConfigFileIn) != NULL) {
+				teslaFileData += buffer;
+			}
+			fclose(teslaConfigFileIn);
+
+			parsedData = tsl::hlp::ini::parseIni(teslaFileData);
+			if (parsedData.find("tesla") != parsedData.end() &&
+				parsedData["tesla"].find("key_combo") != parsedData["tesla"].end()) {
+				keyCombo = parsedData["tesla"]["key_combo"];
+				removeSpaces(keyCombo); // format combo
+				convertToUpper(keyCombo);
+			}
+
+			// Save keyCombo into configFileOut for status-monitor
+			FILE* configFileOut = fopen(configIniPath.c_str(), "w");
+			fprintf(configFileOut, "[status-monitor]\nkey_combo=%s\n", keyCombo.c_str());
+			fclose(configFileOut);
+			return;
+		}
 		return;
 	}
 
@@ -664,13 +693,16 @@ void ParseIniFile() {
 
 	// Parse the INI data
 	std::string fileDataString(fileData, fileSize);
-	tsl::hlp::ini::IniData parsedData = tsl::hlp::ini::parseIni(fileDataString);
+	parsedData = tsl::hlp::ini::parseIni(fileDataString);
 
 	// Access and use the parsed data as needed
 	// For example, print the value of a specific section and key
-	keyCombo = parsedData["status-monitor"]["key_combo"]; // load keyCombo variable
-	removeSpaces(keyCombo); // format combo
-	convertToUpper(keyCombo);
+	if (parsedData.find("status-monitor") != parsedData.end() &&
+		parsedData["status-monitor"].find("key_combo") != parsedData["status-monitor"].end()) {
+		keyCombo = parsedData["status-monitor"]["key_combo"]; // load keyCombo variable
+		removeSpaces(keyCombo); // format combo
+		convertToUpper(keyCombo);
+	}
 	
 	delete[] fileData;
 }
