@@ -2,1216 +2,962 @@
 #define STBTT_STATIC
 #define TESLA_INIT_IMPL
 #include <tesla.hpp>
-#include "Utils.hpp"
+#include <utils.hpp>
 
-ButtonMapperImpl buttonMapper; // Custom button mapper implementation
-bool returningFromSelection = false; // for removing the necessity of svcSleepThread
 
-//FPS Counter mode
-class com_FPS : public tsl::Gui {
+// Overlay booleans
+static bool shouldCloseMenu = false;
+static bool returningToMain = false;
+static bool returningToSub = false;
+static bool inMainMenu = false;
+//static bool inOverlay = false;
+static bool inSubMenu = false;
+static bool inConfigMenu = false;
+static bool inSelectionMenu = false;
+static bool defaultMenuLoaded = true;
+static bool freshSpawn = true;
+
+static tsl::elm::OverlayFrame *rootFrame = nullptr;
+
+
+// Config overlay 
+class ConfigOverlay : public tsl::Gui {
 private:
-	std::list<HidNpadButton> mappedButtons = buttonMapper.MapButtons(keyCombo); // map buttons
+    std::string filePath, specificKey;
+    bool isInSection, inQuotes;
+
 public:
-	com_FPS() { }
+    ConfigOverlay(const std::string& file, const std::string& key = "") : filePath(file), specificKey(key) {}
 
-	s16 base_y = 0;
+    virtual tsl::elm::Element* createUI() override {
+        inConfigMenu = true;
+        
+        rootFrame = new tsl::elm::OverlayFrame(getNameFromPath(filePath), "Ultrahand Config");
+        auto list = new tsl::elm::List();
 
-	virtual tsl::elm::Element* createUI() override {
-		auto rootFrame = new tsl::elm::OverlayFrame("", "");
+        std::string configFile = filePath + "/" + configFileName;
 
-		auto Status = new tsl::elm::CustomDrawer([this](tsl::gfx::Renderer *renderer, u16 x, u16 y, u16 w, u16 h) {
-				static uint8_t avg = 0;
-				if (FPSavg >= 100) avg = 46;
-				else if (FPSavg >= 10) avg = 23;
-				else avg = 0;
-				renderer->drawRect(0, base_y, tsl::cfg::FramebufferWidth - 370 + avg, 50, a(0x7111));
-				renderer->drawString(FPSavg_c, false, 5, base_y+40, 40, renderer->a(0xFFFF));
-		});
+        std::string fileContent = getFileContents(configFile);
+        if (!fileContent.empty()) {
+            std::string line;
+            std::istringstream iss(fileContent);
+            std::string currentCategory;
+            isInSection = false;
+            while (std::getline(iss, line)) {
+                if (line.empty() || line.find_first_not_of('\n') == std::string::npos) {
+                    continue;
+                }
 
-		rootFrame->setContent(Status);
+                if (line.front() == '[' && line.back() == ']') {
+                    if (!specificKey.empty()) {
+                        if (line.substr(1, line.size() - 2) == specificKey) {
+                            currentCategory = line.substr(1, line.size() - 2);
+                            isInSection = true;
+                            list->addItem(new tsl::elm::CategoryHeader(currentCategory));
+                        } else {
+                            currentCategory.clear();
+                            isInSection = false;
+                        }
+                    } else {
+                        currentCategory = line.substr(1, line.size() - 2);
+                        isInSection = true;
+                        list->addItem(new tsl::elm::CategoryHeader(currentCategory));
+                    }
+                } else if (isInSection) {
+                    auto listItem = new tsl::elm::ListItem(line);
+                    listItem->setClickListener([line, this](uint64_t keys) {
+                        if (keys & KEY_A) {
+                            std::istringstream iss(line);
+                            std::string part;
+                            std::vector<std::vector<std::string>> commandVec;
+                            std::vector<std::string> commandParts;
+                            inQuotes = false;
 
-		return rootFrame;
-	}
+                            while (std::getline(iss, part, '\'')) {
+                                if (!part.empty()) {
+                                    if (!inQuotes) {
+                                        std::istringstream argIss(part);
+                                        std::string arg;
+                                        while (argIss >> arg) {
+                                            commandParts.emplace_back(arg);
+                                        }
+                                    } else {
+                                        commandParts.emplace_back(part);
+                                    }
+                                }
+                                inQuotes = !inQuotes;
+                            }
 
-	virtual void update() override {
-		///FPS
-		snprintf(FPSavg_c, sizeof FPSavg_c, "%2.1f", FPSavg);
-		
-	}
-	virtual bool handleInput(uint64_t keysDown, uint64_t keysHeld, touchPosition touchInput, JoystickPosition leftJoyStick, JoystickPosition rightJoyStick) override {
+                            commandVec.emplace_back(std::move(commandParts));
+                            interpretAndExecuteCommand(commandVec);
+                            return true;
+                        }
+                        return false;
+                    });
+                    list->addItem(listItem);
+                }
+            }
+        } else {
+            list->addItem(new tsl::elm::ListItem("Failed to open file: " + configFile));
+        }
 
-		bool allButtonsHeld = true;
-		for (const HidNpadButton& button : mappedButtons) {
-			if (!(keysHeld & static_cast<uint64_t>(button))) {
-				allButtonsHeld = false;
-				break;
-			}
-		}
+        rootFrame->setContent(list);
+        return rootFrame;
+    }
 
-		if (allButtonsHeld) {
-			EndFPSCounterThread();
-			tsl::goBack();
-			return true;
-		}
-		else if ((keysHeld & KEY_ZR) && (keysHeld & KEY_R)) {
-			if ((keysHeld & KEY_DUP) && base_y != 0) {
-				base_y = 0;
-			}
-			else if ((keysHeld & KEY_DDOWN) && base_y != 670) {
-				base_y = 670;
-			}
-		}
-		return false;
-	}
+    virtual bool handleInput(u64 keysDown, u64 keysHeld, touchPosition touchInput, JoystickPosition leftJoyStick, JoystickPosition rightJoyStick) override {
+        if (inConfigMenu) {
+            if (keysHeld & KEY_B) {
+                //tsl::Overlay::get()->close();
+                //svcSleepThread(300'000'000);
+                tsl::goBack();
+                inConfigMenu = false;
+                returningToSub = true;
+                //tsl::Overlay::get()->close();
+                return true;
+            }
+        }
+        if (keysHeld & KEY_B) {
+            return false;
+        }
+        return false;
+        //return handleOverlayMenuInput(inConfigMenu, keysHeld, KEY_B);
+    }
 };
 
-//FPS Counter mode
-class com_FPSGraph : public tsl::Gui {
+
+
+// Selection overlay
+class SelectionOverlay : public tsl::Gui {
 private:
-	std::list<HidNpadButton> mappedButtons = buttonMapper.MapButtons(keyCombo); // map buttons
+    std::string filePath, specificKey, pathPattern, pathPatternOn, pathPatternOff, jsonPath, jsonKey, itemName, parentDirName, lastParentDirName;
+    std::vector<std::string> filesList, filesListOn, filesListOff, filterList, filterOnList, filterOffList;
+    std::vector<std::vector<std::string>> commands;
+    bool toggleState = false;
+    json_t* jsonData;
+
 public:
-	com_FPSGraph() { }
+    SelectionOverlay(const std::string& file, const std::string& key = "", const std::vector<std::vector<std::string>>& cmds = {}) 
+        : filePath(file), specificKey(key), commands(cmds) {}
 
-	struct stats {
-		s16 value;
-		bool zero_rounded;
-	};
+    virtual tsl::elm::Element* createUI() override {
+        inSelectionMenu = true;
 
-	std::vector<stats> readings;
+        rootFrame = new tsl::elm::OverlayFrame(getNameFromPath(filePath), "Ultrahand Package");
+        auto list = new tsl::elm::List();
 
-	s16 base_y = 0;
-	s16 rectangle_width = 180;
-	s16 rectangle_height = 60;
-	s16 rectangle_x = 15;
-	s16 rectangle_y = 5;
-	s16 rectangle_range_max = 60;
-	s16 rectangle_range_min = 0;
-	char legend_max[3] = "60";
-	char legend_min[2] = "0";
-	s32 range = std::abs(rectangle_range_max - rectangle_range_min) + 1;
-	s16 x_end = rectangle_x + rectangle_width;
-	s16 y_old = rectangle_y+rectangle_height;
-	s16 y_30FPS = rectangle_y+(rectangle_height / 2);
-	s16 y_60FPS = rectangle_y;
-	bool isAbove = false;
+        // Extract the path pattern from commands
+        bool useJson = false;
+        bool useToggle = false;
+        bool useSplitHeader = false;
+        
+        for (const auto& cmd : commands) {
+            if (cmd.size() > 1) {
+                if (cmd[0] == "split") {
+                    useSplitHeader = true;
+                } else if (cmd[0] == "filter") {
+                    filterList.push_back(cmd[1]);
+                } else if (cmd[0] == "filter_on") {
+                    filterOnList.push_back(cmd[1]);
+                    useToggle = true;
+                } else if (cmd[0] == "filter_off") {
+                    filterOffList.push_back(cmd[1]);
+                    useToggle = true;
+                } else if (cmd[0] == "source") {
+                    pathPattern = cmd[1];
+                } else if (cmd[0] == "source_on") {
+                    pathPatternOn = cmd[1];
+                    useToggle = true;
+                } else if (cmd[0] == "source_off") {
+                    pathPatternOff = cmd[1];
+                    useToggle = true;
+                } else if (cmd[0] == "json_source") {
+                    jsonPath = preprocessPath(cmd[1]);
+                    if (cmd.size() > 2) {
+                        jsonKey = cmd[2]; //json display key
+                    }
+                    useJson = true;
+                }
+            } 
+        }
 
-	virtual tsl::elm::Element* createUI() override {
-		auto rootFrame = new tsl::elm::OverlayFrame("", "");
+        // Get the list of files matching the pattern
+        if (!useToggle) {
+            if (useJson) {
+                // create list of data in the json 
+                jsonData = readJsonFromFile(jsonPath);
+                
+                if (jsonData && json_is_array(jsonData)) {
+                    size_t arraySize = json_array_size(jsonData);
+                    for (size_t i = 0; i < arraySize; ++i) {
+                        json_t* item = json_array_get(jsonData, i);
+                        if (item && json_is_object(item)) {
+                            json_t* keyValue = json_object_get(item, jsonKey.c_str());
+                            if (keyValue && json_is_string(keyValue)) {
+                                const char* name = json_string_value(keyValue);
+                                filesList.push_back(std::string(name));
+                            }
+                        }
+                    }
+                }
+                
+            } else {
+                filesList = getFilesListByWildcards(pathPattern);
+            }
+        } else {
+            filesListOn = getFilesListByWildcards(pathPatternOn);
+            filesListOff = getFilesListByWildcards(pathPatternOff);
+            
+            // Apply On Filter
+            for (const auto& filterOnPath : filterOnList) {
+                removeEntryFromList(filterOnPath, filesListOn);
+            }
+            // Apply Off Filter
+            for (const auto& filterOnPath : filterOffList) {
+                removeEntryFromList(filterOnPath, filesListOff);
+            }
+            
+            
+            // remove filterOnPath from filesListOn
+            // remove filterOffPath from filesListOff
+            
+            
+            filesList.reserve(filesListOn.size() + filesListOff.size());
+            filesList.insert(filesList.end(), filesListOn.begin(), filesListOn.end());
+            filesList.insert(filesList.end(), filesListOff.begin(), filesListOff.end());
+            if (useSplitHeader) {
+                std::sort(filesList.begin(), filesList.end(), [](const std::string& a, const std::string& b) {
+                    std::string parentDirA = getParentDirNameFromPath(a);
+                    std::string parentDirB = getParentDirNameFromPath(b);
+                
+                    // Compare parent directory names
+                    if (parentDirA != parentDirB) {
+                        return parentDirA < parentDirB;
+                    } else {
+                        // Parent directory names are the same, compare filenames
+                        std::string filenameA = getNameFromPath(a);
+                        std::string filenameB = getNameFromPath(b);
+                
+                        // Compare filenames
+                        return filenameA < filenameB;
+                    }
+                });
+            } else {
+                std::sort(filesList.begin(), filesList.end(), [](const std::string& a, const std::string& b) {
+                    return getNameFromPath(a) < getNameFromPath(b);
+                });
+            }
 
-		auto Status = new tsl::elm::CustomDrawer([this](tsl::gfx::Renderer *renderer, u16 x, u16 y, u16 w, u16 h) {
-			renderer->drawRect(0, base_y, 201, 72, a(0x7111));
-			if (FPSavg < 10) {
-				renderer->drawString(FPSavg_c, false, 55, base_y+60, 63, renderer->a(0x4444));
-			}
-			else if (FPSavg < 100) {
-				renderer->drawString(FPSavg_c, false, 35, base_y+60, 63, renderer->a(0x4444));
-			} 
-			else 
-				renderer->drawString(FPSavg_c, false, 15, base_y+60, 63, renderer->a(0x4444));
-			renderer->drawEmptyRect(rectangle_x - 1, base_y+rectangle_y - 1, rectangle_width + 2, rectangle_height + 4, renderer->a(0xF77F));
-			renderer->drawDashedLine(rectangle_x, base_y+y_30FPS, rectangle_x+rectangle_width, base_y+y_30FPS, 6, renderer->a(0x8888));
-			renderer->drawString(&legend_max[0], false, rectangle_x-15, base_y+rectangle_y+7, 10, renderer->a(0xFFFF));
-			renderer->drawString(&legend_min[0], false, rectangle_x-10, base_y+rectangle_y+rectangle_height+3, 10, renderer->a(0xFFFF));
+            
+        }
+        
+        // Apply filter
+        for (const auto& filterPath : filterList) {
+            removeEntryFromList(filterPath, filesList);
+        }
+        
+        
+        if (!useSplitHeader){
+            list->addItem(new tsl::elm::CategoryHeader(specificKey.substr(1)));
+        }
+        
+        // Add each file as a menu item
+        int count = 0;
+        for (const std::string& file : filesList) {
+            //if (file.compare(0, filterPath.length(), filterPath) != 0){
+            itemName = getNameFromPath(file);
+            if (!isDirectory(preprocessPath(file))) {
+                itemName = dropExtension(itemName);
+            }
+            parentDirName = getParentDirNameFromPath(file);
+            if (useSplitHeader && (lastParentDirName.empty() || (lastParentDirName != parentDirName))){
+                list->addItem(new tsl::elm::CategoryHeader(removeQuotes(parentDirName)));
+                lastParentDirName = parentDirName.c_str();
+            }
+            
+            if (!useToggle) {
+                if (useJson) { // For JSON wildcards
+                    size_t pos = file.find(" - ");
+                    std::string footer = "";
+                    std::string optionName = file;
+                    if (pos != std::string::npos) {
+                        footer = file.substr(pos + 2); // Assign the part after "&&" as the footer
+                        optionName = file.substr(0, pos); // Strip the "&&" and everything after it
+                    }
+                    auto listItem = new tsl::elm::ListItem(optionName);
+                    listItem->setValue(footer, true);
+                    listItem->setClickListener([count, this](uint64_t keys) { // Add 'command' to the capture list
+                        if (keys & KEY_A) {
+                            // Replace "{json_source}" with file in commands, then execute
+                            std::string countString = std::to_string(count);
+                            std::vector<std::vector<std::string>> modifiedCommands = getModifyCommands(commands, countString, false, true, true);
+                            interpretAndExecuteCommand(modifiedCommands);
+                            return true;
+                        }
+                        return false;
+                    });
+                    list->addItem(listItem);
+                } else {
+                    auto listItem = new tsl::elm::ListItem(itemName);
+                    listItem->setClickListener([file, this](uint64_t keys) { // Add 'command' to the capture list
+                        if (keys & KEY_A) {
+                            // Replace "{source}" with file in commands, then execute
+                            std::vector<std::vector<std::string>> modifiedCommands = getModifyCommands(commands, file);
+                            interpretAndExecuteCommand(modifiedCommands);
+                            return true;
+                        }
+                        return false;
+                    });
+                    list->addItem(listItem);
+                }
+            } else { // for handiling toggles
+                auto toggleListItem = new tsl::elm::ToggleListItem(itemName, false, "On", "Off");
 
-			size_t last_element = readings.size() - 1;
+                // Set the initial state of the toggle item
+                bool toggleStateOn = std::find(filesListOn.begin(), filesListOn.end(), file) != filesListOn.end();
+                toggleListItem->setState(toggleStateOn);
 
-			for (s16 x = x_end; x > static_cast<s16>(x_end-readings.size()); x--) {
-				s32 y_on_range = readings[last_element].value + std::abs(rectangle_range_min) + 1;
-				if (y_on_range < 0) {
-					y_on_range = 0;
-				}
-				else if (y_on_range > range) {
-					isAbove = true;
-					y_on_range = range; 
-				}
-				
-				s16 y = rectangle_y + static_cast<s16>(std::lround((float)rectangle_height * ((float)(range - y_on_range) / (float)range))); // 320 + (80 * ((61 - 61)/61)) = 320
-				auto colour = renderer->a(0xFFFF);
-				if (y == y_old && !isAbove && readings[last_element].zero_rounded) {
-					if ((y == y_30FPS || y == y_60FPS))
-						colour = renderer->a(0xF0C0);
-					else
-						colour = renderer->a(0xFF0F);
-				}
+                toggleListItem->setStateChangedListener([toggleListItem, file, toggleStateOn, this](bool state) {
+                    if (!state) {
+                        // Toggle switched to On
+                        if (toggleStateOn) {
+                            std::vector<std::vector<std::string>> modifiedCommands = getModifyCommands(commands, file, true);
+                            interpretAndExecuteCommand(modifiedCommands);
+                        } else {
+                            // Handle the case where the command should only run in the source_on section
+                            // Add your specific code here
+                        }
+                    } else {
+                        // Toggle switched to Off
+                        if (!toggleStateOn) {
+                            std::vector<std::vector<std::string>> modifiedCommands = getModifyCommands(commands, file, true, false);
+                            interpretAndExecuteCommand(modifiedCommands);
+                        } else {
+                            // Handle the case where the command should only run in the source_off section
+                            // Add your specific code here
+                        }
+                    }
+                });
 
-				if (x == x_end) {
-					y_old = y;
-				}
-				/*
-				else if (y - y_old > 0) {
-					if (y_old + 1 <= rectangle_y+rectangle_height) 
-						y_old += 1;
-				}
-				else if (y - y_old < 0) {
-					if (y_old - 1 >= rectangle_y) 
-						y_old -= 1;
-				}
-				*/
+                list->addItem(toggleListItem);
+            } 
+            count++;
+        }
 
-				renderer->drawLine(x, base_y+y, x, base_y+y_old, colour);
-				isAbove = false;
-				y_old = y;
-				last_element--;
-			}
+        rootFrame->setContent(list);
+        return rootFrame;
+    }
 
-		});
-
-		rootFrame->setContent(Status);
-
-		return rootFrame;
-	}
-
-	virtual void update() override {
-		///FPS
-		static float FPSavg_old = 0;
-		stats temp = {0, false};
-
-		if (FPSavg_old == FPSavg)
-			return;
-		FPSavg_old = FPSavg;
-		snprintf(FPSavg_c, sizeof FPSavg_c, "%2.1f",  FPSavg);
-		if (FPSavg < 254) {
-			if ((s16)(readings.size()) >= rectangle_width) {
-				readings.erase(readings.begin());
-			}
-			float whole = std::round(FPSavg);
-			temp.value = static_cast<s16>(std::lround(FPSavg));
-			if (FPSavg < whole+0.04 && FPSavg > whole-0.05) {
-				temp.zero_rounded = true;
-			}
-			readings.push_back(temp);
-		}
-		else {
-			readings.clear();
-			readings.shrink_to_fit();
-		}
-		
-	}
-	virtual bool handleInput(uint64_t keysDown, uint64_t keysHeld, touchPosition touchInput, JoystickPosition leftJoyStick, JoystickPosition rightJoyStick) override {
-
-		bool allButtonsHeld = true;
-		for (const HidNpadButton& button : mappedButtons) {
-			if (!(keysHeld & static_cast<uint64_t>(button))) {
-				allButtonsHeld = false;
-				break;
-			}
-		}
-
-		if (allButtonsHeld) {
-			EndFPSCounterThread();
-			tsl::goBack();
-			return true;
-		}
-		else if ((keysHeld & KEY_ZR) && (keysHeld & KEY_R)) {
-			if ((keysHeld & KEY_DUP) && base_y != 0) {
-				base_y = 0;
-			}
-			else if ((keysHeld & KEY_DDOWN) && base_y != 648) {
-				base_y = 648;
-			}
-		}
-		return false;
-	}
+    virtual bool handleInput(u64 keysDown, u64 keysHeld, touchPosition touchInput, JoystickPosition leftJoyStick, JoystickPosition rightJoyStick) override {
+        if (inSelectionMenu) {
+            if (keysHeld & KEY_B) {
+                //tsl::Overlay::get()->close();
+                //svcSleepThread(300'000'000);
+                tsl::goBack();
+                inSelectionMenu = false;
+                returningToSub = true;
+                //tsl::Overlay::get()->close();
+                return true;
+            }
+        } 
+        if (keysHeld & KEY_B) {
+            return false;
+        }
+        
+        return false;
+        
+        //return handleOverlayMenuInput(inSelectionMenu, keysHeld, KEY_B);
+    }
 };
 
-//Full mode
-class FullOverlay : public tsl::Gui {
+
+class MainMenu;
+
+// Sub menu
+class SubMenu : public tsl::Gui {
 private:
-	std::list<HidNpadButton> mappedButtons = buttonMapper.MapButtons(keyCombo); // map buttons
+    std::string subPath, pathReplace, pathReplaceOn, pathReplaceOff;
+
 public:
-	FullOverlay() { }
+    SubMenu(const std::string& path) : subPath(path) {}
 
-	virtual tsl::elm::Element* createUI() override {
-		auto rootFrame = new tsl::elm::OverlayFrame("Status Monitor", APP_VERSION);
+    virtual tsl::elm::Element* createUI() override {
+        inSubMenu = true;
+        
+        rootFrame = new tsl::elm::OverlayFrame(getNameFromPath(subPath), "Ultrahand Package");
+        auto list = new tsl::elm::List();
 
-		auto Status = new tsl::elm::CustomDrawer([](tsl::gfx::Renderer *renderer, u16 x, u16 y, u16 w, u16 h) {
-			
-			//Print strings
-			///CPU
-			if (R_SUCCEEDED(clkrstCheck) || R_SUCCEEDED(pcvCheck)) {
-				renderer->drawString("CPU Usage:", false, 20, 120, 20, renderer->a(0xFFFF));
-				renderer->drawString(CPU_Hz_c, false, 20, 155, 15, renderer->a(0xFFFF));
-				renderer->drawString(CPU_compressed_c, false, 20, 185, 15, renderer->a(0xFFFF));
-			}
-			
-			///GPU
-			if (R_SUCCEEDED(clkrstCheck) || R_SUCCEEDED(pcvCheck) || R_SUCCEEDED(nvCheck)) {
-				
-				renderer->drawString("GPU Usage:", false, 20, 285, 20, renderer->a(0xFFFF));
-				if (R_SUCCEEDED(clkrstCheck) || R_SUCCEEDED(pcvCheck)) renderer->drawString(GPU_Hz_c, false, 20, 320, 15, renderer->a(0xFFFF));
-				if (R_SUCCEEDED(nvCheck)) renderer->drawString(GPU_Load_c, false, 20, 335, 15, renderer->a(0xFFFF));
-				
-			}
-			
-			///RAM
-			if (R_SUCCEEDED(clkrstCheck) || R_SUCCEEDED(pcvCheck) || R_SUCCEEDED(Hinted)) {
-				
-				renderer->drawString("RAM Usage:", false, 20, 375, 20, renderer->a(0xFFFF));
-				if (R_SUCCEEDED(clkrstCheck) || R_SUCCEEDED(pcvCheck)) renderer->drawString(RAM_Hz_c, false, 20, 410, 15, renderer->a(0xFFFF));
-				if (R_SUCCEEDED(Hinted)) {
-					renderer->drawString(RAM_compressed_c, false, 20, 440, 15, renderer->a(0xFFFF));
-					renderer->drawString(RAM_var_compressed_c, false, 140, 440, 15, renderer->a(0xFFFF));
-				}
-			}
-			
-			///Thermal
-			if (R_SUCCEEDED(tsCheck) || R_SUCCEEDED(tcCheck) || R_SUCCEEDED(fanCheck)) {
-				renderer->drawString("Board:", false, 20, 540, 20, renderer->a(0xFFFF));
-				if (R_SUCCEEDED(tsCheck)) renderer->drawString(BatteryDraw_c, false, 20, 575, 15, renderer->a(0xFFFF));
-				if (R_SUCCEEDED(tsCheck)) renderer->drawString("Temperatures: SoC\n\t\t\t\t\t\t\t PCB\n\t\t\t\t\t\t\t Skin", false, 20, 590, 15, renderer->a(0xFFFF));
-				if (R_SUCCEEDED(tsCheck)) renderer->drawString(SoCPCB_temperature_c, false, 170, 590, 15, renderer->a(0xFFFF));
-				if (R_SUCCEEDED(fanCheck)) renderer->drawString(Rotation_SpeedLevel_c, false, 20, 635, 15, renderer->a(0xFFFF));
-			}
-			
-			///FPS
-			if (GameRunning) {
-				renderer->drawString(FPS_compressed_c, false, 235, 120, 20, renderer->a(0xFFFF));
-				renderer->drawString(FPS_var_compressed_c, false, 295, 120, 20, renderer->a(0xFFFF));
-			}
-			
-			std::string formattedKeyCombo = keyCombo;
-			formatButtonCombination(formattedKeyCombo);
-			
-			std::string messageOne = "Hold " + formattedKeyCombo + " to Exit\nHold ZR + R + DDOWN to slow down refresh";
-			std::string messageTwo = "Hold " + formattedKeyCombo + " to Exit\nHold ZR + R + DDOWN to slow down refresh";
-			
-			if (refreshrate == 5) renderer->drawString(messageOne.c_str(), false, 20, 675, 15, renderer->a(0xFFFF));
-			else if (refreshrate == 1) renderer->drawString(messageTwo.c_str(), false, 20, 675, 15, renderer->a(0xFFFF));
-		});
+        // Add a section break with small text to indicate the "Commands" section
+        list->addItem(new tsl::elm::CategoryHeader("Commands"));
 
-		rootFrame->setContent(Status);
+        // Load options from INI file in the subdirectory
+        std::string subConfigIniPath = subPath + "/" + configFileName;
+        std::vector<std::pair<std::string, std::vector<std::vector<std::string>>>> options = loadOptionsFromIni(subConfigIniPath);
+        
+        // Populate the sub menu with options
+        for (const auto& option : options) {
+            std::string optionName = option.first;
+            std::string footer; 
+            bool usePattern = false;
+            if (optionName[0] == '*') { 
+                usePattern = true;
+                optionName = optionName.substr(1); // Strip the "*" character on the left
+                footer = "\u25B6";
+            } else {
+                size_t pos = optionName.find(" - ");
+                if (pos != std::string::npos) {
+                    footer = optionName.substr(pos + 2); // Assign the part after "&&" as the footer
+                    optionName = optionName.substr(0, pos); // Strip the "&&" and everything after it
+                }
+            }
+            
+            // Extract the path pattern from commands
+            bool useToggle = false;
+            for (const auto& cmd : option.second) {
+                if (cmd.size() > 1) {
+                    if (cmd[0] == "source") {
+                        pathReplace = cmd[1];
+                    } else if (cmd[0] == "source_on") {
+                        pathReplaceOn = cmd[1];
+                        useToggle = true;
+                    } else if (cmd[0] == "source_off") {
+                        pathReplaceOff = cmd[1];
+                        useToggle = true;
+                    }
+                    //else if (cmd[0] == "json_data") {
+                    //    jsonPath = cmd[1];
+                    //}
+                } 
+            }
+            
+            if (usePattern || !useToggle){
+                auto listItem = static_cast<tsl::elm::ListItem*>(nullptr);
+                if ((footer == "\u25B6") || (footer.empty())) {
+                    listItem = new tsl::elm::ListItem(optionName, footer);
+                } else {
+                    listItem = new tsl::elm::ListItem(optionName);
+                    listItem->setValue(footer, true);
+                }
+                
+                //std::vector<std::vector<std::string>> modifiedCommands = getModifyCommands(option.second, pathReplace);
+                listItem->setClickListener([command = option.second, keyName = option.first, subPath = this->subPath, usePattern](uint64_t keys) {
+                    if (keys & KEY_A) {
+                        if (usePattern) {
+                            inSubMenu = false;
+                            tsl::changeTo<SelectionOverlay>(subPath, keyName, command);
+                        } else {
+                            // Interpret and execute the command
+                            interpretAndExecuteCommand(command);
+                        }
+                        return true;
+                    } else if (keys & KEY_X) {
+                        inSubMenu = false; // Set boolean to true when entering a submenu
+                        tsl::changeTo<ConfigOverlay>(subPath, keyName);
+                        return true;
+                    }
+                    return false;
+                });
 
-		return rootFrame;
-	}
+                list->addItem(listItem);
+            } else {
+                auto toggleListItem = new tsl::elm::ToggleListItem(optionName, false, "On", "Off");
+                // Set the initial state of the toggle item
+                bool toggleStateOn = isFileOrDirectory(preprocessPath(pathReplaceOn));
+                
+                toggleListItem->setState(toggleStateOn);
 
-	virtual void update() override {
-		if (TeslaFPS == 60) TeslaFPS = 1;
-		//In case of getting more than systemtickfrequency in idle, make it equal to systemtickfrequency to get 0% as output and nothing less
-		//This is because making each loop also takes time, which is not considered because this will take also additional time
-		if (idletick0 > systemtickfrequency) idletick0 = systemtickfrequency;
-		if (idletick1 > systemtickfrequency) idletick1 = systemtickfrequency;
-		if (idletick2 > systemtickfrequency) idletick2 = systemtickfrequency;
-		if (idletick3 > systemtickfrequency) idletick3 = systemtickfrequency;
-		
-		//Make stuff ready to print
-		///CPU
-		snprintf(CPU_Hz_c, sizeof CPU_Hz_c, "Frequency: %.1f MHz", (float)CPU_Hz / 1000000);
-		snprintf(CPU_Usage0, sizeof CPU_Usage0, "Core #0: %.2f%s", ((double)systemtickfrequency - (double)idletick0) / (double)systemtickfrequency * 100, "%");
-		snprintf(CPU_Usage1, sizeof CPU_Usage1, "Core #1: %.2f%s", ((double)systemtickfrequency - (double)idletick1) / (double)systemtickfrequency * 100, "%");
-		snprintf(CPU_Usage2, sizeof CPU_Usage2, "Core #2: %.2f%s", ((double)systemtickfrequency - (double)idletick2) / (double)systemtickfrequency * 100, "%");
-		snprintf(CPU_Usage3, sizeof CPU_Usage3, "Core #3: %.2f%s", ((double)systemtickfrequency - (double)idletick3) / (double)systemtickfrequency * 100, "%");
-		snprintf(CPU_compressed_c, sizeof CPU_compressed_c, "%s\n%s\n%s\n%s", CPU_Usage0, CPU_Usage1, CPU_Usage2, CPU_Usage3);
-		
-		///GPU
-		snprintf(GPU_Hz_c, sizeof GPU_Hz_c, "Frequency: %.1f MHz", (float)GPU_Hz / 1000000);
-		snprintf(GPU_Load_c, sizeof GPU_Load_c, "Load: %.1f%s", (float)GPU_Load_u / 10, "%");
-		
-		///RAM
-		snprintf(RAM_Hz_c, sizeof RAM_Hz_c, "Frequency: %.1f MHz", (float)RAM_Hz / 1000000);
-		float RAM_Total_application_f = (float)RAM_Total_application_u / 1024 / 1024;
-		float RAM_Total_applet_f = (float)RAM_Total_applet_u / 1024 / 1024;
-		float RAM_Total_system_f = (float)RAM_Total_system_u / 1024 / 1024;
-		float RAM_Total_systemunsafe_f = (float)RAM_Total_systemunsafe_u / 1024 / 1024;
-		float RAM_Total_all_f = RAM_Total_application_f + RAM_Total_applet_f + RAM_Total_system_f + RAM_Total_systemunsafe_f;
-		float RAM_Used_application_f = (float)RAM_Used_application_u / 1024 / 1024;
-		float RAM_Used_applet_f = (float)RAM_Used_applet_u / 1024 / 1024;
-		float RAM_Used_system_f = (float)RAM_Used_system_u / 1024 / 1024;
-		float RAM_Used_systemunsafe_f = (float)RAM_Used_systemunsafe_u / 1024 / 1024;
-		float RAM_Used_all_f = RAM_Used_application_f + RAM_Used_applet_f + RAM_Used_system_f + RAM_Used_systemunsafe_f;
-		snprintf(RAM_all_c, sizeof RAM_all_c, "Total:");
-		snprintf(RAM_application_c, sizeof RAM_application_c, "Application:");
-		snprintf(RAM_applet_c, sizeof RAM_applet_c, "Applet:");
-		snprintf(RAM_system_c, sizeof RAM_system_c, "System:");
-		snprintf(RAM_systemunsafe_c, sizeof RAM_systemunsafe_c, "System Unsafe:");
-		snprintf(RAM_compressed_c, sizeof RAM_compressed_c, "%s\n%s\n%s\n%s\n%s", RAM_all_c, RAM_application_c, RAM_applet_c, RAM_system_c, RAM_systemunsafe_c);
-		snprintf(RAM_all_c, sizeof RAM_all_c, "%4.2f / %4.2f MB", RAM_Used_all_f, RAM_Total_all_f);
-		snprintf(RAM_application_c, sizeof RAM_application_c, "%4.2f / %4.2f MB", RAM_Used_application_f, RAM_Total_application_f);
-		snprintf(RAM_applet_c, sizeof RAM_applet_c, "%4.2f / %4.2f MB", RAM_Used_applet_f, RAM_Total_applet_f);
-		snprintf(RAM_system_c, sizeof RAM_system_c, "%4.2f / %4.2f MB", RAM_Used_system_f, RAM_Total_system_f);
-		snprintf(RAM_systemunsafe_c, sizeof RAM_systemunsafe_c, "%4.2f / %4.2f MB", RAM_Used_systemunsafe_f, RAM_Total_systemunsafe_f);
-		snprintf(RAM_var_compressed_c, sizeof RAM_var_compressed_c, "%s\n%s\n%s\n%s\n%s", RAM_all_c, RAM_application_c, RAM_applet_c, RAM_system_c, RAM_systemunsafe_c);
-		
-		///Thermal
-		snprintf(BatteryDraw_c, sizeof BatteryDraw_c, "Battery Power Flow: %+.2fW", PowerConsumption);
-		if (hosversionAtLeast(14,0,0)) {
-			snprintf(SoCPCB_temperature_c, sizeof SoCPCB_temperature_c, "%2d \u00B0C\n%2d \u00B0C\n%2.2f \u00B0C", SOC_temperatureC, PCB_temperatureC, (float)skin_temperaturemiliC / 1000);
-		}
-		else 
-			snprintf(SoCPCB_temperature_c, sizeof SoCPCB_temperature_c, "%2.2f \u00B0C\n%2.2f\u00B0C\n%2.2f \u00B0C", (float)SOC_temperatureC / 1000, (float)PCB_temperatureC / 1000, (float)skin_temperaturemiliC / 1000);
-		snprintf(Rotation_SpeedLevel_c, sizeof Rotation_SpeedLevel_c, "Fan Rotation Level:\t%2.2f%s", Rotation_SpeedLevel_f * 100, "%");
-		
-		///FPS
-		snprintf(FPS_c, sizeof FPS_c, "PFPS:"); //Pushed Frames Per Second
-		snprintf(FPSavg_c, sizeof FPSavg_c, "FPS:"); //Frames Per Second calculated from averaged frametime 
-		snprintf(FPS_compressed_c, sizeof FPS_compressed_c, "%s\n%s", FPS_c, FPSavg_c);
-		snprintf(FPS_var_compressed_c, sizeof FPS_var_compressed_c, "%u\n%2.2f", FPS, FPSavg);
-		
-	}
-	virtual bool handleInput(uint64_t keysDown, uint64_t keysHeld, touchPosition touchInput, JoystickPosition leftJoyStick, JoystickPosition rightJoyStick) override {
+                toggleListItem->setStateChangedListener([toggleStateOn, command = option.second, this](bool state) {
+                    if (!state) {
+                        // Toggle switched to On
+                        if (toggleStateOn) {
+                            std::vector<std::vector<std::string>> modifiedCommands = getModifyCommands(command, pathReplaceOn, true);
+                            interpretAndExecuteCommand(modifiedCommands);
+                        } else {
+                            // Handle the case where the command should only run in the source_on section
+                            // Add your specific code here
+                        }
+                    } else {
+                        // Toggle switched to Off
+                        if (!toggleStateOn) {
+                            std::vector<std::vector<std::string>> modifiedCommands = getModifyCommands(command, pathReplaceOff, true, false);
+                            interpretAndExecuteCommand(modifiedCommands);
+                        } else {
+                            // Handle the case where the command should only run in the source_off section
+                            // Add your specific code here
+                        }
+                    }
+                });
 
-		bool allButtonsHeld = true;
-		for (const HidNpadButton& button : mappedButtons) {
-			if (!(keysHeld & static_cast<uint64_t>(button))) {
-				allButtonsHeld = false;
-				break;
-			}
-		}
+                list->addItem(toggleListItem);
+            }
 
-		if (allButtonsHeld) {
-			CloseThreads();
-			tsl::goBack();
-			return true;
-		}
-		return false;
-	}
+        }
+
+        // Package Info
+        PackageHeader packageHeader = getPackageHeaderFromIni(subConfigIniPath);
+
+        constexpr int lineHeight = 20;  // Adjust the line height as needed
+        constexpr int xOffset = 120;    // Adjust the horizontal offset as needed
+        constexpr int fontSize = 16;    // Adjust the font size as needed
+        int numEntries = 0;   // Adjust the number of entries as needed
+        
+        std::string packageSectionString = "";
+        std::string packageInfoString = "";
+        if (packageHeader.version != "") {
+            packageSectionString += "Version\n";
+            packageInfoString += (packageHeader.version+"\n").c_str();
+            numEntries++;
+        }
+        if (packageHeader.creator != "") {
+            packageSectionString += "Creator(s)\n";
+            packageInfoString += (packageHeader.creator+"\n").c_str();
+            numEntries++;
+        }
+        if (packageHeader.about != "") {
+            std::string aboutHeaderText = "About\n";
+            std::string::size_type aboutHeaderLength = aboutHeaderText.length();
+            std::string aboutText = packageHeader.about;
+    
+            packageSectionString += aboutHeaderText;
+            
+            // Split the about text into multiple lines with proper word wrapping
+            constexpr int maxLineLength = 28;  // Adjust the maximum line length as needed
+            std::string::size_type startPos = 0;
+            std::string::size_type spacePos = 0;
+    
+            while (startPos < aboutText.length()) {
+                std::string::size_type endPos = std::min(startPos + maxLineLength, aboutText.length());
+                std::string line = aboutText.substr(startPos, endPos - startPos);
+        
+                // Check if the current line ends with a space; if not, find the last space in the line
+                if (endPos < aboutText.length() && aboutText[endPos] != ' ') {
+                    spacePos = line.find_last_of(' ');
+                    if (spacePos != std::string::npos) {
+                        endPos = startPos + spacePos;
+                        line = aboutText.substr(startPos, endPos - startPos);
+                    }
+                }
+        
+                packageInfoString += line + '\n';
+                startPos = endPos + 1;
+                numEntries++;
+        
+                // Add corresponding newline to the packageSectionString
+                if (startPos < aboutText.length()) {
+                    packageSectionString += std::string(aboutHeaderLength, ' ') + '\n';
+                }
+            }
+    
+        }
+
+        
+        // Remove trailing newline character
+        if ((packageSectionString != "") && (packageSectionString.back() == '\n')) {
+            packageSectionString = packageSectionString.substr(0, packageSectionString.size() - 1);
+        }
+        if ((packageInfoString != "") && (packageInfoString.back() == '\n')) {
+            packageInfoString = packageInfoString.substr(0, packageInfoString.size() - 1);
+        }
+        
+        
+        if ((packageSectionString != "") && (packageInfoString != "")) {
+            list->addItem(new tsl::elm::CategoryHeader("Package Info"));
+            list->addItem(new tsl::elm::CustomDrawer([lineHeight, xOffset, fontSize, packageSectionString, packageInfoString](tsl::gfx::Renderer *renderer, s32 x, s32 y, s32 w, s32 h) {
+                renderer->drawString(packageSectionString.c_str(), false, x, y + lineHeight, fontSize, a(tsl::style::color::ColorText));
+                renderer->drawString(packageInfoString.c_str(), false, x + xOffset, y + lineHeight, fontSize, a(tsl::style::color::ColorText));
+            }), fontSize * numEntries + lineHeight);
+        }
+        
+        
+        rootFrame->setContent(list);
+        
+        return rootFrame;
+    }
+
+    virtual bool handleInput(uint64_t keysDown, uint64_t keysHeld, touchPosition touchInput, JoystickPosition leftJoyStick, JoystickPosition rightJoyStick) override {
+
+        if (!returningToSub && inSubMenu) {
+            if ((keysHeld & KEY_B)) {
+                //tsl::Overlay::get()->close();
+                //svcSleepThread(300'000'000);
+                //tsl::goBack();
+                tsl::changeTo<MainMenu>();
+                inSubMenu = false;
+                returningToMain = true;
+                //tsl::Overlay::get()->close();
+                return true;
+            }
+        }
+        if (keysHeld & KEY_B) {
+            return false;
+        }
+        
+        if (returningToSub && !(keysHeld & KEY_B)){
+            returningToSub = false;
+            inSubMenu = true;
+        }
+        
+        return false;
+        
+        //return handleOverlayMenuInput(inSubMenu, keysHeld, KEY_B);
+    }
 };
 
-//Mini mode
-class MiniOverlay : public tsl::Gui {
-private:
-	std::list<HidNpadButton> mappedButtons = buttonMapper.MapButtons(keyCombo); // map buttons
-public:
-	MiniOverlay() { }
 
-	virtual tsl::elm::Element* createUI() override {
-
-		auto rootFrame = new tsl::elm::OverlayFrame("", "");
-
-		auto Status = new tsl::elm::CustomDrawer([](tsl::gfx::Renderer *renderer, u16 x, u16 y, u16 w, u16 h) {
-			
-			if (!GameRunning) renderer->drawRect(0, 0, tsl::cfg::FramebufferWidth - 150, 95, a(0x7111));
-			else renderer->drawRect(0, 0, tsl::cfg::FramebufferWidth - 150, 125, a(0x7111));
-			
-			//Print strings
-			///CPU
-			if (GameRunning) renderer->drawString("CPU\nGPU\nRAM\nTEMP\nFAN\nDRAW\nPFPS\nFPS", false, 0, 15, 15, renderer->a(0xFFFF));
-			else renderer->drawString("CPU\nGPU\nRAM\nTEMP\nFAN\nDRAW", false, 0, 15, 15, renderer->a(0xFFFF));
-			
-			///GPU
-			renderer->drawString(Variables, false, 60, 15, 15, renderer->a(0xFFFF));
-		});
-
-		rootFrame->setContent(Status);
-
-		return rootFrame;
-	}
-
-	virtual void update() override {
-		if (TeslaFPS == 60) TeslaFPS = 1;
-		//In case of getting more than systemtickfrequency in idle, make it equal to systemtickfrequency to get 0% as output and nothing less
-		//This is because making each loop also takes time, which is not considered because this will take also additional time
-		if (idletick0 > systemtickfrequency) idletick0 = systemtickfrequency;
-		if (idletick1 > systemtickfrequency) idletick1 = systemtickfrequency;
-		if (idletick2 > systemtickfrequency) idletick2 = systemtickfrequency;
-		if (idletick3 > systemtickfrequency) idletick3 = systemtickfrequency;
-		
-		//Make stuff ready to print
-		///CPU
-		double percent = ((double)systemtickfrequency - (double)idletick0) / (double)systemtickfrequency * 100;
-		snprintf(CPU_Usage0, sizeof CPU_Usage0, "%.0f%s", percent, "%");
-		percent = ((double)systemtickfrequency - (double)idletick1) / (double)systemtickfrequency * 100;
-		snprintf(CPU_Usage1, sizeof CPU_Usage1, "%.0f%s", percent, "%");
-		percent = ((double)systemtickfrequency - (double)idletick2) / (double)systemtickfrequency * 100;
-		snprintf(CPU_Usage2, sizeof CPU_Usage2, "%.0f%s", percent, "%");
-		percent = ((double)systemtickfrequency - (double)idletick3) / (double)systemtickfrequency * 100;
-		snprintf(CPU_Usage3, sizeof CPU_Usage3, "%.0f%s", percent, "%");
-		snprintf(CPU_compressed_c, sizeof CPU_compressed_c, "[%s,%s,%s,%s]@%.1f", CPU_Usage0, CPU_Usage1, CPU_Usage2, CPU_Usage3, (float)CPU_Hz / 1000000);
-		
-		///GPU
-		snprintf(GPU_Load_c, sizeof GPU_Load_c, "%.1f%s@%.1f", (float)GPU_Load_u / 10, "%", (float)GPU_Hz / 1000000);
-		
-		///RAM
-		float RAM_Total_application_f = (float)RAM_Total_application_u / 1024 / 1024;
-		float RAM_Total_applet_f = (float)RAM_Total_applet_u / 1024 / 1024;
-		float RAM_Total_system_f = (float)RAM_Total_system_u / 1024 / 1024;
-		float RAM_Total_systemunsafe_f = (float)RAM_Total_systemunsafe_u / 1024 / 1024;
-		float RAM_Total_all_f = RAM_Total_application_f + RAM_Total_applet_f + RAM_Total_system_f + RAM_Total_systemunsafe_f;
-		float RAM_Used_application_f = (float)RAM_Used_application_u / 1024 / 1024;
-		float RAM_Used_applet_f = (float)RAM_Used_applet_u / 1024 / 1024;
-		float RAM_Used_system_f = (float)RAM_Used_system_u / 1024 / 1024;
-		float RAM_Used_systemunsafe_f = (float)RAM_Used_systemunsafe_u / 1024 / 1024;
-		float RAM_Used_all_f = RAM_Used_application_f + RAM_Used_applet_f + RAM_Used_system_f + RAM_Used_systemunsafe_f;
-		snprintf(RAM_all_c, sizeof RAM_all_c, "%.0f/%.0fMB", RAM_Used_all_f, RAM_Total_all_f);
-		snprintf(RAM_var_compressed_c, sizeof RAM_var_compressed_c, "%s@%.1f", RAM_all_c, (float)RAM_Hz / 1000000);
-		
-		///Thermal
-		snprintf(SoCPCB_temperature_c, sizeof SoCPCB_temperature_c, "%0.2fW", PowerConsumption);
-		if (hosversionAtLeast(14,0,0))
-			snprintf(skin_temperature_c, sizeof skin_temperature_c, "%2d\u00B0C/%2d\u00B0C/%2.1f\u00B0C", SOC_temperatureC, PCB_temperatureC, (float)skin_temperaturemiliC / 1000);
-		else
-			snprintf(skin_temperature_c, sizeof skin_temperature_c, "%2.1f\u00B0C/%2.1f\u00B0C/%2.1f\u00B0C", (float)SOC_temperatureC / 1000, (float)PCB_temperatureC / 1000, (float)skin_temperaturemiliC / 1000);
-		snprintf(Rotation_SpeedLevel_c, sizeof Rotation_SpeedLevel_c, "%2.2f%s", Rotation_SpeedLevel_f * 100, "%");
-		
-		///FPS
-		snprintf(FPS_c, sizeof FPS_c, "PFPS:"); //Pushed Frames Per Second
-		snprintf(FPSavg_c, sizeof FPSavg_c, "FPS:"); //Frames Per Second calculated from averaged frametime 
-		snprintf(FPS_compressed_c, sizeof FPS_compressed_c, "%s\n%s", FPS_c, FPSavg_c);
-		snprintf(FPS_var_compressed_c, sizeof FPS_compressed_c, "%u\n%2.2f", FPS, FPSavg);
-
-		if (GameRunning) snprintf(Variables, sizeof Variables, "%s\n%s\n%s\n%s\n%s\n%s\n%s", CPU_compressed_c, GPU_Load_c, RAM_var_compressed_c, skin_temperature_c, Rotation_SpeedLevel_c, SoCPCB_temperature_c, FPS_var_compressed_c);
-		else snprintf(Variables, sizeof Variables, "%s\n%s\n%s\n%s\n%s\n%s", CPU_compressed_c, GPU_Load_c, RAM_var_compressed_c, skin_temperature_c, Rotation_SpeedLevel_c, SoCPCB_temperature_c);
-
-	}
-	virtual bool handleInput(uint64_t keysDown, uint64_t keysHeld, touchPosition touchInput, JoystickPosition leftJoyStick, JoystickPosition rightJoyStick) override {
-		
-		bool allButtonsHeld = true;
-		for (const HidNpadButton& button : mappedButtons) {
-			if (!(keysHeld & static_cast<uint64_t>(button))) {
-				allButtonsHeld = false;
-				break;
-			}
-		}
-
-		if (allButtonsHeld) {
-			CloseThreads();
-			tsl::goBack();
-			return true;
-		}
-		return false;
-	}
-};
-
-//Micro mode
-class MicroOverlay : public tsl::Gui {
-private:
-	ButtonMapperImpl buttonMapper; // Create an instance of the ButtonMapperImpl class
-	std::list<HidNpadButton> mappedButtons = buttonMapper.MapButtons(keyCombo); // map buttons
-public:
-	MicroOverlay() {}
-	
-	char batteryCharge[10]; // Declare the batteryCharge variable
-	
-	virtual tsl::elm::Element* createUI() override {
-
-		auto rootFrame = new tsl::elm::OverlayFrame("", "");
-
-		auto Status = new tsl::elm::CustomDrawer([this](tsl::gfx::Renderer *renderer, u16 x, u16 y, u16 w, u16 h) {
-			
-			if (!GameRunning) {
-				uint32_t size = 16;
-				uint32_t offset1 = 0;
-				uint32_t offset2 = offset1 + 290;
-				uint32_t offset3 = offset2 + 198;  // Adjusted offset for RAM
-				uint32_t offset4 = offset3 + 266;  // Adjusted offset for BRD
-				uint32_t offset5 = offset4 + 282;  // Adjusted offset for FAN
-				uint32_t offset6 = offset5 + 146;  // Adjusted offset for BAT
-				renderer->drawRect(0, 0, tsl::cfg::FramebufferWidth, 22, a(0x7111));
-				renderer->drawString("CPU", false, offset1, size, size, renderer->a(0xFCCF));
-				renderer->drawString("GPU", false, offset2, size, size, renderer->a(0xFCCF));
-				renderer->drawString("RAM", false, offset3, size, size, renderer->a(0xFCCF));
-				renderer->drawString("BRD", false, offset4, size, size, renderer->a(0xFCCF));
-				renderer->drawString("FAN", false, offset5, size, size, renderer->a(0xFCCF));
-				renderer->drawString("BAT", false, offset6, size, size, renderer->a(0xFCCF));
-				renderer->drawString(CPU_compressed_c, false, offset1+42, size, size, renderer->a(0xFFFF));
-				renderer->drawString(GPU_Load_c, false, offset2+45, size, size, renderer->a(0xFFFF));
-				renderer->drawString(RAM_var_compressed_c, false, offset3+47, size, size, renderer->a(0xFFFF));
-				renderer->drawString(skin_temperature_c, false, offset4+43, size, size, renderer->a(0xFFFF));
-				renderer->drawString(Rotation_SpeedLevel_c, false, offset5+43, size, size, renderer->a(0xFFFF));
-				// Add the following line to display the battery raw charge
-				renderer->drawString(batteryCharge, false, offset6+40, size, size, renderer->a(0xFFFF));
-				
-			}
-			else {
-				uint32_t size = 16;
-				uint32_t offset1 = 0;
-				uint32_t offset2 = offset1 + 290;
-				uint32_t offset3 = offset2 + 180;  // Adjusted offset for RAM
-				uint32_t offset4 = offset3 + 255;  // Adjusted offset for BRD
-				uint32_t offset5 = offset4 + 240;  // Adjusted offset for FAN
-				uint32_t offset6 = offset5 + 120;  // Adjusted offset for FPS
-				uint32_t offset7 = offset6 + 90;  // Adjusted offset for BAT
-				renderer->drawRect(0, 0, tsl::cfg::FramebufferWidth, 22, a(0x7111));
-				renderer->drawString("CPU", false, offset1, size, size, renderer->a(0xFCCF));
-				renderer->drawString("GPU", false, offset2, size, size, renderer->a(0xFCCF));
-				renderer->drawString("RAM", false, offset3, size, size, renderer->a(0xFCCF));
-				renderer->drawString("BRD", false, offset4, size, size, renderer->a(0xFCCF));
-				renderer->drawString("FAN", false, offset5, size, size, renderer->a(0xFCCF));
-				renderer->drawString("FPS", false, offset6, size, size, renderer->a(0xFCCF));
-				renderer->drawString("BAT", false, offset7, size, size, renderer->a(0xFCCF));
-				renderer->drawString(CPU_compressed_c, false, offset1+42, size, size, renderer->a(0xFFFF));
-				renderer->drawString(GPU_Load_c, false, offset2+45, size, size, renderer->a(0xFFFF));
-				renderer->drawString(RAM_var_compressed_c, false, offset3+47, size, size, renderer->a(0xFFFF));
-				renderer->drawString(skin_temperature_c, false, offset4+44, size, size, renderer->a(0xFFFF));
-				renderer->drawString(Rotation_SpeedLevel_c, false, offset5+43, size, size, renderer->a(0xFFFF));
-				renderer->drawString(FPS_var_compressed_c, false, offset6+37, size, size, renderer->a(0xFFFF));
-				// Add the following line to display the battery raw charge
-				renderer->drawString(batteryCharge, false, offset7+40, size, size, renderer->a(0xFFFF));
-			}
-		});
-
-		rootFrame->setContent(Status);
-
-		return rootFrame;
-	}
-
-	virtual void update() override {
-		if (TeslaFPS == 60) {
-			TeslaFPS = 1;
-			tsl::hlp::requestForeground(false);
-		}
-		//In case of getting more than systemtickfrequency in idle, make it equal to systemtickfrequency to get 0% as output and nothing less
-		//This is because making each loop also takes time, which is not considered because this will take also additional time
-		if (idletick0 > systemtickfrequency) idletick0 = systemtickfrequency;
-		if (idletick1 > systemtickfrequency) idletick1 = systemtickfrequency;
-		if (idletick2 > systemtickfrequency) idletick2 = systemtickfrequency;
-		if (idletick3 > systemtickfrequency) idletick3 = systemtickfrequency;
-		
-		//Make stuff ready to print
-		///CPU
-		double percent = ((double)systemtickfrequency - (double)idletick0) / (double)systemtickfrequency * 100;
-		snprintf(CPU_Usage0, sizeof CPU_Usage0, "%.0f%s", percent, "%");
-		percent = ((double)systemtickfrequency - (double)idletick1) / (double)systemtickfrequency * 100;
-		snprintf(CPU_Usage1, sizeof CPU_Usage1, "%.0f%s", percent, "%");
-		percent = ((double)systemtickfrequency - (double)idletick2) / (double)systemtickfrequency * 100;
-		snprintf(CPU_Usage2, sizeof CPU_Usage2, "%.0f%s", percent, "%");
-		percent = ((double)systemtickfrequency - (double)idletick3) / (double)systemtickfrequency * 100;
-		snprintf(CPU_Usage3, sizeof CPU_Usage3, "%.0f%s", percent, "%");
-		snprintf(CPU_compressed_c, sizeof CPU_compressed_c, "[%s,%s,%s,%s]@%.1f", CPU_Usage0, CPU_Usage1, CPU_Usage2, CPU_Usage3, (float)CPU_Hz / 1000000);
-		
-		///GPU
-		snprintf(GPU_Load_c, sizeof GPU_Load_c, "%.1f%s@%.1f", (float)GPU_Load_u / 10, "%", (float)GPU_Hz / 1000000);
-		
-		///RAM
-		float RAM_Total_application_f = (float)RAM_Total_application_u / 1024 / 1024;
-		float RAM_Total_applet_f = (float)RAM_Total_applet_u / 1024 / 1024;
-		float RAM_Total_system_f = (float)RAM_Total_system_u / 1024 / 1024;
-		float RAM_Total_systemunsafe_f = (float)RAM_Total_systemunsafe_u / 1024 / 1024;
-		float RAM_Total_all_f = RAM_Total_application_f + RAM_Total_applet_f + RAM_Total_system_f + RAM_Total_systemunsafe_f;
-		float RAM_Used_application_f = (float)RAM_Used_application_u / 1024 / 1024;
-		float RAM_Used_applet_f = (float)RAM_Used_applet_u / 1024 / 1024;
-		float RAM_Used_system_f = (float)RAM_Used_system_u / 1024 / 1024;
-		float RAM_Used_systemunsafe_f = (float)RAM_Used_systemunsafe_u / 1024 / 1024;
-		float RAM_Used_all_f = RAM_Used_application_f + RAM_Used_applet_f + RAM_Used_system_f + RAM_Used_systemunsafe_f;
-		snprintf(RAM_all_c, sizeof RAM_all_c, "%.0f/%.0fMB", RAM_Used_all_f, RAM_Total_all_f);
-		snprintf(RAM_var_compressed_c, sizeof RAM_var_compressed_c, "%s@%.1f", RAM_all_c, (float)RAM_Hz / 1000000);
-		
-		///Thermal
-		if (GameRunning) {
-			if (hosversionAtLeast(14,0,0)) {
-				snprintf(skin_temperature_c, sizeof skin_temperature_c, "%2d/%2d/%2.0f\u00B0C@%+.2fW", SOC_temperatureC, PCB_temperatureC, (float)skin_temperaturemiliC / 1000, PowerConsumption);
-			}
-			else
-				snprintf(skin_temperature_c, sizeof skin_temperature_c, "%2.0f/%2.0f/%2.0f\u00B0C@%+.2fW", (float)SOC_temperatureC / 1000, (float)PCB_temperatureC / 1000, (float)skin_temperaturemiliC / 1000, PowerConsumption);
-		}
-		else {
-			if (hosversionAtLeast(14,0,0)) {
-			snprintf(skin_temperature_c, sizeof skin_temperature_c, "%2d/%2d/%2.1f\u00B0C@%+.2fW", SOC_temperatureC, PCB_temperatureC, (float)skin_temperaturemiliC / 1000, PowerConsumption);
-			}
-			else
-				snprintf(skin_temperature_c, sizeof skin_temperature_c, "%2.1f/%2.1f/%2.1f\u00B0C@%+.2fW", (float)SOC_temperatureC / 1000, (float)PCB_temperatureC / 1000, (float)skin_temperaturemiliC / 1000, PowerConsumption);
-		}
-		snprintf(Rotation_SpeedLevel_c, sizeof Rotation_SpeedLevel_c, "%2.2f%s", Rotation_SpeedLevel_f * 100, "%");
-		
-		///FPS
-		snprintf(FPS_var_compressed_c, sizeof FPS_var_compressed_c, "%2.1f", FPSavg);
-		
-		// Calculate battery charge value
-		// Update the battery temperature value here
-		float batteryChargeValue = static_cast<float>(_batteryChargeInfoFields.RawBatteryCharge) / 1000;
-		snprintf(batteryCharge, sizeof(batteryCharge), "%.1f%s", batteryChargeValue, "%");
-		
-		//Debug
-		/*
-		snprintf(CPU_compressed_c, sizeof CPU_compressed_c, "[100%s,100%s,100%s,100%s]@1785.0", "%", "%", "%", "%");
-		snprintf(GPU_Load_c, sizeof GPU_Load_c, "100.0%s@2400.0", "%");
-		snprintf(RAM_var_compressed_c, sizeof RAM_var_compressed_c, "4444/4444MB@4444.4");
-		if (GameRunning) {
-			snprintf(skin_temperature_c, sizeof skin_temperature_c, "88/88/88\u00B0C@15.55W");
-		}
-		else snprintf(skin_temperature_c, sizeof skin_temperature_c, "88.8/88.8/88.8\u00B0C@15.55W");
-		snprintf(Rotation_SpeedLevel_c, sizeof Rotation_SpeedLevel_c, "100.00%s", "%");
-		snprintf(FPS_var_compressed_c, sizeof FPS_var_compressed_c, "60.0");
-		*/
-	}
-	virtual bool handleInput(uint64_t keysDown, uint64_t keysHeld, touchPosition touchInput, JoystickPosition leftJoyStick, JoystickPosition rightJoyStick) override {
-		//std::list<HidNpadButton> mappedButtons;
-		//ButtonMapperImpl buttonMapper; // Create an instance of the ButtonMapperImpl class
-		//mappedButtons = buttonMapper.MapButtons(keyCombo); // map buttons
-		
-		bool allButtonsHeld = true;
-		for (const HidNpadButton& button : mappedButtons) {
-			if (!(keysHeld & static_cast<uint64_t>(button))) {
-				allButtonsHeld = false;
-				break;
-			}
-		}
-
-		if (allButtonsHeld) {
-			TeslaFPS = 60;
-			refreshrate = 60;
-			tsl::setNextOverlay(filepath.c_str());
-			tsl::Overlay::get()->close();
-			return true;
-		}
-		return false;
-	}
-};
-
-//Battery
-class BatteryOverlay : public tsl::Gui {
-public:
-	BatteryOverlay() { }
-
-	virtual tsl::elm::Element* createUI() override {
-		auto rootFrame = new tsl::elm::OverlayFrame("Status Monitor", APP_VERSION);
-
-		auto Status = new tsl::elm::CustomDrawer([](tsl::gfx::Renderer *renderer, u16 x, u16 y, u16 w, u16 h) {
-			
-			if (R_SUCCEEDED(psmCheck)) {
-				
-				renderer->drawString("Battery/Charger Stats:", false, 20, 120, 20, renderer->a(0xFFFF));
-				renderer->drawString(Battery_c, false, 20, 155, 18, renderer->a(0xFFFF));
-			}
-
-		});
-
-		rootFrame->setContent(Status);
-
-		return rootFrame;
-	}
-
-	virtual void update() override {
-
-		///Battery
-
-		if (_batteryChargeInfoFields.ChargerType)
-			snprintf(Battery_c, sizeof Battery_c,
-				"Battery Temperature: %.1f\u00B0C\n"
-				"Battery Raw Charge: %.1f%s\n"
-				"Battery Age: %.1f%s\n"
-				"Battery Voltage (5s AVG): %.0f mV\n"
-				"Battery Current Flow (5s AVG): %+.0f mA\n"
-				"Battery Power Flow (5s AVG): %+.3f W\n"
-				"Charger Type: %u\n"
-				"Charger Max Voltage: %u mV\n"
-				"Charger Max Current: %u mA",
-				(float)_batteryChargeInfoFields.BatteryTemperature / 1000,
-				(float)_batteryChargeInfoFields.RawBatteryCharge / 1000, "%",
-				(float)_batteryChargeInfoFields.BatteryAge / 1000, "%",
-				batVoltageAvg,
-				batCurrentAvg,
-				PowerConsumption,
-				_batteryChargeInfoFields.ChargerType,
-				_batteryChargeInfoFields.ChargerVoltageLimit,
-				_batteryChargeInfoFields.ChargerCurrentLimit
-			);
-		else
-			snprintf(Battery_c, sizeof Battery_c,
-				"Battery Temperature: %.1f\u00B0C\n"
-				"Battery Raw Charge: %.1f%s\n"
-				"Battery Age: %.1f%s\n"
-				"Battery Voltage (5s AVG): %.0f mV\n"
-				"Battery Current Flow (5s AVG): %.0f mA\n"
-				"Battery Power Flow (5s AVG): %+.3f W",
-				(float)_batteryChargeInfoFields.BatteryTemperature / 1000,
-				(float)_batteryChargeInfoFields.RawBatteryCharge / 1000, "%",
-				(float)_batteryChargeInfoFields.BatteryAge / 1000, "%",
-				batVoltageAvg,
-				batCurrentAvg,
-				PowerConsumption
-			);
-		
-	}
-	virtual bool handleInput(uint64_t keysDown, uint64_t keysHeld, touchPosition touchInput, JoystickPosition leftJoyStick, JoystickPosition rightJoyStick) override {
-		if (keysHeld & KEY_B) {
-			CloseThreads();
-			//svcSleepThread(500'000'000);
-			returningFromSelection = true;
-			tsl::goBack();
-			return true;
-		}
-		return false;
-	}
-};
-
-void StartMiscThread() {
-	threadCreate(&t0, Misc2, NULL, NULL, 0x1000, 0x3F, 3);
-	threadStart(&t0);
-}
-
-void EndMiscThread() {
-	threadexit = true;
-	threadWaitForExit(&t0);
-	threadClose(&t0);
-	threadexit = false;
-}
-
-class MiscOverlay : public tsl::Gui {
-public:
-	MiscOverlay() { }
-
-	virtual tsl::elm::Element* createUI() override {
-		auto rootFrame = new tsl::elm::OverlayFrame("Status Monitor", APP_VERSION);
-
-		auto Status = new tsl::elm::CustomDrawer([](tsl::gfx::Renderer *renderer, u16 x, u16 y, u16 w, u16 h) {
-			
-			///DSP
-			if (R_SUCCEEDED(audsnoopCheck)) {
-				renderer->drawString(DSP_Load_c, false, 20, 120, 20, renderer->a(0xFFFF));
-			}
-
-			//NVDEC
-			if (R_SUCCEEDED(nvdecCheck)) {
-				renderer->drawString(NVDEC_Hz_c, false, 20, 165, 20, renderer->a(0xFFFF));
-			}
-
-			if (R_SUCCEEDED(nifmCheck)) {
-				renderer->drawString("Network", false, 20, 210, 20, renderer->a(0xFFFF));
-				if (!Nifm_internet_rc) {
-					if (NifmConnectionType == NifmInternetConnectionType_WiFi) {
-						renderer->drawString("Type: Wi-Fi", false, 20, 235, 18, renderer->a(0xFFFF));
-						if (!Nifm_profile_rc) {
-							if (Nifm_showpass)
-								renderer->drawString(Nifm_pass, false, 20, 260, 15, renderer->a(0xFFFF));
-							else
-								renderer->drawString("Press Y to show password", false, 20, 260, 15, renderer->a(0xFFFF));
-						}
-					}
-					else if (NifmConnectionType == NifmInternetConnectionType_Ethernet)
-						renderer->drawString("Type: Ethernet", false, 20, 235, 18, renderer->a(0xFFFF));
-				}
-				else
-					renderer->drawString("Type: Not connected", false, 20, 235, 18, renderer->a(0xFFFF));
-		}
-
-		});
-
-		rootFrame->setContent(Status);
-
-		return rootFrame;
-	}
-
-	virtual void update() override {
-
-		snprintf(DSP_Load_c, sizeof DSP_Load_c, "DSP usage: %u%%", DSP_Load_u);
-		snprintf(NVDEC_Hz_c, sizeof NVDEC_Hz_c, "NVDEC clock rate: %.1f MHz", (float)NVDEC_Hz / 1000);
-		char pass_temp1[25] = "";
-		char pass_temp2[25] = "";
-		char pass_temp3[17] = "";
-		if (Nifm_profile.wireless_setting_data.passphrase_len > 48) {
-			memcpy(&pass_temp1, &(Nifm_profile.wireless_setting_data.passphrase[0]), 24);
-			memcpy(&pass_temp2, &(Nifm_profile.wireless_setting_data.passphrase[24]), 24);
-			memcpy(&pass_temp3, &(Nifm_profile.wireless_setting_data.passphrase[48]), 16);
-		}
-		else if (Nifm_profile.wireless_setting_data.passphrase_len > 24) {
-			memcpy(&pass_temp1, &(Nifm_profile.wireless_setting_data.passphrase[0]), 24);
-			memcpy(&pass_temp2, &(Nifm_profile.wireless_setting_data.passphrase[24]), 24);
-		}
-		else {
-			memcpy(&pass_temp1, &(Nifm_profile.wireless_setting_data.passphrase[0]), 24);
-		}
-		snprintf(Nifm_pass, sizeof Nifm_pass, "%s\n%s\n%s", pass_temp1, pass_temp2, pass_temp3);	
-	}
-
-	virtual bool handleInput(uint64_t keysDown, uint64_t keysHeld, touchPosition touchInput, JoystickPosition leftJoyStick, JoystickPosition rightJoyStick) override {
-		if (keysHeld & KEY_Y) {
-			Nifm_showpass = true;
-		}
-		else Nifm_showpass = false;
-
-		if (keysHeld & KEY_B) {
-			EndMiscThread();
-			nifmExit();
-			//svcSleepThread(500'000'000);
-			returningFromSelection = true;
-			tsl::goBack();
-			return true;
-		}
-		return false;
-	}
-};
-
-//Graphs
-class GraphsMenu : public tsl::Gui {
-public:
-	GraphsMenu() { }
-
-	virtual tsl::elm::Element* createUI() override {
-		auto rootFrame = new tsl::elm::OverlayFrame("Status Monitor", "Graphs");
-		auto list = new tsl::elm::List();
-
-		auto comFPSGraph = new tsl::elm::ListItem("FPS");
-		comFPSGraph->setClickListener([](uint64_t keys) {
-			if (keys & KEY_A) {
-				StartFPSCounterThread();
-				TeslaFPS = 31;
-				refreshrate = 31;
-				alphabackground = 0x0;
-				tsl::hlp::requestForeground(false);
-				FullMode = false;
-				tsl::changeTo<com_FPSGraph>();
-				return true;
-			}
-			return false;
-		});
-		list->addItem(comFPSGraph);
-
-		rootFrame->setContent(list);
-
-		return rootFrame;
-	}
-
-	virtual void update() override {
-		if (TeslaFPS != 60) {
-			FullMode = true;
-			tsl::hlp::requestForeground(true);
-			TeslaFPS = 60;
-			alphabackground = 0xD;
-			refreshrate = 60;
-			systemtickfrequency = 19200000;
-		}
-	}
-
-	virtual bool handleInput(uint64_t keysDown, uint64_t keysHeld, touchPosition touchInput, JoystickPosition leftJoyStick, JoystickPosition rightJoyStick) override {
-		if (keysHeld & KEY_B) {
-			//svcSleepThread(300'000'000);
-			returningFromSelection = true;
-			tsl::goBack();
-			return true;
-		}
-		return false;
-	}
-};
-
-//Other
-class OtherMenu : public tsl::Gui {
-public:
-	OtherMenu() { }
-
-	virtual tsl::elm::Element* createUI() override {
-		auto rootFrame = new tsl::elm::OverlayFrame("Status Monitor", "Other");
-		auto list = new tsl::elm::List();
-
-		auto Battery = new tsl::elm::ListItem("Battery/Charger");
-		Battery->setClickListener([](uint64_t keys) {
-			if (keys & KEY_A) {
-				StartBatteryThread();
-				tsl::changeTo<BatteryOverlay>();
-				return true;
-			}
-			return false;
-		});
-		list->addItem(Battery);
-
-		auto Misc = new tsl::elm::ListItem("Miscellaneous");
-		Misc->setClickListener([](uint64_t keys) {
-			if (keys & KEY_A) {
-				smInitialize();
-				nifmCheck = nifmInitialize(NifmServiceType_Admin);
-				smExit();
-				StartMiscThread();
-				tsl::changeTo<MiscOverlay>();
-				return true;
-			}
-			return false;
-		});
-		list->addItem(Misc);
-
-		rootFrame->setContent(list);
-
-		return rootFrame;
-	}
-
-	virtual void update() override {}
-
-	virtual bool handleInput(uint64_t keysDown, uint64_t keysHeld, touchPosition touchInput, JoystickPosition leftJoyStick, JoystickPosition rightJoyStick) override {
-		if (!returningFromSelection && (keysHeld & KEY_B)) {
-			//svcSleepThread(300'000'000);
-			returningFromSelection = true;
-			tsl::goBack();
-			return true;
-		}
-		if (returningFromSelection && !(keysHeld & KEY_B)) {
-			returningFromSelection = false;
-		}
-		return false;
-	}
-};
-
-//Main Menu
+// Main menu
 class MainMenu : public tsl::Gui {
+private:
+    tsl::hlp::ini::IniData settingsData;
+    std::string packageConfigIniPath = packageDirectory + configFileName;
+    std::string menuMode, defaultMenuMode, inOverlayString, fullPath, optionName;
+    bool useDefaultMenu = false;
+    //bool inSubMenu = false; // Added boolean to track submenu state
+    //bool inTextMenu = false;
 public:
-	MainMenu() { }
+    MainMenu() {}
 
-	virtual tsl::elm::Element* createUI() override {
-		auto rootFrame = new tsl::elm::OverlayFrame("Status Monitor", APP_VERSION);
-		auto list = new tsl::elm::List(6);
-		
-		auto Full = new tsl::elm::ListItem("Full");
-		Full->setClickListener([](uint64_t keys) {
-			if (keys & KEY_A) {
-				StartThreads();
-				TeslaFPS = 1;
-				refreshrate = 1;
-				tsl::hlp::requestForeground(false);
-				tsl::changeTo<FullOverlay>();
-				return true;
-			}
-			return false;
-		});
-		list->addItem(Full);
-		auto Mini = new tsl::elm::ListItem("Mini");
-		Mini->setClickListener([](uint64_t keys) {
-			if (keys & KEY_A) {
-				StartThreads();
-				TeslaFPS = 1;
-				refreshrate = 1;
-				alphabackground = 0x0;
-				tsl::hlp::requestForeground(false);
-				FullMode = false;
-				tsl::changeTo<MiniOverlay>();
-				return true;
-			}
-			return false;
-		});
-		list->addItem(Mini);
+    virtual tsl::elm::Element* createUI() override {
+        inMainMenu = true;
+        //defaultMenuMode = "last_menu";
+        defaultMenuMode = "overlays";
+        menuMode = "overlays";
+        
+        createDirectory(packageDirectory);
+        createDirectory(settingsPath);
+        
+        
+        bool settingsLoaded = false;
+        if (isFileOrDirectory(settingsConfigIniPath)) {
+            settingsData = getParsedDataFromIniFile(settingsConfigIniPath);
+            if (settingsData.count("ultrahand") > 0) {
+                auto& ultrahandSection = settingsData["ultrahand"];
+                if (ultrahandSection.count("last_menu") > 0) {
+                    menuMode = ultrahandSection["last_menu"];
+                    if (ultrahandSection.count("default_menu") > 0) {
+                        defaultMenuMode = ultrahandSection["default_menu"];
+                        if (ultrahandSection.count("in_overlay") > 0) {
+                            settingsLoaded = true;
+                        }
+                    }
+                }
+                //if (ultrahandSection.count("in_overlay") > 0) {
+                //    inOverlayString = ultrahandSection["in_overlay"];
+                //    if (inOverlayString == "true") {
+                //        setIniFileValue(settingsConfigIniPath, "ultrahand", "in_overlay", "false");
+                //    }
+                //    settingsLoaded = true;
+                //}
+            }
+        }
+        if (!settingsLoaded) { // write data if settings are not loaded
+            setIniFileValue(settingsConfigIniPath, "ultrahand", "default_menu", defaultMenuMode);
+            setIniFileValue(settingsConfigIniPath, "ultrahand", "last_menu", menuMode);
+            setIniFileValue(settingsConfigIniPath, "ultrahand", "in_overlay", "false");
+        }
+        copyTeslaKeyComboToUltraHand();
+        //setIniFileValue(settingsConfigIniPath, "ultrahand", "in_overlay", "false");
+        
+        
+        if ((defaultMenuMode == "overlays") || (defaultMenuMode == "packages")) {
+            if (defaultMenuLoaded) {
+                menuMode = defaultMenuMode.c_str();
+                defaultMenuLoaded = false;
+            }
+        } else {
+            defaultMenuMode = "last_menu";
+            setIniFileValue(settingsConfigIniPath, "ultrahand", "default_menu", defaultMenuMode);
+        }
+        
+        std::string versionLabel = APP_VERSION+std::string("   (")+envGetLoaderInfo()+std::string(")");
+        rootFrame = new tsl::elm::OverlayFrame("Ultrahand", versionLabel, menuMode);
+        auto list = new tsl::elm::List();
 
-		bool fileExist = false;
-		FILE* test = fopen(std::string(folderpath + filename).c_str(), "rb");
-		if (test) {
-			fclose(test);
-			fileExist = true;
-			filepath = folderpath + filename;
-		}
-		else {
-			test = fopen(std::string(folderpath + "Status-Monitor-Overlay.ovl").c_str(), "rb");
-			if (test) {
-				fclose(test);
-				fileExist = true;
-				filepath = folderpath + "Status-Monitor-Overlay.ovl";
-			}
-		}
-		if (fileExist) {
-			auto Micro = new tsl::elm::ListItem("Micro");
-			Micro->setClickListener([](uint64_t keys) {
-				if (keys & KEY_A) {
-					tsl::setNextOverlay(filepath, "--microOverlay");
-					tsl::Overlay::get()->close();
-					return true;
-				}
-				return false;
-			});
-			list->addItem(Micro);
-		}
-		if (SaltySD) {
-			auto comFPS = new tsl::elm::ListItem("FPS Counter");
-			comFPS->setClickListener([](uint64_t keys) {
-				if (keys & KEY_A) {
-					StartFPSCounterThread();
-					TeslaFPS = 31;
-					refreshrate = 31;
-					alphabackground = 0x0;
-					tsl::hlp::requestForeground(false);
-					FullMode = false;
-					tsl::changeTo<com_FPS>();
-					return true;
-				}
-				return false;
-			});
-			list->addItem(comFPS);
-			auto Graphs = new tsl::elm::ListItem("Graphs");
-			Graphs->setClickListener([](uint64_t keys) {
-				if (keys & KEY_A) {
-					tsl::changeTo<GraphsMenu>();
-					return true;
-				}
-				return false;
-			});
-			list->addItem(Graphs);
-		}
-		auto Other = new tsl::elm::ListItem("Other");
-		Other->setClickListener([](uint64_t keys) {
-			if (keys & KEY_A) {
-				tsl::changeTo<OtherMenu>();
-				return true;
-			}
-			return false;
-		});
-		list->addItem(Other);
+        //loadOverlayFiles(list);
+        
+        int count = 0;
+        
+        if (menuMode == "overlays") {
+            // Load overlay files
+            std::vector<std::string> overlayFiles;
+            std::vector<std::string> files = getFilesListByWildcard(overlayDirectory+"*.ovl");
+            for (const auto& file : files) {
+                // Check if the file is an overlay file (*.ovl)
+                if (file.substr(file.length() - 4) == ".ovl" && getNameFromPath(file) != "ovlmenu.ovl") {
+                    overlayFiles.push_back(file);
+                }
+            }
+            std::sort(overlayFiles.begin(), overlayFiles.end()); // Sort overlay files alphabetically
 
-		rootFrame->setContent(list);
+            if (!overlayFiles.empty()) {
+            
+                for (const auto& overlayFile : overlayFiles) {
+                    if (getNameFromPath(overlayFile) == "ovlmenu.ovl")
+                        continue;
 
-		return rootFrame;
-	}
+                    // Get the path of the overlay file
+                    //std::string overlayPath = overlayDirectory + "/" + overlayFile;
 
-	virtual void update() override {
-		if (TeslaFPS != 60) {
-			FullMode = true;
-			tsl::hlp::requestForeground(true);
-			TeslaFPS = 60;
-			alphabackground = 0xD;
-			refreshrate = 60;
-			systemtickfrequency = 19200000;
-		}
-	}
-	virtual bool handleInput(uint64_t keysDown, uint64_t keysHeld, touchPosition touchInput, JoystickPosition leftJoyStick, JoystickPosition rightJoyStick) override {
-		if (!returningFromSelection && (keysHeld & KEY_B)) {
-			tsl::goBack();
-			return true;
-		}
-		if (returningFromSelection && !(keysHeld & KEY_B)) {
-			returningFromSelection = false;
-		}
-		return false;
-	}
+                    // Get the name and version of the overlay file
+                    auto [result, overlayName, overlayVersion] = getOverlayInfo(overlayFile);
+                    if (result != ResultSuccess)
+                        continue;
+
+                    // Create a new list item with the overlay name and version
+                    
+                    std::string fileName = getNameFromPath(overlayFile);
+                    if (!fileName.empty()) {
+                        if (fileName.substr(0, 2) == "0_") {
+                            overlayName = "\u2605 "+overlayName;
+                        }
+                    }
+                    
+                    auto* listItem = new tsl::elm::ListItem(overlayName);
+                    listItem->setValue(overlayVersion, true);
+
+                    // Add a click listener to load the overlay when clicked upon
+                    listItem->setClickListener([overlayFile](s64 key) {
+                        if (key & KEY_A) {
+                            // Load the overlay here
+                            //inMainMenu = false;
+                            //inOverlay = true;
+                            setIniFileValue(settingsConfigIniPath, "ultrahand", "in_overlay", "true"); // this is handled within tesla.hpp
+                            tsl::setNextOverlay(overlayFile);
+                            //envSetNextLoad(overlayPath, "");
+                            tsl::Overlay::get()->close();
+                            //inMainMenu = true;
+                            return true;
+                        } else if (key & KEY_PLUS) {
+                            std::string fileName = getNameFromPath(overlayFile);
+                            if (!fileName.empty()) {
+                                if (fileName.substr(0, 2) != "0_") {
+                                    std::string newFilePath = getParentDirFromPath(overlayFile) + "0_" + fileName;
+                                    moveFileOrDirectory(overlayFile, newFilePath);
+                                } else {
+                                    fileName = fileName.substr(2); // Remove "0_" from fileName
+                                    std::string newFilePath = getParentDirFromPath(overlayFile) + fileName;
+                                    moveFileOrDirectory(overlayFile, newFilePath);
+                                }
+                            }
+                            tsl::changeTo<MainMenu>();
+                            return true;
+                        }
+                        return false;
+                    });
+
+                    if (count == 0) {
+                        list->addItem(new tsl::elm::CategoryHeader("Overlays"));
+                    }
+                    list->addItem(listItem);
+                    count++;
+                }
+            }
+        }
+        
+        if (menuMode == "packages" ) {
+            // Create the directory if it doesn't exist
+            createDirectory(packageDirectory);
+
+            // Load options from INI file
+            std::vector<std::pair<std::string, std::vector<std::vector<std::string>>>> options = loadOptionsFromIni(packageConfigIniPath, true);
+        
+
+            // Load subdirectories
+            std::vector<std::string> subdirectories = getSubdirectories(packageDirectory);
+            
+            for (size_t i = 0; i < subdirectories.size(); ++i) {
+                std::string& subdirectory = subdirectories[i];
+                std::string subPath = packageDirectory + subdirectory + "/";
+                std::string starFilePath = subPath + ".star";
+            
+                if (isFileOrDirectory(starFilePath)) {
+                    // Add "0_" to subdirectory within subdirectories
+                    subdirectory = "0_" + subdirectory;
+                }
+            }
+            
+            std::sort(subdirectories.begin(), subdirectories.end()); // Sort subdirectories alphabetically
+            
+            count = 0;
+            for (const auto& taintedSubdirectory : subdirectories) {
+                //bool usingStar = false;
+                std::string subdirectory = taintedSubdirectory;
+                std::string subdirectoryIcon = "";
+                if (subdirectory.find("0_") == 0) {
+                    subdirectory = subdirectory.substr(2); // Remove "0_" from the beginning
+                    subdirectoryIcon = "\u2605 ";
+                }
+                std::string subPath = packageDirectory + subdirectory + "/";
+                std::string configFilePath = subPath + "config.ini";
+            
+                if (isFileOrDirectory(configFilePath)) {
+                    PackageHeader packageHeader = getPackageHeaderFromIni(subPath + configFileName);
+                    if (count == 0) {
+                        // Add a section break with small text to indicate the "Packages" section
+                        list->addItem(new tsl::elm::CategoryHeader("Packages"));
+                    }
+                    
+                    auto listItem = new tsl::elm::ListItem(subdirectoryIcon + subdirectory);
+                    listItem->setValue(packageHeader.version, true);
+            
+                    listItem->setClickListener([this, subPath = packageDirectory + subdirectory + "/"](uint64_t keys) {
+                        if (keys & KEY_A) {
+                            inMainMenu = false;
+                            tsl::changeTo<SubMenu>(subPath);
+                    
+                            return true;
+                        } else if (keys & KEY_PLUS) {
+                            std::string starFilePath = subPath + ".star";
+                            if (isFileOrDirectory(starFilePath)) {
+                                deleteFileOrDirectory(starFilePath);
+                            } else {
+                                createTextFile(starFilePath, "");
+                            }
+                            tsl::changeTo<MainMenu>();
+                            return true;
+                        }
+                        return false;
+                    });
+
+                    list->addItem(listItem);
+                    count++;
+                }
+
+            }
+
+        
+            count = 0;
+            //std::string optionName;
+            // Populate the menu with options
+            for (const auto& option : options) {
+                optionName = option.first;
+            
+                // Check if it's a subdirectory
+                fullPath = packageDirectory + optionName;
+                if (count == 0) {
+                    // Add a section break with small text to indicate the "Packages" section
+                    list->addItem(new tsl::elm::CategoryHeader("Commands"));
+                }
+                
+                //std::string header;
+                //if ((optionName == "Shutdown")) {
+                //    header = "\uE0F3  ";
+                //}
+                //else if ((optionName == "Safe Reboot") || (optionName == "L4T Reboot")) {
+                //    header = "\u2194  ";
+                //}
+                //auto listItem = new tsl::elm::ListItem(header+optionName);
+                auto listItem = new tsl::elm::ListItem(optionName);
+                
+                std::vector<std::vector<std::string>> modifiedCommands = getModifyCommands(option.second, fullPath);
+                listItem->setClickListener([this, command = modifiedCommands, subPath = optionName](uint64_t keys) {
+                    if (keys & KEY_A) {
+                        // Check if it's a subdirectory
+                        struct stat entryStat;
+                        std::string newPath = packageDirectory + subPath;
+                        if (stat(fullPath.c_str(), &entryStat) == 0 && S_ISDIR(entryStat.st_mode)) {
+                            inMainMenu = false;
+                            tsl::changeTo<SubMenu>(newPath);
+                        } else {
+                            // Interpret and execute the command
+                            interpretAndExecuteCommand(command);
+                        }
+
+                        return true;
+                    }
+                    return false;
+                });
+
+                list->addItem(listItem);
+                count++;
+            }
+        }
+
+        rootFrame->setContent(list);
+
+        return rootFrame;
+    }
+
+    virtual bool handleInput(uint64_t keysDown, uint64_t keysHeld, touchPosition touchInput, JoystickPosition leftJoyStick, JoystickPosition rightJoyStick) override {
+        
+        if (inMainMenu){
+            if (!freshSpawn && !returningToMain) {
+                if ((keysHeld & KEY_DRIGHT) && !(keysHeld & (KEY_DLEFT | KEY_DUP | KEY_DDOWN | KEY_B | KEY_A | KEY_X | KEY_Y | KEY_L | KEY_R | KEY_ZL | KEY_ZR))) {
+                    if (menuMode != "packages") {
+                        setIniFileValue(settingsConfigIniPath, "ultrahand", "last_menu", "packages");
+                        tsl::changeTo<MainMenu>();
+                        return true;
+                    }
+                }
+                if ((keysHeld & KEY_DLEFT) && !(keysHeld & (KEY_DRIGHT | KEY_DUP | KEY_DDOWN | KEY_B | KEY_A | KEY_X | KEY_Y | KEY_L | KEY_R | KEY_ZL | KEY_ZR))) {
+                    if (menuMode != "overlays") {
+                        setIniFileValue(settingsConfigIniPath, "ultrahand", "last_menu", "overlays");
+                        tsl::changeTo<MainMenu>();
+                        return true;
+                    }
+                }
+                if (keysHeld & KEY_B) {
+                    //inMainMenu = false;
+                    tsl::Overlay::get()->close();
+                    return true;
+                }
+            }
+        }
+        if (keysHeld & KEY_B) {
+            return false;
+        }
+        
+        if (freshSpawn && !(keysHeld & KEY_B)){
+            freshSpawn = false;
+        }
+        if (returningToMain && !(keysHeld & KEY_B)){
+            returningToMain = false;
+            inMainMenu = true;
+        }
+        return false;
+    }
 };
 
-class MonitorOverlay : public tsl::Overlay {
+
+// Overlay
+class Overlay : public tsl::Overlay {
 public:
+    
+    virtual void initServices() override {
+        fsdevMountSdmc();
+        splInitialize();
+        spsmInitialize();
+        ASSERT_FATAL(socketInitializeDefault());
+        ASSERT_FATAL(nifmInitialize(NifmServiceType_User));
+        ASSERT_FATAL(timeInitialize());
+        ASSERT_FATAL(smInitialize());
+    }
 
-	virtual void initServices() override {
-		//Initialize services
-		tsl::hlp::doWithSmSession([this]{
-			
-			if (hosversionAtLeast(8,0,0)) clkrstCheck = clkrstInitialize();
-			else pcvCheck = pcvInitialize();
-			
-			tsCheck = tsInitialize();
-			if (hosversionAtLeast(5,0,0)) tcCheck = tcInitialize();
+    virtual void exitServices() override {
+        socketExit();
+        nifmExit();
+        timeExit();
+        smExit();
+        spsmExit();
+        splExit();
+        fsdevUnmountAll();
+    }
 
-			if (R_SUCCEEDED(fanInitialize())) {
-				if (hosversionAtLeast(7,0,0)) fanCheck = fanOpenController(&g_ICon, 0x3D000001);
-				else fanCheck = fanOpenController(&g_ICon, 1);
-			}
+    virtual void onShow() override {
+        //if (rootFrame != nullptr) {
+        //    tsl::Overlay::get()->getCurrentGui()->removeFocus();
+        //    rootFrame->invalidate();
+        //    tsl::Overlay::get()->getCurrentGui()->requestFocus(rootFrame, tsl::FocusDirection::None);
+        //}
+    }   // Called before overlay wants to change from invisible to visible state
+    virtual void onHide() override {}   // Called before overlay wants to change from visible to invisible state
 
-			if (R_SUCCEEDED(nvInitialize())) nvCheck = nvOpen(&fd, "/dev/nvhost-ctrl-gpu");
-			if (R_SUCCEEDED(nvMapInit())) nvdecCheck = nvChannelCreate(&nvdecChannel, "/dev/nvhost-nvdec");
-			
-			if (R_SUCCEEDED(audsnoopInitialize())) audsnoopCheck = audsnoopEnableDspUsageMeasurement();
-
-			psmCheck = psmInitialize();
-			if (R_SUCCEEDED(psmCheck)) {
-				psmService = psmGetServiceSession();
-				i2cInitialize();
-			}
-			
-			SaltySD = CheckPort();
-			
-			if (SaltySD) {
-				LoadSharedMemory();
-			}
-		});
-		Hinted = envIsSyscallHinted(0x6F);
-	}
-
-	virtual void exitServices() override {
-		CloseThreads();
-		shmemClose(&_sharedmemory);
-		//Exit services
-		clkrstExit();
-		pcvExit();
-		tsExit();
-		tcExit();
-		fanControllerClose(&g_ICon);
-		fanExit();
-		nvChannelClose(&nvdecChannel);
-		nvMapExit();
-		nvClose(fd);
-		nvExit();
-		i2cExit();
-		psmExit();
-		if (R_SUCCEEDED(audsnoopCheck)) {
-			audsnoopDisableDspUsageMeasurement();
-		}
-		audsnoopExit();
-	}
-
-	virtual void onShow() override {}	// Called before overlay wants to change from invisible to visible state
-	virtual void onHide() override {}	// Called before overlay wants to change from visible to invisible state
-
-	virtual std::unique_ptr<tsl::Gui> loadInitialGui() override {
-		return initially<MainMenu>();  // Initial Gui to load. It's possible to pass arguments to it's constructor like this
-	}
+    virtual std::unique_ptr<tsl::Gui> loadInitialGui() override {
+        return initially<MainMenu>();  // Initial Gui to load. It's possible to pass arguments to its constructor like this
+    }
 };
 
-class MicroMode : public tsl::Overlay {
-public:
 
-	virtual void initServices() override {
-		//Initialize services
-		tsl::hlp::doWithSmSession([this]{
-			
-			if (hosversionAtLeast(8,0,0)) clkrstCheck = clkrstInitialize();
-			else pcvCheck = pcvInitialize();
-			
-			if (R_SUCCEEDED(nvInitialize())) nvCheck = nvOpen(&fd, "/dev/nvhost-ctrl-gpu");
 
-			tsCheck = tsInitialize();
-			if (hosversionAtLeast(5,0,0)) tcCheck = tcInitialize();
-
-			if (R_SUCCEEDED(fanInitialize())) {
-				if (hosversionAtLeast(7,0,0)) fanCheck = fanOpenController(&g_ICon, 0x3D000001);
-				else fanCheck = fanOpenController(&g_ICon, 1);
-			}
-
-			psmCheck = psmInitialize();
-			if (R_SUCCEEDED(psmCheck)) {
-				psmService = psmGetServiceSession();
-				i2cInitialize();
-			}
-			
-			SaltySD = CheckPort();
-			
-			if (SaltySD) {
-				LoadSharedMemory();
-			}
-		});
-		Hinted = envIsSyscallHinted(0x6F);
-	}
-
-	virtual void exitServices() override {
-		CloseThreads();
-		shmemClose(&_sharedmemory);
-		//Exit services
-		clkrstExit();
-		pcvExit();
-		tsExit();
-		tcExit();
-		fanControllerClose(&g_ICon);
-		fanExit();
-		i2cExit();
-		psmExit();
-		nvClose(fd);
-		nvExit();
-	}
-
-	virtual void onShow() override {}	// Called before overlay wants to change from invisible to visible state
-	virtual void onHide() override {}	// Called before overlay wants to change from visible to invisible state
-
-	virtual std::unique_ptr<tsl::Gui> loadInitialGui() override {
-		StartThreads();
-		refreshrate = 1;
-		return initially<MicroOverlay>();  // Initial Gui to load. It's possible to pass arguments to it's constructor like this
-	}
-};
-
-// This function gets called on startup to create a new Overlay object
-int main(int argc, char **argv) {
-	ParseIniFile(); // parse INI from file
-	
-	if (argc > 0) {
-		filename = argv[0];
-	}
-	for (u8 arg = 0; arg < argc; arg++) {
-		if (strcasecmp(argv[arg], "--microOverlay") == 0) {
-			framebufferWidth = 1280;
-			framebufferHeight = 28;
-			FullMode = false;
-			alphabackground = 0x0;
-			FILE* test = fopen(std::string(folderpath + filename).c_str(), "rb");
-			if (test) {
-				fclose(test);
-				filepath = folderpath + filename;
-			}
-			else {
-				test = fopen(std::string(folderpath + "Status-Monitor-Overlay.ovl").c_str(), "rb");
-				if (test) {
-					fclose(test);
-					filepath = folderpath + "Status-Monitor-Overlay.ovl";
-				}
-			}
-			return tsl::loop<MicroMode>(argc, argv);
-		}
-	}
-	return tsl::loop<MonitorOverlay>(argc, argv);
+int main(int argc, char* argv[]) {
+    return tsl::loop<Overlay, tsl::impl::LaunchFlags::None>(argc, argv);
 }
