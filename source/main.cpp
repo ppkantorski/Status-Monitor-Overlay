@@ -2,15 +2,23 @@
 #include <tesla.hpp>
 #include "Utils.hpp"
 
+ButtonMapperImpl buttonMapper; // Custom button mapper implementation
+static bool returningFromSelection = false; // for removing the necessity of svcSleepThread
+static tsl::elm::OverlayFrame *rootFrame = nullptr;
+
+
+
 //FPS Counter mode
 class com_FPS : public tsl::Gui {
+private:
+	std::list<HidNpadButton> mappedButtons = buttonMapper.MapButtons(keyCombo); // map buttons
 public:
     com_FPS() { }
 
 	s16 base_y = 0;
 
     virtual tsl::elm::Element* createUI() override {
-		auto rootFrame = new tsl::elm::OverlayFrame("", "");
+		rootFrame = new tsl::elm::OverlayFrame("", "");
 
 		auto Status = new tsl::elm::CustomDrawer([this](tsl::gfx::Renderer *renderer, u16 x, u16 y, u16 w, u16 h) {
 				static uint8_t avg = 0;
@@ -32,8 +40,18 @@ public:
 		
 	}
 	virtual bool handleInput(uint64_t keysDown, uint64_t keysHeld, touchPosition touchInput, JoystickPosition leftJoyStick, JoystickPosition rightJoyStick) override {
-		if ((keysHeld & KEY_LSTICK) && (keysHeld & KEY_RSTICK)) {
+
+		bool allButtonsHeld = true;
+		for (const HidNpadButton& button : mappedButtons) {
+			if (!(keysHeld & static_cast<uint64_t>(button))) {
+				allButtonsHeld = false;
+				break;
+			}
+		}
+
+		if (allButtonsHeld) {
 			EndFPSCounterThread();
+			returningFromSelection = true;
 			tsl::goBack();
 			return true;
 		}
@@ -51,6 +69,8 @@ public:
 
 //FPS Counter mode
 class com_FPSGraph : public tsl::Gui {
+private:
+	std::list<HidNpadButton> mappedButtons = buttonMapper.MapButtons(keyCombo); // map buttons
 public:
     com_FPSGraph() { }
 
@@ -78,7 +98,7 @@ public:
 	bool isAbove = false;
 
     virtual tsl::elm::Element* createUI() override {
-		auto rootFrame = new tsl::elm::OverlayFrame("", "");
+		rootFrame = new tsl::elm::OverlayFrame("", "");
 
 		auto Status = new tsl::elm::CustomDrawer([this](tsl::gfx::Renderer *renderer, u16 x, u16 y, u16 w, u16 h) {
 			renderer->drawRect(0, base_y, 201, 72, a(0x7111));
@@ -170,8 +190,18 @@ public:
 		
 	}
 	virtual bool handleInput(uint64_t keysDown, uint64_t keysHeld, touchPosition touchInput, JoystickPosition leftJoyStick, JoystickPosition rightJoyStick) override {
-		if ((keysHeld & KEY_LSTICK) && (keysHeld & KEY_RSTICK)) {
+
+		bool allButtonsHeld = true;
+		for (const HidNpadButton& button : mappedButtons) {
+			if (!(keysHeld & static_cast<uint64_t>(button))) {
+				allButtonsHeld = false;
+				break;
+			}
+		}
+
+		if (allButtonsHeld) {
 			EndFPSCounterThread();
+			returningFromSelection = true;
 			tsl::goBack();
 			return true;
 		}
@@ -189,11 +219,13 @@ public:
 
 //Full mode
 class FullOverlay : public tsl::Gui {
+private:
+	std::list<HidNpadButton> mappedButtons = buttonMapper.MapButtons(keyCombo); // map buttons
 public:
     FullOverlay() { }
 
     virtual tsl::elm::Element* createUI() override {
-		auto rootFrame = new tsl::elm::OverlayFrame("Status Monitor", APP_VERSION);
+		rootFrame = new tsl::elm::OverlayFrame("Status Monitor", APP_VERSION);
 
 		auto Status = new tsl::elm::CustomDrawer([](tsl::gfx::Renderer *renderer, u16 x, u16 y, u16 w, u16 h) {
 			
@@ -240,9 +272,15 @@ public:
 				renderer->drawString(FPS_var_compressed_c, false, 295, 120, 20, renderer->a(0xFFFF));
 			}
 			
-			if (refreshrate == 5) renderer->drawString("Hold Left Stick & Right Stick to Exit\nHold ZR + R + D-Pad Down to slow down refresh", false, 20, 675, 15, renderer->a(0xFFFF));
-			else if (refreshrate == 1) renderer->drawString("Hold Left Stick & Right Stick to Exit\nHold ZR + R + D-Pad Up to speed up refresh", false, 20, 675, 15, renderer->a(0xFFFF));
-		
+			std::string formattedKeyCombo = keyCombo;
+			formatButtonCombination(formattedKeyCombo);
+			
+			std::string messageOne = "Hold " + formattedKeyCombo + " to Exit\nHold ZR + R + DDOWN to slow down refresh";
+			std::string messageTwo = "Hold " + formattedKeyCombo + " to Exit\nHold ZR + R + DDOWN to slow down refresh";
+			
+			if (refreshrate == 5) renderer->drawString(messageOne.c_str(), false, 20, 675, 15, renderer->a(0xFFFF));
+			else if (refreshrate == 1) renderer->drawString(messageTwo.c_str(), false, 20, 675, 15, renderer->a(0xFFFF));
+			
 		});
 
 		rootFrame->setContent(Status);
@@ -319,10 +357,23 @@ public:
 		
 	}
 	virtual bool handleInput(uint64_t keysDown, uint64_t keysHeld, touchPosition touchInput, JoystickPosition leftJoyStick, JoystickPosition rightJoyStick) override {
-		if ((keysHeld & KEY_LSTICK) && (keysHeld & KEY_RSTICK)) {
+
+		bool allButtonsHeld = true;
+		for (const HidNpadButton& button : mappedButtons) {
+			if (!(keysHeld & static_cast<uint64_t>(button))) {
+				allButtonsHeld = false;
+				break;
+			}
+		}
+
+		if (allButtonsHeld) {
 			CloseThreads();
+			returningFromSelection = true;
 			tsl::goBack();
 			return true;
+		}
+		if (keysHeld & KEY_B) {
+			return false;
 		}
 		return false;
 	}
@@ -330,12 +381,14 @@ public:
 
 //Mini mode
 class MiniOverlay : public tsl::Gui {
+private:
+	std::list<HidNpadButton> mappedButtons = buttonMapper.MapButtons(keyCombo); // map buttons
 public:
     MiniOverlay() { }
 
     virtual tsl::elm::Element* createUI() override {
 
-		auto rootFrame = new tsl::elm::OverlayFrame("", "");
+		rootFrame = new tsl::elm::OverlayFrame("", "");
 
 		auto Status = new tsl::elm::CustomDrawer([](tsl::gfx::Renderer *renderer, u16 x, u16 y, u16 w, u16 h) {
 			
@@ -419,10 +472,23 @@ public:
 
 	}
 	virtual bool handleInput(uint64_t keysDown, uint64_t keysHeld, touchPosition touchInput, JoystickPosition leftJoyStick, JoystickPosition rightJoyStick) override {
-		if ((keysHeld & KEY_LSTICK) && (keysHeld & KEY_RSTICK)) {
+		
+		bool allButtonsHeld = true;
+		for (const HidNpadButton& button : mappedButtons) {
+			if (!(keysHeld & static_cast<uint64_t>(button))) {
+				allButtonsHeld = false;
+				break;
+			}
+		}
+
+		if (allButtonsHeld) {
 			CloseThreads();
+			returningFromSelection = true;
 			tsl::goBack();
 			return true;
+		}
+		if (keysHeld & KEY_B) {
+			return false;
 		}
 		return false;
 	}
@@ -430,42 +496,65 @@ public:
 
 //Mini mode
 class MicroOverlay : public tsl::Gui {
+private:
+	ButtonMapperImpl buttonMapper; // Create an instance of the ButtonMapperImpl class
+	std::list<HidNpadButton> mappedButtons = buttonMapper.MapButtons(keyCombo); // map buttons
 public:
     MicroOverlay() { }
-
+    
+    char batteryCharge[10]; // Declare the batteryCharge variable
+    
     virtual tsl::elm::Element* createUI() override {
+		bool fileExist = false;
+		FILE* test = fopen(std::string(folderpath + filename).c_str(), "rb");
+		if (test) {
+			fclose(test);
+			fileExist = true;
+			filepath = folderpath + filename;
+		}
+		else {
+			test = fopen(std::string(folderpath + "Status-Monitor-Overlay.ovl").c_str(), "rb");
+			if (test) {
+				fclose(test);
+				fileExist = true;
+				filepath = folderpath + "Status-Monitor-Overlay.ovl";
+			}
+        }
+		rootFrame = new tsl::elm::OverlayFrame("", "");
 
-		auto rootFrame = new tsl::elm::OverlayFrame("", "");
-
-		auto Status = new tsl::elm::CustomDrawer([](tsl::gfx::Renderer *renderer, u16 x, u16 y, u16 w, u16 h) {
-			
+		auto Status = new tsl::elm::CustomDrawer([this](tsl::gfx::Renderer *renderer, u16 x, u16 y, u16 w, u16 h) {
 			if (!GameRunning) {
-				uint32_t size = 18;
+				uint32_t size = 16;
 				uint32_t offset1 = 0;
-				uint32_t offset2 = offset1 + 355;
-				uint32_t offset3 = offset2 + 210;
-				uint32_t offset4 = offset3 + 245;
-				uint32_t offset5 = offset4 + 360;
+				uint32_t offset2 = offset1 + 284;
+				uint32_t offset3 = offset2 + 200;  // Adjusted offset for RAM
+				uint32_t offset4 = offset3 + 240;  // Adjusted offset for BRD
+				uint32_t offset5 = offset4 + 335;  // Adjusted offset for FAN
+				uint32_t offset6 = offset5 + 126;  // Adjusted offset for BAT
 				renderer->drawRect(0, 0, tsl::cfg::FramebufferWidth, 22, a(0x7111));
 				renderer->drawString("CPU", false, offset1, size, size, renderer->a(0xFCCF));
 				renderer->drawString("GPU", false, offset2, size, size, renderer->a(0xFCCF));
 				renderer->drawString("RAM", false, offset3, size, size, renderer->a(0xFCCF));
 				renderer->drawString("BRD", false, offset4, size, size, renderer->a(0xFCCF));
 				renderer->drawString("FAN", false, offset5, size, size, renderer->a(0xFCCF));
+				renderer->drawString("BAT", false, offset6, size, size, renderer->a(0xFCCF));
 				renderer->drawString(CPU_compressed_c, false, offset1+42, size, size, renderer->a(0xFFFF));
 				renderer->drawString(GPU_Load_c, false, offset2+45, size, size, renderer->a(0xFFFF));
 				renderer->drawString(RAM_var_compressed_c, false, offset3+47, size, size, renderer->a(0xFFFF));
-				renderer->drawString(skin_temperature_c, false, offset4+45, size, size, renderer->a(0xFFFF));
+				renderer->drawString(skin_temperature_c, false, offset4+43, size, size, renderer->a(0xFFFF));
 				renderer->drawString(Rotation_SpeedLevel_c, false, offset5+43, size, size, renderer->a(0xFFFF));
+				// Add the following line to display the battery raw charge
+				renderer->drawString(batteryCharge, false, offset6+40, size, size, renderer->a(0xFFFF));
 			}
 			else {
-				uint32_t size = 18;
+				uint32_t size = 16;
 				uint32_t offset1 = 0;
-				uint32_t offset2 = offset1 + 343;
-				uint32_t offset3 = offset2 + 197;
-				uint32_t offset4 = offset3 + 218;
-				uint32_t offset5 = offset4 + 328;
-				uint32_t offset6 = offset5 + 116;
+				uint32_t offset2 = offset1 + 274;
+				uint32_t offset3 = offset2 + 176;  // Adjusted offset for RAM
+				uint32_t offset4 = offset3 + 220;  // Adjusted offset for BRD
+				uint32_t offset5 = offset4 + 315;  // Adjusted offset for FAN
+				uint32_t offset6 = offset5 + 104;  // Adjusted offset for FPS
+				uint32_t offset7 = offset6 + 96;  // Adjusted offset for BAT
 				renderer->drawRect(0, 0, tsl::cfg::FramebufferWidth, 22, a(0x7111));
 				renderer->drawString("CPU", false, offset1, size, size, renderer->a(0xFCCF));
 				renderer->drawString("GPU", false, offset2, size, size, renderer->a(0xFCCF));
@@ -473,12 +562,15 @@ public:
 				renderer->drawString("BRD", false, offset4, size, size, renderer->a(0xFCCF));
 				renderer->drawString("FAN", false, offset5, size, size, renderer->a(0xFCCF));
 				renderer->drawString("FPS", false, offset6, size, size, renderer->a(0xFCCF));
+				renderer->drawString("BAT", false, offset7, size, size, renderer->a(0xFCCF));
 				renderer->drawString(CPU_compressed_c, false, offset1+42, size, size, renderer->a(0xFFFF));
-				renderer->drawString(GPU_Load_c, false, offset2+42, size, size, renderer->a(0xFFFF));
+				renderer->drawString(GPU_Load_c, false, offset2+45, size, size, renderer->a(0xFFFF));
 				renderer->drawString(RAM_var_compressed_c, false, offset3+47, size, size, renderer->a(0xFFFF));
-				renderer->drawString(skin_temperature_c, false, offset4+42, size, size, renderer->a(0xFFFF));
+				renderer->drawString(skin_temperature_c, false, offset4+44, size, size, renderer->a(0xFFFF));
 				renderer->drawString(Rotation_SpeedLevel_c, false, offset5+43, size, size, renderer->a(0xFFFF));
-				renderer->drawString(FPS_var_compressed_c, false, offset6+38, size, size, renderer->a(0xFFFF));
+				renderer->drawString(FPS_var_compressed_c, false, offset6+37, size, size, renderer->a(0xFFFF));
+				// Add the following line to display the battery raw charge
+				renderer->drawString(batteryCharge, false, offset7+40, size, size, renderer->a(0xFFFF));
 			}
 		});
 
@@ -545,6 +637,11 @@ public:
 		///FPS
 		snprintf(FPS_var_compressed_c, sizeof FPS_var_compressed_c, "%2.1f", FPSavg);
 
+		// Calculate battery charge value
+		// Update the battery temperature value here
+		float batteryChargeValue = static_cast<float>(_batteryChargeInfoFields.RawBatteryCharge) / 1000;
+		snprintf(batteryCharge, sizeof(batteryCharge), "%.1f%s", batteryChargeValue, "%");
+		
 		//Debug
 		/*
 		snprintf(CPU_compressed_c, sizeof CPU_compressed_c, "[100%s,100%s,100%s,100%s]@1785.0", "%", "%", "%", "%");
@@ -559,12 +656,28 @@ public:
 		
 	}
 	virtual bool handleInput(uint64_t keysDown, uint64_t keysHeld, touchPosition touchInput, JoystickPosition leftJoyStick, JoystickPosition rightJoyStick) override {
-		if ((keysHeld & KEY_LSTICK) && (keysHeld & KEY_RSTICK)) {
+		//std::list<HidNpadButton> mappedButtons;
+		//ButtonMapperImpl buttonMapper; // Create an instance of the ButtonMapperImpl class
+		//mappedButtons = buttonMapper.MapButtons(keyCombo); // map buttons
+		
+		bool allButtonsHeld = true;
+		for (const HidNpadButton& button : mappedButtons) {
+			if (!(keysHeld & static_cast<uint64_t>(button))) {
+				allButtonsHeld = false;
+				break;
+			}
+		}
+
+		if (allButtonsHeld) {
 			TeslaFPS = 60;
 			refreshrate = 60;
-			tsl::setNextOverlay(filepath);
+			returningFromSelection = true;
+			tsl::setNextOverlay(filepath.c_str());
 			tsl::Overlay::get()->close();
 			return true;
+		}
+		if (keysHeld & KEY_B) {
+			return false;
 		}
 		return false;
 	}
@@ -576,7 +689,7 @@ public:
     BatteryOverlay() { }
 
     virtual tsl::elm::Element* createUI() override {
-		auto rootFrame = new tsl::elm::OverlayFrame("Status Monitor", APP_VERSION);
+		rootFrame = new tsl::elm::OverlayFrame("Status Monitor", APP_VERSION);
 
 		auto Status = new tsl::elm::CustomDrawer([](tsl::gfx::Renderer *renderer, u16 x, u16 y, u16 w, u16 h) {
 			
@@ -663,7 +776,8 @@ public:
 	virtual bool handleInput(uint64_t keysDown, uint64_t keysHeld, touchPosition touchInput, JoystickPosition leftJoyStick, JoystickPosition rightJoyStick) override {
 		if (keysHeld & KEY_B) {
 			CloseThreads();
-			svcSleepThread(500'000'000);
+			//svcSleepThread(500'000'000);
+			returningFromSelection = true;
 			tsl::goBack();
 			return true;
 		}
@@ -688,7 +802,7 @@ public:
     MiscOverlay() { }
 
     virtual tsl::elm::Element* createUI() override {
-		auto rootFrame = new tsl::elm::OverlayFrame("Status Monitor", APP_VERSION);
+		rootFrame = new tsl::elm::OverlayFrame("Status Monitor", APP_VERSION);
 
 		auto Status = new tsl::elm::CustomDrawer([](tsl::gfx::Renderer *renderer, u16 x, u16 y, u16 w, u16 h) {
 			
@@ -767,9 +881,13 @@ public:
 		if (keysHeld & KEY_B) {
 			EndMiscThread();
 			nifmExit();
-			svcSleepThread(500'000'000);
+			//svcSleepThread(500'000'000);
+			returningFromSelection = true;
 			tsl::goBack();
 			return true;
+		}
+		if (keysHeld & KEY_B) {
+			return false;
 		}
 		return false;
 	}
@@ -781,7 +899,7 @@ public:
     GraphsMenu() { }
 
     virtual tsl::elm::Element* createUI() override {
-		auto rootFrame = new tsl::elm::OverlayFrame("Status Monitor", "Graphs");
+		rootFrame = new tsl::elm::OverlayFrame("Status Monitor", "Graphs");
 		auto list = new tsl::elm::List();
 
 		auto comFPSGraph = new tsl::elm::ListItem("FPS");
@@ -816,14 +934,15 @@ public:
 		}
 	}
 
-    virtual bool handleInput(uint64_t keysDown, uint64_t keysHeld, touchPosition touchInput, JoystickPosition leftJoyStick, JoystickPosition rightJoyStick) override {
+	virtual bool handleInput(uint64_t keysDown, uint64_t keysHeld, touchPosition touchInput, JoystickPosition leftJoyStick, JoystickPosition rightJoyStick) override {
 		if (keysHeld & KEY_B) {
-			svcSleepThread(300'000'000);
+			//svcSleepThread(300'000'000);
+			returningFromSelection = true;
 			tsl::goBack();
 			return true;
 		}
 		return false;
-    }
+	}
 };
 
 //Other
@@ -832,7 +951,7 @@ public:
     OtherMenu() { }
 
     virtual tsl::elm::Element* createUI() override {
-		auto rootFrame = new tsl::elm::OverlayFrame("Status Monitor", "Other");
+		rootFrame = new tsl::elm::OverlayFrame("Status Monitor", "Other");
 		auto list = new tsl::elm::List();
 
 		auto Battery = new tsl::elm::ListItem("Battery/Charger");
@@ -867,14 +986,21 @@ public:
 
 	virtual void update() override {}
 
-    virtual bool handleInput(uint64_t keysDown, uint64_t keysHeld, touchPosition touchInput, JoystickPosition leftJoyStick, JoystickPosition rightJoyStick) override {
-		if (keysHeld & KEY_B) {
-			svcSleepThread(300'000'000);
+	virtual bool handleInput(uint64_t keysDown, uint64_t keysHeld, touchPosition touchInput, JoystickPosition leftJoyStick, JoystickPosition rightJoyStick) override {
+		if (!returningFromSelection && (keysHeld & KEY_B)) {
+			//svcSleepThread(300'000'000);
+			returningFromSelection = true;
 			tsl::goBack();
 			return true;
 		}
+		if (returningFromSelection && !(keysHeld & KEY_B)) {
+			returningFromSelection = false;
+		}
+		if (keysHeld & KEY_B) {
+			return false;
+		}
 		return false;
-    }
+	}
 };
 
 //Main Menu
@@ -883,8 +1009,9 @@ public:
     MainMenu() { }
 
     virtual tsl::elm::Element* createUI() override {
-		auto rootFrame = new tsl::elm::OverlayFrame("Status Monitor", APP_VERSION);
-		auto list = new tsl::elm::List(6);
+		rootFrame = new tsl::elm::OverlayFrame("Status Monitor", APP_VERSION);
+		auto list = new tsl::elm::List();
+		//list->addItem(new tsl::elm::CategoryHeader("Monitor Modes"));
 		
 		auto Full = new tsl::elm::ListItem("Full");
 		Full->setClickListener([](uint64_t keys) {
@@ -993,13 +1120,19 @@ public:
 			systemtickfrequency = 19200000;
 		}
 	}
-    virtual bool handleInput(uint64_t keysDown, uint64_t keysHeld, touchPosition touchInput, JoystickPosition leftJoyStick, JoystickPosition rightJoyStick) override {
-		if (keysHeld & KEY_B) {
+	virtual bool handleInput(uint64_t keysDown, uint64_t keysHeld, touchPosition touchInput, JoystickPosition leftJoyStick, JoystickPosition rightJoyStick) override {
+		if (!returningFromSelection && (keysHeld & KEY_B)) {
 			tsl::goBack();
 			return true;
 		}
+		if (returningFromSelection && !(keysHeld & KEY_B)) {
+			returningFromSelection = false;
+		}
+		if (keysHeld & KEY_B) {
+			return false;
+		}
 		return false;
-    }
+	}
 };
 
 class MonitorOverlay : public tsl::Overlay {
@@ -1145,8 +1278,12 @@ public:
     }
 };
 
+
+
 // This function gets called on startup to create a new Overlay object
 int main(int argc, char **argv) {
+	ParseIniFile(); // parse INI from file
+    
 	if (argc > 0) {
 		filename = argv[0];
 	}
