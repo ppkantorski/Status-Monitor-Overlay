@@ -8,6 +8,8 @@
 #include "max17050.h"
 #include <numeric>
 #include "ts.h"
+#include <tesla.hpp>
+#include <sys/stat.h>
 
 #define NVGPU_GPU_IOCTL_PMU_GET_GPU_LOAD 0x80044715
 #define FieldDescriptor uint32_t
@@ -31,6 +33,7 @@ Service* g_ITs;
 std::string folderpath = "sdmc:/switch/.overlays/";
 std::string filename = "";
 std::string filepath = "";
+std::string keyCombo = "L+DDOWN+RSTICK"; // default Tesla Menu combo
 
 //Misc2
 MmuRequest nvdecRequest;
@@ -636,4 +639,166 @@ void EndFPSCounterThread() {
 	threadClose(&t6);
 	threadexit = false;
 	threadexit2 = false;
+}
+
+
+// String formatting functions
+void removeSpaces(std::string& str) {
+	str.erase(std::remove(str.begin(), str.end(), ' '), str.end());
+}
+
+void convertToUpper(std::string& str) {
+	std::transform(str.begin(), str.end(), str.begin(), ::toupper);
+}
+
+void formatButtonCombination(std::string& line) {
+	// Remove all spaces from the line
+	line.erase(std::remove(line.begin(), line.end(), ' '), line.end());
+
+	// Replace '+' with ' + '
+	size_t pos = 0;
+	while ((pos = line.find('+', pos)) != std::string::npos) {
+		if (pos > 0 && pos < line.size() - 1) {
+			if (std::isalnum(line[pos - 1]) && std::isalnum(line[pos + 1])) {
+				line.replace(pos, 1, " + ");
+				pos += 3;
+			}
+		}
+		++pos;
+	}
+}
+
+
+// Base class with virtual function
+class ButtonMapper {
+public:
+	virtual std::list<HidNpadButton> MapButtons(const std::string& buttonCombo) = 0;
+};
+
+// Derived class implementing the virtual function
+class ButtonMapperImpl : public ButtonMapper {
+public:
+	std::list<HidNpadButton> MapButtons(const std::string& buttonCombo) override {
+		std::map<std::string, HidNpadButton> buttonMap = {
+			{"A", static_cast<HidNpadButton>(HidNpadButton_A)},
+			{"B", static_cast<HidNpadButton>(HidNpadButton_B)},
+			{"X", static_cast<HidNpadButton>(HidNpadButton_X)},
+			{"Y", static_cast<HidNpadButton>(HidNpadButton_Y)},
+			{"L", static_cast<HidNpadButton>(HidNpadButton_L)},
+			{"R", static_cast<HidNpadButton>(HidNpadButton_R)},
+			{"ZL", static_cast<HidNpadButton>(HidNpadButton_ZL)},
+			{"ZR", static_cast<HidNpadButton>(HidNpadButton_ZR)},
+			{"PLUS", static_cast<HidNpadButton>(HidNpadButton_Plus)},
+			{"MINUS", static_cast<HidNpadButton>(HidNpadButton_Minus)},
+			{"DUP", static_cast<HidNpadButton>(HidNpadButton_Up)},
+			{"DDOWN", static_cast<HidNpadButton>(HidNpadButton_Down)},
+			{"DLEFT", static_cast<HidNpadButton>(HidNpadButton_Left)},
+			{"DRIGHT", static_cast<HidNpadButton>(HidNpadButton_Right)},
+			{"SL", static_cast<HidNpadButton>(HidNpadButton_AnySL)},
+			{"SR", static_cast<HidNpadButton>(HidNpadButton_AnySR)},
+			{"LSTICK", static_cast<HidNpadButton>(HidNpadButton_StickL)},
+			{"RSTICK", static_cast<HidNpadButton>(HidNpadButton_StickR)},
+			{"UP", static_cast<HidNpadButton>(HidNpadButton_Up | HidNpadButton_StickLUp | HidNpadButton_StickRUp)},
+			{"DOWN", static_cast<HidNpadButton>(HidNpadButton_Down | HidNpadButton_StickLDown | HidNpadButton_StickRDown)},
+			{"LEFT", static_cast<HidNpadButton>(HidNpadButton_Left | HidNpadButton_StickLLeft | HidNpadButton_StickRLeft)},
+			{"RIGHT", static_cast<HidNpadButton>(HidNpadButton_Right | HidNpadButton_StickLRight | HidNpadButton_StickRRight)}
+		};
+
+		std::list<HidNpadButton> mappedButtons;
+		std::string comboCopy = buttonCombo;  // Make a copy of buttonCombo
+
+		std::string delimiter = "+";
+		size_t pos = 0;
+		std::string button;
+		while ((pos = comboCopy.find(delimiter)) != std::string::npos) {
+			button = comboCopy.substr(0, pos);
+			if (buttonMap.find(button) != buttonMap.end()) {
+				mappedButtons.push_back(buttonMap[button]);
+			}
+			comboCopy.erase(0, pos + delimiter.length());
+		}
+		if (buttonMap.find(comboCopy) != buttonMap.end()) {
+			mappedButtons.push_back(buttonMap[comboCopy]);
+		}
+		return mappedButtons;
+	}
+};
+
+
+// Custom utility function for parsing an ini file
+void ParseIniFile() {
+	std::string overlayName, configIniPath, teslaConfigIniPath;
+	std::string directoryPath = "sdmc:/config/status-monitor/";
+	std::string teslaDirectoryPath = "sdmc:/config/tesla/";
+	tsl::hlp::ini::IniData parsedData;
+	
+	struct stat st;
+	if (stat(directoryPath.c_str(), &st) != 0) {
+		mkdir(directoryPath.c_str(), 0777);
+	}
+
+	configIniPath = directoryPath + "config.ini";
+	teslaConfigIniPath = teslaDirectoryPath + "config.ini";
+
+	// Open the INI file
+	FILE* configFileIn = fopen(configIniPath.c_str(), "r");
+	if (!configFileIn) {
+		FILE* teslaConfigFileIn = fopen(teslaConfigIniPath.c_str(), "r");
+		if (!teslaConfigFileIn) {
+			// Write the default INI file
+			FILE* configFileOut = fopen(configIniPath.c_str(), "w");
+			fprintf(configFileOut, "[status-monitor]\nkey_combo=%s\n", keyCombo.c_str());
+			fclose(configFileOut);
+			return;
+		} else {
+			// load keyCombo from teslaConfig
+			std::string teslaFileData;
+			char buffer[256];
+			while (fgets(buffer, sizeof(buffer), teslaConfigFileIn) != NULL) {
+				teslaFileData += buffer;
+			}
+			fclose(teslaConfigFileIn);
+
+			parsedData = tsl::hlp::ini::parseIni(teslaFileData);
+			if (parsedData.find("tesla") != parsedData.end() &&
+				parsedData["tesla"].find("key_combo") != parsedData["tesla"].end()) {
+				keyCombo = parsedData["tesla"]["key_combo"];
+				removeSpaces(keyCombo); // format combo
+				convertToUpper(keyCombo);
+			}
+
+			// Save keyCombo into configFileOut for status-monitor
+			FILE* configFileOut = fopen(configIniPath.c_str(), "w");
+			fprintf(configFileOut, "[status-monitor]\nkey_combo=%s\n", keyCombo.c_str());
+			fclose(configFileOut);
+			return;
+		}
+		return;
+	}
+
+	// Determine the size of the INI file
+	fseek(configFileIn, 0, SEEK_END);
+	long fileSize = ftell(configFileIn);
+	rewind(configFileIn);
+
+	// Read the contents of the INI file
+	char* fileData = new char[fileSize + 1];
+	fread(fileData, sizeof(char), fileSize, configFileIn);
+	fileData[fileSize] = '\0';  // Add null-terminator to create a C-string
+	fclose(configFileIn);
+
+	// Parse the INI data
+	std::string fileDataString(fileData, fileSize);
+	parsedData = tsl::hlp::ini::parseIni(fileDataString);
+
+	// Access and use the parsed data as needed
+	// For example, print the value of a specific section and key
+	if (parsedData.find("status-monitor") != parsedData.end() &&
+		parsedData["status-monitor"].find("key_combo") != parsedData["status-monitor"].end()) {
+		keyCombo = parsedData["status-monitor"]["key_combo"]; // load keyCombo variable
+		removeSpaces(keyCombo); // format combo
+		convertToUpper(keyCombo);
+	}
+	
+	delete[] fileData;
 }
