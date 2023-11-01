@@ -518,38 +518,42 @@ public:
 				fileExist = true;
 				filepath = folderpath + "Status-Monitor-Overlay.ovl";
 			}
-        	}
+        }
 		rootFrame = new tsl::elm::OverlayFrame("", "");
 
-		auto Status = new tsl::elm::CustomDrawer([](tsl::gfx::Renderer *renderer, u16 x, u16 y, u16 w, u16 h) {
-			
+		auto Status = new tsl::elm::CustomDrawer([this](tsl::gfx::Renderer *renderer, u16 x, u16 y, u16 w, u16 h) {
 			if (!GameRunning) {
-				uint32_t size = 18;
+				uint32_t size = 16;
 				uint32_t offset1 = 0;
-				uint32_t offset2 = offset1 + 355;
-				uint32_t offset3 = offset2 + 210;
-				uint32_t offset4 = offset3 + 245;
-				uint32_t offset5 = offset4 + 360;
+				uint32_t offset2 = offset1 + 284;
+				uint32_t offset3 = offset2 + 200;  // Adjusted offset for RAM
+				uint32_t offset4 = offset3 + 240;  // Adjusted offset for BRD
+				uint32_t offset5 = offset4 + 335;  // Adjusted offset for FAN
+				uint32_t offset6 = offset5 + 126;  // Adjusted offset for BAT
 				renderer->drawRect(0, 0, tsl::cfg::FramebufferWidth, 22, a(0x7111));
 				renderer->drawString("CPU", false, offset1, size, size, renderer->a(0xFCCF));
 				renderer->drawString("GPU", false, offset2, size, size, renderer->a(0xFCCF));
 				renderer->drawString("RAM", false, offset3, size, size, renderer->a(0xFCCF));
 				renderer->drawString("BRD", false, offset4, size, size, renderer->a(0xFCCF));
 				renderer->drawString("FAN", false, offset5, size, size, renderer->a(0xFCCF));
+				renderer->drawString("BAT", false, offset6, size, size, renderer->a(0xFCCF));
 				renderer->drawString(CPU_compressed_c, false, offset1+42, size, size, renderer->a(0xFFFF));
 				renderer->drawString(GPU_Load_c, false, offset2+45, size, size, renderer->a(0xFFFF));
 				renderer->drawString(RAM_var_compressed_c, false, offset3+47, size, size, renderer->a(0xFFFF));
-				renderer->drawString(skin_temperature_c, false, offset4+45, size, size, renderer->a(0xFFFF));
+				renderer->drawString(skin_temperature_c, false, offset4+43, size, size, renderer->a(0xFFFF));
 				renderer->drawString(Rotation_SpeedLevel_c, false, offset5+43, size, size, renderer->a(0xFFFF));
+				// Add the following line to display the battery raw charge
+				renderer->drawString(batteryCharge, false, offset6+40, size, size, renderer->a(0xFFFF));
 			}
 			else {
-				uint32_t size = 18;
+				uint32_t size = 16;
 				uint32_t offset1 = 0;
-				uint32_t offset2 = offset1 + 343;
-				uint32_t offset3 = offset2 + 197;
-				uint32_t offset4 = offset3 + 218;
-				uint32_t offset5 = offset4 + 328;
-				uint32_t offset6 = offset5 + 116;
+				uint32_t offset2 = offset1 + 274;
+				uint32_t offset3 = offset2 + 176;  // Adjusted offset for RAM
+				uint32_t offset4 = offset3 + 220;  // Adjusted offset for BRD
+				uint32_t offset5 = offset4 + 315;  // Adjusted offset for FAN
+				uint32_t offset6 = offset5 + 104;  // Adjusted offset for FPS
+				uint32_t offset7 = offset6 + 96;  // Adjusted offset for BAT
 				renderer->drawRect(0, 0, tsl::cfg::FramebufferWidth, 22, a(0x7111));
 				renderer->drawString("CPU", false, offset1, size, size, renderer->a(0xFCCF));
 				renderer->drawString("GPU", false, offset2, size, size, renderer->a(0xFCCF));
@@ -557,12 +561,15 @@ public:
 				renderer->drawString("BRD", false, offset4, size, size, renderer->a(0xFCCF));
 				renderer->drawString("FAN", false, offset5, size, size, renderer->a(0xFCCF));
 				renderer->drawString("FPS", false, offset6, size, size, renderer->a(0xFCCF));
+				renderer->drawString("BAT", false, offset7, size, size, renderer->a(0xFCCF));
 				renderer->drawString(CPU_compressed_c, false, offset1+42, size, size, renderer->a(0xFFFF));
-				renderer->drawString(GPU_Load_c, false, offset2+42, size, size, renderer->a(0xFFFF));
+				renderer->drawString(GPU_Load_c, false, offset2+45, size, size, renderer->a(0xFFFF));
 				renderer->drawString(RAM_var_compressed_c, false, offset3+47, size, size, renderer->a(0xFFFF));
-				renderer->drawString(skin_temperature_c, false, offset4+42, size, size, renderer->a(0xFFFF));
+				renderer->drawString(skin_temperature_c, false, offset4+44, size, size, renderer->a(0xFFFF));
 				renderer->drawString(Rotation_SpeedLevel_c, false, offset5+43, size, size, renderer->a(0xFFFF));
-				renderer->drawString(FPS_var_compressed_c, false, offset6+38, size, size, renderer->a(0xFFFF));
+				renderer->drawString(FPS_var_compressed_c, false, offset6+37, size, size, renderer->a(0xFFFF));
+				// Add the following line to display the battery raw charge
+				renderer->drawString(batteryCharge, false, offset7+40, size, size, renderer->a(0xFFFF));
 			}
 		});
 
@@ -628,6 +635,11 @@ public:
 		
 		///FPS
 		snprintf(FPS_var_compressed_c, sizeof FPS_var_compressed_c, "%2.1f", FPSavg);
+
+		// Calculate battery charge value
+		// Update the battery temperature value here
+		float batteryChargeValue = static_cast<float>(_batteryChargeInfoFields.RawBatteryCharge) / 1000;
+		snprintf(batteryCharge, sizeof(batteryCharge), "%.1f%s", batteryChargeValue, "%");
 		
 		//Debug
 		/*
