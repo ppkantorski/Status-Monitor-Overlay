@@ -531,19 +531,19 @@ public:
 				uint32_t offset5 = offset4 + 335;  // Adjusted offset for FAN
 				uint32_t offset6 = offset5 + 126;  // Adjusted offset for BAT
 				renderer->drawRect(0, 0, tsl::cfg::FramebufferWidth, 22, a(0x7111));
-				renderer->drawString("CPU", false, offset1, size, size, renderer->a(0xFCCF));
-				renderer->drawString("GPU", false, offset2, size, size, renderer->a(0xFCCF));
-				renderer->drawString("RAM", false, offset3, size, size, renderer->a(0xFCCF));
-				renderer->drawString("BRD", false, offset4, size, size, renderer->a(0xFCCF));
-				renderer->drawString("FAN", false, offset5, size, size, renderer->a(0xFCCF));
-				renderer->drawString("BAT", false, offset6, size, size, renderer->a(0xFCCF));
-				renderer->drawString(CPU_compressed_c, false, offset1+42, size, size, renderer->a(0xFFFF));
-				renderer->drawString(GPU_Load_c, false, offset2+45, size, size, renderer->a(0xFFFF));
-				renderer->drawString(RAM_var_compressed_c, false, offset3+47, size, size, renderer->a(0xFFFF));
-				renderer->drawString(skin_temperature_c, false, offset4+43, size, size, renderer->a(0xFFFF));
-				renderer->drawString(Rotation_SpeedLevel_c, false, offset5+43, size, size, renderer->a(0xFFFF));
+				renderer->drawString("CPU", false, offset1, size, size, renderer->a(0x7BE0));
+				renderer->drawString("GPU", false, offset2, size, size, renderer->a(0x7BE0));
+				renderer->drawString("内存", false, offset3, size, size, renderer->a(0x7BE0));
+				renderer->drawString("主板", false, offset4, size, size, renderer->a(0x7800));
+				renderer->drawString("风扇", false, offset5, size, size, renderer->a(0x000F));
+				renderer->drawString("电量", false, offset6, size, size, renderer->a(0xF81F));
+				renderer->drawString(CPU_compressed_c, false, offset1+42, size, size, renderer->a(0x7BEF));
+				renderer->drawString(GPU_Load_c, false, offset2+45, size, size, renderer->a(0x7BEF));
+				renderer->drawString(RAM_var_compressed_c, false, offset3+47, size, size, renderer->a(0x7BEF));
+				renderer->drawString(skin_temperature_c, false, offset4+43, size, size, renderer->a(0x7BEF));
+				renderer->drawString(Rotation_SpeedLevel_c, false, offset5+43, size, size, renderer->a(0x7BEF));
 				// Add the following line to display the battery raw charge
-				renderer->drawString(batteryCharge, false, offset6+40, size, size, renderer->a(0xFFFF));
+				renderer->drawString(batteryCharge, false, offset6+40, size, size, renderer->a(0x7BEF));
 			}
 			else {
 				uint32_t size = 16;
