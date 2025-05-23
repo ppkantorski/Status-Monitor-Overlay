@@ -27,6 +27,9 @@ extern "C"
 #define FieldDescriptor uint32_t
 #define BASE_SNS_UOHM 5000
 
+static bool fixHiding = false;
+
+
 //Common
 Thread t0;
 Thread t1;
@@ -322,6 +325,7 @@ void BatteryChecker(void*) {
 		if (batteryTimeEstimateInMinutes > (99.0*60.0)+59.0) {
 			batTimeEstimate = (99*60)+59;
 		}
+
 		else batTimeEstimate = (int16_t)batteryTimeEstimateInMinutes;
 	}
 
@@ -733,6 +737,8 @@ void formatButtonCombination(std::string& line) {
 	}	
 }
 
+uint64_t comboBitmask = 0;
+
 uint64_t MapButtons(const std::string& buttonCombo) {
 	std::map<std::string, uint64_t> buttonMap = {
 		{"A", HidNpadButton_A},
@@ -761,7 +767,7 @@ uint64_t MapButtons(const std::string& buttonCombo) {
 		{"RIGHT", HidNpadButton_AnyRight}
 	};
 
-	uint64_t comboBitmask = 0;
+	
 	std::string comboCopy = buttonCombo;  // Make a copy of buttonCombo
 
 	std::string delimiter = "+";
@@ -784,9 +790,59 @@ uint64_t MapButtons(const std::string& buttonCombo) {
 	return comboBitmask;
 }
 
-ALWAYS_INLINE bool isKeyComboPressed(uint64_t keysHeld, uint64_t keysDown, uint64_t comboBitmask) {
-	return (keysDown == comboBitmask) || (keysHeld == comboBitmask);
+ALWAYS_INLINE bool isKeyComboPressed(uint64_t keysHeld, uint64_t keysDown) {
+    // Static variables to track the state and hold time
+    static uint64_t holdStartTime = 0;
+    static bool isHolding = false; // Tracks if the keys are currently being held for 0.3 seconds
+
+    // If the combo is first pressed, start tracking
+    if (!isHolding && (keysHeld & comboBitmask) == comboBitmask) {
+        holdStartTime = armGetSystemTick(); // Record start time
+        isHolding = true;
+    }
+
+    // If keys are held, check if the hold duration has exceeded 0.3 seconds
+    if (isHolding && (keysHeld & comboBitmask) == comboBitmask) {
+        uint64_t elapsed = armTicksToNs(armGetSystemTick() - holdStartTime);
+        
+        // If held for at least 0.3 seconds, mark as ready for release detection
+        if (elapsed >= 300000000) {
+            isHolding = false; // Stop further duration checks
+            holdStartTime = 0; // Reset timing
+            fixHiding = true; // for fixing hiding when returning
+            return true; // Return false until released
+        }
+    }
+
+    return false; // Default return if conditions are not met
 }
+
+
+
+// Helper function to check if comboBitmask is satisfied with at least one key in keysDown and the rest in keysHeld
+bool isKeyComboPressed2(uint64_t keysDown, uint64_t keysHeld) {
+    uint64_t requiredKeys = comboBitmask;
+    bool hasKeyDown = false; // Tracks if at least one key is in keysDown
+
+    // Iterate over each bit in the comboBitmask
+    while (requiredKeys) {
+        uint64_t keyBit = requiredKeys & ~(requiredKeys - 1); // Get the lowest bit set in requiredKeys
+
+        // Check if the key is in keysDown or keysHeld
+        if (keysDown & keyBit) {
+            hasKeyDown = true; // Found at least one key in keysDown
+        } else if (!(keysHeld & keyBit)) {
+            return false; // If the key is neither in keysDown nor keysHeld, the combo is incomplete
+        }
+
+        // Remove the lowest bit and continue to check other keys
+        requiredKeys &= ~keyBit;
+    }
+
+    // Ensure that at least one key was in keysDown and the rest were in keysHeld
+    return hasKeyDown;
+}
+
 
 // Custom utility function for parsing an ini file
 void ParseIniFile() {
@@ -819,7 +875,7 @@ void ParseIniFile() {
 		fread(&fileDataString[0], sizeof(char), fileSize, configFileIn);
 		fclose(configFileIn);
 
-		parsedData = tsl::hlp::ini::parseIni(fileDataString);
+		parsedData = ult::parseIni(fileDataString);
 		
 		// Access and use the parsed data as needed
 		// For example, print the value of a specific section and key
@@ -883,7 +939,7 @@ void ParseIniFile() {
 			}
 			fclose(ultrahandConfigFileIn);
 			
-			parsedData = tsl::hlp::ini::parseIni(ultrahandFileData);
+			parsedData = ult::parseIni(ultrahandFileData);
 			if (parsedData.find("ultrahand") != parsedData.end() &&
 				parsedData["ultrahand"].find("key_combo") != parsedData["ultrahand"].end()) {
 				keyCombo = parsedData["ultrahand"]["key_combo"];
@@ -900,7 +956,7 @@ void ParseIniFile() {
 			}
 			fclose(teslaConfigFileIn);
 			
-			parsedData = tsl::hlp::ini::parseIni(teslaFileData);
+			parsedData = ult::parseIni(teslaFileData);
 			if (parsedData.find("tesla") != parsedData.end() &&
 				parsedData["tesla"].find("key_combo") != parsedData["tesla"].end()) {
 				keyCombo = parsedData["tesla"]["key_combo"];
@@ -909,6 +965,7 @@ void ParseIniFile() {
 			}
 		}
 	}
+	comboBitmask = MapButtons(keyCombo);
 }
 
 
@@ -1027,7 +1084,7 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
 	fread(&fileDataString[0], sizeof(char), fileSize, configFileIn);
 	fclose(configFileIn);
 	
-	auto parsedData = tsl::hlp::ini::parseIni(fileDataString);
+	auto parsedData = ult::parseIni(fileDataString);
 
 	std::string key;
 	const char* mode = "mini";
@@ -1146,7 +1203,7 @@ ALWAYS_INLINE void GetConfigSettings(MicroSettings* settings) {
 	fread(&fileDataString[0], sizeof(char), fileSize, configFileIn);
 	fclose(configFileIn);
 	
-	auto parsedData = tsl::hlp::ini::parseIni(fileDataString);
+	auto parsedData = ult::parseIni(fileDataString);
 
 	std::string key;
 	const char* mode = "micro";
@@ -1257,7 +1314,7 @@ ALWAYS_INLINE void GetConfigSettings(FpsCounterSettings* settings) {
 	fread(&fileDataString[0], sizeof(char), fileSize, configFileIn);
 	fclose(configFileIn);
 	
-	auto parsedData = tsl::hlp::ini::parseIni(fileDataString);
+	auto parsedData = ult::parseIni(fileDataString);
 
 	std::string key;
 	const char* mode = "fps-counter";
@@ -1341,7 +1398,7 @@ ALWAYS_INLINE void GetConfigSettings(FpsGraphSettings* settings) {
 	fread(&fileDataString[0], sizeof(char), fileSize, configFileIn);
 	fclose(configFileIn);
 	
-	auto parsedData = tsl::hlp::ini::parseIni(fileDataString);
+	auto parsedData = ult::parseIni(fileDataString);
 
 	std::string key;
 	const char* mode = "fps-graph";
@@ -1443,7 +1500,7 @@ ALWAYS_INLINE void GetConfigSettings(FullSettings* settings) {
 	fread(&fileDataString[0], sizeof(char), fileSize, configFileIn);
 	fclose(configFileIn);
 	
-	auto parsedData = tsl::hlp::ini::parseIni(fileDataString);
+	auto parsedData = ult::parseIni(fileDataString);
 
 	std::string key;
 	const char* mode = "full";
@@ -1512,7 +1569,7 @@ ALWAYS_INLINE void GetConfigSettings(ResolutionSettings* settings) {
 	fread(&fileDataString[0], sizeof(char), fileSize, configFileIn);
 	fclose(configFileIn);
 	
-	auto parsedData = tsl::hlp::ini::parseIni(fileDataString);
+	auto parsedData = ult::parseIni(fileDataString);
 
 	std::string key;
 	const char* mode = "game_resolutions";
