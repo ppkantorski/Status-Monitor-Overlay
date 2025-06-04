@@ -382,7 +382,29 @@ public:
     }
 };
 
+class MiniEntryOverlay : public tsl::Overlay {
+public:
+    // We don’t need a custom initServices/exitServices unless MiniOverlay
+    // itself depends on special service initialization. You can copy from
+    // your other overlays (MonitorOverlay/MicroMode) if needed.
+    void initServices() override {
+        // If MiniOverlay itself relies on any SM, NV, APM, etc. calls,
+        // you can replicate the same initServices() block you use in MonitorOverlay.
+    }
 
+    void exitServices() override {
+        // Mirror cleanup from your other overlays, if necessary.
+    }
+
+    std::unique_ptr<tsl::Gui> loadInitialGui() override {
+        // This makes “MiniEntryOverlay” immediately show MiniOverlay as its first page.
+        return initially<MiniOverlay>();
+    }
+
+    // onShow/onHide can remain empty if you don’t need special logic:
+    void onShow() override {}
+    void onHide() override {}
+};
 
 // This function gets called on startup to create a new Overlay object
 int main(int argc, char **argv) {
@@ -425,6 +447,8 @@ int main(int argc, char **argv) {
 				}
 			}
 			return tsl::loop<MicroMode>(argc, argv);
+		} else if (strcasecmp(argv[arg], "--miniOverlay") == 0) {
+		    return tsl::loop<MiniEntryOverlay>(argc, argv);
 		}
 	}
     return tsl::loop<MonitorOverlay>(argc, argv);
