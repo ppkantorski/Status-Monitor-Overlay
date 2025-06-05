@@ -384,26 +384,80 @@ public:
 
 class MiniEntryOverlay : public tsl::Overlay {
 public:
-    // We don’t need a custom initServices/exitServices unless MiniOverlay
-    // itself depends on special service initialization. You can copy from
-    // your other overlays (MonitorOverlay/MicroMode) if needed.
-    void initServices() override {
-        // If MiniOverlay itself relies on any SM, NV, APM, etc. calls,
-        // you can replicate the same initServices() block you use in MonitorOverlay.
+    MiniEntryOverlay() {}
+
+    virtual void initServices() override {
+        // Same service‐init as before
+        tsl::hlp::doWithSmSession([this]{
+            apmInitialize();
+            if (hosversionAtLeast(8,0,0)) clkrstCheck = clkrstInitialize();
+            else pcvCheck = pcvInitialize();
+
+            if (R_SUCCEEDED(nvInitialize())) nvCheck = nvOpen(&fd, "/dev/nvhost-ctrl-gpu");
+
+            if (hosversionAtLeast(5,0,0)) tcCheck = tcInitialize();
+
+            if (hosversionAtLeast(6,0,0) && R_SUCCEEDED(pwmInitialize())) {
+                pwmCheck = pwmOpenSession2(&g_ICon, 0x3D000001);
+            }
+
+            i2cCheck = i2cInitialize();
+
+            psmCheck = psmInitialize();
+            if (R_SUCCEEDED(psmCheck)) {
+                psmService = psmGetServiceSession();
+            }
+
+            SaltySD = CheckPort();
+
+            if (SaltySD) {
+                LoadSharedMemory();
+            }
+            if (sysclkIpcRunning() && R_SUCCEEDED(sysclkIpcInitialize())) {
+                uint32_t sysClkApiVer = 0;
+                sysclkIpcGetAPIVersion(&sysClkApiVer);
+                if (sysClkApiVer < 4) {
+                    sysclkIpcExit();
+                }
+                else sysclkCheck = 0;
+            }
+        });
+        Hinted = envIsSyscallHinted(0x6F);
     }
 
-    void exitServices() override {
-        // Mirror cleanup from your other overlays, if necessary.
+    virtual void exitServices() override {
+        CloseThreads();
+        shmemClose(&_sharedmemory);
+        if (R_SUCCEEDED(sysclkCheck)) {
+            sysclkIpcExit();
+        }
+        // Exit services
+        clkrstExit();
+        pcvExit();
+        tsExit();
+        tcExit();
+        pwmChannelSessionClose(&g_ICon);
+        pwmExit();
+        i2cExit();
+        psmExit();
+        nvClose(fd);
+        nvExit();
+        apmExit();
     }
 
-    std::unique_ptr<tsl::Gui> loadInitialGui() override {
-        // This makes “MiniEntryOverlay” immediately show MiniOverlay as its first page.
+    // **Override onShow** so that as soon as this Overlay appears, we let input pass through.
+    virtual void onShow() override {
+        // Request that Tesla stop grabbing all buttons/touches
+        tsl::hlp::requestForeground(false);
+
+        // (Optional) hide Tesla’s footer if you don’t want it
+        deactivateOriginalFooter = true;
+    }
+
+    virtual std::unique_ptr<tsl::Gui> loadInitialGui() override {
+        // Immediately show your MiniOverlay page
         return initially<MiniOverlay>();
     }
-
-    // onShow/onHide can remain empty if you don’t need special logic:
-    void onShow() override {}
-    void onHide() override {}
 };
 
 // This function gets called on startup to create a new Overlay object
