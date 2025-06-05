@@ -806,7 +806,7 @@ ALWAYS_INLINE bool isKeyComboPressed(uint64_t keysHeld, uint64_t keysDown) {
         uint64_t elapsed = armTicksToNs(armGetSystemTick() - holdStartTime);
         
         // If held for at least 0.3 seconds, mark as ready for release detection
-        if (elapsed >= 300000000) {
+        if (elapsed >= 200000000) {
             isHolding = false; // Stop further duration checks
             holdStartTime = 0; // Reset timing
             fixHiding = true; // for fixing hiding when returning
