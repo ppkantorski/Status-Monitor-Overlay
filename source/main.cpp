@@ -184,7 +184,7 @@ public:
 			auto Micro = new tsl::elm::ListItem("Micro");
 			Micro->setClickListener([](uint64_t keys) {
 				if (keys & KEY_A) {
-					tsl::setNextOverlay(filepath, "--microOverlay_");
+					tsl::setNextOverlay(filepath, "--microOverlay");
 					tsl::Overlay::get()->close();
 					return true;
 				}
@@ -460,50 +460,56 @@ public:
     }
 };
 
+// Helper function to check if overlay file exists
+bool checkOverlayFile(const std::string& filename) {
+    FILE* test = fopen(filename.c_str(), "rb");
+    if (test) {
+        fclose(test);
+        return true;
+    }
+    return false;
+}
+
+// Helper function to setup micro mode paths
+void setupMicroMode() {
+    ult::DefaultFramebufferWidth = 1280;
+    ult::DefaultFramebufferHeight = 28;
+    
+    // Try user-specified filename first, then fallback to default
+    std::string primaryPath = folderpath + filename;
+    std::string fallbackPath = folderpath + "Status-Monitor-Overlay.ovl";
+    
+    if (checkOverlayFile(primaryPath)) {
+        filepath = primaryPath;
+    } else if (checkOverlayFile(fallbackPath)) {
+        filepath = fallbackPath;
+    }
+}
+
 // This function gets called on startup to create a new Overlay object
 int main(int argc, char **argv) {
-	ParseIniFile(); // parse INI from file
+    ParseIniFile(); // parse INI from file
     
-	if (argc > 0) {
-		filename = argv[0];
-	}
-	for (u8 arg = 0; arg < argc; arg++) {
-		if (strcasecmp(argv[arg], "--microOverlay_") == 0) {
-			ult::DefaultFramebufferWidth = 1280;
-			ult::DefaultFramebufferHeight = 28;
-			FILE* test = fopen(std::string(folderpath + filename).c_str(), "rb");
-			if (test) {
-				fclose(test);
-				filepath = folderpath + filename;
-			}
-			else {
-				test = fopen(std::string(folderpath + "Status-Monitor-Overlay.ovl").c_str(), "rb");
-				if (test) {
-					fclose(test);
-					filepath = folderpath + "Status-Monitor-Overlay.ovl";
-				}
-			}
-			return tsl::loop<MicroMode>(argc, argv);
-		} else if (strcasecmp(argv[arg], "--microOverlay") == 0) {
+    if (argc > 0) {
+        filename = argv[0];
+    }
+    
+    // Check command line arguments
+    for (u8 arg = 0; arg < argc; arg++) {
+        if (strcasecmp(argv[arg], "--microOverlay") == 0) {
+            setupMicroMode();
+            return tsl::loop<MicroMode>(argc, argv);
+        } 
+        else if (strcasecmp(argv[arg], "--micro") == 0) {
             skipMain = true;
-			ult::DefaultFramebufferWidth = 1280;
-			ult::DefaultFramebufferHeight = 28;
-			FILE* test = fopen(std::string(folderpath + filename).c_str(), "rb");
-			if (test) {
-				fclose(test);
-				filepath = folderpath + filename;
-			}
-			else {
-				test = fopen(std::string(folderpath + "Status-Monitor-Overlay.ovl").c_str(), "rb");
-				if (test) {
-					fclose(test);
-					filepath = folderpath + "Status-Monitor-Overlay.ovl";
-				}
-			}
-			return tsl::loop<MicroMode>(argc, argv);
-		} else if (strcasecmp(argv[arg], "--miniOverlay") == 0) {
-		    return tsl::loop<MiniEntryOverlay>(argc, argv);
-		}
-	}
+            setupMicroMode();
+            return tsl::loop<MicroMode>(argc, argv);
+        } 
+        else if (strcasecmp(argv[arg], "--mini") == 0) {
+            return tsl::loop<MiniEntryOverlay>(argc, argv);
+        }
+    }
+    
+    // Default case
     return tsl::loop<MonitorOverlay>(argc, argv);
 }
