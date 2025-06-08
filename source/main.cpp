@@ -500,12 +500,12 @@ int main(int argc, char **argv) {
             setupMicroMode();
             return tsl::loop<MicroMode>(argc, argv);
         } 
-        else if (strcasecmp(argv[arg], "--micro") == 0) {
+        else if (strcasecmp(argv[arg], "-micro") == 0) {
             skipMain = true;
             setupMicroMode();
             return tsl::loop<MicroMode>(argc, argv);
         } 
-        else if (strcasecmp(argv[arg], "--mini") == 0) {
+        else if (strcasecmp(argv[arg], "-mini") == 0) {
             return tsl::loop<MiniEntryOverlay>(argc, argv);
         }
     }
