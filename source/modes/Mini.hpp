@@ -4,7 +4,7 @@ private:
     char Rotation_SpeedLevel_c[64] = "";
     char RAM_var_compressed_c[128] = "";
     char SoCPCB_temperature_c[64] = "";
-    char skin_temperature_c[32] = "";
+    char skin_temperature_c[64] = "";
 
     uint32_t rectangleWidth = 0;
     char Variables[512] = "";
@@ -18,7 +18,7 @@ public:
         tsl::initializeUltrahandSettings();
         PowerConsumption = 0.0f;
         batTimeEstimate = -1;
-        strcpy(SoCPCB_temperature_c, "-.--W[--:--]"); // Default display
+        strcpy(SoCPCB_temperature_c, "-.--W [--:--]"); // Default display
 
         GetConfigSettings(&settings);
         apmGetPerformanceMode(&performanceMode);
@@ -115,10 +115,10 @@ public:
                     } else if (key == "GPU" || (key == "RAM" && settings.showRAMLoad && R_SUCCEEDED(sysclkCheck))) {
                         dimensions = renderer->drawString("100.0%@4444.4", false, 0, fontsize, fontsize, renderer->a(0x0000));
                     } else if (key == "RAM" && (!settings.showRAMLoad || R_FAILED(sysclkCheck))) {
-                        dimensions = renderer->drawString("4444/4444MB@4444.4", false, 0, 0, fontsize, renderer->a(0x0000));
+                        dimensions = renderer->drawString("44444444MB@4444.4", false, 0, 0, fontsize, renderer->a(0x0000));
                     } else if (key == "TEMP") {
-                        dimensions = renderer->drawString("88.8\u00B0C/88.8\u00B0C/88.8\u00B0C", false, 0, fontsize, fontsize, renderer->a(0x0000));
-                    } else if (key == "DRAW") {
+                        dimensions = renderer->drawString("88.8\u00B0C|88.8\u00B0C|88.8\u00B0C (100%)", false, 0, fontsize, fontsize, renderer->a(0x0000));
+                    } else if (key == "BAT") {
                         dimensions = renderer->drawString("-44.44W [44:44]", false, 0, fontsize, fontsize, renderer->a(0x0000));
                     } else if (key == "FPS") {
                         dimensions = renderer->drawString("444.4", false, 0, fontsize, fontsize, renderer->a(0x0000));
@@ -163,9 +163,9 @@ public:
                         shouldAdd = true;
                         labelText = "TEMP";
                         flags |= 8;
-                    } else if (key == "DRAW" && !(flags & 16)) {
+                    } else if (key == "BAT" && !(flags & 16)) {
                         shouldAdd = true;
-                        labelText = (batTimeEstimate >= 0) ? "DRAW" : "BAT";
+                        labelText = (batTimeEstimate >= 0) ? "BAT" : "BAT";
                         flags |= 16;
                     } else if (key == "FPS" && !(flags & 64) && GameRunning) {
                         shouldAdd = true;
@@ -182,7 +182,7 @@ public:
                         labelLines.push_back(labelText);
                         entryCount++;
                         
-                        if (settings.realVolts && key != "DRAW" && key != "FPS" && key != "RES") {
+                        if (settings.realVolts && key != "BAT" && key != "FPS" && key != "RES") {
                             labelLines.push_back(""); // Empty line for voltage info
                             entryCount++;
                         }
@@ -407,7 +407,7 @@ public:
             uint32_t vdd2 = realRAM_mV / 10000;
             uint32_t vddq = realRAM_mV % 10000;
             if (isMariko) {
-                snprintf(MINI_RAM_volt_c, sizeof(MINI_RAM_volt_c), "%u.%u/%u.%u mV", vdd2/10, vdd2%10, vddq/10, vddq%10);
+                snprintf(MINI_RAM_volt_c, sizeof(MINI_RAM_volt_c), "%u.%u%u.%u mV", vdd2/10, vdd2%10, vddq/10, vddq%10);
             }
             else {
                 snprintf(MINI_RAM_volt_c, sizeof(MINI_RAM_volt_c), "%u.%u mV", vdd2/10, vdd2%10);
@@ -416,7 +416,7 @@ public:
         
         ///Thermal
         snprintf(skin_temperature_c, sizeof skin_temperature_c, 
-            "%2.1f\u00B0C/%2.1f\u00B0C/%hu.%hhu\u00B0C(%2.0f%%)", 
+            "%2.1f\u00B0C%2.1f\u00B0C%hu.%hhu\u00B0C (%2.0f%%)", 
             SOC_temperatureF, PCB_temperatureF, 
             skin_temperaturemiliC / 1000, (skin_temperaturemiliC / 100) % 10,
             Rotation_Duty);
@@ -551,7 +551,7 @@ public:
             //    strcat(Temp, Rotation_SpeedLevel_c);
             //    flags |= 1 << 4;            
             //}
-            else if (!key.compare("DRAW") && !(flags & 1 << 5)) {
+            else if (!key.compare("BAT") && !(flags & 1 << 5)) {
                 if (Temp[0]) {
                     strcat(Temp, "\n");
                 }
@@ -574,7 +574,7 @@ public:
                 char Temp_s[32];
                 if (!m_resolutionOutput[1].width)
                     snprintf(Temp_s, sizeof(Temp_s), "%dx%d", m_resolutionOutput[0].width, m_resolutionOutput[0].height);
-                else snprintf(Temp_s, sizeof(Temp_s), "%dx%d || %dx%d", m_resolutionOutput[0].width, m_resolutionOutput[0].height, m_resolutionOutput[1].width, m_resolutionOutput[1].height);
+                else snprintf(Temp_s, sizeof(Temp_s), "%dx%d%dx%d", m_resolutionOutput[0].width, m_resolutionOutput[0].height, m_resolutionOutput[1].width, m_resolutionOutput[1].height);
                 strcat(Temp, Temp_s);
                 flags |= 1 << 6;            
             }
