@@ -1334,7 +1334,7 @@ ALWAYS_INLINE void GetConfigSettings(MicroSettings* settings) {
         settings -> showFullCPU = key.compare("FALSE"); 
     } 
     if (parsedData[mode].find("text_align") != parsedData[mode].end()) {
-        key = parsedData["micro"]["text_align"];
+        key = parsedData[mode]["text_align"];
         convertToUpper(key);
         if (!key.compare("LEFT")) {
             settings -> alignTo = 0;
@@ -1585,8 +1585,8 @@ ALWAYS_INLINE void GetConfigSettings(FpsGraphSettings* settings) {
         if (convertStrToRGBA4444(key, &temp))
             settings -> perfectLineColor = temp;
     }
-    if (parsedData["fps-graph"].find("show_info") != parsedData["fps-graph"].end()) {
-        key = parsedData["fps-graph"]["show_info"];
+    if (parsedData[mode].find("show_info") != parsedData[mode].end()) {
+        key = parsedData[mode]["show_info"];
         convertToUpper(key);
         settings -> showInfo = !(key.compare("TRUE"));
     }
