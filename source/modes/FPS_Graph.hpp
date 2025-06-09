@@ -192,6 +192,7 @@ public:
 		stats temp = {0, false};
 		static float last = 0;
 		
+		snprintf(FPSavg_c, sizeof FPSavg_c, "%2.1f",  FPSavg);
 		uint8_t SaltySharedDisplayRefreshRate = *(uint8_t*)((uintptr_t)shmemGetAddr(&_sharedmemory) + 1);
 		if (SaltySharedDisplayRefreshRate) 
 			refreshRate = SaltySharedDisplayRefreshRate;
