@@ -4,6 +4,7 @@ battery_avg_iir_filter=false
 battery_time_left_refreshrate=60
 average_gpu_load=false
 font_cache=true
+
 [full]
 refresh_rate=1
 layer_width_align=left
@@ -12,6 +13,7 @@ show_deltas=true
 show_target_freqs=true
 show_fps=true
 show_res=true
+
 [mini]
 refresh_rate=1
 layer_width_align=left
@@ -25,6 +27,7 @@ replace_MB_with_RAM_load=true
 background_color=#1117
 cat_color=#ADFF
 text_color=#FFFF
+
 [micro]
 refresh_rate=1
 layer_height_align=top
@@ -39,6 +42,7 @@ show_full_cpu=true
 background_color=#1117
 cat_color=#ADFF
 text_color=#FFFF
+
 [fps-counter]
 layer_width_align=left
 layer_height_align=top
@@ -46,6 +50,7 @@ handheld_font_size=24
 docked_font_size=24
 text_color=#0F0F
 background_color=#111A
+
 [fps-graph]
 layer_width_align=left
 layer_height_align=top
@@ -59,6 +64,7 @@ main_line_color=#FFFF
 rounded_line_color=#F0FF
 perfect_line_color=#0C0F
 show_info=true
+
 [game_resolutions]
 refresh_rate=10
 layer_width_align=left
