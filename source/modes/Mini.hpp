@@ -551,7 +551,7 @@ public:
             //    strcat(Temp, Rotation_SpeedLevel_c);
             //    flags |= 1 << 4;            
             //}
-            else if (!key.compare("BAT") && !(flags & 1 << 5)) {
+            else if ((!key.compare("BAT") || !key.compare("DRAW")) && !(flags & 1 << 5)) {
                 if (Temp[0]) {
                     strcat(Temp, "\n");
                 }
