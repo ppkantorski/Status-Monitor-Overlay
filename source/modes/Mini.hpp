@@ -4,7 +4,7 @@ private:
     char Rotation_SpeedLevel_c[64] = "";
     char RAM_var_compressed_c[128] = "";
     char SoCPCB_temperature_c[64] = "";
-    char skin_temperature_c[64] = "";
+    char skin_temperature_c[32] = "";
 
     uint32_t rectangleWidth = 0;
     char Variables[512] = "";
