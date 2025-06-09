@@ -111,12 +111,12 @@ public:
             //renderer->drawString(BatteryDraw_c, false, COMMON_MARGIN, 575, 15, renderer->a(0xFFFF));
             
             ///FPS
-            height_offset = 607;
+            height_offset = 605;
 
             renderer->drawString("Game:", false, COMMON_MARGIN, height_offset - 47, 20, renderer->a(0xFFFF));
-            renderer->drawString(FPS_var_compressed_c, false, COMMON_MARGIN, height_offset - 20, 20, renderer->a(0xFFFF));
+            renderer->drawString(FPS_var_compressed_c, false, COMMON_MARGIN, height_offset - 20, 15, renderer->a(0xFFFF));
         
-            renderer->drawString(Resolutions_c, false, COMMON_MARGIN, height_offset, 20, renderer->a(0xFFFF));
+            renderer->drawString(Resolutions_c, false, COMMON_MARGIN, height_offset, 15, renderer->a(0xFFFF));
             
             renderer->drawStringWithColoredSections(message.c_str(), KEY_SYMBOLS, COMMON_MARGIN, 693, 23,  a(tsl::bottomTextColor), a(tsl::buttonColor));
             
@@ -130,7 +130,7 @@ public:
     virtual void update() override {
         //Make stuff ready to print
         ///CPU
-        snprintf(CPU_compressed_c, sizeof(CPU_compressed_c), "Load #0: %.2f%% / #1: %.2f%% / #2: %.2f%% / #3: %.2f%%", 
+        snprintf(CPU_compressed_c, sizeof(CPU_compressed_c), "Load #0: %.2f%%#1: %.2f%%#2: %.2f%%#3: %.2f%%", 
             (idletick0 > systemtickfrequency_impl) ? 0.0f : (1.d - ((double)idletick0 / systemtickfrequency_impl)) * 100,
             (idletick1 > systemtickfrequency_impl) ? 0.0f : (1.d - ((double)idletick1 / systemtickfrequency_impl)) * 100,
             (idletick2 > systemtickfrequency_impl) ? 0.0f : (1.d - ((double)idletick2 / systemtickfrequency_impl)) * 100,
@@ -168,14 +168,14 @@ public:
         
         int RAM_GPU_Load = ramLoad[SysClkRamLoad_All] - ramLoad[SysClkRamLoad_Cpu];
         snprintf(RAM_load_c, sizeof RAM_load_c, 
-            "Load: %u.%u%% (CPU %u.%u | GPU %u.%u)",
+            "Load: %u.%u%% (CPU %u.%uGPU %u.%u)",
             ramLoad[SysClkRamLoad_All] / 10, ramLoad[SysClkRamLoad_All] % 10,
             ramLoad[SysClkRamLoad_Cpu] / 10, ramLoad[SysClkRamLoad_Cpu] % 10,
             RAM_GPU_Load / 10, RAM_GPU_Load % 10);
         
         ///Thermal
         snprintf(SoCPCB_temperature_c, sizeof SoCPCB_temperature_c, 
-            "SOC %2.1f\u00B0C / PCB %2.1f\u00B0C / Skin %2d.%d\u00B0C", 
+            "SOC %2.1f\u00B0CPCB %2.1f\u00B0CSkin %2d.%d\u00B0C", 
             SOC_temperatureF, PCB_temperatureF, skin_temperaturemiliC / 1000, (skin_temperaturemiliC / 100) % 10);
         snprintf(Rotation_SpeedLevel_c, sizeof Rotation_SpeedLevel_c, "Fan Rotation Level: %2.1f%%", Rotation_Duty);
         
@@ -247,7 +247,7 @@ public:
                 qsort(m_resolutionOutput, 8, sizeof(resolutionCalls), compare);
                 if (!m_resolutionOutput[1].width)
                     snprintf(Resolutions_c, sizeof(Resolutions_c), "%dx%d", m_resolutionOutput[0].width, m_resolutionOutput[0].height);
-                else snprintf(Resolutions_c, sizeof(Resolutions_c), "%dx%d || %dx%d", m_resolutionOutput[0].width, m_resolutionOutput[0].height, m_resolutionOutput[1].width, m_resolutionOutput[1].height);
+                else snprintf(Resolutions_c, sizeof(Resolutions_c), "%dx%d%dx%d", m_resolutionOutput[0].width, m_resolutionOutput[0].height, m_resolutionOutput[1].width, m_resolutionOutput[1].height);
             }
         }
         else if (!GameRunning && resolutionLookup != 0) {
@@ -262,7 +262,7 @@ public:
         if (batTimeEstimate >= 0) {
             snprintf(remainingBatteryLife, sizeof remainingBatteryLife, "%d:%02d", batTimeEstimate / 60, batTimeEstimate % 60);
         }
-        else snprintf(remainingBatteryLife, sizeof remainingBatteryLife, "-:--");
+        else snprintf(remainingBatteryLife, sizeof remainingBatteryLife, "--:--");
         snprintf(BatteryDraw_c, sizeof BatteryDraw_c, "Battery Power Flow: %+.2fW[%s]", PowerConsumption, remainingBatteryLife);
         mutexUnlock(&mutex_BatteryChecker);
         
