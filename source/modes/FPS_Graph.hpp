@@ -143,7 +143,7 @@ public:
 			s16 pos_y = size + base_y + rectangle_y + ((rectangle_height - size) / 2);
 			s16 pos_x = base_x + rectangle_x + ((rectangle_width - width) / 2);
 
-			renderer->drawString(FPSavg_c, false, pos_x, pos_y, size, renderer->a(settings.fpsColor));
+			renderer->drawString(FPSavg_c, false, pos_x, pos_y-5, size, renderer->a(settings.fpsColor));
 			renderer->drawEmptyRect(base_x+(rectangle_x - 1), base_y+(rectangle_y - 1), rectangle_width + 2, rectangle_height + 4, renderer->a(settings.borderColor));
 			renderer->drawDashedLine(base_x+rectangle_x, base_y+y_30FPS, base_x+rectangle_x+rectangle_width, base_y+y_30FPS, 6, renderer->a(settings.dashedLineColor));
 			renderer->drawString(&legend_max[0], false, base_x+(rectangle_x-15), base_y+(rectangle_y+7), 10, renderer->a(settings.maxFPSTextColor));
