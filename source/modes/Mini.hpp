@@ -163,9 +163,9 @@ public:
                         shouldAdd = true;
                         labelText = "TEMP";
                         flags |= 8;
-                    } else if (key == "BAT" && !(flags & 16)) {
+                    } else if ((key == "BAT" || key == "DRAW") && !(flags & 16)) {
                         shouldAdd = true;
-                        labelText = (batTimeEstimate >= 0) ? "BAT" : "BAT";
+                        labelText = "BAT";
                         flags |= 16;
                     } else if (key == "FPS" && !(flags & 64) && GameRunning) {
                         shouldAdd = true;
@@ -182,7 +182,7 @@ public:
                         labelLines.push_back(labelText);
                         entryCount++;
                         
-                        if (settings.realVolts && key != "BAT" && key != "FPS" && key != "RES") {
+                        if (settings.realVolts && key != "BAT" && key != "DRAW" && key != "FPS" && key != "RES") {
                             labelLines.push_back(""); // Empty line for voltage info
                             entryCount++;
                         }
