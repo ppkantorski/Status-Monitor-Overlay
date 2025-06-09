@@ -45,7 +45,7 @@
 #define MAXIM17050_I2C_ADDR 0x36
 */
 
-#define MAX17050_WAIT_NS 1175800000
+#define MAX17050_WAIT_NS 1000000000
 
 constexpr float max17050SenseResistor = MAX17050_BOARD_SNS_RESISTOR_UOHM / 1000; // in uOhm
 constexpr float max17050CGain = 1.99993;
