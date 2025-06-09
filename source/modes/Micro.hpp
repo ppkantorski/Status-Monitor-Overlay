@@ -255,7 +255,7 @@ public:
                     item_layout.volt_width = volt_dim.first;
                     
                     // Total: label + gap + data + gap + "|" + gap + voltage
-                    auto sep_dim = renderer->drawString("|", false, 0, 0, fontsize, renderer->a(0x0000));
+                    auto sep_dim = renderer->drawString("", false, 0, 0, fontsize, renderer->a(0x0000));
                     item_layout.total_width = item_layout.label_width + layout.label_data_gap + 
                                             item_layout.data_width + layout.volt_separator_gap + 
                                             sep_dim.first + layout.volt_data_gap + item_layout.volt_width;
@@ -344,8 +344,8 @@ public:
                 // Draw voltage if present
                 if (item.has_voltage && item.volt_ptr) {
                     current_x += layout.volt_separator_gap;
-                    renderer->drawString("|", false, current_x, base_y + fontsize, fontsize, textColorA);
-                    auto sep_dim = renderer->drawString("|", false, 0, 0, fontsize, renderer->a(0x0000));
+                    renderer->drawString("", false, current_x, base_y + fontsize, fontsize, textColorA);
+                    auto sep_dim = renderer->drawString("", false, 0, 0, fontsize, renderer->a(0x0000));
                     current_x += sep_dim.first + layout.volt_data_gap;
                     renderer->drawString(item.volt_ptr, false, current_x, base_y + fontsize, fontsize, textColorA);
                 }
@@ -431,7 +431,7 @@ public:
         if (!settings.showRAMLoad || R_FAILED(sysclkCheck)) {
             float RAM_Total_all_f = (RAM_Total_application_u + RAM_Total_applet_u + RAM_Total_system_u + RAM_Total_systemunsafe_u) / (1024.0f * 1024.0f * 1024.0f);
             float RAM_Used_all_f = (RAM_Used_application_u + RAM_Used_applet_u + RAM_Used_system_u + RAM_Used_systemunsafe_u) / (1024.0f * 1024.0f * 1024.0f);
-            snprintf(MICRO_RAM_all_c, sizeof(MICRO_RAM_all_c), "%.1f/%.1fGB", RAM_Used_all_f, RAM_Total_all_f);
+            snprintf(MICRO_RAM_all_c, sizeof(MICRO_RAM_all_c), "%.1f%.1fGB", RAM_Used_all_f, RAM_Total_all_f);
         } else {
             snprintf(MICRO_RAM_all_c, sizeof(MICRO_RAM_all_c), "%hu.%hhu%%", 
                 ramLoad[SysClkRamLoad_All] / 10, ramLoad[SysClkRamLoad_All] % 10);
@@ -452,7 +452,7 @@ public:
             uint32_t vdd2 = realRAM_mV / 10000;
             uint32_t vddq = realRAM_mV % 10000;
             if (isMariko) {
-                snprintf(RAM_volt_c, sizeof(RAM_volt_c), "%u.%u/%u.%u mV", 
+                snprintf(RAM_volt_c, sizeof(RAM_volt_c), "%u.%u%u.%u mV", 
                     vdd2/10, vdd2%10, vddq/10, vddq%10);
             } else {
                 snprintf(RAM_volt_c, sizeof(RAM_volt_c), "%u.%u mV", vdd2/10, vdd2%10);
@@ -469,15 +469,15 @@ public:
             strcpy(remainingBatteryLife, "--:--");
         }
 
-        snprintf(Battery_c, sizeof(Battery_c), "%0.2fW | %.1f%% [%s]", 
+        snprintf(Battery_c, sizeof(Battery_c), "%0.2fW%.1f%% [%s]", 
             PowerConsumption, (float)_batteryChargeInfoFields.RawBatteryCharge / 1000, remainingBatteryLife);
         mutexUnlock(&mutex_BatteryChecker);
 
         // Thermal info
         snprintf(soc_temperature_c, sizeof(soc_temperature_c), 
-            "%2.1f°C(%2.0f%%)", SOC_temperatureF, Rotation_Duty);
+            "%2.1f°C (%2.0f%%)", SOC_temperatureF, Rotation_Duty);
         snprintf(skin_temperature_c, sizeof(skin_temperature_c), 
-            "%2.1f/%2.1f/%hu.%hhu°C(%2.0f%%)", 
+            "%2.1f%2.1f%hu.%hhu°C (%2.0f%%)", 
             SOC_temperatureF, PCB_temperatureF, 
             skin_temperaturemiliC / 1000, (skin_temperaturemiliC / 100) % 10, 
             Rotation_Duty);
