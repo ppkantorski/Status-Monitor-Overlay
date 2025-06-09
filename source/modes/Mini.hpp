@@ -4,7 +4,7 @@ private:
     char Rotation_SpeedLevel_c[64] = "";
     char RAM_var_compressed_c[128] = "";
     char SoCPCB_temperature_c[64] = "";
-    char skin_temperature_c[32] = "";
+    char skin_temperature_c[64] = "";
 
     uint32_t rectangleWidth = 0;
     char Variables[512] = "";
@@ -117,8 +117,7 @@ public:
                     } else if (key == "RAM" && (!settings.showRAMLoad || R_FAILED(sysclkCheck))) {
                         dimensions = renderer->drawString("44444444MB@4444.4", false, 0, 0, fontsize, renderer->a(0x0000));
                     } else if (key == "TEMP") {
-                        //dimensions = std::make_pair(400, fontsize); 
-                        dimensions = renderer->drawString("88.8\u00B0C | 88.8\u00B0C | 88.8\u00B0C (100%)", false, 0, 0, fontsize, renderer->a(0x0000));
+                        dimensions = renderer->drawString("88.8\u00B0C88.8\u00B0C88.8\u00B0C (100.0%)", false, 0, 0, fontsize, renderer->a(0x0000));
                     } else if (key == "BAT") {
                         dimensions = renderer->drawString("-44.44W [44:44]", false, 0, 0, fontsize, renderer->a(0x0000));
                     } else if (key == "FPS") {
