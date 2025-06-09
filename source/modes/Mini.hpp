@@ -113,17 +113,18 @@ public:
                     if (key == "CPU") {
                         dimensions = renderer->drawString("[100%,100%,100%,100%]@4444.4", false, 0, 0, fontsize, renderer->a(0x0000));
                     } else if (key == "GPU" || (key == "RAM" && settings.showRAMLoad && R_SUCCEEDED(sysclkCheck))) {
-                        dimensions = renderer->drawString("100.0%@4444.4", false, 0, fontsize, fontsize, renderer->a(0x0000));
+                        dimensions = renderer->drawString("100.0%@4444.4", false, 0, 0, fontsize, renderer->a(0x0000));
                     } else if (key == "RAM" && (!settings.showRAMLoad || R_FAILED(sysclkCheck))) {
                         dimensions = renderer->drawString("44444444MB@4444.4", false, 0, 0, fontsize, renderer->a(0x0000));
                     } else if (key == "TEMP") {
-                        dimensions = renderer->drawString("88.8\u00B0C|88.8\u00B0C|88.8\u00B0C (100%)", false, 0, fontsize, fontsize, renderer->a(0x0000));
+                        //dimensions = std::make_pair(400, fontsize); 
+                        dimensions = renderer->drawString("88.8\u00B0C | 88.8\u00B0C | 88.8\u00B0C (100%)", false, 0, 0, fontsize, renderer->a(0x0000));
                     } else if (key == "BAT") {
-                        dimensions = renderer->drawString("-44.44W [44:44]", false, 0, fontsize, fontsize, renderer->a(0x0000));
+                        dimensions = renderer->drawString("-44.44W [44:44]", false, 0, 0, fontsize, renderer->a(0x0000));
                     } else if (key == "FPS") {
-                        dimensions = renderer->drawString("444.4", false, 0, fontsize, fontsize, renderer->a(0x0000));
+                        dimensions = renderer->drawString("444.4", false, 0, 0, fontsize, renderer->a(0x0000));
                     } else if (key == "RES") {
-                        dimensions = renderer->drawString("3840x2160 or 3840x2160", false, 0, fontsize, fontsize, renderer->a(0x0000));
+                        dimensions = renderer->drawString("3840x2160 or 3840x2160", false, 0, 0, fontsize, renderer->a(0x0000));
                     } else {
                         continue;
                     }
