@@ -878,35 +878,25 @@ uint64_t MapButtons(const std::string& buttonCombo) {
 }
 
 ALWAYS_INLINE bool isKeyComboPressed(uint64_t keysHeld, uint64_t keysDown) {
-    // Static variables to track the state and hold time
-    //static uint64_t holdStartTime = 0;
-    //static bool isHolding = false; // Tracks if the keys are currently being held for 0.3 seconds
-    //
-    //// If the combo is first pressed, start tracking
-    //if (!isHolding && (keysHeld & comboBitmask) == comboBitmask) {
-    //    holdStartTime = armGetSystemTick(); // Record start time
-    //    isHolding = true;
-    //}
-    //
-    //// If keys are held, check if the hold duration has exceeded 0.3 seconds
-    //if (isHolding && (keysHeld & comboBitmask) == comboBitmask) {
-    //    uint64_t elapsed = armTicksToNs(armGetSystemTick() - holdStartTime);
-    //    
-    //    // If held for at least 0.3 seconds, mark as ready for release detection
-    //    if (elapsed >= 30000000) {
-    //        isHolding = false; // Stop further duration checks
-    //        holdStartTime = 0; // Reset timing
-    //        fixHiding = true; // for fixing hiding when returning
-    //        return true; // Return false until released
-    //    }
-    //}
-
-    if ((keysDown & comboBitmask) == comboBitmask) {
-        fixHiding = true; // for fixing hiding when returning
-        return true; // Return false until released
+    // Check if any of the combo buttons are pressed down this frame
+    // while the rest of the combo buttons are being held
+    
+    uint64_t comboButtonsDown = keysDown & comboBitmask;
+    uint64_t comboButtonsHeld = keysHeld & comboBitmask;
+    
+    // If any combo buttons are pressed down this frame
+    if (comboButtonsDown != 0) {
+        // Check if the remaining combo buttons are being held
+        // (the full combo should be active when combining held + down)
+        uint64_t totalComboActive = comboButtonsHeld | comboButtonsDown;
+        
+        if (totalComboActive == comboBitmask) {
+            fixHiding = true; // for fixing hiding when returning
+            return true;
+        }
     }
-
-    return false; // Default return if conditions are not met
+    
+    return false;
 }
 
 
