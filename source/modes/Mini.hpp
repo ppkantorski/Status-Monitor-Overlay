@@ -6,9 +6,9 @@ private:
     char SoCPCB_temperature_c[64] = "";
     char skin_temperature_c[64] = "";
 
-    uint32_t rectangleWidth = 0;
-    char Variables[512] = "";
-    size_t fontsize = 0;
+    uint32_t rectangleWidth;
+    char Variables[512];
+    size_t fontsize;
     MiniSettings settings;
     bool Initialized = false;
     ApmPerformanceMode performanceMode = ApmPerformanceMode_Invalid;
@@ -266,19 +266,22 @@ public:
             uint32_t currentY = cachedBaseY + fontsize;
             size_t labelIndex = 0;
             
+            uint32_t labelWidth, labelCenterX;
             for (size_t i = 0; i < variableLines.size() && labelIndex < labelLines.size(); i++) {
                 // Draw label (centered in label region)
                 if (!labelLines[labelIndex].empty()) {
                     //std::pair<u32, u32> labelDimensions = renderer->drawString(labelLines[labelIndex].c_str(), false, 0, 0, fontsize, renderer->a(0x0000));
                     //u32 width = tsl::gfx::calculateStringWidth(labelLines[labelIndex].c_str(), fontsize);
-                    uint32_t labelWidth = tsl::gfx::calculateStringWidth(labelLines[labelIndex].c_str(), fontsize);
-                    uint32_t labelCenterX = cachedBaseX + (margin / 2) - (labelWidth / 2);
+                    labelWidth = tsl::gfx::calculateStringWidth(labelLines[labelIndex].c_str(), fontsize);
+                    labelCenterX = cachedBaseX + (margin / 2) - (labelWidth / 2);
                     renderer->drawString(labelLines[labelIndex].c_str(), false, labelCenterX, currentY, fontsize, renderer->a(settings.catColor));
                 }
                 
                 // Draw variable data
-                renderer->drawString(variableLines[i].c_str(), false, cachedBaseX + margin, currentY, fontsize, renderer->a(settings.textColor));
-                
+                //renderer->drawString(variableLines[i].c_str(), false, cachedBaseX + margin, currentY, fontsize, renderer->a(settings.textColor));
+                //renderer->drawStringWith(variableLines[i].c_str(), false, cachedBaseX + margin, currentY, fontsize, renderer->a(settings.textColor));
+                renderer->drawStringWithColoredSections(variableLines[i].c_str(), {""}, cachedBaseX + margin, currentY, fontsize, a(settings.textColor), a(tsl::separatorColor));
+
                 currentY += fontsize;
                 labelIndex++;
             }
@@ -508,84 +511,94 @@ public:
         ///FPS
         char Temp[256];
         uint8_t flags = 0;
-        for (std::string key : ult::split(settings.show, '+')) {
-            if (!key.compare("CPU") && !(flags & 1 << 0)) {
-                if (Temp[0]) {
-                    strcat(Temp, "\n");
+        // Pre-computed hash map (initialize once, reuse many times)
+        static const std::unordered_map<std::string, std::function<void()>> key_handlers = {
+            {"CPU", [&]() {
+                if (!(flags & 1)) {
+                    if (Temp[0]) strcat(Temp, "\n");
+                    strcat(Temp, MINI_CPU_compressed_c);
+                    if (settings.realVolts) {
+                        strcat(Temp, "\n");
+                        strcat(Temp, MINI_CPU_volt_c);
+                    }
+                    flags |= 1;
                 }
-                strcat(Temp, MINI_CPU_compressed_c);
-                if (settings.realVolts) { 
-                    strcat(Temp, "\n"); 
-                    strcat(Temp, MINI_CPU_volt_c); 
-                } 
-                flags |= 1 << 0;         
-            }
-            else if (!key.compare("GPU") && !(flags & 1 << 1)) {
-                if (Temp[0]) {
-                    strcat(Temp, "\n");
+            }},
+            {"GPU", [&]() {
+                if (!(flags & 2)) {
+                    if (Temp[0]) strcat(Temp, "\n");
+                    strcat(Temp, MINI_GPU_Load_c);
+                    if (settings.realVolts) {
+                        strcat(Temp, "\n");
+                        strcat(Temp, MINI_GPU_volt_c);
+                    }
+                    flags |= 2;
                 }
-                strcat(Temp, MINI_GPU_Load_c);
-                if (settings.realVolts) { 
-                    strcat(Temp, "\n"); 
-                    strcat(Temp, MINI_GPU_volt_c); 
-                } 
-                flags |= 1 << 1;            
-            }
-            else if (!key.compare("RAM") && !(flags & 1 << 2)) {
-                if (Temp[0]) {
-                    strcat(Temp, "\n");
+            }},
+            {"RAM", [&]() {
+                if (!(flags & 4)) {
+                    if (Temp[0]) strcat(Temp, "\n");
+                    strcat(Temp, MINI_RAM_var_compressed_c);
+                    if (settings.realVolts) {
+                        strcat(Temp, "\n");
+                        strcat(Temp, MINI_RAM_volt_c);
+                    }
+                    flags |= 4;
                 }
-                strcat(Temp, MINI_RAM_var_compressed_c);
-                if (settings.realVolts) { 
-                    strcat(Temp, "\n"); 
-                    strcat(Temp, MINI_RAM_volt_c); 
-                } 
-                flags |= 1 << 2;            
-            }
-            else if (!key.compare("TEMP") && !(flags & 1 << 3)) {
-                if (Temp[0]) {
-                    strcat(Temp, "\n");
+            }},
+            {"TEMP", [&]() {
+                if (!(flags & 8)) {
+                    if (Temp[0]) strcat(Temp, "\n");
+                    strcat(Temp, skin_temperature_c);
+                    if (settings.realVolts) {
+                        strcat(Temp, "\n");
+                        strcat(Temp, MINI_SOC_volt_c);
+                    }
+                    flags |= 8;
                 }
-                strcat(Temp, skin_temperature_c);
-                if (settings.realVolts) { 
-                    strcat(Temp, "\n"); 
-                    strcat(Temp, MINI_SOC_volt_c); 
-                } 
-                flags |= 1 << 3;            
-            }
-            //else if (!key.compare("FAN") && !(flags & 1 << 4)) {
-            //    if (Temp[0]) {
-            //        strcat(Temp, "\n");
-            //    }
-            //    strcat(Temp, Rotation_SpeedLevel_c);
-            //    flags |= 1 << 4;            
-            //}
-            else if ((!key.compare("BAT") || !key.compare("DRAW")) && !(flags & 1 << 5)) {
-                if (Temp[0]) {
-                    strcat(Temp, "\n");
+            }},
+            {"BAT", [&]() {
+                if (!(flags & 16)) {
+                    if (Temp[0]) strcat(Temp, "\n");
+                    strcat(Temp, SoCPCB_temperature_c);
+                    flags |= 16;
                 }
-                strcat(Temp, SoCPCB_temperature_c);
-                flags |= 1 << 4;            
-            }
-            else if (!key.compare("FPS") && !(flags & 1 << 6) && GameRunning) {
-                if (Temp[0]) {
-                    strcat(Temp, "\n");
+            }},
+            {"DRAW", [&]() {
+                if (!(flags & 16)) {
+                    if (Temp[0]) strcat(Temp, "\n");
+                    strcat(Temp, SoCPCB_temperature_c);
+                    flags |= 16;
                 }
-                char Temp_s[24];
-                snprintf(Temp_s, sizeof(Temp_s), "%2.1f [%2.1f - %2.1f]", FPSavg, FPSmin, FPSmax);
-                strcat(Temp, Temp_s);
-                flags |= 1 << 5;            
-            }
-            else if (!key.compare("RES") && !(flags & 1 << 7) && GameRunning) {
-                if (Temp[0]) {
-                    strcat(Temp, "\n");
+            }},
+            {"FPS", [&]() {
+                if (!(flags & 32) && GameRunning) {
+                    if (Temp[0]) strcat(Temp, "\n");
+                    char Temp_s[24];
+                    snprintf(Temp_s, sizeof(Temp_s), "%2.1f [%2.1f - %2.1f]", FPSavg, FPSmin, FPSmax);
+                    strcat(Temp, Temp_s);
+                    flags |= 32;
                 }
-                char Temp_s[32];
-                if (!m_resolutionOutput[1].width)
-                    snprintf(Temp_s, sizeof(Temp_s), "%dx%d", m_resolutionOutput[0].width, m_resolutionOutput[0].height);
-                else snprintf(Temp_s, sizeof(Temp_s), "%dx%d%dx%d", m_resolutionOutput[0].width, m_resolutionOutput[0].height, m_resolutionOutput[1].width, m_resolutionOutput[1].height);
-                strcat(Temp, Temp_s);
-                flags |= 1 << 6;            
+            }},
+            {"RES", [&]() {
+                if (!(flags & 64) && GameRunning) {
+                    if (Temp[0]) strcat(Temp, "\n");
+                    char Temp_s[32];
+                    if (!m_resolutionOutput[1].width)
+                        snprintf(Temp_s, sizeof(Temp_s), "%dx%d", m_resolutionOutput[0].width, m_resolutionOutput[0].height);
+                    else 
+                        snprintf(Temp_s, sizeof(Temp_s), "%dx%d%dx%d", m_resolutionOutput[0].width, m_resolutionOutput[0].height, m_resolutionOutput[1].width, m_resolutionOutput[1].height);
+                    strcat(Temp, Temp_s);
+                    flags |= 64;
+                }
+            }}
+        };
+        
+        // Optimized loop
+        for (const std::string& key : ult::split(settings.show, '+')) {
+            auto it = key_handlers.find(key);
+            if (it != key_handlers.end()) {
+                it->second();
             }
         }
         mutexUnlock(&mutex_Misc);

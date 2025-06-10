@@ -347,13 +347,14 @@ public:
                 current_x += item_layout.label_width + layout.label_data_gap;
                 
                 // Draw data
-                renderer->drawString(item.data_ptr, false, current_x, base_y + fontsize, fontsize, textColorA);
+                //renderer->drawString(item.data_ptr, false, current_x, base_y + fontsize, fontsize, textColorA);
+                renderer->drawStringWithColoredSections(item.data_ptr, {""}, current_x, base_y + fontsize, fontsize, textColorA, a(tsl::separatorColor));
                 current_x += item_layout.data_width;
                 
                 // Draw voltage if present
                 if (item.has_voltage && item.volt_ptr) {
                     current_x += layout.volt_separator_gap;
-                    renderer->drawString("", false, current_x, base_y + fontsize, fontsize, textColorA);
+                    renderer->drawString("", false, current_x, base_y + fontsize, fontsize, tsl::separatorColor);
                     //auto sep_width = renderer->drawString("", false, 0, 0, fontsize, renderer->a(0x0000));
                     //auto sep_width = tsl::gfx::calculateStringWidth("", fontsize);
                     current_x += sep_width + layout.volt_data_gap;

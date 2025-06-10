@@ -28,7 +28,7 @@ public:
         ///Battery
 
         mutexLock(&mutex_BatteryChecker);
-        char tempBatTimeEstimate[8] = "-:--";
+        char tempBatTimeEstimate[8] = "--:--";
         if (batTimeEstimate >= 0) {
             snprintf(&tempBatTimeEstimate[0], sizeof(tempBatTimeEstimate), "%d:%02d", batTimeEstimate / 60, batTimeEstimate % 60);
         }
