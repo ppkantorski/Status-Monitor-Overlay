@@ -497,13 +497,15 @@ void setupMicroMode() {
     ult::DefaultFramebufferHeight = 28;
     
     // Try user-specified filename first, then fallback to default
-    std::string primaryPath = folderpath + filename;
-    std::string fallbackPath = folderpath + "Status-Monitor-Overlay.ovl";
+    const std::string primaryPath = folderpath + filename;
     
     if (checkOverlayFile(primaryPath)) {
         filepath = primaryPath;
-    } else if (checkOverlayFile(fallbackPath)) {
-        filepath = fallbackPath;
+    } else {
+        const std::string fallbackPath = folderpath + "Status-Monitor-Overlay.ovl";
+        if (checkOverlayFile(fallbackPath)) {
+            filepath = fallbackPath;
+        }
     }
 }
 
