@@ -487,12 +487,8 @@ public:
 
 // Helper function to check if overlay file exists
 bool checkOverlayFile(const std::string& filename) {
-    FILE* test = fopen(filename.c_str(), "rb");
-    if (test) {
-        fclose(test);
-        return true;
-    }
-    return false;
+    struct stat buffer;
+    return stat(filename.c_str(), &buffer) == 0;
 }
 
 // Helper function to setup micro mode paths
@@ -521,6 +517,8 @@ int main(int argc, char **argv) {
     
     // Check command line arguments
     for (u8 arg = 0; arg < argc; arg++) {
+        if (argv[arg][0] != '-') continue;  // Check first character
+        
         if (strcasecmp(argv[arg], "--microOverlay") == 0) {
             setupMicroMode();
             return tsl::loop<MicroMode>(argc, argv);

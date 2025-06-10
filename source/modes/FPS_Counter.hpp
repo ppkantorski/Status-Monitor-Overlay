@@ -98,7 +98,7 @@ public:
         
             // Draw rectangle and text
             renderer->drawRect(base_x, base_y, rectangleWidth + margin, fontsize + (margin / 2), renderer->a(settings.backgroundColor));
-            renderer->drawString(FPSavg_c, false, base_x + (margin / 2), base_y + (fontsize - margin), fontsize, renderer->a(settings.textColor));
+            renderer->drawString((FPSavg != 254.0) ? FPSavg_c : "0.0", false, base_x + (margin / 2), base_y + (fontsize - margin), fontsize, renderer->a(settings.textColor));
         });
 
         rootFrame->setContent(Status);

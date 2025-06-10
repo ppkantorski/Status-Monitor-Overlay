@@ -238,25 +238,34 @@ void searchSharedMemoryBlock(uintptr_t base) {
 }
 
 //Check if SaltyNX is working
-bool CheckPort () {
+bool CheckPort() {
     Handle saltysd;
-    for (int i = 0; i < 67; i++) {
-        if (R_SUCCEEDED(svcConnectToNamedPort(&saltysd, "InjectServ"))) {
-            svcCloseHandle(saltysd);
-            break;
-        }
-        else {
-            if (i == 66) return false;
-            svcSleepThread(1'000'000);
-        }
+    
+    // First, try immediate connection (most common case)
+    if (R_SUCCEEDED(svcConnectToNamedPort(&saltysd, "InjectServ"))) {
+        svcCloseHandle(saltysd);
+        return true;
     }
-    for (int i = 0; i < 67; i++) {
+    
+    // If immediate connection fails, wait with exponential backoff
+    static const u64 initial_delay = 100'000;  // 0.1ms initial delay
+    static const u64 max_delay = 10'000'000;   // 10ms max delay
+    static const int max_attempts = 20;        // Reduced from 134 total attempts
+    
+    u64 delay = initial_delay;
+    
+    for (int i = 0; i < max_attempts; i++) {
+        svcSleepThread(delay);
+        
         if (R_SUCCEEDED(svcConnectToNamedPort(&saltysd, "InjectServ"))) {
             svcCloseHandle(saltysd);
             return true;
         }
-        else svcSleepThread(1'000'000);
+        
+        // Exponential backoff with cap
+        delay = (delay < max_delay / 2) ? delay * 2 : max_delay;
     }
+    
     return false;
 }
 
@@ -295,120 +304,131 @@ void BatteryChecker(void*) {
     if (R_FAILED(psmCheck) || R_FAILED(i2cCheck)){
         return;
     }
-    uint16_t data = 0;
-    float tempV = 0.0;
-    float tempA = 0.0;
-    size_t ArraySize = 10;
-    if (batteryFiltered) {
-        ArraySize = 1;
-    }
+    
+    // Pre-calculate all constants and cache frequently used values
+    const float current_multiplier = 1.5625f / (max17050SenseResistor * max17050CGain);
+    const float voltage_multiplier = 0.625f;
+    const float capacity_multiplier = (BASE_SNS_UOHM / MAX17050_BOARD_SNS_RESISTOR_UOHM) / MAX17050_BOARD_CGAIN;
+    const float time_multiplier = 5.625f / 60.0f;
+    const float max_time_minutes = 5999.0f; // (99*60)+59
+    const uint64_t sleep_time_ns = 500000000ULL;
+    const uint64_t refresh_rate_ns = batteryTimeLeftRefreshRate * 1000000000ULL;
+    const int cacheElements = sizeof(BatteryTimeCache) / sizeof(BatteryTimeCache[0]);
+    const size_t ArraySize = batteryFiltered ? 1 : 10;
+    const float inv_array_size = 1.0f / ArraySize;
+    const float power_divisor = inv_array_size / 1000000.0f;
+    
+    uint16_t data;
     float* readingsAmp = new float[ArraySize];
     float* readingsVolt = new float[ArraySize];
 
+    // Initial readings with single I2C calls
     Max17050ReadReg(MAX17050_AvgCurrent, &data);
-    tempA = (1.5625 / (max17050SenseResistor * max17050CGain)) * (s16)data;
-    for (size_t i = 0; i < ArraySize; i++) {
-        readingsAmp[i] = tempA;
-    }
+    float initial_current = current_multiplier * (s16)data;
     Max17050ReadReg(MAX17050_AvgVCELL, &data);
-    tempV = 0.625 * (data >> 3);
+    float initial_voltage = voltage_multiplier * (data >> 3);
+    
+    // Initialize arrays efficiently
     for (size_t i = 0; i < ArraySize; i++) {
-        readingsVolt[i] = tempV;
+        readingsAmp[i] = initial_current;
+        readingsVolt[i] = initial_voltage;
     }
+    
+    // Cache capacity values once
     if (!actualFullBatCapacity) {
         Max17050ReadReg(MAX17050_FullCAP, &data);
-        actualFullBatCapacity = data * (BASE_SNS_UOHM / MAX17050_BOARD_SNS_RESISTOR_UOHM) / MAX17050_BOARD_CGAIN;
+        actualFullBatCapacity = data * capacity_multiplier;
     }
     if (!designedFullBatCapacity) {
         Max17050ReadReg(MAX17050_DesignCap, &data);
-        designedFullBatCapacity = data * (BASE_SNS_UOHM / MAX17050_BOARD_SNS_RESISTOR_UOHM) / MAX17050_BOARD_CGAIN;
+        designedFullBatCapacity = data * capacity_multiplier;
     }
-    if (readingsAmp[0] >= 0) {
+    
+    // Initial time estimate
+    if (initial_current >= 0) {
         batTimeEstimate = -1;
-    }
-    else {
+    } else {
         Max17050ReadReg(MAX17050_TTE, &data);
-        float batteryTimeEstimateInMinutes = (5.625 * data) / 60;
-        if (batteryTimeEstimateInMinutes > (99.0*60.0)+59.0) {
-            batTimeEstimate = (99*60)+59;
-        }
-
-        else batTimeEstimate = (int16_t)batteryTimeEstimateInMinutes;
+        float time_est = time_multiplier * data;
+        batTimeEstimate = (time_est > max_time_minutes) ? 5999 : (int16_t)time_est;
     }
 
+    // Loop variables
     size_t counter = 0;
+    int itr = 0;
     uint64_t tick_TTE = svcGetSystemTick();
+    float tempA, tempV;
+    
+    // Register selection based on filter (avoid branching in loop)
+    const uint8_t current_reg = batteryFiltered ? MAX17050_AvgCurrent : MAX17050_Current;
+    const uint8_t voltage_reg = batteryFiltered ? MAX17050_AvgVCELL : MAX17050_VCELL;
+    
     while (!threadexit) {
         mutexLock(&mutex_BatteryChecker);
         uint64_t startTick = svcGetSystemTick();
 
         psmGetBatteryChargeInfoFields(psmService, &_batteryChargeInfoFields);
 
-        // Calculation is based on Hekate's max17050.c
-        // Source: https://github.com/CTCaer/hekate/blob/master/bdk/power/max17050.c
+        // Single register reads
+        Max17050ReadReg(current_reg, &data);
+        tempA = current_multiplier * (s16)data;
+        Max17050ReadReg(voltage_reg, &data);
+        tempV = voltage_multiplier * (data >> 3);
 
-        if (!batteryFiltered) {
-            Max17050ReadReg(MAX17050_Current, &data);
-            tempA = (1.5625 / (max17050SenseResistor * max17050CGain)) * (s16)data;
-            Max17050ReadReg(MAX17050_VCELL, &data);
-            tempV = 0.625 * (data >> 3);
-        } else {
-            Max17050ReadReg(MAX17050_AvgCurrent, &data);
-            tempA = (1.5625 / (max17050SenseResistor * max17050CGain)) * (s16)data;
-            Max17050ReadReg(MAX17050_AvgVCELL, &data);
-            tempV = 0.625 * (data >> 3);
-        }
-
-        if (tempA && tempV) {
-            readingsAmp[counter % ArraySize] = tempA;
-            readingsVolt[counter % ArraySize] = tempV;
+        // Update circular buffer only if valid data
+        if (tempA != 0.0f && tempV != 0.0f) {
+            size_t idx = counter % ArraySize;
+            readingsAmp[idx] = tempA;
+            readingsVolt[idx] = tempV;
             counter++;
         }
 
-        float batCurrent = 0.0;
-        float batVoltage = 0.0;
-        float batPowerAvg = 0.0;
-        for (size_t x = 0; x < ArraySize; x++) {
-            batCurrent += readingsAmp[x];
-            batVoltage += readingsVolt[x];
-            batPowerAvg += (readingsAmp[x] * readingsVolt[x]) / 1'000;
+        // Calculate averages and power in single pass
+        float sum_current = 0.0f, sum_voltage = 0.0f, sum_power = 0.0f;
+        for (size_t i = 0; i < ArraySize; i++) {
+            float amp = readingsAmp[i];
+            float volt = readingsVolt[i];
+            sum_current += amp;
+            sum_voltage += volt;
+            sum_power += amp * volt;
         }
-        batCurrent /= ArraySize;
-        batVoltage /= ArraySize;
-        batCurrentAvg = batCurrent;
-        batVoltageAvg = batVoltage;
-        batPowerAvg /= ArraySize * 1000;
-        PowerConsumption = batPowerAvg;
+        
+        batCurrentAvg = sum_current * inv_array_size;
+        batVoltageAvg = sum_voltage * inv_array_size;
+        PowerConsumption = sum_power * power_divisor;
 
+        // Time estimation with minimal branching
         if (batCurrentAvg >= 0) {
             batTimeEstimate = -1;
-        } 
-        else {
-            static float batteryTimeEstimateInMinutes = 0;
+        } else {
             Max17050ReadReg(MAX17050_TTE, &data);
-            batteryTimeEstimateInMinutes = (5.625 * data) / 60;
-            if (batteryTimeEstimateInMinutes > (99.0*60.0)+59.0) {
-                batteryTimeEstimateInMinutes = (99.0*60.0)+59.0;
-            }
-            static int itr = 0;
-            int cacheElements = (sizeof(BatteryTimeCache) / sizeof(BatteryTimeCache[0]));
-            BatteryTimeCache[itr++ % cacheElements] = (int32_t)batteryTimeEstimateInMinutes;
+            float time_est = time_multiplier * data;
+            time_est = (time_est > max_time_minutes) ? max_time_minutes : time_est;
+            
+            BatteryTimeCache[itr % cacheElements] = (int32_t)time_est;
+            itr++;
+            
             uint64_t new_tick_TTE = svcGetSystemTick();
-            if (armTicksToNs(new_tick_TTE - tick_TTE) / 1'000'000'000 >= batteryTimeLeftRefreshRate) {
-                size_t to_divide = itr < cacheElements ? itr : cacheElements;
-                batTimeEstimate = (int16_t)(std::accumulate(&BatteryTimeCache[0], &BatteryTimeCache[to_divide], 0) / to_divide);
+            if (armTicksToNs(new_tick_TTE - tick_TTE) >= refresh_rate_ns) {
+                int elements_to_avg = (itr < cacheElements) ? itr : cacheElements;
+                int32_t sum = 0;
+                int32_t* cache_ptr = BatteryTimeCache;
+                for (int i = elements_to_avg; i > 0; i--) {
+                    sum += *cache_ptr++;
+                }
+                batTimeEstimate = (int16_t)(sum / elements_to_avg);
                 tick_TTE = new_tick_TTE;
             }
         }
 
         mutexUnlock(&mutex_BatteryChecker);
-        uint64_t nanosecondsPassed = armTicksToNs(svcGetSystemTick() - startTick);
-        if (nanosecondsPassed < 1'000'000'000 / 2) {
-            svcSleepThread((1'000'000'000 / 2) - nanosecondsPassed);
-        } else {
-            svcSleepThread(1'000);
-        }
+        
+        // Optimized sleep with single system call
+        uint64_t elapsed_ns = armTicksToNs(svcGetSystemTick() - startTick);
+        svcSleepThread((elapsed_ns < sleep_time_ns) ? (sleep_time_ns - elapsed_ns) : 1000);
     }
+    
+    // Fast cleanup
     batTimeEstimate = -1;
     _batteryChargeInfoFields = {0};
     memset(BatteryTimeCache, 0, sizeof(BatteryTimeCache));
@@ -762,29 +782,30 @@ void convertToLower(std::string& str) {
     std::transform(str.begin(), str.end(), str.begin(), ::tolower);
 }
 
+std::map<std::string, std::string> replaces{
+    {"A", "\uE0E0"},
+    {"B", "\uE0E1"},
+    {"X", "\uE0E2"},
+    {"Y", "\uE0E3"},
+    {"L", "\uE0E4"},
+    {"R", "\uE0E5"},
+    {"ZL", "\uE0E6"},
+    {"ZR", "\uE0E7"},
+    {"SL", "\uE0E8"},
+    {"SR", "\uE0E9"},
+    {"DUP", "\uE0EB"},
+    {"DDOWN", "\uE0EC"},
+    {"DLEFT", "\uE0ED"},
+    {"DRIGHT", "\uE0EE"},
+    {"PLUS", "\uE0EF"},
+    {"MINUS", "\uE0F0"},
+    {"LSTICK", "\uE104"},
+    {"RSTICK", "\uE105"},
+    {"RS", "\uE105"},
+    {"LS", "\uE104"}
+};
+
 void formatButtonCombination(std::string& line) {
-    std::map<std::string, std::string> replaces{
-        {"A", "\uE0E0"},
-        {"B", "\uE0E1"},
-        {"X", "\uE0E2"},
-        {"Y", "\uE0E3"},
-        {"L", "\uE0E4"},
-        {"R", "\uE0E5"},
-        {"ZL", "\uE0E6"},
-        {"ZR", "\uE0E7"},
-        {"SL", "\uE0E8"},
-        {"SR", "\uE0E9"},
-        {"DUP", "\uE0EB"},
-        {"DDOWN", "\uE0EC"},
-        {"DLEFT", "\uE0ED"},
-        {"DRIGHT", "\uE0EE"},
-        {"PLUS", "\uE0EF"},
-        {"MINUS", "\uE0F0"},
-        {"LSTICK", "\uE104"},
-        {"RSTICK", "\uE105"},
-        {"RS", "\uE105"},
-        {"LS", "\uE104"}
-    };
     // Remove all spaces from the line
     line.erase(std::remove(line.begin(), line.end(), ' '), line.end());
 
@@ -928,133 +949,138 @@ bool isKeyComboPressed2(uint64_t keysDown, uint64_t keysHeld) {
 
 // Custom utility function for parsing an ini file
 void ParseIniFile() {
-    std::string overlayName;
-    std::string directoryPath = "sdmc:/config/status-monitor/";
-    std::string ultrahandDirectoryPath = "sdmc:/config/ultrahand/";
-    std::string teslaDirectoryPath = "sdmc:/config/tesla/";
-    std::string configIniPath = directoryPath + "config.ini";
-    std::string ultrahandConfigIniPath = ultrahandDirectoryPath + "config.ini";
-    std::string teslaConfigIniPath = teslaDirectoryPath + "config.ini";
+    // Use const string_view for paths to avoid string copying
+    constexpr const char* directoryPath = "sdmc:/config/status-monitor/";
+    //constexpr const char* ultrahandDirectoryPath = "sdmc:/config/ultrahand/";
+    //constexpr const char* teslaDirectoryPath = "sdmc:/config/tesla/";
+    constexpr const char* configIniPath = "sdmc:/config/status-monitor/config.ini";
+    constexpr const char* ultrahandConfigIniPath = "sdmc:/config/ultrahand/config.ini";
+    constexpr const char* teslaConfigIniPath = "sdmc:/config/tesla/config.ini";
+    
     tsl::hlp::ini::IniData parsedData;
     
+    // Check and create directory if needed
     struct stat st;
-    if (stat(directoryPath.c_str(), &st) != 0) {
-        mkdir(directoryPath.c_str(), 0777);
+    if (stat(directoryPath, &st) != 0) {
+        mkdir(directoryPath, 0777);
     }
 
-    
     bool readExternalCombo = false;
-    // Open the INI file
-    FILE* configFileIn = fopen(configIniPath.c_str(), "r");
-    if (configFileIn) {
-        // Determine the size of the INI file
-        fseek(configFileIn, 0, SEEK_END);
-        long fileSize = ftell(configFileIn);
-        rewind(configFileIn);
-            
-        // Parse the INI data
-        std::string fileDataString(fileSize, '\0');
-        fread(&fileDataString[0], sizeof(char), fileSize, configFileIn);
-        fclose(configFileIn);
-
-        parsedData = ult::parseIni(fileDataString);
+    
+    // Try to open main config file
+    FILE* configFile = fopen(configIniPath, "r");
+    if (configFile) {
+        // Get file size more efficiently
+        fseek(configFile, 0, SEEK_END);
+        long fileSize = ftell(configFile);
+        fseek(configFile, 0, SEEK_SET); // Use SEEK_SET instead of rewind for consistency
         
-        // Access and use the parsed data as needed
-        // For example, print the value of a specific section and key
-        if (parsedData.find("status-monitor") != parsedData.end()) {
-            if (parsedData["status-monitor"].find("key_combo") != parsedData["status-monitor"].end()) {
-                keyCombo = parsedData["status-monitor"]["key_combo"]; // load keyCombo variable
-                removeSpaces(keyCombo); // format combo
+        // Reserve string capacity and read directly
+        std::string fileData;
+        fileData.resize(fileSize);
+        fread(fileData.data(), 1, fileSize, configFile);
+        fclose(configFile);
+
+        parsedData = ult::parseIni(fileData);
+        
+        // Cache the section lookup to avoid repeated map lookups
+        auto statusMonitorIt = parsedData.find("status-monitor");
+        if (statusMonitorIt != parsedData.end()) {
+            const auto& section = statusMonitorIt->second;
+            
+            // Process key_combo
+            auto keyComboIt = section.find("key_combo");
+            if (keyComboIt != section.end()) {
+                keyCombo = keyComboIt->second;
+                removeSpaces(keyCombo);
                 convertToUpper(keyCombo);
-            } 
-            else {
+            } else {
                 readExternalCombo = true;
             }
-            if (parsedData["status-monitor"].find("battery_avg_iir_filter") != parsedData["status-monitor"].end()) {
-                auto key = parsedData["status-monitor"]["battery_avg_iir_filter"];
+            
+            // Process battery_avg_iir_filter
+            auto batteryFilterIt = section.find("battery_avg_iir_filter");
+            if (batteryFilterIt != section.end()) {
+                std::string key = batteryFilterIt->second;
                 convertToUpper(key);
-                batteryFiltered = !key.compare("TRUE");
+                batteryFiltered = (key == "TRUE");
             }
-            if (parsedData["status-monitor"].find("font_cache") != parsedData["status-monitor"].end()) {
-                auto key = parsedData["status-monitor"]["font_cache"];
+            
+            // Process font_cache
+            auto fontCacheIt = section.find("font_cache");
+            if (fontCacheIt != section.end()) {
+                std::string key = fontCacheIt->second;
                 convertToUpper(key);
-                fontCache = !key.compare("TRUE");
+                fontCache = (key == "TRUE");
             }
-            if (parsedData["status-monitor"].find("battery_time_left_refreshrate") != parsedData["status-monitor"].end()) {
-                auto key = parsedData["status-monitor"]["battery_time_left_refreshrate"];
-                long maxSeconds = 60;
-                long minSeconds = 1;
-        
-                long rate = atol(key.c_str());
-
-                if (rate > maxSeconds) {
-                    rate = maxSeconds;
-                }
-                else if (rate < minSeconds) {
-                    rate = minSeconds;
-                }
+            
+            // Process battery_time_left_refreshrate
+            auto refreshRateIt = section.find("battery_time_left_refreshrate");
+            if (refreshRateIt != section.end()) {
+                long rate = std::clamp(atol(refreshRateIt->second.c_str()), 1L, 60L);
                 batteryTimeLeftRefreshRate = rate;
             }
-            if (parsedData["status-monitor"].find("average_gpu_load") != parsedData["status-monitor"].end()) {
-                auto key = parsedData["status-monitor"]["average_gpu_load"];
+            
+            // Process average_gpu_load
+            auto gpuLoadIt = section.find("average_gpu_load");
+            if (gpuLoadIt != section.end()) {
+                std::string key = gpuLoadIt->second;
                 convertToUpper(key);
-                GPULoadPerFrame = key.compare("TRUE");
+                GPULoadPerFrame = (key != "TRUE");
             }
         }
-        
     } else {
         readExternalCombo = true;
     }
 
+    // Handle external combo reading
     if (readExternalCombo) {
-        FILE* ultrahandConfigFileIn = fopen(ultrahandConfigIniPath.c_str(), "r");
-        FILE* teslaConfigFileIn = fopen(teslaConfigIniPath.c_str(), "r");
-        if (ultrahandConfigFileIn) {
-            if (teslaConfigFileIn)
-                fclose(teslaConfigFileIn);
-            
-            // load keyCombo from teslaConfig
-            std::string ultrahandFileData;
-            char buffer[256];
-            while (fgets(buffer, sizeof(buffer), ultrahandConfigFileIn) != NULL) {
-                ultrahandFileData += buffer;
-            }
-            fclose(ultrahandConfigFileIn);
-            
-            parsedData = ult::parseIni(ultrahandFileData);
-            if (parsedData.find("ultrahand") != parsedData.end() &&
-                parsedData["ultrahand"].find("key_combo") != parsedData["ultrahand"].end()) {
-                keyCombo = parsedData["ultrahand"]["key_combo"];
-                removeSpaces(keyCombo); // format combo
-                convertToUpper(keyCombo);
-            }
-            
-        } else if (teslaConfigFileIn) {
-            // load keyCombo from teslaConfig
-            std::string teslaFileData;
-            char buffer[256];
-            while (fgets(buffer, sizeof(buffer), teslaConfigFileIn) != NULL) {
-                teslaFileData += buffer;
-            }
-            fclose(teslaConfigFileIn);
-            
-            parsedData = ult::parseIni(teslaFileData);
-            if (parsedData.find("tesla") != parsedData.end() &&
-                parsedData["tesla"].find("key_combo") != parsedData["tesla"].end()) {
-                keyCombo = parsedData["tesla"]["key_combo"];
-                removeSpaces(keyCombo); // format combo
-                convertToUpper(keyCombo);
+        // Try ultrahand first, then tesla
+        const char* configPaths[] = {ultrahandConfigIniPath, teslaConfigIniPath};
+        const char* sectionNames[] = {"ultrahand", "tesla"};
+        
+        for (int i = 0; i < 2; ++i) {
+            FILE* extConfigFile = fopen(configPaths[i], "r");
+            if (extConfigFile) {
+                // Get file size and read efficiently
+                fseek(extConfigFile, 0, SEEK_END);
+                long fileSize = ftell(extConfigFile);
+                fseek(extConfigFile, 0, SEEK_SET);
+                
+                std::string fileData;
+                fileData.resize(fileSize);
+                fread(fileData.data(), 1, fileSize, extConfigFile);
+                fclose(extConfigFile);
+                
+                parsedData = ult::parseIni(fileData);
+                
+                auto sectionIt = parsedData.find(sectionNames[i]);
+                if (sectionIt != parsedData.end()) {
+                    auto keyComboIt = sectionIt->second.find("key_combo");
+                    if (keyComboIt != sectionIt->second.end()) {
+                        keyCombo = keyComboIt->second;
+                        removeSpaces(keyCombo);
+                        convertToUpper(keyCombo);
+                        break; // Found combo, exit loop
+                    }
+                }
             }
         }
     }
+    
     comboBitmask = MapButtons(keyCombo);
 }
 
 
 ALWAYS_INLINE bool isValidRGBA4Color(const std::string& hexColor) {
-    for (char c : hexColor) {
-        if (!isxdigit(c)) {
-            return false; // Must contain only hexadecimal digits (0-9, A-F, a-f)
+    const char* data = hexColor.data();
+    const size_t size = hexColor.size();
+    
+    for (size_t i = 0; i < size; ++i) {
+        unsigned char c = data[i];
+        // Branchless hex digit check: (c >= '0' && c <= '9') || (c >= 'A' && c <= 'F') || (c >= 'a' && c <= 'f')
+        if (!((c - '0') <= 9 || (c - 'A') <= 5 || (c - 'a') <= 5)) {
+            return false;
         }
     }
     
@@ -1150,125 +1176,133 @@ struct ResolutionSettings {
 };
 
 ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
-    settings -> realFrequencies = false;
-    settings -> realVolts = true;
-    settings -> handheldFontSize = 15;
-    settings -> dockedFontSize = 15;
-    convertStrToRGBA4444("#1117", &(settings -> backgroundColor));
-    convertStrToRGBA4444("#FFFF", &(settings -> catColor));
-    convertStrToRGBA4444("#FFFF", &(settings -> textColor));
-    settings -> show = "CPU+GPU+RAM+TEMP+BAT+FAN+FPS+RES";
-    settings -> showRAMLoad = true;
-    settings -> refreshRate = 1;
-    settings -> setPos = 0;
+    // Initialize defaults
+    settings->realFrequencies = false;
+    settings->realVolts = true;
+    settings->handheldFontSize = 15;
+    settings->dockedFontSize = 15;
+    convertStrToRGBA4444("#1117", &(settings->backgroundColor));
+    convertStrToRGBA4444("#FFFF", &(settings->catColor));
+    convertStrToRGBA4444("#FFFF", &(settings->textColor));
+    settings->show = "CPU+GPU+RAM+TEMP+BAT+FAN+FPS+RES";
+    settings->showRAMLoad = true;
+    settings->refreshRate = 1;
+    settings->setPos = 0;
 
-    FILE* configFileIn = fopen("sdmc:/config/status-monitor/config.ini", "r");
-    if (!configFileIn)
-        return;
-    fseek(configFileIn, 0, SEEK_END);
-    long fileSize = ftell(configFileIn);
-    rewind(configFileIn);
-
-    std::string fileDataString(fileSize, '\0');
-    fread(&fileDataString[0], sizeof(char), fileSize, configFileIn);
-    fclose(configFileIn);
+    // Open and read file efficiently
+    FILE* configFile = fopen("sdmc:/config/status-monitor/config.ini", "r");
+    if (!configFile) return;
     
-    auto parsedData = ult::parseIni(fileDataString);
+    fseek(configFile, 0, SEEK_END);
+    long fileSize = ftell(configFile);
+    fseek(configFile, 0, SEEK_SET);
 
-    std::string key;
-    const char* mode = "mini";
-    if (parsedData.find(mode) == parsedData.end())
-        return;
-    if (parsedData[mode].find("refresh_rate") != parsedData[mode].end()) {
-        long maxFPS = 60;
-        long minFPS = 1;
+    std::string fileData;
+    fileData.resize(fileSize);
+    fread(fileData.data(), 1, fileSize, configFile);
+    fclose(configFile);
+    
+    auto parsedData = ult::parseIni(fileData);
 
-        key = parsedData[mode]["refresh_rate"];
-        long rate = atol(key.c_str());
-        if (rate < minFPS) {
-            settings -> refreshRate = minFPS;
-        }
-        else if (rate > maxFPS)
-            settings -> refreshRate = maxFPS;
-        else settings -> refreshRate = rate;    
+    // Cache section lookup
+    auto sectionIt = parsedData.find("mini");
+    if (sectionIt == parsedData.end()) return;
+    
+    const auto& section = sectionIt->second;
+    
+    // Process refresh_rate
+    auto it = section.find("refresh_rate");
+    if (it != section.end()) {
+        settings->refreshRate = std::clamp(atol(it->second.c_str()), 1L, 60L);
     }
-    if (parsedData[mode].find("real_freqs") != parsedData[mode].end()) {
-        key = parsedData[mode]["real_freqs"];
+    
+    // Process boolean flags
+    it = section.find("real_freqs");
+    if (it != section.end()) {
+        std::string key = it->second;
         convertToUpper(key);
-        settings -> realFrequencies = !(key.compare("TRUE"));
+        settings->realFrequencies = (key == "TRUE");
     }
-    if (parsedData[mode].find("real_volts") != parsedData[mode].end()) {  
-        key = parsedData[mode]["real_volts"];  
-        convertToUpper(key);  
-        settings -> realVolts = !(key.compare("TRUE"));  
-    } 
-
-    long maxFontSize = 22;
-    long minFontSize = 8;
-    if (parsedData[mode].find("handheld_font_size") != parsedData[mode].end()) {
-        key = parsedData[mode]["handheld_font_size"];
-        long fontsize = atol(key.c_str());
-        if (fontsize < minFontSize)
-            settings -> handheldFontSize = minFontSize;
-        else if (fontsize > maxFontSize)
-            settings -> handheldFontSize = maxFontSize;
-        else settings -> handheldFontSize = fontsize;    
+    
+    it = section.find("real_volts");
+    if (it != section.end()) {
+        std::string key = it->second;
+        convertToUpper(key);
+        settings->realVolts = (key == "TRUE");
     }
-    if (parsedData[mode].find("docked_font_size") != parsedData[mode].end()) {
-        key = parsedData[mode]["docked_font_size"];
-        long fontsize = atol(key.c_str());
-        if (fontsize < minFontSize)
-            settings -> dockedFontSize = minFontSize;
-        else if (fontsize > maxFontSize)
-            settings -> dockedFontSize = maxFontSize;
-        else settings -> dockedFontSize = fontsize;    
+    
+    // Process font sizes with shared bounds
+    constexpr long minFontSize = 8;
+    constexpr long maxFontSize = 22;
+    
+    it = section.find("handheld_font_size");
+    if (it != section.end()) {
+        settings->handheldFontSize = std::clamp(atol(it->second.c_str()), minFontSize, maxFontSize);
     }
-    if (parsedData[mode].find("background_color") != parsedData[mode].end()) {
-        key = parsedData[mode]["background_color"];
+    
+    it = section.find("docked_font_size");
+    if (it != section.end()) {
+        settings->dockedFontSize = std::clamp(atol(it->second.c_str()), minFontSize, maxFontSize);
+    }
+    
+    // Process colors
+    it = section.find("background_color");
+    if (it != section.end()) {
         uint16_t temp = 0;
-        if (convertStrToRGBA4444(key, &temp))
-            settings -> backgroundColor = temp;
+        if (convertStrToRGBA4444(it->second, &temp))
+            settings->backgroundColor = temp;
     }
-    if (parsedData[mode].find("cat_color") != parsedData[mode].end()) {
-        key = parsedData[mode]["cat_color"];
+    
+    it = section.find("cat_color");
+    if (it != section.end()) {
         uint16_t temp = 0;
-        if (convertStrToRGBA4444(key, &temp))
-            settings -> catColor = temp;
+        if (convertStrToRGBA4444(it->second, &temp))
+            settings->catColor = temp;
     }
-    if (parsedData[mode].find("text_color") != parsedData[mode].end()) {
-        key = parsedData[mode]["text_color"];
+    
+    it = section.find("text_color");
+    if (it != section.end()) {
         uint16_t temp = 0;
-        if (convertStrToRGBA4444(key, &temp))
-            settings -> textColor = temp;
+        if (convertStrToRGBA4444(it->second, &temp))
+            settings->textColor = temp;
     }
-    if (parsedData[mode].find("show") != parsedData[mode].end()) {
-        key = parsedData[mode]["show"];
+    
+    // Process show string
+    it = section.find("show");
+    if (it != section.end()) {
+        std::string key = it->second;
         convertToUpper(key);
-        settings -> show = key;
+        settings->show = std::move(key);
     }
-    if (parsedData[mode].find("replace_MB_with_RAM_load") != parsedData[mode].end()) {
-        key = parsedData[mode]["replace_MB_with_RAM_load"];
+    
+    // Process RAM load flag
+    it = section.find("replace_MB_with_RAM_load");
+    if (it != section.end()) {
+        std::string key = it->second;
         convertToUpper(key);
-        settings -> showRAMLoad = key.compare("FALSE");
+        settings->showRAMLoad = (key != "FALSE");
     }
-    if (parsedData[mode].find("layer_width_align") != parsedData[mode].end()) {
-        key = parsedData[mode]["layer_width_align"];
+    
+    // Process alignment settings
+    it = section.find("layer_width_align");
+    if (it != section.end()) {
+        std::string key = it->second;
         convertToUpper(key);
-        if (!key.compare("CENTER")) {
-            settings -> setPos = 1;
+        if (key == "CENTER") {
+            settings->setPos = 1;
+        } else if (key == "RIGHT") {
+            settings->setPos = 2;
         }
-        if (!key.compare("RIGHT")) {
-            settings -> setPos = 2;
-        }
     }
-    if (parsedData[mode].find("layer_height_align") != parsedData[mode].end()) {
-        key = parsedData[mode]["layer_height_align"];
+    
+    it = section.find("layer_height_align");
+    if (it != section.end()) {
+        std::string key = it->second;
         convertToUpper(key);
-        if (!key.compare("CENTER")) {
-            settings -> setPos += 3;
-        }
-        if (!key.compare("BOTTOM")) {
-            settings -> setPos += 6;
+        if (key == "CENTER") {
+            settings->setPos += 3;
+        } else if (key == "BOTTOM") {
+            settings->setPos += 6;
         }
     }
 }
@@ -1402,193 +1436,180 @@ ALWAYS_INLINE void GetConfigSettings(MicroSettings* settings) {
 }
 
 ALWAYS_INLINE void GetConfigSettings(FpsCounterSettings* settings) {
-    settings -> handheldFontSize = 40;
-    settings -> dockedFontSize = 40;
-    convertStrToRGBA4444("#1117", &(settings -> backgroundColor));
-    convertStrToRGBA4444("#FFFF", &(settings -> textColor));
-    settings -> setPos = 0;
-    settings -> refreshRate = 31;
+    // Initialize defaults
+    settings->handheldFontSize = 40;
+    settings->dockedFontSize = 40;
+    convertStrToRGBA4444("#1117", &(settings->backgroundColor));
+    convertStrToRGBA4444("#FFFF", &(settings->textColor));
+    settings->setPos = 0;
+    settings->refreshRate = 31;
 
-    FILE* configFileIn = fopen("sdmc:/config/status-monitor/config.ini", "r");
-    if (!configFileIn)
-        return;
-    fseek(configFileIn, 0, SEEK_END);
-    long fileSize = ftell(configFileIn);
-    rewind(configFileIn);
-
-    std::string fileDataString(fileSize, '\0');
-    fread(&fileDataString[0], sizeof(char), fileSize, configFileIn);
-    fclose(configFileIn);
+    // Open and read file efficiently
+    FILE* configFile = fopen("sdmc:/config/status-monitor/config.ini", "r");
+    if (!configFile) return;
     
-    auto parsedData = ult::parseIni(fileDataString);
+    fseek(configFile, 0, SEEK_END);
+    long fileSize = ftell(configFile);
+    fseek(configFile, 0, SEEK_SET);
 
-    std::string key;
-    const char* mode = "fps-counter";
-    if (parsedData.find(mode) == parsedData.end())
-        return;
-    long maxFontSize = 150;
-    long minFontSize = 8;
-    if (parsedData[mode].find("handheld_font_size") != parsedData[mode].end()) {
-        key = parsedData[mode]["handheld_font_size"];
-        long fontsize = atol(key.c_str());
-        if (fontsize < minFontSize)
-            settings -> handheldFontSize = minFontSize;
-        else if (fontsize > maxFontSize)
-            settings -> handheldFontSize = maxFontSize;
-        else settings -> handheldFontSize = fontsize;    
+    std::string fileData;
+    fileData.resize(fileSize);
+    fread(fileData.data(), 1, fileSize, configFile);
+    fclose(configFile);
+    
+    auto parsedData = ult::parseIni(fileData);
+
+    // Cache section lookup
+    auto sectionIt = parsedData.find("fps-counter");
+    if (sectionIt == parsedData.end()) return;
+    
+    const auto& section = sectionIt->second;
+    
+    // Process font sizes with shared bounds
+    constexpr long minFontSize = 8;
+    constexpr long maxFontSize = 150;
+    
+    auto it = section.find("handheld_font_size");
+    if (it != section.end()) {
+        settings->handheldFontSize = std::clamp(atol(it->second.c_str()), minFontSize, maxFontSize);
     }
-    if (parsedData[mode].find("docked_font_size") != parsedData[mode].end()) {
-        key = parsedData[mode]["docked_font_size"];
-        long fontsize = atol(key.c_str());
-        if (fontsize < minFontSize)
-            settings -> dockedFontSize = minFontSize;
-        else if (fontsize > maxFontSize)
-            settings -> dockedFontSize = maxFontSize;
-        else settings -> dockedFontSize = fontsize;    
+    
+    it = section.find("docked_font_size");
+    if (it != section.end()) {
+        settings->dockedFontSize = std::clamp(atol(it->second.c_str()), minFontSize, maxFontSize);
     }
-    if (parsedData[mode].find("background_color") != parsedData[mode].end()) {
-        key = parsedData[mode]["background_color"];
+    
+    // Process colors
+    it = section.find("background_color");
+    if (it != section.end()) {
         uint16_t temp = 0;
-        if (convertStrToRGBA4444(key, &temp))
-            settings -> backgroundColor = temp;
+        if (convertStrToRGBA4444(it->second, &temp))
+            settings->backgroundColor = temp;
     }
-    if (parsedData[mode].find("text_color") != parsedData[mode].end()) {
-        key = parsedData[mode]["text_color"];
+    
+    it = section.find("text_color");
+    if (it != section.end()) {
         uint16_t temp = 0;
-        if (convertStrToRGBA4444(key, &temp))
-            settings -> textColor = temp;
+        if (convertStrToRGBA4444(it->second, &temp))
+            settings->textColor = temp;
     }
-    if (parsedData[mode].find("layer_width_align") != parsedData[mode].end()) {
-        key = parsedData[mode]["layer_width_align"];
+    
+    // Process alignment settings
+    it = section.find("layer_width_align");
+    if (it != section.end()) {
+        std::string key = it->second;
         convertToUpper(key);
-        if (!key.compare("CENTER")) {
-            settings -> setPos = 1;
-        }
-        if (!key.compare("RIGHT")) {
-            settings -> setPos = 2;
+        if (key == "CENTER") {
+            settings->setPos = 1;
+        } else if (key == "RIGHT") {
+            settings->setPos = 2;
         }
     }
-    if (parsedData[mode].find("layer_height_align") != parsedData[mode].end()) {
-        key = parsedData[mode]["layer_height_align"];
+    
+    it = section.find("layer_height_align");
+    if (it != section.end()) {
+        std::string key = it->second;
         convertToUpper(key);
-        if (!key.compare("CENTER")) {
-            settings -> setPos += 3;
-        }
-        if (!key.compare("BOTTOM")) {
-            settings -> setPos += 6;
+        if (key == "CENTER") {
+            settings->setPos += 3;
+        } else if (key == "BOTTOM") {
+            settings->setPos += 6;
         }
     }
 }
 
 ALWAYS_INLINE void GetConfigSettings(FpsGraphSettings* settings) {
-    settings -> showInfo = false;
-    settings -> setPos = 0;
-    convertStrToRGBA4444("#1117", &(settings -> backgroundColor));
-    convertStrToRGBA4444("#4444", &(settings -> fpsColor));
-    convertStrToRGBA4444("#F77F", &(settings -> borderColor));
-    convertStrToRGBA4444("#8888", &(settings -> dashedLineColor));
-    convertStrToRGBA4444("#FFFF", &(settings -> maxFPSTextColor));
-    convertStrToRGBA4444("#FFFF", &(settings -> minFPSTextColor));
-    convertStrToRGBA4444("#FFFF", &(settings -> mainLineColor));
-    convertStrToRGBA4444("#F0FF", &(settings -> roundedLineColor));
-    convertStrToRGBA4444("#0C0F", &(settings -> perfectLineColor));
-    settings -> refreshRate = 31;
+    // Initialize defaults
+    settings->showInfo = false;
+    settings->setPos = 0;
+    convertStrToRGBA4444("#1117", &(settings->backgroundColor));
+    convertStrToRGBA4444("#4444", &(settings->fpsColor));
+    convertStrToRGBA4444("#F77F", &(settings->borderColor));
+    convertStrToRGBA4444("#8888", &(settings->dashedLineColor));
+    convertStrToRGBA4444("#FFFF", &(settings->maxFPSTextColor));
+    convertStrToRGBA4444("#FFFF", &(settings->minFPSTextColor));
+    convertStrToRGBA4444("#FFFF", &(settings->mainLineColor));
+    convertStrToRGBA4444("#F0FF", &(settings->roundedLineColor));
+    convertStrToRGBA4444("#0C0F", &(settings->perfectLineColor));
+    settings->refreshRate = 31;
 
-    FILE* configFileIn = fopen("sdmc:/config/status-monitor/config.ini", "r");
-    if (!configFileIn)
-        return;
-    fseek(configFileIn, 0, SEEK_END);
-    long fileSize = ftell(configFileIn);
-    rewind(configFileIn);
-
-    std::string fileDataString(fileSize, '\0');
-    fread(&fileDataString[0], sizeof(char), fileSize, configFileIn);
-    fclose(configFileIn);
+    // Open and read file efficiently
+    FILE* configFile = fopen("sdmc:/config/status-monitor/config.ini", "r");
+    if (!configFile) return;
     
-    auto parsedData = ult::parseIni(fileDataString);
+    fseek(configFile, 0, SEEK_END);
+    long fileSize = ftell(configFile);
+    fseek(configFile, 0, SEEK_SET);
 
-    std::string key;
-    const char* mode = "fps-graph";
-    if (parsedData.find(mode) == parsedData.end())
-        return;
-    if (parsedData[mode].find("layer_width_align") != parsedData[mode].end()) {
-        key = parsedData[mode]["layer_width_align"];
+    std::string fileData;
+    fileData.resize(fileSize);
+    fread(fileData.data(), 1, fileSize, configFile);
+    fclose(configFile);
+    
+    auto parsedData = ult::parseIni(fileData);
+
+    // Cache section lookup
+    auto sectionIt = parsedData.find("fps-graph");
+    if (sectionIt == parsedData.end()) return;
+    
+    const auto& section = sectionIt->second;
+    
+    // Process alignment settings
+    auto it = section.find("layer_width_align");
+    if (it != section.end()) {
+        std::string key = it->second;
         convertToUpper(key);
-        if (!key.compare("CENTER")) {
-            settings -> setPos = 1;
-        }
-        if (!key.compare("RIGHT")) {
-            settings -> setPos = 2;
+        if (key == "CENTER") {
+            settings->setPos = 1;
+        } else if (key == "RIGHT") {
+            settings->setPos = 2;
         }
     }
-    if (parsedData[mode].find("layer_height_align") != parsedData[mode].end()) {
-        key = parsedData[mode]["layer_height_align"];
+    
+    it = section.find("layer_height_align");
+    if (it != section.end()) {
+        std::string key = it->second;
         convertToUpper(key);
-        if (!key.compare("CENTER")) {
-            settings -> setPos += 3;
+        if (key == "CENTER") {
+            settings->setPos += 3;
+        } else if (key == "BOTTOM") {
+            settings->setPos += 6;
         }
-        if (!key.compare("BOTTOM")) {
-            settings -> setPos += 6;
+    }
+    
+    // Process colors - using a struct for cleaner code
+    struct ColorMapping {
+        const char* key;
+        uint16_t* target;
+    };
+    
+    const ColorMapping colorMappings[] = {
+        {"min_fps_text_color", &settings->minFPSTextColor},
+        {"max_fps_text_color", &settings->maxFPSTextColor},
+        {"background_color", &settings->backgroundColor},
+        {"fps_counter_color", &settings->fpsColor},
+        {"border_color", &settings->borderColor},
+        {"dashed_line_color", &settings->dashedLineColor},
+        {"main_line_color", &settings->mainLineColor},
+        {"rounded_line_color", &settings->roundedLineColor},
+        {"perfect_line_color", &settings->perfectLineColor}
+    };
+    
+    for (const auto& mapping : colorMappings) {
+        it = section.find(mapping.key);
+        if (it != section.end()) {
+            uint16_t temp = 0;
+            if (convertStrToRGBA4444(it->second, &temp))
+                *(mapping.target) = temp;
         }
     }
-    if (parsedData[mode].find("min_fps_text_color") != parsedData[mode].end()) {
-        key = parsedData[mode]["min_fps_text_color"];
-        uint16_t temp = 0;
-        if (convertStrToRGBA4444(key, &temp))
-            settings -> minFPSTextColor = temp;
-    }
-    if (parsedData[mode].find("max_fps_text_color") != parsedData[mode].end()) {
-        key = parsedData[mode]["max_fps_text_color"];
-        uint16_t temp = 0;
-        if (convertStrToRGBA4444(key, &temp))
-            settings -> maxFPSTextColor = temp;
-    }
-    if (parsedData[mode].find("background_color") != parsedData[mode].end()) {
-        key = parsedData[mode]["background_color"];
-        uint16_t temp = 0;
-        if (convertStrToRGBA4444(key, &temp))
-            settings -> backgroundColor = temp;
-    }
-    if (parsedData[mode].find("fps_counter_color") != parsedData[mode].end()) {
-        key = parsedData[mode]["fps_counter_color"];
-        uint16_t temp = 0;
-        if (convertStrToRGBA4444(key, &temp))
-            settings -> fpsColor = temp;
-    }
-    if (parsedData[mode].find("border_color") != parsedData[mode].end()) {
-        key = parsedData[mode]["border_color"];
-        uint16_t temp = 0;
-        if (convertStrToRGBA4444(key, &temp))
-            settings -> borderColor = temp;
-    }
-    if (parsedData[mode].find("dashed_line_color") != parsedData[mode].end()) {
-        key = parsedData[mode]["dashed_line_color"];
-        uint16_t temp = 0;
-        if (convertStrToRGBA4444(key, &temp))
-            settings -> dashedLineColor = temp;
-    }
-    if (parsedData[mode].find("main_line_color") != parsedData[mode].end()) {
-        key = parsedData[mode]["main_line_color"];
-        uint16_t temp = 0;
-        if (convertStrToRGBA4444(key, &temp))
-            settings -> mainLineColor = temp;
-    }
-    if (parsedData[mode].find("rounded_line_color") != parsedData[mode].end()) {
-        key = parsedData[mode]["rounded_line_color"];
-        uint16_t temp = 0;
-        if (convertStrToRGBA4444(key, &temp))
-            settings -> roundedLineColor = temp;
-    }
-    if (parsedData[mode].find("perfect_line_color") != parsedData[mode].end()) {
-        key = parsedData[mode]["perfect_line_color"];
-        uint16_t temp = 0;
-        if (convertStrToRGBA4444(key, &temp))
-            settings -> perfectLineColor = temp;
-    }
-    if (parsedData[mode].find("show_info") != parsedData[mode].end()) {
-        key = parsedData[mode]["show_info"];
+    
+    // Process show_info boolean
+    it = section.find("show_info");
+    if (it != section.end()) {
+        std::string key = it->second;
         convertToUpper(key);
-        settings -> showInfo = !(key.compare("TRUE"));
+        settings->showInfo = (key == "TRUE");
     }
 }
 

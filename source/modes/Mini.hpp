@@ -130,8 +130,8 @@ public:
                         //dimensions = renderer->drawString("444.4", false, 0, 0, fontsize, renderer->a(0x0000));
                         width = tsl::gfx::calculateStringWidth("444.4", fontsize);
                     } else if (key == "RES") {
-                        //dimensions = renderer->drawString("3840x2160 or 3840x2160", false, 0, 0, fontsize, renderer->a(0x0000));
-                        width = tsl::gfx::calculateStringWidth("3840x2160 or 3840x2160", fontsize);
+                        //dimensions = renderer->drawString("3840x21603840x2160", false, 0, 0, fontsize, renderer->a(0x0000));
+                        width = tsl::gfx::calculateStringWidth("3840x21603840x2160", fontsize);
                     } else {
                         continue;
                     }
