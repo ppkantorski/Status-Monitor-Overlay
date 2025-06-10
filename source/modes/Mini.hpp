@@ -107,29 +107,37 @@ public:
             // Initial width calculation (only once)
             if (!Initialized) {
                 rectangleWidth = 0;
-                std::pair<u32, u32> dimensions;
+                //std::pair<u32, u32> dimensions;
+                u32 width;
                 
                 for (const auto& key : showKeys) {
                     if (key == "CPU") {
-                        dimensions = renderer->drawString("[100%,100%,100%,100%]@4444.4", false, 0, 0, fontsize, renderer->a(0x0000));
+                        //dimensions = renderer->drawString("[100%,100%,100%,100%]@4444.4", false, 0, 0, fontsize, renderer->a(0x0000));
+                        width = tsl::gfx::calculateStringWidth("[100%,100%,100%,100%]@4444.4", fontsize);
                     } else if (key == "GPU" || (key == "RAM" && settings.showRAMLoad && R_SUCCEEDED(sysclkCheck))) {
-                        dimensions = renderer->drawString("100.0%@4444.4", false, 0, 0, fontsize, renderer->a(0x0000));
+                        //dimensions = renderer->drawString("100.0%@4444.4", false, 0, 0, fontsize, renderer->a(0x0000));
+                        width = tsl::gfx::calculateStringWidth("100.0%@4444.4", fontsize);
                     } else if (key == "RAM" && (!settings.showRAMLoad || R_FAILED(sysclkCheck))) {
-                        dimensions = renderer->drawString("44444444MB@4444.4", false, 0, 0, fontsize, renderer->a(0x0000));
+                        //dimensions = renderer->drawString("44444444MB@4444.4", false, 0, 0, fontsize, renderer->a(0x0000));
+                        width = tsl::gfx::calculateStringWidth("44444444MB@4444.4", fontsize);
                     } else if (key == "TEMP") {
-                        dimensions = renderer->drawString("88.8\u00B0C88.8\u00B0C88.8\u00B0C (100.0%)", false, 0, 0, fontsize, renderer->a(0x0000));
+                        //dimensions = renderer->drawString("88.8\u00B0C88.8\u00B0C88.8\u00B0C (100.0%)", false, 0, 0, fontsize, renderer->a(0x0000));
+                        width = tsl::gfx::calculateStringWidth("88.8\u00B0C88.8\u00B0C88.8\u00B0C (100.0%)", fontsize);
                     } else if (key == "BAT") {
-                        dimensions = renderer->drawString("-44.44W [44:44]", false, 0, 0, fontsize, renderer->a(0x0000));
+                        //dimensions = renderer->drawString("-44.44W [44:44]", false, 0, 0, fontsize, renderer->a(0x0000));
+                        width = tsl::gfx::calculateStringWidth("-44.44W [44:44]", fontsize);
                     } else if (key == "FPS") {
-                        dimensions = renderer->drawString("444.4", false, 0, 0, fontsize, renderer->a(0x0000));
+                        //dimensions = renderer->drawString("444.4", false, 0, 0, fontsize, renderer->a(0x0000));
+                        width = tsl::gfx::calculateStringWidth("444.4", fontsize);
                     } else if (key == "RES") {
-                        dimensions = renderer->drawString("3840x2160 or 3840x2160", false, 0, 0, fontsize, renderer->a(0x0000));
+                        //dimensions = renderer->drawString("3840x2160 or 3840x2160", false, 0, 0, fontsize, renderer->a(0x0000));
+                        width = tsl::gfx::calculateStringWidth("3840x2160 or 3840x2160", fontsize);
                     } else {
                         continue;
                     }
                     
-                    if (rectangleWidth < dimensions.first) {
-                        rectangleWidth = dimensions.first;
+                    if (rectangleWidth < width) {
+                        rectangleWidth = width;
                     }
                 }
                 Initialized = true;
@@ -261,8 +269,9 @@ public:
             for (size_t i = 0; i < variableLines.size() && labelIndex < labelLines.size(); i++) {
                 // Draw label (centered in label region)
                 if (!labelLines[labelIndex].empty()) {
-                    std::pair<u32, u32> labelDimensions = renderer->drawString(labelLines[labelIndex].c_str(), false, 0, 0, fontsize, renderer->a(0x0000));
-                    uint32_t labelWidth = labelDimensions.first;
+                    //std::pair<u32, u32> labelDimensions = renderer->drawString(labelLines[labelIndex].c_str(), false, 0, 0, fontsize, renderer->a(0x0000));
+                    //u32 width = tsl::gfx::calculateStringWidth(labelLines[labelIndex].c_str(), fontsize);
+                    uint32_t labelWidth = tsl::gfx::calculateStringWidth(labelLines[labelIndex].c_str(), fontsize);
                     uint32_t labelCenterX = cachedBaseX + (margin / 2) - (labelWidth / 2);
                     renderer->drawString(labelLines[labelIndex].c_str(), false, labelCenterX, currentY, fontsize, renderer->a(settings.catColor));
                 }
