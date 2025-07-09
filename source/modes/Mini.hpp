@@ -113,25 +113,25 @@ public:
                 for (const auto& key : showKeys) {
                     if (key == "CPU") {
                         //dimensions = renderer->drawString("[100%,100%,100%,100%]@4444.4", false, 0, 0, fontsize, renderer->a(0x0000));
-                        width = tsl::gfx::calculateStringWidth("[100%,100%,100%,100%]@4444.4", fontsize);
+                        width = renderer->getTextDimensions("[100%,100%,100%,100%]@4444.4", false, fontsize).first;
                     } else if (key == "GPU" || (key == "RAM" && settings.showRAMLoad && R_SUCCEEDED(sysclkCheck))) {
                         //dimensions = renderer->drawString("100.0%@4444.4", false, 0, 0, fontsize, renderer->a(0x0000));
-                        width = tsl::gfx::calculateStringWidth("100.0%@4444.4", fontsize);
+                        width = renderer->getTextDimensions("100.0%@4444.4", false, fontsize).first;
                     } else if (key == "RAM" && (!settings.showRAMLoad || R_FAILED(sysclkCheck))) {
                         //dimensions = renderer->drawString("44444444MB@4444.4", false, 0, 0, fontsize, renderer->a(0x0000));
-                        width = tsl::gfx::calculateStringWidth("44444444MB@4444.4", fontsize);
+                        width = renderer->getTextDimensions("44444444MB@4444.4", false, fontsize).first;
                     } else if (key == "TEMP") {
                         //dimensions = renderer->drawString("88.8\u00B0C88.8\u00B0C88.8\u00B0C (100.0%)", false, 0, 0, fontsize, renderer->a(0x0000));
-                        width = tsl::gfx::calculateStringWidth("88.8\u00B0C88.8\u00B0C88.8\u00B0C (100.0%)", fontsize);
+                        width = renderer->getTextDimensions("88.8\u00B0C88.8\u00B0C88.8\u00B0C (100.0%)", false, fontsize).first;
                     } else if (key == "BAT") {
                         //dimensions = renderer->drawString("-44.44W [44:44]", false, 0, 0, fontsize, renderer->a(0x0000));
-                        width = tsl::gfx::calculateStringWidth("-44.44W [44:44]", fontsize);
+                        width = renderer->getTextDimensions("-44.44W [44:44]", false, fontsize).first;
                     } else if (key == "FPS") {
                         //dimensions = renderer->drawString("444.4", false, 0, 0, fontsize, renderer->a(0x0000));
-                        width = tsl::gfx::calculateStringWidth("444.4", fontsize);
+                        width = renderer->getTextDimensions("444.4", false, fontsize).first;
                     } else if (key == "RES") {
                         //dimensions = renderer->drawString("3840x21603840x2160", false, 0, 0, fontsize, renderer->a(0x0000));
-                        width = tsl::gfx::calculateStringWidth("3840x21603840x2160", fontsize);
+                        width = renderer->getTextDimensions("3840x21603840x2160", false, fontsize).first;
                     } else {
                         continue;
                     }
@@ -271,8 +271,8 @@ public:
                 // Draw label (centered in label region)
                 if (!labelLines[labelIndex].empty()) {
                     //std::pair<u32, u32> labelDimensions = renderer->drawString(labelLines[labelIndex].c_str(), false, 0, 0, fontsize, renderer->a(0x0000));
-                    //u32 width = tsl::gfx::calculateStringWidth(labelLines[labelIndex].c_str(), fontsize);
-                    labelWidth = tsl::gfx::calculateStringWidth(labelLines[labelIndex].c_str(), fontsize);
+                    //u32 width = renderer->getTextDimensions(labelLines[labelIndex].c_str(), fontsize);
+                    labelWidth = renderer->getTextDimensions(labelLines[labelIndex].c_str(), false, fontsize).first;
                     labelCenterX = cachedBaseX + (margin / 2) - (labelWidth / 2);
                     renderer->drawString(labelLines[labelIndex].c_str(), false, labelCenterX, currentY, fontsize, renderer->a(settings.catColor));
                 }
@@ -280,7 +280,7 @@ public:
                 // Draw variable data
                 //renderer->drawString(variableLines[i].c_str(), false, cachedBaseX + margin, currentY, fontsize, renderer->a(settings.textColor));
                 //renderer->drawStringWith(variableLines[i].c_str(), false, cachedBaseX + margin, currentY, fontsize, renderer->a(settings.textColor));
-                renderer->drawStringWithColoredSections(variableLines[i].c_str(), {""}, cachedBaseX + margin, currentY, fontsize, a(settings.textColor), a(tsl::separatorColor));
+                renderer->drawStringWithColoredSections(variableLines[i].c_str(), false, {""}, cachedBaseX + margin, currentY, fontsize, a(settings.textColor), a(tsl::separatorColor));
 
                 currentY += fontsize;
                 labelIndex++;

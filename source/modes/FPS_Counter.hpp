@@ -49,7 +49,7 @@ public:
 
         auto Status = new tsl::elm::CustomDrawer([this](tsl::gfx::Renderer *renderer, u16 x, u16 y, u16 w, u16 h) {
             //auto dimensions = renderer->drawString(FPSavg_c, false, 0, fontsize, fontsize, tsl::Color(0x0000));
-            auto width = tsl::gfx::calculateStringWidth(FPSavg_c, fontsize);
+            auto width = renderer->getTextDimensions(FPSavg_c, false, fontsize).first;
             size_t rectangleWidth = width;
             size_t margin = (fontsize / 8);
             int base_x = 0;

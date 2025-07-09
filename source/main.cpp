@@ -514,7 +514,7 @@ int main(int argc, char **argv) {
     ParseIniFile(); // parse INI from file
     
     if (argc > 0) {
-        filename = argv[0];
+        filename = argv[0]; // set global
     }
     
     // Check command line arguments

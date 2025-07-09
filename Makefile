@@ -41,10 +41,14 @@ APP_TITLE	:=	Status Monitor
 APP_VERSION	:=	1.1.9+r3
 TARGET		:=	$(notdir $(CURDIR))
 BUILD		:=	build
-SOURCES		:=	source lib/libultrahand/libultra/source #lib/libultrahand/libtesla/source
-INCLUDES	:=	include lib/Atmosphere-libs/libstratosphere/source/dmnt lib/Atmosphere-libs/libstratosphere/source lib/libultrahand/libultra/include lib/libultrahand/libtesla/include
+SOURCES		:=	source
+INCLUDES	:=	include lib/Atmosphere-libs/libstratosphere/source/dmnt lib/Atmosphere-libs/libstratosphere/source
 NO_ICON		:=  1
 #ROMFS       :=  romfs
+
+# This location should reflect where you place the libultrahand directory (lib can vary between projects).
+include ${TOPDIR}/lib/libultrahand/ultrahand.mk
+
 
 #---------------------------------------------------------------------------------
 # options for code generation

@@ -199,7 +199,7 @@ public:
             
             if (!Initialized) {
                 //cachedMargin = renderer->drawString(" ", false, 0, 0, fontsize, renderer->a(0x0000)).first;
-                cachedMargin = tsl::gfx::calculateStringWidth(" ", fontsize);
+                cachedMargin = renderer->getTextDimensions(" ", false, fontsize).first;
                 catColorA = renderer->a(settings.catColor);
                 textColorA = renderer->a(settings.textColor);
                 base_y = settings.setPosBottom ? 
@@ -240,26 +240,26 @@ public:
             std::vector<ItemLayout> item_layouts;
             uint32_t total_main_width = 0;
 
-            auto sep_width = tsl::gfx::calculateStringWidth("", fontsize);
+            static auto sep_width = renderer->getTextDimensions("", false, fontsize).first;
 
             for (const auto& item : main_items) {
                 ItemLayout item_layout = {};
                 
                 // Calculate actual label width
                 //auto label_dim = renderer->drawString(item.label, false, 0, 0, fontsize, renderer->a(0x0000));
-                //auto label_dim = tsl::gfx::calculateStringWidth(item.label, fontsize);
-                item_layout.label_width = tsl::gfx::calculateStringWidth(item.label, fontsize);
+                //auto label_dim = renderer->getTextDimensions(item.label, fontsize);
+                item_layout.label_width = renderer->getTextDimensions(item.label, false, fontsize).first;
                 
                 // Calculate actual data width
                 //auto data_dim = renderer->drawString(item.data_ptr, false, 0, 0, fontsize, renderer->a(0x0000));
-                //auto data_dim = tsl::gfx::calculateStringWidth(item.data_ptr, fontsize);
-                item_layout.data_width = tsl::gfx::calculateStringWidth(item.data_ptr, fontsize);
+                //auto data_dim = renderer->getTextDimensions(item.data_ptr, fontsize);
+                item_layout.data_width = renderer->getTextDimensions(item.data_ptr, false, fontsize).first;
                 
                 // Calculate voltage width if present
                 if (item.has_voltage && item.volt_ptr) {
                     //uto volt_dim = renderer->drawString(item.volt_ptr, false, 0, 0, fontsize, renderer->a(0x0000));
-                    //auto volt_dim = tsl::gfx::calculateStringWidth(item.volt_ptr, fontsize);
-                    item_layout.volt_width = tsl::gfx::calculateStringWidth(item.volt_ptr, fontsize);
+                    //auto volt_dim = renderer->getTextDimensions(item.volt_ptr, fontsize);
+                    item_layout.volt_width = renderer->getTextDimensions(item.volt_ptr, false, fontsize).first;
                     
                     // Total: label + gap + data + gap + "|" + gap + voltage
                     //auto sep_width = renderer->drawString("", false, 0, 0, fontsize, renderer->a(0x0000));
@@ -290,13 +290,13 @@ public:
             // Add battery as the last item if present
             if (battery_item) {
                 //auto bat_label_dim = renderer->drawString("BAT", false, 0, 0, fontsize, renderer->a(0x0000));
-                //auto bat_label_dim = tsl::gfx::calculateStringWidth("BAT", fontsize);
+                //auto bat_label_dim = renderer->getTextDimensions("BAT", fontsize);
                 //auto bat_data_dim = renderer->drawString(battery_item->data_ptr, false, 0, 0, fontsize, renderer->a(0x0000));
-                //auto bat_data_dim = tsl::gfx::calculateStringWidth(battery_item->data_ptr, fontsize);
+                //auto bat_data_dim = renderer->getTextDimensions(battery_item->data_ptr, fontsize);
                 
                 ItemLayout battery_layout = {};
-                battery_layout.label_width = tsl::gfx::calculateStringWidth("BAT", fontsize);
-                battery_layout.data_width = tsl::gfx::calculateStringWidth(battery_item->data_ptr, fontsize);
+                battery_layout.label_width = renderer->getTextDimensions("BAT", false, fontsize).first;
+                battery_layout.data_width = renderer->getTextDimensions(battery_item->data_ptr, false, fontsize).first;
                 battery_layout.volt_width = 0;
                 battery_layout.total_width = battery_layout.label_width + layout.label_data_gap + battery_layout.data_width;
                 
@@ -348,7 +348,7 @@ public:
                 
                 // Draw data
                 //renderer->drawString(item.data_ptr, false, current_x, base_y + fontsize, fontsize, textColorA);
-                renderer->drawStringWithColoredSections(item.data_ptr, {""}, current_x, base_y + fontsize, fontsize, textColorA, a(tsl::separatorColor));
+                renderer->drawStringWithColoredSections(item.data_ptr, false, {""}, current_x, base_y + fontsize, fontsize, textColorA, a(tsl::separatorColor));
                 current_x += item_layout.data_width;
                 
                 // Draw voltage if present
@@ -356,7 +356,7 @@ public:
                     current_x += layout.volt_separator_gap;
                     renderer->drawString("", false, current_x, base_y + fontsize, fontsize, tsl::separatorColor);
                     //auto sep_width = renderer->drawString("", false, 0, 0, fontsize, renderer->a(0x0000));
-                    //auto sep_width = tsl::gfx::calculateStringWidth("", fontsize);
+                    //auto sep_width = renderer->getTextDimensions("", fontsize);
                     current_x += sep_width + layout.volt_data_gap;
                     renderer->drawString(item.volt_ptr, false, current_x, base_y + fontsize, fontsize, textColorA);
                 }

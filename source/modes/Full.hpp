@@ -118,7 +118,7 @@ public:
         
             renderer->drawString(Resolutions_c, false, COMMON_MARGIN, height_offset, 15, renderer->a(0xFFFF));
             
-            renderer->drawStringWithColoredSections(message.c_str(), KEY_SYMBOLS, COMMON_MARGIN, 693, 23,  a(tsl::bottomTextColor), a(tsl::buttonColor));
+            renderer->drawStringWithColoredSections(message.c_str(), false, KEY_SYMBOLS, COMMON_MARGIN, 693, 23,  a(tsl::bottomTextColor), a(tsl::buttonColor));
             
         });
 
