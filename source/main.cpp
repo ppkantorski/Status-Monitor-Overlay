@@ -521,7 +521,13 @@ int main(int argc, char **argv) {
     
     if (argc > 0) {
         filename = argv[0]; // set global
+        bool usingModeArgs = !(ult::parseValueFromIniSection(ult::OVERLAYS_INI_FILEPATH, filename, "mode_args").empty());
+        if (!usingModeArgs) {
+            ult::setIniFileValue(ult::OVERLAYS_INI_FILEPATH, filename, "mode_args", "(-mini, -micro)");
+            ult::setIniFileValue(ult::OVERLAYS_INI_FILEPATH, filename, "mode_labels", "(Mini, Micro)");
+        }
     }
+
     
     // Check command line arguments
     for (u8 arg = 0; arg < argc; arg++) {
