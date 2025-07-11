@@ -32,6 +32,7 @@ private:
     };
 public:
     FullOverlay() { 
+        disableJumpTo = true;
         GetConfigSettings(&settings);
         mutexInit(&mutex_BatteryChecker);
         mutexInit(&mutex_Misc);
@@ -48,9 +49,9 @@ public:
     }
     ~FullOverlay() {
         CloseThreads();
-        FullMode = true;
+        //FullMode = true;
         tsl::hlp::requestForeground(true);
-        alphabackground = 0xD;
+        //alphabackground = 0xD;
         if (settings.setPosRight) {
             tsl::gfx::Renderer::get().setLayerPos(0, 0);
         }
@@ -71,52 +72,52 @@ public:
             ///CPU
             uint32_t height_offset = 162;
 
-            renderer->drawString("CPU Usage:", false, COMMON_MARGIN, height_offset - 42, 20, renderer->a(0xFFFF));
-            renderer->drawString(CPU_Hz_c, false, COMMON_MARGIN, height_offset - 15, 15, renderer->a(0xFFFF));
-            renderer->drawString(RealCPU_Hz_c, false, COMMON_MARGIN, height_offset, 15, renderer->a(0xFFFF));
-            renderer->drawString(CPU_compressed_c, false, COMMON_MARGIN, height_offset + 15, 15, renderer->a(0xFFFF));
+            renderer->drawString("CPU Usage:", false, COMMON_MARGIN, height_offset - 42, 20, 0xFFFF);
+            renderer->drawString(CPU_Hz_c, false, COMMON_MARGIN, height_offset - 15, 15, 0xFFFF);
+            renderer->drawString(RealCPU_Hz_c, false, COMMON_MARGIN, height_offset, 15, 0xFFFF);
+            renderer->drawString(CPU_compressed_c, false, COMMON_MARGIN, height_offset + 15, 15, 0xFFFF);
 
             ///GPU
             height_offset = 252;
 
-            renderer->drawString("GPU Usage:", false, COMMON_MARGIN, height_offset - 42, 20, renderer->a(0xFFFF));
-            renderer->drawString(GPU_Hz_c, false, COMMON_MARGIN, height_offset - 15, 15, renderer->a(0xFFFF));
-            renderer->drawString(RealGPU_Hz_c, false, COMMON_MARGIN, height_offset, 15, renderer->a(0xFFFF));
-            renderer->drawString(GPU_Load_c, false, COMMON_MARGIN, height_offset + 15, 15, renderer->a(0xFFFF));
+            renderer->drawString("GPU Usage:", false, COMMON_MARGIN, height_offset - 42, 20, 0xFFFF);
+            renderer->drawString(GPU_Hz_c, false, COMMON_MARGIN, height_offset - 15, 15, 0xFFFF);
+            renderer->drawString(RealGPU_Hz_c, false, COMMON_MARGIN, height_offset, 15, 0xFFFF);
+            renderer->drawString(GPU_Load_c, false, COMMON_MARGIN, height_offset + 15, 15, 0xFFFF);
 
             ///RAM
             height_offset = 342;
 
-            renderer->drawString("RAM Usage:", false, COMMON_MARGIN, height_offset - 42, 20, renderer->a(0xFFFF));
-            renderer->drawString(RAM_Hz_c, false, COMMON_MARGIN, height_offset - 15, 15, renderer->a(0xFFFF));
-            renderer->drawString(RealRAM_Hz_c, false, COMMON_MARGIN, height_offset, 15, renderer->a(0xFFFF));
-            renderer->drawString(RAM_load_c, false, COMMON_MARGIN, height_offset + 15, 15, renderer->a(0xFFFF));
+            renderer->drawString("RAM Usage:", false, COMMON_MARGIN, height_offset - 42, 20, 0xFFFF);
+            renderer->drawString(RAM_Hz_c, false, COMMON_MARGIN, height_offset - 15, 15, 0xFFFF);
+            renderer->drawString(RealRAM_Hz_c, false, COMMON_MARGIN, height_offset, 15, 0xFFFF);
+            renderer->drawString(RAM_load_c, false, COMMON_MARGIN, height_offset + 15, 15, 0xFFFF);
     
             if (R_SUCCEEDED(Hinted)) {
-                static auto dimensions = renderer->drawString("Total: \nApplication: \nApplet: \nSystem: \nSystem Unsafe: ", false, 0, height_offset + 40, 15, renderer->a(0x0000));
-                renderer->drawString("Total: \nApplication: \nApplet: \nSystem: \nSystem Unsafe: ", false, COMMON_MARGIN, height_offset + 40, 15, renderer->a(0xFFFF));
-                renderer->drawString(RAM_var_compressed_c, false, COMMON_MARGIN + dimensions.first, height_offset + 40, 15, renderer->a(0xFFFF));
+                static auto dimensions = renderer->drawString("Total: \nApplication: \nApplet: \nSystem: \nSystem Unsafe: ", false, 0, height_offset + 40, 15, 0x0000);
+                renderer->drawString("Total: \nApplication: \nApplet: \nSystem: \nSystem Unsafe: ", false, COMMON_MARGIN, height_offset + 40, 15, 0xFFFF);
+                renderer->drawString(RAM_var_compressed_c, false, COMMON_MARGIN + dimensions.first, height_offset + 40, 15, 0xFFFF);
             }
             
             ///Thermal
             height_offset = 522;
 
-            renderer->drawString("Thermal:", false, COMMON_MARGIN, height_offset - 42, 20, renderer->a(0xFFFF));
-            static auto dimensions1 = renderer->drawString("Temperatures: ", false, 0, height_offset - 15, 15, renderer->a(0x0000));
-            renderer->drawString("Temperatures:", false, COMMON_MARGIN, height_offset - 15, 15, renderer->a(0xFFFF));
-            renderer->drawString(SoCPCB_temperature_c, false, COMMON_MARGIN + dimensions1.first, height_offset - 15, 15, renderer->a(0xFFFF));
+            renderer->drawString("Thermal:", false, COMMON_MARGIN, height_offset - 42, 20, 0xFFFF);
+            static auto dimensions1 = renderer->drawString("Temperatures: ", false, 0, height_offset - 15, 15, 0x0000);
+            renderer->drawString("Temperatures:", false, COMMON_MARGIN, height_offset - 15, 15, 0xFFFF);
+            renderer->drawString(SoCPCB_temperature_c, false, COMMON_MARGIN + dimensions1.first, height_offset - 15, 15, 0xFFFF);
             
-            renderer->drawString(Rotation_SpeedLevel_c, false, COMMON_MARGIN, height_offset, 15, renderer->a(0xFFFF));
+            renderer->drawString(Rotation_SpeedLevel_c, false, COMMON_MARGIN, height_offset, 15, 0xFFFF);
 
-            //renderer->drawString(BatteryDraw_c, false, COMMON_MARGIN, 575, 15, renderer->a(0xFFFF));
+            //renderer->drawString(BatteryDraw_c, false, COMMON_MARGIN, 575, 15, 0xFFFF);
             
             ///FPS
             height_offset = 605;
 
-            renderer->drawString("Game:", false, COMMON_MARGIN, height_offset - 47, 20, renderer->a(0xFFFF));
-            renderer->drawString(FPS_var_compressed_c, false, COMMON_MARGIN, height_offset - 20, 15, renderer->a(0xFFFF));
+            renderer->drawString("Game:", false, COMMON_MARGIN, height_offset - 47, 20, 0xFFFF);
+            renderer->drawString(FPS_var_compressed_c, false, COMMON_MARGIN, height_offset - 20, 15, 0xFFFF);
         
-            renderer->drawString(Resolutions_c, false, COMMON_MARGIN, height_offset, 15, renderer->a(0xFFFF));
+            renderer->drawString(Resolutions_c, false, COMMON_MARGIN, height_offset, 15, 0xFFFF);
             
             renderer->drawStringWithColoredSections(message.c_str(), false, KEY_SYMBOLS, COMMON_MARGIN, 693, 23,  a(tsl::bottomTextColor), a(tsl::buttonColor));
             

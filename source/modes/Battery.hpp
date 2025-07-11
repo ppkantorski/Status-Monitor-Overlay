@@ -3,6 +3,7 @@ private:
     char Battery_c[512];
 public:
     BatteryOverlay() {
+        disableJumpTo = true;
         mutexInit(&mutex_BatteryChecker);
         StartBatteryThread();
     }
@@ -14,8 +15,8 @@ public:
         rootFrame = new tsl::elm::OverlayFrame("Status Monitor", APP_VERSION, true);
 
         auto Status = new tsl::elm::CustomDrawer([this](tsl::gfx::Renderer *renderer, u16 x, u16 y, u16 w, u16 h) {
-            renderer->drawString("Battery/Charger Stats:", false, 20, 120, 20, renderer->a(0xFFFF));
-            renderer->drawString(Battery_c, false, 20, 155, 18, renderer->a(0xFFFF));
+            renderer->drawString("Battery/Charger Stats:", false, 20, 120, 20, 0xFFFF);
+            renderer->drawString(Battery_c, false, 20, 155, 18, 0xFFFF);
         });
 
         rootFrame->setContent(Status);

@@ -19,6 +19,7 @@ private:
     char Nifm_pass[96];
 public:
     MiscOverlay() { 
+        disableJumpTo = true;
         smInitialize();
         nifmCheck = nifmInitialize(NifmServiceType_Admin);
         if (R_SUCCEEDED(mmuInitialize())) {

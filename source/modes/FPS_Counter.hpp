@@ -6,6 +6,7 @@ private:
     ApmPerformanceMode performanceMode = ApmPerformanceMode_Invalid;
 public:
     com_FPS() { 
+        disableJumpTo = true;
         GetConfigSettings(&settings);
         apmGetPerformanceMode(&performanceMode);
         if (performanceMode == ApmPerformanceMode_Normal) {
@@ -27,7 +28,7 @@ public:
                 break;
         }
         StartFPSCounterThread();
-        alphabackground = 0x0;
+        //alphabackground = 0x0;
         tsl::hlp::requestForeground(false);
         FullMode = false;
         TeslaFPS = settings.refreshRate;
@@ -40,7 +41,7 @@ public:
             tsl::gfx::Renderer::get().setLayerPos(0, 0);
         FullMode = true;
         tsl::hlp::requestForeground(true);
-        alphabackground = 0xD;
+        //alphabackground = 0xD;
         deactivateOriginalFooter = false;
     }
 
@@ -98,7 +99,7 @@ public:
         
             // Draw rectangle and text
             renderer->drawRect(base_x, base_y, rectangleWidth + margin, fontsize + (margin / 2), renderer->a(settings.backgroundColor));
-            renderer->drawString((FPSavg != 254.0) ? FPSavg_c : "0.0", false, base_x + (margin / 2), base_y + (fontsize - margin), fontsize, renderer->a(settings.textColor));
+            renderer->drawString((FPSavg != 254.0) ? FPSavg_c : "0.0", false, base_x + (margin / 2), base_y + (fontsize - margin), fontsize, settings.textColor);
         });
 
         rootFrame->setContent(Status);

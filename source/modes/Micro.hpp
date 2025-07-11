@@ -91,6 +91,7 @@ private:
 
 public:
     MicroOverlay() { 
+        disableJumpTo = true;
         tsl::initializeUltrahandSettings();
         GetConfigSettings(&settings);
         apmGetPerformanceMode(&performanceMode);
@@ -106,17 +107,19 @@ public:
         mutexInit(&mutex_Misc);
         TeslaFPS = settings.refreshRate;
         systemtickfrequency_impl /= settings.refreshRate;
-        alphabackground = 0x0;
+        FullMode = false;
+        //alphabackground = 0x0;
         deactivateOriginalFooter = true;
         
         // Pre-allocate render items vector
-        renderItems.reserve(8);
+        //renderItems.reserve(8);
         
         StartThreads();
     }
     
     ~MicroOverlay() {
         CloseThreads();
+        FullMode = true;
     }
     
     // Fast parsing and render item preparation
@@ -130,16 +133,18 @@ public:
         size_t start = 0, end = 0;
         uint8_t seen_flags = 0;
         
+        size_t len;
+        uint32_t key3;
         while (start < show.length()) {
             end = show.find('+', start);
             if (end == std::string::npos) end = show.length();
             
-            size_t len = end - start;
+            len = end - start;
             if (len >= 3) {
                 const char* key = &show[start];
                 
                 // Use first 3 chars for fast comparison
-                uint32_t key3 = (key[0] << 16) | (key[1] << 8) | key[2];
+                key3 = (key[0] << 16) | (key[1] << 8) | key[2];
                 
                 switch (key3) {
                     case 0x435055: // "CPU"
@@ -199,17 +204,19 @@ public:
             
             if (!Initialized) {
                 //cachedMargin = renderer->drawString(" ", false, 0, 0, fontsize, renderer->a(0x0000)).first;
-                cachedMargin = renderer->getTextDimensions(" ", false, fontsize).first;
-                catColorA = renderer->a(settings.catColor);
-                textColorA = renderer->a(settings.textColor);
+                cachedMargin = renderer->getTextDimensions("CPUGPURAMSOCBAT[]", false, fontsize).second;
+                catColorA = settings.catColor;
+                textColorA = settings.textColor;
                 base_y = settings.setPosBottom ? 
-                    tsl::cfg::FramebufferHeight - (fontsize + (fontsize / 4)) : 2;
+                    tsl::cfg::FramebufferHeight - (fontsize + (fontsize / 4)) : 0;
                 Initialized = true;
                 renderDataDirty = true;
                 layout.calculated = false; // Force recalculation
                 tsl::hlp::requestForeground(false);
             }
             
+            renderer->drawRect(0, 0, tsl::cfg::FramebufferWidth, cachedMargin + 5, a(settings.backgroundColor));
+
             // Prepare render items if settings changed
             prepareRenderItems();
             calculateLayoutMetrics(renderer);
@@ -242,8 +249,9 @@ public:
 
             static auto sep_width = renderer->getTextDimensions("", false, fontsize).first;
 
+            ItemLayout item_layout;
             for (const auto& item : main_items) {
-                ItemLayout item_layout = {};
+                item_layout = {};
                 
                 // Calculate actual label width
                 //auto label_dim = renderer->drawString(item.label, false, 0, 0, fontsize, renderer->a(0x0000));
@@ -328,37 +336,40 @@ public:
                 if (all_items_ordered.size() > 1) {
                     uint32_t spacing_between = remaining_space / (all_items_ordered.size() - 1);
                     
+                    uint32_t prev_pos, prev_width;
                     for (size_t i = 1; i < all_items_ordered.size(); i++) {
-                        uint32_t prev_pos = item_positions[i-1];
-                        uint32_t prev_width = all_layouts_ordered[i-1].total_width;
+                        prev_pos = item_positions[i-1];
+                        prev_width = all_layouts_ordered[i-1].total_width;
                         item_positions.push_back(prev_pos + prev_width + spacing_between);
                     }
                 }
             }
-            
+            uint32_t current_x;
+            static std::vector<std::string> specialChars = {""};
+
             // Render all items at calculated positions
             for (size_t i = 0; i < all_items_ordered.size(); i++) {
                 const auto& item = all_items_ordered[i];
                 const auto& item_layout = all_layouts_ordered[i];
-                uint32_t current_x = item_positions[i];
+                current_x = item_positions[i];
                 
                 // Draw label
-                renderer->drawString(item.label, false, current_x, base_y + fontsize, fontsize, catColorA);
+                renderer->drawString(item.label, false, current_x, base_y + cachedMargin, fontsize, catColorA);
                 current_x += item_layout.label_width + layout.label_data_gap;
                 
                 // Draw data
                 //renderer->drawString(item.data_ptr, false, current_x, base_y + fontsize, fontsize, textColorA);
-                renderer->drawStringWithColoredSections(item.data_ptr, false, {""}, current_x, base_y + fontsize, fontsize, textColorA, a(tsl::separatorColor));
+                renderer->drawStringWithColoredSections(item.data_ptr, false, specialChars, current_x, base_y + cachedMargin, fontsize, textColorA, a(settings.separatorColor));
                 current_x += item_layout.data_width;
                 
                 // Draw voltage if present
                 if (item.has_voltage && item.volt_ptr) {
                     current_x += layout.volt_separator_gap;
-                    renderer->drawString("", false, current_x, base_y + fontsize, fontsize, tsl::separatorColor);
+                    renderer->drawString("", false, current_x, base_y + cachedMargin, fontsize, a(settings.separatorColor));
                     //auto sep_width = renderer->drawString("", false, 0, 0, fontsize, renderer->a(0x0000));
                     //auto sep_width = renderer->getTextDimensions("", fontsize);
                     current_x += sep_width + layout.volt_data_gap;
-                    renderer->drawString(item.volt_ptr, false, current_x, base_y + fontsize, fontsize, textColorA);
+                    renderer->drawStringWithColoredSections(item.volt_ptr, false, specialChars, current_x, base_y + cachedMargin, fontsize, textColorA,  a(settings.separatorColor));
                 }
             }
         });
@@ -409,10 +420,29 @@ public:
         }
         
         uint32_t cpuFreq = settings.realFrequencies && realCPU_Hz ? realCPU_Hz : CPU_Hz;
-        snprintf(CPU_compressed_c, sizeof(CPU_compressed_c), 
-            "[%s,%s,%s,%s]%s%u.%u", 
-            CPU_Usage0, CPU_Usage1, CPU_Usage2, CPU_Usage3, 
-            cpuDiff, cpuFreq / 1000000, (cpuFreq / 100000) % 10);
+        
+        if (settings.showFullCPU) {
+            snprintf(CPU_compressed_c, sizeof(CPU_compressed_c), 
+                "[%s,%s,%s,%s]%s%u.%u", 
+                CPU_Usage0, CPU_Usage1, CPU_Usage2, CPU_Usage3, 
+                cpuDiff, cpuFreq / 1000000, (cpuFreq / 100000) % 10);
+        } else {
+            // Find max CPU usage across all cores
+            const auto extractUsage = [](const char* usage_str) -> double {
+                return strtod(usage_str, nullptr);
+            };
+            
+            double usage0 = extractUsage(CPU_Usage0);
+            double usage1 = extractUsage(CPU_Usage1);
+            double usage2 = extractUsage(CPU_Usage2);
+            double usage3 = extractUsage(CPU_Usage3);
+            
+            double maxUsage = std::max({usage0, usage1, usage2, usage3});
+            
+            snprintf(CPU_compressed_c, sizeof(CPU_compressed_c), 
+                "%.0f%%%s%u.%u", 
+                maxUsage, cpuDiff, cpuFreq / 1000000, (cpuFreq / 100000) % 10);
+        }
             
         if (settings.realVolts) {
             snprintf(CPU_volt_c, sizeof(CPU_volt_c), "%u.%u mV", 

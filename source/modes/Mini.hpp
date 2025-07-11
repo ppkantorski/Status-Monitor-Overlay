@@ -15,6 +15,7 @@ private:
     uint64_t systemtickfrequency_impl = systemtickfrequency;
 public:
     MiniOverlay() { 
+        disableJumpTo = true;
         tsl::initializeUltrahandSettings();
         PowerConsumption = 0.0f;
         batTimeEstimate = -1;
@@ -40,7 +41,7 @@ public:
         }
         mutexInit(&mutex_BatteryChecker);
         mutexInit(&mutex_Misc);
-        alphabackground = 0x0;
+        //alphabackground = 0x0;
         tsl::hlp::requestForeground(false);
         FullMode = false;
         TeslaFPS = settings.refreshRate;
@@ -52,7 +53,7 @@ public:
         CloseThreads();
         FullMode = true;
         tsl::hlp::requestForeground(true);
-        alphabackground = 0xD;
+        //alphabackground = 0xD;
         deactivateOriginalFooter = false;
     }
 
@@ -151,9 +152,11 @@ public:
                 entryCount = 0;
                 uint8_t flags = 0;
                 
+                bool shouldAdd;
+                std::string labelText;
                 for (const auto& key : showKeys) {
-                    bool shouldAdd = false;
-                    std::string labelText;
+                    shouldAdd = false;
+                    labelText = "";
                     
                     if (key == "CPU" && !(flags & 1)) {
                         shouldAdd = true;
@@ -274,13 +277,13 @@ public:
                     //u32 width = renderer->getTextDimensions(labelLines[labelIndex].c_str(), fontsize);
                     labelWidth = renderer->getTextDimensions(labelLines[labelIndex].c_str(), false, fontsize).first;
                     labelCenterX = cachedBaseX + (margin / 2) - (labelWidth / 2);
-                    renderer->drawString(labelLines[labelIndex].c_str(), false, labelCenterX, currentY, fontsize, renderer->a(settings.catColor));
+                    renderer->drawString(labelLines[labelIndex].c_str(), false, labelCenterX, currentY, fontsize, settings.catColor);
                 }
                 
                 // Draw variable data
                 //renderer->drawString(variableLines[i].c_str(), false, cachedBaseX + margin, currentY, fontsize, renderer->a(settings.textColor));
                 //renderer->drawStringWith(variableLines[i].c_str(), false, cachedBaseX + margin, currentY, fontsize, renderer->a(settings.textColor));
-                renderer->drawStringWithColoredSections(variableLines[i].c_str(), false, {""}, cachedBaseX + margin, currentY, fontsize, a(settings.textColor), a(tsl::separatorColor));
+                renderer->drawStringWithColoredSections(variableLines[i].c_str(), false, {""}, cachedBaseX + margin, currentY, fontsize, settings.textColor, a(settings.separatorColor));
 
                 currentY += fontsize;
                 labelIndex++;

@@ -284,16 +284,16 @@ void CheckIfGameRunning(void*) {
             check = true;
         }
         else if (!GameRunning && SharedMemoryUsed) {
-                uintptr_t base = (uintptr_t)shmemGetAddr(&_sharedmemory);
-                searchSharedMemoryBlock(base);
-                if (NxFps) {
-                    (NxFps -> pluginActive) = false;
-                    svcSleepThread(100'000'000);
-                    if ((NxFps -> pluginActive)) {
-                        GameRunning = true;
-                        check = false;
-                    }
+            uintptr_t base = (uintptr_t)shmemGetAddr(&_sharedmemory);
+            searchSharedMemoryBlock(base);
+            if (NxFps) {
+                (NxFps -> pluginActive) = false;
+                svcSleepThread(100'000'000);
+                if ((NxFps -> pluginActive)) {
+                    GameRunning = true;
+                    check = false;
                 }
+            }
         }
         svcSleepThread(1'000'000'000);
     }
@@ -385,9 +385,10 @@ void BatteryChecker(void*) {
 
         // Calculate averages and power in single pass
         float sum_current = 0.0f, sum_voltage = 0.0f, sum_power = 0.0f;
+        float amp, volt;
         for (size_t i = 0; i < ArraySize; i++) {
-            float amp = readingsAmp[i];
-            float volt = readingsVolt[i];
+            amp = readingsAmp[i];
+            volt = readingsVolt[i];
             sum_current += amp;
             sum_voltage += volt;
             sum_power += amp * volt;
@@ -612,9 +613,10 @@ void Misc3(void*) {
 //In case of getting more than systemtickfrequency in idle, make it equal to systemtickfrequency to get 0% as output and nothing less
 //This is because making each loop also takes time, which is not considered because this will take also additional time
 void CheckCore0(void*) {
+    uint64_t idletick_a0, idletick_b0;
     while (!threadexit) {
-        uint64_t idletick_a0 = 0;
-        uint64_t idletick_b0 = 0;
+        idletick_a0 = 0;
+        idletick_b0 = 0;
         svcGetInfo(&idletick_b0, InfoType_IdleTickCount, INVALID_HANDLE, 0);
         svcSleepThread(1'000'000'000 / TeslaFPS);
         svcGetInfo(&idletick_a0, InfoType_IdleTickCount, INVALID_HANDLE, 0);
@@ -623,9 +625,10 @@ void CheckCore0(void*) {
 }
 
 void CheckCore1(void*) {
+    uint64_t idletick_a1, idletick_b1;
     while (!threadexit) {
-        uint64_t idletick_a1 = 0;
-        uint64_t idletick_b1 = 0;
+        idletick_a1 = 0;
+        idletick_b1 = 0;
         svcGetInfo(&idletick_b1, InfoType_IdleTickCount, INVALID_HANDLE, 1);
         svcSleepThread(1'000'000'000 / TeslaFPS);
         svcGetInfo(&idletick_a1, InfoType_IdleTickCount, INVALID_HANDLE, 1);
@@ -634,9 +637,10 @@ void CheckCore1(void*) {
 }
 
 void CheckCore2(void*) {
+    uint64_t idletick_a2, idletick_b2;
     while (!threadexit) {
-        uint64_t idletick_a2 = 0;
-        uint64_t idletick_b2 = 0;
+        idletick_a2 = 0;
+        idletick_b2 = 0;
         svcGetInfo(&idletick_b2, InfoType_IdleTickCount, INVALID_HANDLE, 2);
         svcSleepThread(1'000'000'000 / TeslaFPS);
         svcGetInfo(&idletick_a2, InfoType_IdleTickCount, INVALID_HANDLE, 2);
@@ -645,9 +649,10 @@ void CheckCore2(void*) {
 }
 
 void CheckCore3(void*) {
+    uint64_t idletick_a3, idletick_b3;
     while (!threadexit) {
-        uint64_t idletick_a3 = 0;
-        uint64_t idletick_b3 = 0;
+        idletick_a3 = 0;
+        idletick_b3 = 0;
         svcGetInfo(&idletick_b3, InfoType_IdleTickCount, INVALID_HANDLE, 3);
         svcSleepThread(1'000'000'000 / TeslaFPS);
         svcGetInfo(&idletick_a3, InfoType_IdleTickCount, INVALID_HANDLE, 3);
@@ -828,9 +833,10 @@ void formatButtonCombination(std::string& line) {
     }
     pos = 0;
     size_t old_pos = 0;
+    std::string button;
     while ((pos = line.find(" + ", pos)) != std::string::npos) {
 
-        std::string button = line.substr(old_pos, pos - old_pos);
+        button = line.substr(old_pos, pos - old_pos);
         if (replaces.find(button) != replaces.end()) {
             line.replace(old_pos, button.length(), replaces[button]);
             pos = 0;
@@ -839,7 +845,7 @@ void formatButtonCombination(std::string& line) {
         else pos += 3;
         old_pos = pos;
     }
-    std::string button = line.substr(old_pos);
+    button = line.substr(old_pos);
     if (replaces.find(button) != replaces.end()) {
         line.replace(old_pos, button.length(), replaces[button]);
     }    
@@ -927,9 +933,10 @@ bool isKeyComboPressed2(uint64_t keysDown, uint64_t keysHeld) {
     uint64_t requiredKeys = comboBitmask;
     bool hasKeyDown = false; // Tracks if at least one key is in keysDown
 
+    uint64_t keyBit;
     // Iterate over each bit in the comboBitmask
     while (requiredKeys) {
-        uint64_t keyBit = requiredKeys & ~(requiredKeys - 1); // Get the lowest bit set in requiredKeys
+        keyBit = requiredKeys & ~(requiredKeys - 1); // Get the lowest bit set in requiredKeys
 
         // Check if the key is in keysDown or keysHeld
         if (keysDown & keyBit) {
@@ -1039,6 +1046,7 @@ void ParseIniFile() {
         const char* configPaths[] = {ultrahandConfigIniPath, teslaConfigIniPath};
         const char* sectionNames[] = {"ultrahand", "tesla"};
         
+        std::string fileData;
         for (int i = 0; i < 2; ++i) {
             FILE* extConfigFile = fopen(configPaths[i], "r");
             if (extConfigFile) {
@@ -1047,7 +1055,7 @@ void ParseIniFile() {
                 long fileSize = ftell(extConfigFile);
                 fseek(extConfigFile, 0, SEEK_SET);
                 
-                std::string fileData;
+                fileData = "";
                 fileData.resize(fileSize);
                 fread(fileData.data(), 1, fileSize, extConfigFile);
                 fclose(extConfigFile);
@@ -1076,8 +1084,9 @@ ALWAYS_INLINE bool isValidRGBA4Color(const std::string& hexColor) {
     const char* data = hexColor.data();
     const size_t size = hexColor.size();
     
+    unsigned char c;
     for (size_t i = 0; i < size; ++i) {
-        unsigned char c = data[i];
+        c = data[i];
         // Branchless hex digit check: (c >= '0' && c <= '9') || (c >= 'A' && c <= 'F') || (c >= 'a' && c <= 'f')
         if (!((c - '0') <= 9 || (c - 'A') <= 5 || (c - 'a') <= 5)) {
             return false;
@@ -1120,6 +1129,7 @@ struct MiniSettings {
     size_t handheldFontSize;
     size_t dockedFontSize;
     uint16_t backgroundColor;
+    uint16_t separatorColor;
     uint16_t catColor;
     uint16_t textColor;
     std::string show;
@@ -1136,6 +1146,7 @@ struct MicroSettings {
     size_t dockedFontSize;
     uint8_t alignTo;
     uint16_t backgroundColor;
+    uint16_t separatorColor;
     uint16_t catColor;
     uint16_t textColor;
     std::string show;
@@ -1182,6 +1193,7 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
     settings->handheldFontSize = 15;
     settings->dockedFontSize = 15;
     convertStrToRGBA4444("#1117", &(settings->backgroundColor));
+    convertStrToRGBA4444("#666F", &(settings->separatorColor));
     convertStrToRGBA4444("#FFFF", &(settings->catColor));
     convertStrToRGBA4444("#FFFF", &(settings->textColor));
     settings->show = "CPU+GPU+RAM+TEMP+BAT+FAN+FPS+RES";
@@ -1253,6 +1265,14 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
             settings->backgroundColor = temp;
     }
     
+    it = section.find("separator_color");
+    if (it != section.end()) {
+        uint16_t temp = 0;
+        if (convertStrToRGBA4444(it->second, &temp))
+            settings->separatorColor = temp;
+    }
+    
+
     it = section.find("cat_color");
     if (it != section.end()) {
         uint16_t temp = 0;
@@ -1310,11 +1330,12 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
 ALWAYS_INLINE void GetConfigSettings(MicroSettings* settings) {
     settings -> realFrequencies = false;
     settings -> realVolts = false;  
-    settings -> showFullCPU = false;  
+    settings -> showFullCPU = true;  
     settings -> handheldFontSize = 18;
     settings -> dockedFontSize = 18;
     settings -> alignTo = 1;
     convertStrToRGBA4444("#1117", &(settings -> backgroundColor));
+    convertStrToRGBA4444("#666F", &(settings -> separatorColor));
     convertStrToRGBA4444("#FCCF", &(settings -> catColor));
     convertStrToRGBA4444("#FFFF", &(settings -> textColor));
     settings -> show = "FPS+CPU+GPU+RAM+SOC+PWR+BAT";
@@ -1405,6 +1426,12 @@ ALWAYS_INLINE void GetConfigSettings(MicroSettings* settings) {
         uint16_t temp = 0;
         if (convertStrToRGBA4444(key, &temp))
             settings -> backgroundColor = temp;
+    }
+    if (parsedData[mode].find("separator_color") != parsedData[mode].end()) {
+        key = parsedData[mode]["separator_color"];
+        uint16_t temp = 0;
+        if (convertStrToRGBA4444(key, &temp))
+            settings -> separatorColor = temp;
     }
     if (parsedData[mode].find("cat_color") != parsedData[mode].end()) {
         key = parsedData[mode]["cat_color"];

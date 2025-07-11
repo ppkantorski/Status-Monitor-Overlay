@@ -12,6 +12,7 @@ private:
 public:
 	bool isStarted = false;
     com_FPSGraph() { 
+    	disableJumpTo = true;
 		GetConfigSettings(&settings);
 		switch(settings.setPos) {
 			case 1:
@@ -32,7 +33,7 @@ public:
 			svcSleepThread(100'000);
 			SaltySD_Term();
 		}
-		alphabackground = 0x0;
+		//alphabackground = 0x0;
 		tsl::hlp::requestForeground(false);
 		FullMode = false;
 		TeslaFPS = settings.refreshRate;
@@ -48,7 +49,7 @@ public:
 			tsl::gfx::Renderer::get().setLayerPos(0, 0);
 		FullMode = true;
 		tsl::hlp::requestForeground(true);
-		alphabackground = 0xD;
+		//alphabackground = 0xD;
 		deactivateOriginalFooter = false;
 		EndInfoThread();
 	}
@@ -144,11 +145,11 @@ public:
 			s16 pos_x = base_x + rectangle_x + ((rectangle_width - width) / 2);
 
 			if (FPSavg != 254.0)
-				renderer->drawString(FPSavg_c, false, pos_x, pos_y-5, size, renderer->a(settings.fpsColor));
+				renderer->drawString(FPSavg_c, false, pos_x, pos_y-5, size, settings.fpsColor);
 			renderer->drawEmptyRect(base_x+(rectangle_x - 1), base_y+(rectangle_y - 1), rectangle_width + 2, rectangle_height + 4, renderer->a(settings.borderColor));
 			renderer->drawDashedLine(base_x+rectangle_x, base_y+y_30FPS, base_x+rectangle_x+rectangle_width, base_y+y_30FPS, 6, renderer->a(settings.dashedLineColor));
-			renderer->drawString(&legend_max[0], false, base_x+(rectangle_x-15), base_y+(rectangle_y+7), 10, renderer->a(settings.maxFPSTextColor));
-			renderer->drawString(&legend_min[0], false, base_x+(rectangle_x-10), base_y+(rectangle_y+rectangle_height+3), 10, renderer->a(settings.minFPSTextColor));
+			renderer->drawString(&legend_max[0], false, base_x+(rectangle_x-15), base_y+(rectangle_y+7), 10, settings.maxFPSTextColor);
+			renderer->drawString(&legend_min[0], false, base_x+(rectangle_x-10), base_y+(rectangle_y+rectangle_height+3), 10, settings.minFPSTextColor);
 
 			size_t last_element = readings.size() - 1;
 
@@ -163,12 +164,12 @@ public:
 				}
 				
 				s16 y = rectangle_y + static_cast<s16>(std::lround((float)rectangle_height * ((float)(range - y_on_range) / (float)range))); // 320 + (80 * ((61 - 61)/61)) = 320
-				auto colour = renderer->a(settings.mainLineColor);
+				auto color = renderer->a(settings.mainLineColor);
 				if (y == y_old && !isAbove && readings[last_element].zero_rounded) {
 					if ((y == y_30FPS || y == y_60FPS))
-						colour = renderer->a(settings.perfectLineColor);
+						color = renderer->a(settings.perfectLineColor);
 					else
-						colour = renderer->a(settings.dashedLineColor);
+						color = renderer->a(settings.dashedLineColor);
 				}
 
 				if (x == x_end) {
@@ -185,7 +186,7 @@ public:
 				}
 				*/
 
-				renderer->drawLine(base_x+x, base_y+y, base_x+x, base_y+y_old, colour);
+				renderer->drawLine(base_x+x, base_y+y, base_x+x, base_y+y_old, color);
 				isAbove = false;
 				y_old = y;
 				last_element--;
@@ -197,10 +198,10 @@ public:
 				renderer->drawRect(info_x, 0, rectangle_width /2 - 4, rectangle_height + 12, a(settings.backgroundColor));
 				renderer->drawString("CPU\nGPU\nRAM\nSOC\nPCB\nSKN", false, info_x, info_y+11, 11, renderer->a(settings.borderColor));
 
-				renderer->drawString(CPU_Load_c, false, info_x + 40, info_y+11, 11, renderer->a(settings.minFPSTextColor));
-				renderer->drawString(GPU_Load_c, false, info_x + 40, info_y+22, 11, renderer->a(settings.minFPSTextColor));
-				renderer->drawString(RAM_Load_c, false, info_x + 40, info_y+33, 11, renderer->a(settings.minFPSTextColor));
-				renderer->drawString(TEMP_c, false, info_x + 40, info_y+44, 11, renderer->a(settings.minFPSTextColor));
+				renderer->drawString(CPU_Load_c, false, info_x + 40, info_y+11, 11, settings.minFPSTextColor);
+				renderer->drawString(GPU_Load_c, false, info_x + 40, info_y+22, 11, settings.minFPSTextColor);
+				renderer->drawString(RAM_Load_c, false, info_x + 40, info_y+33, 11, settings.minFPSTextColor);
+				renderer->drawString(TEMP_c, false, info_x + 40, info_y+44, 11, settings.minFPSTextColor);
 			}
 		});
 

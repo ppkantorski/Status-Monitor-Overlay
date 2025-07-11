@@ -5,6 +5,7 @@ private:
 	ResolutionSettings settings;
 public:
     ResolutionsOverlay() {
+    	disableJumpTo = true;
 		GetConfigSettings(&settings);
 		switch(settings.setPos) {
 			case 1:
@@ -21,7 +22,7 @@ public:
 		StartFPSCounterThread();
 		deactivateOriginalFooter = true;
 		tsl::hlp::requestForeground(false);
-		alphabackground = 0x0;
+		//alphabackground = 0x0;
 		FullMode = false;
 		TeslaFPS = settings.refreshRate;
 	}
@@ -30,7 +31,7 @@ public:
 		EndFPSCounterThread();
 		deactivateOriginalFooter = false;
 		tsl::hlp::requestForeground(true);
-		alphabackground = 0xD;
+		//alphabackground = 0xD;
 		FullMode = true;
 		if (settings.setPos)
 			tsl::gfx::Renderer::get().setLayerPos(0, 0);
@@ -178,7 +179,7 @@ public:
 		}
 	}
 	virtual bool handleInput(u64 keysDown, u64 keysHeld, const HidTouchState &touchPos, HidAnalogStickState joyStickPosLeft, HidAnalogStickState joyStickPosRight) override {
-		if (isKeyComboPressed(keysHeld, keysDown)) {
+		if (isKeyComboPressed2(keysHeld, keysDown)) {
 			tsl::goBack();
 			return true;
 		}
