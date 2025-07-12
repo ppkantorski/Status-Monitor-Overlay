@@ -62,10 +62,6 @@ CFLAGS	:=	-g -Wall -Wno-address-of-packed-member -Os -ffunction-sections -ffast-
 IS_STATUS_MONITOR_DIRECTIVE := 1
 CFLAGS += -DIS_STATUS_MONITOR_DIRECTIVE=$(IS_STATUS_MONITOR_DIRECTIVE)
 
-# Disable fstream
-NO_FSTREAM_DIRECTIVE := 1
-CFLAGS += -DNO_FSTREAM_DIRECTIVE=$(NO_FSTREAM_DIRECTIVE)
-
 # Enable appearance overriding
 UI_OVERRIDE_PATH := /config/status-monitor/
 CFLAGS += -DUI_OVERRIDE_PATH="\"$(UI_OVERRIDE_PATH)\""
