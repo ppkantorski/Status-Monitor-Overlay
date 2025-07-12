@@ -16,7 +16,7 @@ private:
 public:
     MiniOverlay() { 
         disableJumpTo = true;
-        tsl::initializeUltrahandSettings();
+        //tsl::initializeUltrahandSettings();
         PowerConsumption = 0.0f;
         batTimeEstimate = -1;
         strcpy(SoCPCB_temperature_c, "-.--W [--:--]"); // Default display

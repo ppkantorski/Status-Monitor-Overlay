@@ -363,9 +363,18 @@ void BatteryChecker(void*) {
     const uint8_t current_reg = batteryFiltered ? MAX17050_AvgCurrent : MAX17050_Current;
     const uint8_t voltage_reg = batteryFiltered ? MAX17050_AvgVCELL : MAX17050_VCELL;
     
+    uint64_t startTick;
+    float sum_current, sum_voltage, sum_power;
+    float amp, volt;
+    float time_est;
+    uint64_t new_tick_TTE;
+    int elements_to_avg;
+    int32_t sum;
+
+    size_t idx;
     while (!threadexit) {
         mutexLock(&mutex_BatteryChecker);
-        uint64_t startTick = svcGetSystemTick();
+        startTick = svcGetSystemTick();
 
         psmGetBatteryChargeInfoFields(psmService, &_batteryChargeInfoFields);
 
@@ -377,15 +386,15 @@ void BatteryChecker(void*) {
 
         // Update circular buffer only if valid data
         if (tempA != 0.0f && tempV != 0.0f) {
-            size_t idx = counter % ArraySize;
+            idx = counter % ArraySize;
             readingsAmp[idx] = tempA;
             readingsVolt[idx] = tempV;
             counter++;
         }
 
         // Calculate averages and power in single pass
-        float sum_current = 0.0f, sum_voltage = 0.0f, sum_power = 0.0f;
-        float amp, volt;
+        sum_current = sum_voltage = sum_power = 0.0f;
+        
         for (size_t i = 0; i < ArraySize; i++) {
             amp = readingsAmp[i];
             volt = readingsVolt[i];
@@ -403,16 +412,16 @@ void BatteryChecker(void*) {
             batTimeEstimate = -1;
         } else {
             Max17050ReadReg(MAX17050_TTE, &data);
-            float time_est = time_multiplier * data;
+            time_est = time_multiplier * data;
             time_est = (time_est > max_time_minutes) ? max_time_minutes : time_est;
             
             BatteryTimeCache[itr % cacheElements] = (int32_t)time_est;
             itr++;
             
-            uint64_t new_tick_TTE = svcGetSystemTick();
+            new_tick_TTE = svcGetSystemTick();
             if (armTicksToNs(new_tick_TTE - tick_TTE) >= refresh_rate_ns) {
-                int elements_to_avg = (itr < cacheElements) ? itr : cacheElements;
-                int32_t sum = 0;
+                elements_to_avg = (itr < cacheElements) ? itr : cacheElements;
+                sum = 0;
                 int32_t* cache_ptr = BatteryTimeCache;
                 for (int i = elements_to_avg; i > 0; i--) {
                     sum += *cache_ptr++;
@@ -854,7 +863,7 @@ void formatButtonCombination(std::string& line) {
 uint64_t comboBitmask = 0;
 
 uint64_t MapButtons(const std::string& buttonCombo) {
-    std::map<std::string, uint64_t> buttonMap = {
+    static std::map<std::string, uint64_t> buttonMap = {
         {"A", HidNpadButton_A},
         {"B", HidNpadButton_B},
         {"X", HidNpadButton_X},

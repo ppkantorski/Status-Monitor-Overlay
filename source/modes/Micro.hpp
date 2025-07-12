@@ -71,18 +71,18 @@ private:
         // Use font size to determine appropriate spacing
         if (fontsize <= 16) {
             layout.label_data_gap = 6;
-            layout.volt_separator_gap = 6;
-            layout.volt_data_gap = 6;
+            layout.volt_separator_gap = 0;
+            layout.volt_data_gap = 0;
             layout.item_spacing = 12;
         } else if (fontsize <= 20) {
             layout.label_data_gap = 8;
-            layout.volt_separator_gap = 8;
-            layout.volt_data_gap = 8;
+            layout.volt_separator_gap = 0;
+            layout.volt_data_gap = 0;
             layout.item_spacing = 16;
         } else {
             layout.label_data_gap = 10;
-            layout.volt_separator_gap = 10;
-            layout.volt_data_gap = 10;
+            layout.volt_separator_gap = 0;
+            layout.volt_data_gap = 0;
             layout.item_spacing = 20;
         }
         
