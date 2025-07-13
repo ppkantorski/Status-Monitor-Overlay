@@ -623,7 +623,7 @@ public:
                 }
             }},
             {"RES", [&]() {
-                if (!(flags & 64) && GameRunning) {
+                if (!(flags & 64) && GameRunning && m_resolutionOutput[0].width) {
                     if (Temp[0]) strcat(Temp, "\n");
                     char Temp_s[32];
                     if (settings.showFullResolution) {
