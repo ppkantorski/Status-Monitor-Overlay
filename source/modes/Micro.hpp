@@ -243,7 +243,7 @@ public:
             for (auto& item : renderItems) {
                 if (item.type == 6) { // BAT
                     battery_item = &item;
-                } else if (item.type == 5 && !GameRunning) {
+                } else if (item.type == 5 && (!GameRunning || FPS_var_compressed_c == "254.0")) {
                     // Skip FPS if no game running
                     continue;
                 } else if (item.type == 7 && (!GameRunning || !m_resolutionOutput[0].width)) {
