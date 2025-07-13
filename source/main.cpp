@@ -334,6 +334,7 @@ class MicroMode : public tsl::Overlay {
 public:
 
     virtual void initServices() override {
+        tsl::hlp::requestForeground(false);
         //Initialize services
         tsl::hlp::doWithSmSession([this]{
             apmInitialize();
@@ -417,6 +418,7 @@ public:
     MiniEntryOverlay() {}
 
     virtual void initServices() override {
+        tsl::hlp::requestForeground(false);
         // Same service‐init as before
         tsl::hlp::doWithSmSession([this]{
             apmInitialize();
