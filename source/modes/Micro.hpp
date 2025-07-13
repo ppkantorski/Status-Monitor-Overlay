@@ -16,6 +16,7 @@ private:
     char GPU_volt_c[16];
     char RAM_volt_c[32];
     char SOC_volt_c[16];
+    char RES_var_compressed_c[32];
 
     const uint32_t margin = 4;
 
@@ -38,6 +39,13 @@ private:
         bool has_voltage;
     };
     
+    // Resolution tracking
+    resolutionCalls m_resolutionRenderCalls[8] = {0};
+    resolutionCalls m_resolutionViewportCalls[8] = {0};
+    resolutionCalls m_resolutionOutput[8] = {0};
+    uint8_t resolutionLookup = 0;
+    bool resolutionShow = false;
+
     std::vector<RenderItem> renderItems;
     uint32_t cachedMargin = 0;
     tsl::Color catColorA = 0;
@@ -48,10 +56,10 @@ private:
     // Fixed spacing system - calculate actual widths at render time
     struct LayoutMetrics {
         uint32_t label_data_gap = 8;      // Fixed gap between label and data
-        uint32_t volt_separator_gap = 8;   // Fixed gap before voltage separator
-        uint32_t volt_data_gap = 8;        // Fixed gap after voltage separator
+        uint32_t volt_separator_gap = 0;   // Fixed gap before voltage separator
+        uint32_t volt_data_gap = 0;        // Fixed gap after voltage separator
         uint32_t item_spacing = 16;        // Minimum spacing between complete items
-        uint32_t side_margin = 6;          // Margins on left and right
+        uint32_t side_margin = 2;          // Margins on left and right
         bool calculated = false;
     } layout;
     
@@ -177,6 +185,13 @@ public:
                             seen_flags |= 16;
                         }
                         break;
+                    case 0x524553: // "RES"
+                        if (!(seen_flags & 128)) {
+                            renderItems.push_back({7, "RES", RES_var_compressed_c, nullptr, false}); // We'll reuse FPS buffer temporarily
+                            seen_flags |= 128;
+                            resolutionShow = true;
+                        }
+                        break;
                     case 0x465053: // "FPS"
                         if (!(seen_flags & 32)) {
                             renderItems.push_back({5, "FPS", FPS_var_compressed_c, nullptr, false});
@@ -230,6 +245,9 @@ public:
                     battery_item = &item;
                 } else if (item.type == 5 && !GameRunning) {
                     // Skip FPS if no game running
+                    continue;
+                } else if (item.type == 7 && (!GameRunning || !m_resolutionOutput[0].width)) {
+                    // Skip RES if no game running or no resolution data yet
                     continue;
                 } else {
                     main_items.push_back(item);
@@ -526,6 +544,89 @@ public:
         if (settings.realVolts) {
             snprintf(SOC_volt_c, sizeof(SOC_volt_c), "%u.%u mV", 
                 realSOC_mV/1000, (realSOC_mV/100)%10);
+        }
+
+        // Resolution processing
+        //char RES_var_compressed_c[32] = "";
+        if (GameRunning && NxFps && resolutionShow) {
+            if (!resolutionLookup) {
+                (NxFps -> renderCalls[0].calls) = 0xFFFF;
+                resolutionLookup = 1;
+            }
+            else if (resolutionLookup == 1) {
+                if ((NxFps -> renderCalls[0].calls) != 0xFFFF) resolutionLookup = 2;
+            }
+            else {
+                memcpy(&m_resolutionRenderCalls, &(NxFps -> renderCalls), sizeof(m_resolutionRenderCalls));
+                memcpy(&m_resolutionViewportCalls, &(NxFps -> viewportCalls), sizeof(m_resolutionViewportCalls));
+                qsort(m_resolutionRenderCalls, 8, sizeof(resolutionCalls), compare);
+                qsort(m_resolutionViewportCalls, 8, sizeof(resolutionCalls), compare);
+                memset(&m_resolutionOutput, 0, sizeof(m_resolutionOutput));
+                size_t out_iter = 0;
+                bool found = false;
+                for (size_t i = 0; i < 8; i++) {
+                    for (size_t x = 0; x < 8; x++) {
+                        if (m_resolutionRenderCalls[i].width == 0) {
+                            break;
+                        }
+                        if ((m_resolutionRenderCalls[i].width == m_resolutionViewportCalls[x].width) && (m_resolutionRenderCalls[i].height == m_resolutionViewportCalls[x].height)) {
+                            m_resolutionOutput[out_iter].width = m_resolutionRenderCalls[i].width;
+                            m_resolutionOutput[out_iter].height = m_resolutionRenderCalls[i].height;
+                            m_resolutionOutput[out_iter].calls = (m_resolutionRenderCalls[i].calls > m_resolutionViewportCalls[x].calls) ? m_resolutionRenderCalls[i].calls : m_resolutionViewportCalls[x].calls;
+                            out_iter++;
+                            found = true;
+                            break;
+                        }
+                    }
+                    if (!found && m_resolutionRenderCalls[i].width != 0) {
+                        m_resolutionOutput[out_iter].width = m_resolutionRenderCalls[i].width;
+                        m_resolutionOutput[out_iter].height = m_resolutionRenderCalls[i].height;
+                        m_resolutionOutput[out_iter].calls = m_resolutionRenderCalls[i].calls;
+                        out_iter++;
+                    }
+                    found = false;
+                    if (out_iter == 8) break;
+                }
+                if (out_iter < 8) {
+                    size_t out_iter_s = out_iter;
+                    for (size_t x = 0; x < 8; x++) {
+                        for (size_t y = 0; y < out_iter_s; y++) {
+                            if (m_resolutionViewportCalls[x].width == 0) {
+                                break;
+                            }
+                            if ((m_resolutionViewportCalls[x].width == m_resolutionOutput[y].width) && (m_resolutionViewportCalls[x].height == m_resolutionOutput[y].height)) {
+                                found = true;
+                                break;
+                            }
+                        }
+                        if (!found && m_resolutionViewportCalls[x].width != 0) {
+                            m_resolutionOutput[out_iter].width = m_resolutionViewportCalls[x].width;
+                            m_resolutionOutput[out_iter].height = m_resolutionViewportCalls[x].height;
+                            m_resolutionOutput[out_iter].calls = m_resolutionViewportCalls[x].calls;
+                            out_iter++;            
+                        }
+                        found = false;
+                        if (out_iter == 8) break;
+                    }
+                }
+                qsort(m_resolutionOutput, 8, sizeof(resolutionCalls), compare);
+                
+                // Format resolution string
+                if (settings.showFullResolution) {
+                    if (!m_resolutionOutput[1].width)
+                        snprintf(RES_var_compressed_c, sizeof(RES_var_compressed_c), "%dx%d", m_resolutionOutput[0].width, m_resolutionOutput[0].height);
+                    else 
+                        snprintf(RES_var_compressed_c, sizeof(RES_var_compressed_c), "%dx%d%dx%d", m_resolutionOutput[0].width, m_resolutionOutput[0].height, m_resolutionOutput[1].width, m_resolutionOutput[1].height);
+                } else {
+                    if (!m_resolutionOutput[1].width)
+                        snprintf(RES_var_compressed_c, sizeof(RES_var_compressed_c), "%dp", m_resolutionOutput[0].height);
+                    else 
+                        snprintf(RES_var_compressed_c, sizeof(RES_var_compressed_c), "%dp%dp", m_resolutionOutput[0].height, m_resolutionOutput[1].height);
+                }
+            }
+        }
+        else if (!GameRunning && resolutionLookup != 0) {
+            resolutionLookup = 0;
         }
 
         // FPS

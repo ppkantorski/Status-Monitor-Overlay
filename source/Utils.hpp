@@ -1135,6 +1135,7 @@ struct MiniSettings {
     bool realFrequencies;
     bool realVolts;
     bool showFullCPU;
+    bool showFullResolution;
     size_t handheldFontSize;
     size_t dockedFontSize;
     uint16_t backgroundColor;
@@ -1151,6 +1152,7 @@ struct MicroSettings {
     bool realFrequencies;
     bool realVolts; 
     bool showFullCPU; 
+    bool showFullResolution;
     size_t handheldFontSize;
     size_t dockedFontSize;
     uint8_t alignTo;
@@ -1199,10 +1201,12 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
     // Initialize defaults
     settings->realFrequencies = false;
     settings->realVolts = true;
+    settings -> showFullCPU = true;
+    settings -> showFullResolution = true;
     settings->handheldFontSize = 15;
     settings->dockedFontSize = 15;
     convertStrToRGBA4444("#1117", &(settings->backgroundColor));
-    convertStrToRGBA4444("#666F", &(settings->separatorColor));
+    convertStrToRGBA4444("#999F", &(settings->separatorColor));
     convertStrToRGBA4444("#FFFF", &(settings->catColor));
     convertStrToRGBA4444("#FFFF", &(settings->textColor));
     settings->show = "CPU+GPU+RAM+TEMP+BAT+FAN+FPS+RES";
@@ -1296,6 +1300,21 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
             settings->textColor = temp;
     }
     
+    // Process RAM load flag
+    it = section.find("show_full_cpu");
+    if (it != section.end()) {
+        std::string key = it->second;
+        convertToUpper(key);
+        settings->showFullCPU = !(key == "FALSE");
+    }
+
+    it = section.find("show_full_res");
+    if (it != section.end()) {
+        std::string key = it->second;
+        convertToUpper(key);
+        settings->showFullResolution = !(key == "FALSE");
+    }
+
     // Process show string
     it = section.find("show");
     if (it != section.end()) {
@@ -1338,13 +1357,14 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
 
 ALWAYS_INLINE void GetConfigSettings(MicroSettings* settings) {
     settings -> realFrequencies = false;
-    settings -> realVolts = false;  
-    settings -> showFullCPU = true;  
+    settings -> realVolts = false;
+    settings -> showFullCPU = false;
+    settings -> showFullResolution = false;
     settings -> handheldFontSize = 18;
     settings -> dockedFontSize = 18;
     settings -> alignTo = 1;
     convertStrToRGBA4444("#1117", &(settings -> backgroundColor));
-    convertStrToRGBA4444("#666F", &(settings -> separatorColor));
+    convertStrToRGBA4444("#999F", &(settings -> separatorColor));
     convertStrToRGBA4444("#FCCF", &(settings -> catColor));
     convertStrToRGBA4444("#FFFF", &(settings -> textColor));
     settings -> show = "FPS+CPU+GPU+RAM+SOC+PWR+BAT";
@@ -1395,7 +1415,12 @@ ALWAYS_INLINE void GetConfigSettings(MicroSettings* settings) {
     if (parsedData[mode].find("show_full_cpu") != parsedData[mode].end()) { 
         key = parsedData[mode]["show_full_cpu"]; 
         convertToUpper(key); 
-        settings -> showFullCPU = key.compare("FALSE"); 
+        settings -> showFullCPU = !(key.compare("TRUE")); 
+    } 
+    if (parsedData[mode].find("show_full_res") != parsedData[mode].end()) { 
+        key = parsedData[mode]["show_full_res"]; 
+        convertToUpper(key);
+        settings -> showFullResolution = !(key.compare("TRUE")); 
     } 
     if (parsedData[mode].find("text_align") != parsedData[mode].end()) {
         key = parsedData[mode]["text_align"];

@@ -114,7 +114,10 @@ public:
                 for (const auto& key : showKeys) {
                     if (key == "CPU") {
                         //dimensions = renderer->drawString("[100%,100%,100%,100%]@4444.4", false, 0, 0, fontsize, renderer->a(0x0000));
-                        width = renderer->getTextDimensions("[100%,100%,100%,100%]@4444.4", false, fontsize).first;
+                        if (settings.showFullCPU)
+                            width = renderer->getTextDimensions("[100%,100%,100%,100%]@4444.4", false, fontsize).first;
+                        else
+                            width = renderer->getTextDimensions("100%@4444.4", false, fontsize).first;
                     } else if (key == "GPU" || (key == "RAM" && settings.showRAMLoad && R_SUCCEEDED(sysclkCheck))) {
                         //dimensions = renderer->drawString("100.0%@4444.4", false, 0, 0, fontsize, renderer->a(0x0000));
                         width = renderer->getTextDimensions("100.0%@4444.4", false, fontsize).first;
@@ -132,7 +135,10 @@ public:
                         width = renderer->getTextDimensions("444.4", false, fontsize).first;
                     } else if (key == "RES") {
                         //dimensions = renderer->drawString("3840x21603840x2160", false, 0, 0, fontsize, renderer->a(0x0000));
-                        width = renderer->getTextDimensions("3840x21603840x2160", false, fontsize).first;
+                        if (settings.showFullResolution)
+                            width = renderer->getTextDimensions("3840x21603840x2160", false, fontsize).first;
+                        else
+                            width = renderer->getTextDimensions("2160p2160p", false, fontsize).first;
                     } else {
                         continue;
                     }
@@ -311,6 +317,7 @@ public:
 
         //Make stuff ready to print
         ///CPU
+
         char MINI_CPU_Usage0[7];
         char MINI_CPU_Usage1[7];
         char MINI_CPU_Usage2[7];
@@ -333,18 +340,50 @@ public:
         
         char MINI_CPU_compressed_c[42];
         char MINI_CPU_volt_c[16];
-        if (settings.realFrequencies && realCPU_Hz) {
-            snprintf(MINI_CPU_compressed_c, sizeof(MINI_CPU_compressed_c), 
-                "[%s,%s,%s,%s]@%hu.%hhu", 
-                MINI_CPU_Usage0, MINI_CPU_Usage1, MINI_CPU_Usage2, MINI_CPU_Usage3, 
-                realCPU_Hz / 1000000, (realCPU_Hz / 100000) % 10);
+        if (settings.showFullCPU) {
+            // Show all cores
+            if (settings.realFrequencies && realCPU_Hz) {
+                snprintf(MINI_CPU_compressed_c, sizeof(MINI_CPU_compressed_c), 
+                    "[%s,%s,%s,%s]@%hu.%hhu", 
+                    MINI_CPU_Usage0, MINI_CPU_Usage1, MINI_CPU_Usage2, MINI_CPU_Usage3, 
+                    realCPU_Hz / 1000000, (realCPU_Hz / 100000) % 10);
+            }
+            else {
+                snprintf(MINI_CPU_compressed_c, sizeof(MINI_CPU_compressed_c), 
+                    "[%s,%s,%s,%s]@%hu.%hhu", 
+                    MINI_CPU_Usage0, MINI_CPU_Usage1, MINI_CPU_Usage2, MINI_CPU_Usage3, 
+                    CPU_Hz / 1000000, (CPU_Hz / 100000) % 10);
+            }
+        } else {
+            // Show only max CPU usage
+            // Extract numeric values from percentage strings
+            double usage0 = 0, usage1 = 0, usage2 = 0, usage3 = 0;
+            sscanf(MINI_CPU_Usage0, "%lf%%", &usage0);
+            sscanf(MINI_CPU_Usage1, "%lf%%", &usage1);
+            sscanf(MINI_CPU_Usage2, "%lf%%", &usage2);
+            sscanf(MINI_CPU_Usage3, "%lf%%", &usage3);
+            
+            // Find max usage
+            double maxUsage = usage0;
+            if (usage1 > maxUsage) maxUsage = usage1;
+            if (usage2 > maxUsage) maxUsage = usage2;
+            if (usage3 > maxUsage) maxUsage = usage3;
+            
+            if (settings.realFrequencies && realCPU_Hz) {
+                snprintf(MINI_CPU_compressed_c, sizeof(MINI_CPU_compressed_c), 
+                    "%.0f%%@%hu.%hhu", 
+                    maxUsage,
+                    realCPU_Hz / 1000000, (realCPU_Hz / 100000) % 10);
+            }
+            else {
+                snprintf(MINI_CPU_compressed_c, sizeof(MINI_CPU_compressed_c), 
+                    "%.0f%%@%hu.%hhu", 
+                    maxUsage,
+                    CPU_Hz / 1000000, (CPU_Hz / 100000) % 10);
+            }
         }
-        else {
-            snprintf(MINI_CPU_compressed_c, sizeof(MINI_CPU_compressed_c), 
-                "[%s,%s,%s,%s]@%hu.%hhu", 
-                MINI_CPU_Usage0, MINI_CPU_Usage1, MINI_CPU_Usage2, MINI_CPU_Usage3, 
-                CPU_Hz / 1000000, (CPU_Hz / 100000) % 10);
-        }
+
+
         if (settings.realVolts) { 
             if (isMariko) {
                 snprintf(MINI_CPU_volt_c, sizeof(MINI_CPU_volt_c), "%u.%u mV", realCPU_mV/1000, (realCPU_mV/100)%10);
@@ -587,10 +626,17 @@ public:
                 if (!(flags & 64) && GameRunning) {
                     if (Temp[0]) strcat(Temp, "\n");
                     char Temp_s[32];
-                    if (!m_resolutionOutput[1].width)
-                        snprintf(Temp_s, sizeof(Temp_s), "%dx%d", m_resolutionOutput[0].width, m_resolutionOutput[0].height);
-                    else 
-                        snprintf(Temp_s, sizeof(Temp_s), "%dx%d%dx%d", m_resolutionOutput[0].width, m_resolutionOutput[0].height, m_resolutionOutput[1].width, m_resolutionOutput[1].height);
+                    if (settings.showFullResolution) {
+                        if (!m_resolutionOutput[1].width)
+                            snprintf(Temp_s, sizeof(Temp_s), "%dx%d", m_resolutionOutput[0].width, m_resolutionOutput[0].height);
+                        else 
+                            snprintf(Temp_s, sizeof(Temp_s), "%dx%d%dx%d", m_resolutionOutput[0].width, m_resolutionOutput[0].height, m_resolutionOutput[1].width, m_resolutionOutput[1].height);
+                    } else {
+                        if (!m_resolutionOutput[1].width)
+                            snprintf(Temp_s, sizeof(Temp_s), "%dp", m_resolutionOutput[0].height);
+                        else 
+                            snprintf(Temp_s, sizeof(Temp_s), "%d%d", m_resolutionOutput[0].height, m_resolutionOutput[1].height);
+                    }
                     strcat(Temp, Temp_s);
                     flags |= 64;
                 }
