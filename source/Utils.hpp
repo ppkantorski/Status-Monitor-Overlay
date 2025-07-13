@@ -1363,9 +1363,9 @@ ALWAYS_INLINE void GetConfigSettings(MicroSettings* settings) {
     settings -> handheldFontSize = 18;
     settings -> dockedFontSize = 18;
     settings -> alignTo = 1;
-    convertStrToRGBA4444("#1117", &(settings -> backgroundColor));
-    convertStrToRGBA4444("#999F", &(settings -> separatorColor));
-    convertStrToRGBA4444("#FCCF", &(settings -> catColor));
+    convertStrToRGBA4444("#0008", &(settings -> backgroundColor));
+    convertStrToRGBA4444("#8AFF", &(settings -> separatorColor));
+    convertStrToRGBA4444("#8AFF", &(settings -> catColor));
     convertStrToRGBA4444("#FFFF", &(settings -> textColor));
     settings -> show = "FPS+CPU+GPU+RAM+SOC+PWR+BAT";
     settings -> showRAMLoad = true;
