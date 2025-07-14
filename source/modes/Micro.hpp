@@ -216,10 +216,10 @@ public:
         tsl::elm::OverlayFrame* rootFrame = new tsl::elm::OverlayFrame("", "");
     
         auto Status = new tsl::elm::CustomDrawer([this](tsl::gfx::Renderer *renderer, u16 x, u16 y, u16 w, u16 h) {
-            
+            cachedMargin = renderer->getTextDimensions("CPUGPURAMSOCBAT[]", false, fontsize).second;
             if (!Initialized) {
                 //cachedMargin = renderer->drawString(" ", false, 0, 0, fontsize, renderer->a(0x0000)).first;
-                cachedMargin = renderer->getTextDimensions("CPUGPURAMSOCBAT[]", false, fontsize).second;
+                
                 catColorA = settings.catColor;
                 textColorA = settings.textColor;
                 base_y = settings.setPosBottom ? 
@@ -230,7 +230,7 @@ public:
                 tsl::hlp::requestForeground(false);
             }
             
-            renderer->drawRect(0, 0, tsl::cfg::FramebufferWidth, cachedMargin + 5, a(settings.backgroundColor));
+            renderer->drawRect(0, 0, tsl::cfg::FramebufferWidth, cachedMargin + 4, a(settings.backgroundColor));
 
             // Prepare render items if settings changed
             prepareRenderItems();
@@ -633,15 +633,20 @@ public:
         snprintf(FPS_var_compressed_c, sizeof(FPS_var_compressed_c), "%2.1f", FPSavg);
 
         mutexUnlock(&mutex_Misc);
+
+        static bool runOnce = true;
+        if (runOnce)
+            isRendering = true;
     }
     
     virtual bool handleInput(u64 keysDown, u64 keysHeld, const HidTouchState &touchPos, HidAnalogStickState joyStickPosLeft, HidAnalogStickState joyStickPosRight) override {
         if (isKeyComboPressed(keysHeld, keysDown)) {
+            isRendering = false;
             TeslaFPS = 60;
             if (skipMain)
                 tsl::goBack();
             else {
-                tsl::setNextOverlay(filepath.c_str());
+                tsl::setNextOverlay(filepath.c_str(), "--lastSelectedItem Micro");
                 tsl::Overlay::get()->close();
             }
             return true;

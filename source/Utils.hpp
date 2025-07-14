@@ -938,29 +938,29 @@ ALWAYS_INLINE bool isKeyComboPressed(uint64_t keysHeld, uint64_t keysDown) {
 
 
 // Helper function to check if comboBitmask is satisfied with at least one key in keysDown and the rest in keysHeld
-bool isKeyComboPressed2(uint64_t keysDown, uint64_t keysHeld) {
-    uint64_t requiredKeys = comboBitmask;
-    bool hasKeyDown = false; // Tracks if at least one key is in keysDown
-
-    uint64_t keyBit;
-    // Iterate over each bit in the comboBitmask
-    while (requiredKeys) {
-        keyBit = requiredKeys & ~(requiredKeys - 1); // Get the lowest bit set in requiredKeys
-
-        // Check if the key is in keysDown or keysHeld
-        if (keysDown & keyBit) {
-            hasKeyDown = true; // Found at least one key in keysDown
-        } else if (!(keysHeld & keyBit)) {
-            return false; // If the key is neither in keysDown nor keysHeld, the combo is incomplete
-        }
-
-        // Remove the lowest bit and continue to check other keys
-        requiredKeys &= ~keyBit;
-    }
-
-    // Ensure that at least one key was in keysDown and the rest were in keysHeld
-    return hasKeyDown;
-}
+//bool isKeyComboPressed2(uint64_t keysDown, uint64_t keysHeld) {
+//    uint64_t requiredKeys = comboBitmask;
+//    bool hasKeyDown = false; // Tracks if at least one key is in keysDown
+//
+//    uint64_t keyBit;
+//    // Iterate over each bit in the comboBitmask
+//    while (requiredKeys) {
+//        keyBit = requiredKeys & ~(requiredKeys - 1); // Get the lowest bit set in requiredKeys
+//
+//        // Check if the key is in keysDown or keysHeld
+//        if (keysDown & keyBit) {
+//            hasKeyDown = true; // Found at least one key in keysDown
+//        } else if (!(keysHeld & keyBit)) {
+//            return false; // If the key is neither in keysDown nor keysHeld, the combo is incomplete
+//        }
+//
+//        // Remove the lowest bit and continue to check other keys
+//        requiredKeys &= ~keyBit;
+//    }
+//
+//    // Ensure that at least one key was in keysDown and the rest were in keysHeld
+//    return hasKeyDown;
+//}
 
 
 // Custom utility function for parsing an ini file
@@ -981,7 +981,7 @@ void ParseIniFile() {
         mkdir(directoryPath, 0777);
     }
 
-    bool readExternalCombo = false;
+    //bool readExternalCombo = false;
     
     // Try to open main config file
     FILE* configFile = fopen(configIniPath, "r");
@@ -1005,14 +1005,14 @@ void ParseIniFile() {
             const auto& section = statusMonitorIt->second;
             
             // Process key_combo
-            auto keyComboIt = section.find("key_combo");
-            if (keyComboIt != section.end()) {
-                keyCombo = keyComboIt->second;
-                removeSpaces(keyCombo);
-                convertToUpper(keyCombo);
-            } else {
-                readExternalCombo = true;
-            }
+            //auto keyComboIt = section.find("key_combo");
+            //if (keyComboIt != section.end()) {
+            //    keyCombo = keyComboIt->second;
+            //    removeSpaces(keyCombo);
+            //    convertToUpper(keyCombo);
+            //} else {
+            //    readExternalCombo = true;
+            //}
             
             // Process battery_avg_iir_filter
             auto batteryFilterIt = section.find("battery_avg_iir_filter");
@@ -1023,13 +1023,13 @@ void ParseIniFile() {
             }
             
             // Process font_cache
-            auto fontCacheIt = section.find("font_cache");
-            if (fontCacheIt != section.end()) {
-                std::string key = fontCacheIt->second;
-                convertToUpper(key);
-                fontCache = (key == "TRUE");
-            }
-            
+            //auto fontCacheIt = section.find("font_cache");
+            //if (fontCacheIt != section.end()) {
+            //    std::string key = fontCacheIt->second;
+            //    convertToUpper(key);
+            //    fontCache = (key == "TRUE");
+            //}
+            //
             // Process battery_time_left_refreshrate
             auto refreshRateIt = section.find("battery_time_left_refreshrate");
             if (refreshRateIt != section.end()) {
@@ -1045,45 +1045,45 @@ void ParseIniFile() {
                 GPULoadPerFrame = (key != "TRUE");
             }
         }
-    } else {
-        readExternalCombo = true;
+    //} else {
+    //    readExternalCombo = true;
     }
 
     // Handle external combo reading
-    if (readExternalCombo) {
-        // Try ultrahand first, then tesla
-        const char* configPaths[] = {ultrahandConfigIniPath, teslaConfigIniPath};
-        const char* sectionNames[] = {"ultrahand", "tesla"};
-        
-        std::string fileData;
-        for (int i = 0; i < 2; ++i) {
-            FILE* extConfigFile = fopen(configPaths[i], "r");
-            if (extConfigFile) {
-                // Get file size and read efficiently
-                fseek(extConfigFile, 0, SEEK_END);
-                long fileSize = ftell(extConfigFile);
-                fseek(extConfigFile, 0, SEEK_SET);
-                
-                fileData = "";
-                fileData.resize(fileSize);
-                fread(fileData.data(), 1, fileSize, extConfigFile);
-                fclose(extConfigFile);
-                
-                parsedData = ult::parseIni(fileData);
-                
-                auto sectionIt = parsedData.find(sectionNames[i]);
-                if (sectionIt != parsedData.end()) {
-                    auto keyComboIt = sectionIt->second.find("key_combo");
-                    if (keyComboIt != sectionIt->second.end()) {
-                        keyCombo = keyComboIt->second;
-                        removeSpaces(keyCombo);
-                        convertToUpper(keyCombo);
-                        break; // Found combo, exit loop
-                    }
+    //if (readExternalCombo) {
+    // Try ultrahand first, then tesla
+    const char* configPaths[] = {ultrahandConfigIniPath, teslaConfigIniPath};
+    const char* sectionNames[] = {"ultrahand", "tesla"};
+    
+    std::string fileData;
+    for (int i = 0; i < 2; ++i) {
+        FILE* extConfigFile = fopen(configPaths[i], "r");
+        if (extConfigFile) {
+            // Get file size and read efficiently
+            fseek(extConfigFile, 0, SEEK_END);
+            long fileSize = ftell(extConfigFile);
+            fseek(extConfigFile, 0, SEEK_SET);
+            
+            fileData = "";
+            fileData.resize(fileSize);
+            fread(fileData.data(), 1, fileSize, extConfigFile);
+            fclose(extConfigFile);
+            
+            parsedData = ult::parseIni(fileData);
+            
+            auto sectionIt = parsedData.find(sectionNames[i]);
+            if (sectionIt != parsedData.end()) {
+                auto keyComboIt = sectionIt->second.find("key_combo");
+                if (keyComboIt != sectionIt->second.end()) {
+                    keyCombo = keyComboIt->second;
+                    removeSpaces(keyCombo);
+                    convertToUpper(keyCombo);
+                    break; // Found combo, exit loop
                 }
             }
         }
     }
+    //}
     
     comboBitmask = MapButtons(keyCombo);
 }
@@ -1356,18 +1356,18 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
 }
 
 ALWAYS_INLINE void GetConfigSettings(MicroSettings* settings) {
-    settings -> realFrequencies = false;
-    settings -> realVolts = false;
+    settings -> realFrequencies = true;
+    settings -> realVolts = true;
     settings -> showFullCPU = false;
     settings -> showFullResolution = false;
-    settings -> handheldFontSize = 18;
-    settings -> dockedFontSize = 18;
+    settings -> handheldFontSize = 15;
+    settings -> dockedFontSize = 15;
     settings -> alignTo = 1;
     convertStrToRGBA4444("#0008", &(settings -> backgroundColor));
     convertStrToRGBA4444("#8AFF", &(settings -> separatorColor));
     convertStrToRGBA4444("#8AFF", &(settings -> catColor));
     convertStrToRGBA4444("#FFFF", &(settings -> textColor));
-    settings -> show = "FPS+CPU+GPU+RAM+SOC+PWR+BAT";
+    settings -> show = "FPS+CPU+GPU+RAM+SOC+BAT";
     settings -> showRAMLoad = true;
     settings -> setPosBottom = false;
     settings -> refreshRate = 1;

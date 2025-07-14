@@ -177,9 +177,13 @@ public:
 			gameStart = false;
 			resolutionLookup = false;
 		}
+        static bool runOnce = true;
+        if (runOnce)
+            isRendering = true;
 	}
 	virtual bool handleInput(u64 keysDown, u64 keysHeld, const HidTouchState &touchPos, HidAnalogStickState joyStickPosLeft, HidAnalogStickState joyStickPosRight) override {
-		if (isKeyComboPressed2(keysHeld, keysDown)) {
+		if (isKeyComboPressed(keysHeld, keysDown)) {
+			isRendering = false;
 			tsl::goBack();
 			return true;
 		}

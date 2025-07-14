@@ -266,10 +266,14 @@ public:
         else snprintf(remainingBatteryLife, sizeof remainingBatteryLife, "--:--");
         snprintf(BatteryDraw_c, sizeof BatteryDraw_c, "Battery Power Flow: %+.2fW[%s]", PowerConsumption, remainingBatteryLife);
         mutexUnlock(&mutex_BatteryChecker);
-        
+
+        static bool runOnce = true;
+        if (runOnce)
+            isRendering = true;
     }
     virtual bool handleInput(u64 keysDown, u64 keysHeld, const HidTouchState &touchPos, HidAnalogStickState joyStickPosLeft, HidAnalogStickState joyStickPosRight) override {
         if (isKeyComboPressed(keysHeld, keysDown)) {
+            isRendering = false;
             TeslaFPS = 60;
             tsl::goBack();
             return true;

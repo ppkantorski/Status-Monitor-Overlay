@@ -5,7 +5,7 @@
 
 //static tsl::elm::OverlayFrame* rootFrame = nullptr;
 static bool skipMain = false;
-
+static std::string lastSelectedItem;
 
 #include "modes/FPS_Counter.hpp"
 #include "modes/FPS_Graph.hpp"
@@ -159,15 +159,15 @@ public:
             return false;
         });
         list->addItem(Full);
-        auto Mini = new tsl::elm::ListItem("Mini");
-        Mini->setClickListener([](uint64_t keys) {
-            if (keys & KEY_A) {
-                tsl::changeTo<MiniOverlay>();
-                return true;
-            }
-            return false;
-        });
-        list->addItem(Mini);
+        //auto Mini = new tsl::elm::ListItem("Mini");
+        //Mini->setClickListener([](uint64_t keys) {
+        //    if (keys & KEY_A) {
+        //        tsl::changeTo<MiniOverlay>();
+        //        return true;
+        //    }
+        //    return false;
+        //});
+        //list->addItem(Mini);
 
         bool fileExist = false;
         FILE* test = fopen(std::string(folderpath + filename).c_str(), "rb");
@@ -185,6 +185,17 @@ public:
             }
         }
         if (fileExist) {
+            auto Mini = new tsl::elm::ListItem("Mini");
+            Mini->setClickListener([](uint64_t keys) {
+                if (keys & KEY_A) {
+                    tsl::setNextOverlay(filepath, "--miniOverlay");
+                    tsl::Overlay::get()->close();
+                    return true;
+                }
+                return false;
+            });
+            list->addItem(Mini);
+
             auto Micro = new tsl::elm::ListItem("Micro");
             Micro->setClickListener([](uint64_t keys) {
                 if (keys & KEY_A) {
@@ -217,6 +228,7 @@ public:
         });
         list->addItem(Other);
 
+        list->jumpToItem(lastSelectedItem);
         rootFrame->setContent(list);
 
         return rootFrame;
@@ -418,6 +430,7 @@ public:
     MiniEntryOverlay() {}
 
     virtual void initServices() override {
+
         tsl::hlp::requestForeground(false);
         // Same service‐init as before
         tsl::hlp::doWithSmSession([this]{
@@ -455,6 +468,7 @@ public:
             }
         });
         Hinted = envIsSyscallHinted(0x6F);
+
     }
 
     virtual void exitServices() override {
@@ -499,6 +513,20 @@ bool checkOverlayFile(const std::string& filename) {
 }
 
 // Helper function to setup micro mode paths
+void setupMiniMode() {
+    // Try user-specified filename first, then fallback to default
+    const std::string primaryPath = folderpath + filename;
+    
+    if (checkOverlayFile(primaryPath)) {
+        filepath = primaryPath;
+    } else {
+        const std::string fallbackPath = folderpath + "Status-Monitor-Overlay.ovl";
+        if (checkOverlayFile(fallbackPath)) {
+            filepath = fallbackPath;
+        }
+    }
+}
+
 void setupMicroMode() {
     ult::DefaultFramebufferWidth = 1280;
     ult::DefaultFramebufferHeight = 28;
@@ -530,7 +558,7 @@ int main(int argc, char **argv) {
         }
     }
 
-    
+    ult::useRightAlignment = (ult::parseValueFromIniSection(ult::ULTRAHAND_CONFIG_INI_PATH, ult::ULTRAHAND_PROJECT_NAME, "right_alignment") == ult::TRUE_STR);
     // Check command line arguments
     for (u8 arg = 0; arg < argc; arg++) {
         if (argv[arg][0] != '-') continue;  // Check first character
@@ -539,13 +567,30 @@ int main(int argc, char **argv) {
             setupMicroMode();
             return tsl::loop<MicroMode>(argc, argv);
         } 
+        else if (strcasecmp(argv[arg], "--miniOverlay") == 0) {
+            setupMiniMode();
+            ult::useRightAlignment = ult::useRightAlignment || (ult::parseValueFromIniSection("sdmc:/config/status-monitor/config.ini", "mini", "right_alignment") == ult::TRUE_STR);
+            return tsl::loop<MiniEntryOverlay>(argc, argv);
+        } 
         else if (strcasecmp(argv[arg], "-micro") == 0) {
+
             skipMain = true;
-            setupMicroMode();
+            ult::DefaultFramebufferWidth = 1280;
+            ult::DefaultFramebufferHeight = 28;
             return tsl::loop<MicroMode>(argc, argv);
         } 
         else if (strcasecmp(argv[arg], "-mini") == 0) {
+            skipMain = true;
+            ult::useRightAlignment = ult::useRightAlignment || (ult::parseValueFromIniSection("sdmc:/config/status-monitor/config.ini", "mini", "right_alignment") == ult::TRUE_STR);
             return tsl::loop<MiniEntryOverlay>(argc, argv);
+        }
+        else if (strcasecmp(argv[arg], "--lastSelectedItem") == 0) {
+            // Check if there's a next argument for the item name
+            if (arg + 1 < argc) {
+                lastSelectedItem = argv[arg + 1];
+                arg++; // Skip the next argument since we've consumed it
+            }
+            // Don't return here, continue processing other arguments
         }
     }
     

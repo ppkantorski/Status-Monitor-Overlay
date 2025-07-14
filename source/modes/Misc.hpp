@@ -117,7 +117,10 @@ public:
         else {
             memcpy(&pass_temp1, &(Nifm_profile.wireless_setting_data.passphrase[0]), 24);
         }
-        snprintf(Nifm_pass, sizeof Nifm_pass, "%s\n%s\n%s", pass_temp1, pass_temp2, pass_temp3);    
+        snprintf(Nifm_pass, sizeof Nifm_pass, "%s\n%s\n%s", pass_temp1, pass_temp2, pass_temp3);
+        static bool runOnce = true;
+        if (runOnce)
+            isRendering = true;
     }
 
     virtual bool handleInput(u64 keysDown, u64 keysHeld, const HidTouchState &touchPos, HidAnalogStickState joyStickPosLeft, HidAnalogStickState joyStickPosRight) override {
@@ -127,6 +130,7 @@ public:
         else Nifm_showpass = false;
 
         if (keysDown & KEY_B) {
+            isRendering = false;
             tsl::goBack();
             return true;
         }

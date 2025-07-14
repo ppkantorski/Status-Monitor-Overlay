@@ -19,7 +19,7 @@ public:
         //tsl::initializeUltrahandSettings();
         PowerConsumption = 0.0f;
         batTimeEstimate = -1;
-        strcpy(SoCPCB_temperature_c, "-.--W [--:--]"); // Default display
+        strcpy(SoCPCB_temperature_c, "-.--W-.-% [--:--]"); // Default display
 
         GetConfigSettings(&settings);
         apmGetPerformanceMode(&performanceMode);
@@ -50,6 +50,7 @@ public:
         StartThreads();
     }
     ~MiniOverlay() {
+
         CloseThreads();
         FullMode = true;
         tsl::hlp::requestForeground(true);
@@ -107,6 +108,7 @@ public:
             
             // Initial width calculation (only once)
             if (!Initialized) {
+                
                 rectangleWidth = 0;
                 //std::pair<u32, u32> dimensions;
                 u32 width;
@@ -128,8 +130,8 @@ public:
                         //dimensions = renderer->drawString("88.8\u00B0C88.8\u00B0C88.8\u00B0C (100.0%)", false, 0, 0, fontsize, renderer->a(0x0000));
                         width = renderer->getTextDimensions("88.8\u00B0C88.8\u00B0C88.8\u00B0C (100.0%)", false, fontsize).first;
                     } else if (key == "BAT") {
-                        //dimensions = renderer->drawString("-44.44W [44:44]", false, 0, 0, fontsize, renderer->a(0x0000));
-                        width = renderer->getTextDimensions("-44.44W [44:44]", false, fontsize).first;
+                        //dimensions = renderer->drawString("-44.44W100.0% [44:44]", false, 0, 0, fontsize, renderer->a(0x0000));
+                        width = renderer->getTextDimensions("-44.44W100.0% [44:44]", false, fontsize).first;
                     } else if (key == "FPS") {
                         //dimensions = renderer->drawString("444.4", false, 0, 0, fontsize, renderer->a(0x0000));
                         width = renderer->getTextDimensions("444.4", false, fontsize).first;
@@ -660,14 +662,25 @@ public:
         }
         else snprintf(remainingBatteryLife, sizeof remainingBatteryLife, "--:--");
         
-        snprintf(SoCPCB_temperature_c, sizeof SoCPCB_temperature_c, "%0.2fW [%s]", PowerConsumption, remainingBatteryLife);
+        snprintf(SoCPCB_temperature_c, sizeof SoCPCB_temperature_c, "%0.2fW%.1f%% [%s]", 
+            PowerConsumption, (float)_batteryChargeInfoFields.RawBatteryCharge / 1000, remainingBatteryLife);
         mutexUnlock(&mutex_BatteryChecker);
+
+        static bool runOnce = true;
+        if (runOnce)
+            isRendering = true;
 
     }
     virtual bool handleInput(u64 keysDown, u64 keysHeld, const HidTouchState &touchPos, HidAnalogStickState joyStickPosLeft, HidAnalogStickState joyStickPosRight) override {
         if (isKeyComboPressed(keysHeld, keysDown)) {
+            isRendering = false;
             TeslaFPS = 60;
-            tsl::goBack();
+            if (skipMain)
+                tsl::goBack();
+            else {
+                tsl::setNextOverlay(filepath.c_str(), "--lastSelectedItem Mini");
+                tsl::Overlay::get()->close();
+            }
             return true;
         }
         else if (((keysDown & KEY_L) && (keysDown & KEY_ZL)) || ((keysDown & KEY_L) && (keysHeld & KEY_ZL)) || ((keysHeld & KEY_L) && (keysDown & KEY_ZL))) { 

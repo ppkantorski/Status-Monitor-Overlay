@@ -101,10 +101,13 @@ public:
                 tempBatTimeEstimate
             );
         mutexUnlock(&mutex_BatteryChecker);
-        
+        static bool runOnce = true;
+        if (runOnce)
+            isRendering = true;
     }
     virtual bool handleInput(uint64_t keysDown, uint64_t keysHeld, touchPosition touchInput, JoystickPosition leftJoyStick, JoystickPosition rightJoyStick) override {
         if (keysDown & KEY_B) {
+            isRendering = false;
             tsl::goBack();
             return true;
         }
