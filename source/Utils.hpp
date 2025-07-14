@@ -1205,9 +1205,9 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
     settings -> showFullResolution = true;
     settings->handheldFontSize = 15;
     settings->dockedFontSize = 15;
-    convertStrToRGBA4444("#0008", &(settings -> backgroundColor));
-    convertStrToRGBA4444("#8AFF", &(settings -> separatorColor));
-    convertStrToRGBA4444("#8AFF", &(settings -> catColor));
+    convertStrToRGBA4444("#0009", &(settings -> backgroundColor));
+    convertStrToRGBA4444("#1CFF", &(settings -> separatorColor));
+    convertStrToRGBA4444("#1CFF", &(settings -> catColor));
     convertStrToRGBA4444("#FFFF", &(settings -> textColor));
     settings->show = "CPU+GPU+RAM+TEMP+BAT+FAN+FPS+RES";
     settings->showRAMLoad = true;
@@ -1363,9 +1363,9 @@ ALWAYS_INLINE void GetConfigSettings(MicroSettings* settings) {
     settings -> handheldFontSize = 15;
     settings -> dockedFontSize = 15;
     settings -> alignTo = 1;
-    convertStrToRGBA4444("#0008", &(settings -> backgroundColor));
-    convertStrToRGBA4444("#8AFF", &(settings -> separatorColor));
-    convertStrToRGBA4444("#8AFF", &(settings -> catColor));
+    convertStrToRGBA4444("#0009", &(settings -> backgroundColor));
+    convertStrToRGBA4444("#1CFF", &(settings -> separatorColor));
+    convertStrToRGBA4444("#1CFF", &(settings -> catColor));
     convertStrToRGBA4444("#FFFF", &(settings -> textColor));
     settings -> show = "FPS+CPU+GPU+RAM+SOC+BAT";
     settings -> showRAMLoad = true;
