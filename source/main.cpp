@@ -558,7 +558,7 @@ int main(int argc, char **argv) {
         }
     }
 
-    ult::useRightAlignment = (ult::parseValueFromIniSection(ult::ULTRAHAND_CONFIG_INI_PATH, ult::ULTRAHAND_PROJECT_NAME, "right_alignment") == ult::TRUE_STR);
+    //ult::useRightAlignment = (ult::parseValueFromIniSection(ult::ULTRAHAND_CONFIG_INI_PATH, ult::ULTRAHAND_PROJECT_NAME, "right_alignment") == ult::TRUE_STR);
     // Check command line arguments
     for (u8 arg = 0; arg < argc; arg++) {
         if (argv[arg][0] != '-') continue;  // Check first character
@@ -569,7 +569,7 @@ int main(int argc, char **argv) {
         } 
         else if (strcasecmp(argv[arg], "--miniOverlay") == 0) {
             setupMiniMode();
-            ult::useRightAlignment = ult::useRightAlignment || (ult::parseValueFromIniSection("sdmc:/config/status-monitor/config.ini", "mini", "right_alignment") == ult::TRUE_STR);
+            //ult::useRightAlignment = ult::useRightAlignment || (ult::parseValueFromIniSection("sdmc:/config/status-monitor/config.ini", "mini", "right_alignment") == ult::TRUE_STR);
             return tsl::loop<MiniEntryOverlay>(argc, argv);
         } 
         else if (strcasecmp(argv[arg], "-micro") == 0) {
