@@ -59,7 +59,7 @@ private:
         uint32_t volt_separator_gap = 0;   // Fixed gap before voltage separator
         uint32_t volt_data_gap = 0;        // Fixed gap after voltage separator
         uint32_t item_spacing = 16;        // Minimum spacing between complete items
-        uint32_t side_margin = 2;          // Margins on left and right
+        uint32_t side_margin = 3;          // Margins on left and right
         bool calculated = false;
     } layout;
     
@@ -337,8 +337,8 @@ public:
             }
             
             // Calculate available space for distribution
-            uint32_t available_width = tsl::cfg::FramebufferWidth - (2 * layout.side_margin);
-            uint32_t remaining_space = available_width - total_all_width;
+            //uint32_t available_width = tsl::cfg::FramebufferWidth - (2 * layout.side_margin);
+            //uint32_t remaining_space = available_width - total_all_width;
             
             // Calculate positions for even distribution
             std::vector<uint32_t> item_positions;
@@ -374,10 +374,11 @@ public:
                 // To fix any rounding error, shift all items horizontally if needed:
                 int32_t last_item_end = item_positions.back() + all_layouts_ordered.back().total_width;
                 int32_t overflow = (int32_t)tsl::cfg::FramebufferWidth - layout.side_margin - last_item_end;
-            
+                
+                /* keep far-left fixed; nudge only items 1…N-1 */
                 if (overflow != 0) {
-                    for (auto& pos : item_positions) {
-                        pos += overflow;  // shift right or left to align perfectly
+                    for (size_t i = 1; i < item_positions.size(); ++i) {
+                        item_positions[i] += overflow;
                     }
                 }
             }

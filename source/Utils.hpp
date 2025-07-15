@@ -356,7 +356,7 @@ void BatteryChecker(void*) {
     // Loop variables
     size_t counter = 0;
     int itr = 0;
-    uint64_t tick_TTE = svcGetSystemTick();
+    uint64_t tick_TTE = armGetSystemTick();
     float tempA, tempV;
     
     // Register selection based on filter (avoid branching in loop)
@@ -374,7 +374,7 @@ void BatteryChecker(void*) {
     size_t idx;
     while (!threadexit) {
         mutexLock(&mutex_BatteryChecker);
-        startTick = svcGetSystemTick();
+        startTick = armGetSystemTick();
 
         psmGetBatteryChargeInfoFields(psmService, &_batteryChargeInfoFields);
 
@@ -418,7 +418,7 @@ void BatteryChecker(void*) {
             BatteryTimeCache[itr % cacheElements] = (int32_t)time_est;
             itr++;
             
-            new_tick_TTE = svcGetSystemTick();
+            new_tick_TTE = armGetSystemTick();
             if (armTicksToNs(new_tick_TTE - tick_TTE) >= refresh_rate_ns) {
                 elements_to_avg = (itr < cacheElements) ? itr : cacheElements;
                 sum = 0;
@@ -434,7 +434,7 @@ void BatteryChecker(void*) {
         mutexUnlock(&mutex_BatteryChecker);
         
         // Optimized sleep with single system call
-        uint64_t elapsed_ns = armTicksToNs(svcGetSystemTick() - startTick);
+        uint64_t elapsed_ns = armTicksToNs(armGetSystemTick() - startTick);
         svcSleepThread((elapsed_ns < sleep_time_ns) ? (sleep_time_ns - elapsed_ns) : 1000);
     }
     
