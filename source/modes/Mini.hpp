@@ -4,6 +4,7 @@ private:
     char Rotation_SpeedLevel_c[64] = "";
     char RAM_var_compressed_c[128] = "";
     char SoCPCB_temperature_c[64] = "";
+    char soc_temperature_c[64] = "";
     char skin_temperature_c[64] = "";
 
     uint32_t rectangleWidth;
@@ -19,7 +20,7 @@ public:
         //tsl::initializeUltrahandSettings();
         PowerConsumption = 0.0f;
         batTimeEstimate = -1;
-        strcpy(SoCPCB_temperature_c, "-.--W-.-% [--:--]"); // Default display
+        strcpy(SoCPCB_temperature_c, "-.-- W-.-% [--:--]"); // Default display
 
         GetConfigSettings(&settings);
         apmGetPerformanceMode(&performanceMode);
@@ -116,22 +117,58 @@ public:
                 for (const auto& key : showKeys) {
                     if (key == "CPU") {
                         //dimensions = renderer->drawString("[100%,100%,100%,100%]@4444.4", false, 0, 0, fontsize, renderer->a(0x0000));
-                        if (settings.showFullCPU)
-                            width = renderer->getTextDimensions("[100%,100%,100%,100%]@4444.4", false, fontsize).first;
-                        else
-                            width = renderer->getTextDimensions("100%@4444.4", false, fontsize).first;
+                        if (!settings.realVolts) {
+                            if (settings.showFullCPU)
+                                width = renderer->getTextDimensions("[100%,100%,100%,100%]@4444.4", false, fontsize).first;
+                            else
+                                width = renderer->getTextDimensions("100%@4444.4", false, fontsize).first;
+                        } else {
+                            if (settings.showFullCPU)
+                                width = renderer->getTextDimensions("[100%,100%,100%,100%]@4444.4444 mV", false, fontsize).first;
+                            else
+                                width = renderer->getTextDimensions("100%@4444.4444 mV", false, fontsize).first;
+                        }
                     } else if (key == "GPU" || (key == "RAM" && settings.showRAMLoad && R_SUCCEEDED(sysclkCheck))) {
                         //dimensions = renderer->drawString("100.0%@4444.4", false, 0, 0, fontsize, renderer->a(0x0000));
-                        width = renderer->getTextDimensions("100.0%@4444.4", false, fontsize).first;
+                        if (!settings.realVolts) {
+                            width = renderer->getTextDimensions("100%@4444.4", false, fontsize).first;
+                        } else {
+                            width = renderer->getTextDimensions("100%@4444.4444 mV", false, fontsize).first;
+                        }
                     } else if (key == "RAM" && (!settings.showRAMLoad || R_FAILED(sysclkCheck))) {
                         //dimensions = renderer->drawString("44444444MB@4444.4", false, 0, 0, fontsize, renderer->a(0x0000));
-                        width = renderer->getTextDimensions("44444444MB@4444.4", false, fontsize).first;
-                    } else if (key == "TEMP") {
-                        //dimensions = renderer->drawString("88.8\u00B0C88.8\u00B0C88.8\u00B0C (100.0%)", false, 0, 0, fontsize, renderer->a(0x0000));
-                        width = renderer->getTextDimensions("88.8\u00B0C88.8\u00B0C88.8\u00B0C (100.0%)", false, fontsize).first;
+                        if (!settings.realVolts) {
+                            width = renderer->getTextDimensions("100%@4444.4", false, fontsize).first;
+                        } else {
+                            width = renderer->getTextDimensions("100%@4444.44444 mV", false, fontsize).first;
+                        }
+                    } else if (key == "SOC") {                // new block
+                        if (!settings.realVolts)
+                            if (settings.showFanPercentage)
+                                width = renderer->getTextDimensions("88°C (100%)", false, fontsize).first;
+                            else
+                                width = renderer->getTextDimensions("88°C", false, fontsize).first;
+                        else
+                            if (settings.showFanPercentage)
+                                width = renderer->getTextDimensions("88°C (100%)444 mV", false, fontsize).first;
+                            else
+                                width = renderer->getTextDimensions("88°C444 mV", false, fontsize).first;
+                    } else if (key == "TMP") {
+                        //dimensions = renderer->drawString("88.8\u00B0C88.8\u00B0C88.8\u00B0C (100%)", false, 0, 0, fontsize, renderer->a(0x0000));
+                        if (!settings.realVolts) {
+                            if (settings.showFanPercentage)
+                                width = renderer->getTextDimensions("88\u00B0C88\u00B0C88\u00B0C (100%)", false, fontsize).first;
+                            else
+                                width = renderer->getTextDimensions("88\u00B0C88\u00B0C88\u00B0C", false, fontsize).first;
+                        } else {
+                            if (settings.showFanPercentage)
+                                width = renderer->getTextDimensions("88\u00B0C88\u00B0C88\u00B0C4444.4 mV", false, fontsize).first;
+                            else
+                                width = renderer->getTextDimensions("88\u00B0C88\u00B0C88\u00B0C4444.4 mV", false, fontsize).first;
+                        }
                     } else if (key == "BAT") {
-                        //dimensions = renderer->drawString("-44.44W100.0% [44:44]", false, 0, 0, fontsize, renderer->a(0x0000));
-                        width = renderer->getTextDimensions("-44.44W100.0% [44:44]", false, fontsize).first;
+                        //dimensions = renderer->drawString("-44.44 W100.0% [44:44]", false, 0, 0, fontsize, renderer->a(0x0000));
+                        width = renderer->getTextDimensions("-44.44 W100.0% [44:44]", false, fontsize).first;
                     } else if (key == "FPS") {
                         //dimensions = renderer->drawString("444.4", false, 0, 0, fontsize, renderer->a(0x0000));
                         width = renderer->getTextDimensions("444.4", false, fontsize).first;
@@ -178,14 +215,18 @@ public:
                         shouldAdd = true;
                         labelText = "RAM";
                         flags |= 4;
-                    } else if (key == "TEMP" && !(flags & 8)) {
+                    } else if (key == "SOC" && !(flags & 8)) {
                         shouldAdd = true;
-                        labelText = "TEMP";
+                        labelText = "SOC";
                         flags |= 8;
-                    } else if ((key == "BAT" || key == "DRAW") && !(flags & 16)) {
+                    } else if (key == "TMP" && !(flags & 16)) {
+                        shouldAdd = true;
+                        labelText = "TMP";
+                        flags |= 16;
+                    } else if ((key == "BAT" || key == "DRAW") && !(flags & 32)) {
                         shouldAdd = true;
                         labelText = "BAT";
-                        flags |= 16;
+                        flags |= 32;
                     } else if (key == "FPS" && !(flags & 64) && GameRunning) {
                         shouldAdd = true;
                         labelText = "FPS";
@@ -201,10 +242,10 @@ public:
                         labelLines.push_back(labelText);
                         entryCount++;
                         
-                        if (settings.realVolts && key != "BAT" && key != "DRAW" && key != "FPS" && key != "RES") {
-                            labelLines.push_back(""); // Empty line for voltage info
-                            entryCount++;
-                        }
+                        //if (settings.realVolts && key != "BAT" && key != "DRAW" && key != "FPS" && key != "RES") {
+                        //    labelLines.push_back(""); // Empty line for voltage info
+                        //    entryCount++;
+                        //}
                     }
                 }
                 
@@ -217,7 +258,7 @@ public:
                 }
                 
                 // Use the actual entry count for height calculation
-                cachedHeight = (fontsize * actualEntryCount) + (fontsize / 3);
+                cachedHeight = ((fontsize + settings.spacing) * actualEntryCount) + (fontsize / 3) + settings.spacing;
                 uint32_t margin = (fontsize * 4);
                 
                 cachedBaseX = 0;
@@ -274,7 +315,7 @@ public:
             }
             
             // Draw each label and variable line individually
-            uint32_t currentY = cachedBaseY + fontsize;
+            uint32_t currentY = cachedBaseY + fontsize + settings.spacing;
             size_t labelIndex = 0;
             
             uint32_t labelWidth, labelCenterX;
@@ -293,8 +334,8 @@ public:
                 //renderer->drawStringWith(variableLines[i].c_str(), false, cachedBaseX + margin, currentY, fontsize, renderer->a(settings.textColor));
                 renderer->drawStringWithColoredSections(variableLines[i].c_str(), false, {""}, cachedBaseX + margin, currentY, fontsize, settings.textColor, a(settings.separatorColor));
 
-                currentY += fontsize;
-                labelIndex++;
+                currentY += fontsize + settings.spacing;   // previously += fontsize
+                ++labelIndex;
             }
         });
     
@@ -386,102 +427,156 @@ public:
         }
 
 
-        if (settings.realVolts) { 
-            if (isMariko) {
-                snprintf(MINI_CPU_volt_c, sizeof(MINI_CPU_volt_c), "%u.%u mV", realCPU_mV/1000, (realCPU_mV/100)%10);
-            }
-            else {
-                snprintf(MINI_CPU_volt_c, sizeof(MINI_CPU_volt_c), "%u.%u mV", realCPU_mV/1000, (realCPU_mV/10)%100);
-            } 
-        } 
+        //if (settings.realVolts) { 
+        //    if (isMariko) {
+        //        snprintf(MINI_CPU_volt_c, sizeof(MINI_CPU_volt_c), "%u.%u mV", realCPU_mV/1000, (realCPU_mV/100)%10);
+        //    }
+        //    else {
+        //        snprintf(MINI_CPU_volt_c, sizeof(MINI_CPU_volt_c), "%u.%u mV", realCPU_mV/1000, (realCPU_mV/10)%100);
+        //    }
+        //} 
+        /* ─── CPU ───────────────────────────────────────────── */
+        if (settings.realVolts) {
+            uint32_t mv = realCPU_mV / 1000;
+            snprintf(MINI_CPU_volt_c, sizeof(MINI_CPU_volt_c), "%u mV", mv);
+        }
+
+
         char MINI_GPU_Load_c[14];
         char MINI_GPU_volt_c[16];
         if (settings.realFrequencies && realGPU_Hz) {
-            snprintf(MINI_GPU_Load_c, sizeof(MINI_GPU_Load_c), 
-                "%hu.%hhu%%@%hu.%hhu", 
-                GPU_Load_u / 10, GPU_Load_u % 10,
-                realGPU_Hz / 1000000, (realGPU_Hz / 100000) % 10);
-        }
-        else {
-            snprintf(MINI_GPU_Load_c, sizeof(MINI_GPU_Load_c), 
-                "%hu.%hhu%%@%hu.%hhu", 
-                GPU_Load_u / 10, GPU_Load_u % 10, 
-                GPU_Hz / 1000000, (GPU_Hz / 100000) % 10);
+            snprintf(MINI_GPU_Load_c, sizeof(MINI_GPU_Load_c),
+                     "%hu%%%s%hu.%hhu",
+                     GPU_Load_u / 10,               // integer %
+                     "@",                           // keep diff char as before
+                     realGPU_Hz / 1000000,
+                     (realGPU_Hz / 100000) % 10);
+        } else {
+            snprintf(MINI_GPU_Load_c, sizeof(MINI_GPU_Load_c),
+                     "%hu%%%s%hu.%hhu",
+                     GPU_Load_u / 10,               // integer %
+                     "@",
+                     GPU_Hz / 1000000,
+                     (GPU_Hz / 100000) % 10);
         }
         
-        if (settings.realVolts) { 
-            if (isMariko) {
-                snprintf(MINI_GPU_volt_c, sizeof(MINI_GPU_volt_c), "%u.%u mV", realGPU_mV/1000, (realGPU_mV/100)%10);
-            }
-            else {
-                snprintf(MINI_GPU_volt_c, sizeof(MINI_GPU_volt_c), "%u.%u mV", realGPU_mV/1000, (realGPU_mV/10)%100);
-            } 
-        } 
+        //if (settings.realVolts) { 
+        //    if (isMariko) {
+        //        snprintf(MINI_GPU_volt_c, sizeof(MINI_GPU_volt_c), "%u.%u mV", realGPU_mV/1000, (realGPU_mV/100)%10);
+        //    }
+        //    else {
+        //        snprintf(MINI_GPU_volt_c, sizeof(MINI_GPU_volt_c), "%u.%u mV", realGPU_mV/1000, (realGPU_mV/10)%100);
+        //    } 
+        //} 
+        /* ─── GPU ───────────────────────────────────────────── */
+        if (settings.realVolts) {
+            uint32_t mv = realGPU_mV / 1000;
+            snprintf(MINI_GPU_volt_c, sizeof(MINI_GPU_volt_c), "%u mV", mv);
+        }
 
         ///RAM
-        char MINI_RAM_var_compressed_c[19];
-        char MINI_RAM_volt_c[32]; 
-        if (R_FAILED(sysclkCheck) || !settings.showRAMLoad) {
-            float RAM_Total_application_f = (float)RAM_Total_application_u / 1024 / 1024;
-            float RAM_Total_applet_f = (float)RAM_Total_applet_u / 1024 / 1024;
-            float RAM_Total_system_f = (float)RAM_Total_system_u / 1024 / 1024;
-            float RAM_Total_systemunsafe_f = (float)RAM_Total_systemunsafe_u / 1024 / 1024;
-            float RAM_Total_all_f = RAM_Total_application_f + RAM_Total_applet_f + RAM_Total_system_f + RAM_Total_systemunsafe_f;
-            float RAM_Used_application_f = (float)RAM_Used_application_u / 1024 / 1024;
-            float RAM_Used_applet_f = (float)RAM_Used_applet_u / 1024 / 1024;
-            float RAM_Used_system_f = (float)RAM_Used_system_u / 1024 / 1024;
-            float RAM_Used_systemunsafe_f = (float)RAM_Used_systemunsafe_u / 1024 / 1024;
-            float RAM_Used_all_f = RAM_Used_application_f + RAM_Used_applet_f + RAM_Used_system_f + RAM_Used_systemunsafe_f;
-            if (settings.realFrequencies && realRAM_Hz) {
-                snprintf(MINI_RAM_var_compressed_c, sizeof(MINI_RAM_var_compressed_c), 
-                    "%.0f/%.0fMB@%hu.%hhu", 
-                    RAM_Used_all_f, RAM_Total_all_f, 
-                    realRAM_Hz / 1000000, (realRAM_Hz / 100000) % 10);
-            }
-            else {
-                snprintf(MINI_RAM_var_compressed_c, sizeof(MINI_RAM_var_compressed_c), 
-                    "%.0f/%.0fMB@%hu.%hhu",
-                    RAM_Used_all_f, RAM_Total_all_f, 
-                    RAM_Hz / 1000000, (RAM_Hz / 100000) % 10);
-            }
-        }
-        else {
-            if (settings.realFrequencies && realRAM_Hz) {
-                snprintf(MINI_RAM_var_compressed_c, sizeof(MINI_RAM_var_compressed_c), 
-                    "%hu.%hhu%%@%hu.%hhu", 
-                    ramLoad[SysClkRamLoad_All] / 10, ramLoad[SysClkRamLoad_All] % 10, 
-                    realRAM_Hz / 1000000, (realRAM_Hz / 100000) % 10);
-            }
-            else {
-                snprintf(MINI_RAM_var_compressed_c, sizeof(MINI_RAM_var_compressed_c), 
-                    "%hu.%hhu%%@%hu.%hhu", 
-                    ramLoad[SysClkRamLoad_All] / 10, ramLoad[SysClkRamLoad_All] % 10, 
-                    RAM_Hz / 1000000, (RAM_Hz / 100000) % 10);
-            }
-        }
-        if (settings.realVolts) { 
-            uint32_t vdd2 = realRAM_mV / 10000;
-            uint32_t vddq = realRAM_mV % 10000;
-            if (isMariko) {
-                snprintf(MINI_RAM_volt_c, sizeof(MINI_RAM_volt_c), "%u.%u%u.%u mV", vdd2/10, vdd2%10, vddq/10, vddq%10);
-            }
-            else {
-                snprintf(MINI_RAM_volt_c, sizeof(MINI_RAM_volt_c), "%u.%u mV", vdd2/10, vdd2%10);
-            } 
-        } 
+        char MINI_RAM_var_compressed_c[24];   // 19 → 24 bytes for headroom
+        char MINI_RAM_volt_c[32];
         
+        if (R_FAILED(sysclkCheck) || !settings.showRAMLoad) {
+            /* ── “used / total MB” branch ────────────────────────────────────────── */
+            float ramTotalGiB = (RAM_Total_application_u + RAM_Total_applet_u +
+                                 RAM_Total_system_u + RAM_Total_systemunsafe_u) /
+                                (1024.0f * 1024.0f);           // MiB → GiB
+            float ramUsedGiB  = (RAM_Used_application_u + RAM_Used_applet_u +
+                                 RAM_Used_system_u + RAM_Used_systemunsafe_u) /
+                                (1024.0f * 1024.0f);
+        
+            if (settings.realFrequencies && realRAM_Hz) {
+                snprintf(MINI_RAM_var_compressed_c, sizeof(MINI_RAM_var_compressed_c),
+                         "%.0f/%.0fMB@%hu.%hhu",
+                         ramUsedGiB, ramTotalGiB,
+                         realRAM_Hz / 1000000, (realRAM_Hz / 100000) % 10);
+            } else {
+                snprintf(MINI_RAM_var_compressed_c, sizeof(MINI_RAM_var_compressed_c),
+                         "%.0f/%.0fMB@%hu.%hhu",
+                         ramUsedGiB, ramTotalGiB,
+                         RAM_Hz / 1000000, (RAM_Hz / 100000) % 10);
+            }
+        
+        } else {
+            /* ── “percentage” branch (integer %) ─────────────────────────────────── */
+            unsigned ramLoadInt = ramLoad[SysClkRamLoad_All] / 10;  // drop decimal
+        
+            if (settings.realFrequencies && realRAM_Hz) {
+                snprintf(MINI_RAM_var_compressed_c, sizeof(MINI_RAM_var_compressed_c),
+                         "%u%%@%hu.%hhu",
+                         ramLoadInt,
+                         realRAM_Hz / 1000000, (realRAM_Hz / 100000) % 10);
+            } else {
+                snprintf(MINI_RAM_var_compressed_c, sizeof(MINI_RAM_var_compressed_c),
+                         "%u%%@%hu.%hhu",
+                         ramLoadInt,
+                         RAM_Hz / 1000000, (RAM_Hz / 100000) % 10);
+            }
+        }
+
+        //if (settings.realVolts) { 
+        //    uint32_t vdd2 = realRAM_mV / 10000;
+        //    uint32_t vddq = realRAM_mV % 10000;
+        //    if (isMariko) {
+        //        snprintf(MINI_RAM_volt_c, sizeof(MINI_RAM_volt_c), "%u.%u%u.%u mV", vdd2/10, vdd2%10, vddq/10, vddq%10);
+        //    }
+        //    else {
+        //        snprintf(MINI_RAM_volt_c, sizeof(MINI_RAM_volt_c), "%u.%u mV", vdd2/10, vdd2%10);
+        //    } 
+        //} 
+        /* ─── RAM ───────────────────────────────────────────── */
+        if (settings.realVolts) {
+            uint32_t mv_vdd2 = (realRAM_mV / 10000) / 10;   // VDD2 in µV → mV
+            uint32_t mv_vddq = (realRAM_mV % 10000) / 10;   // VDDQ in µV → mV
+            if (isMariko)
+                snprintf(MINI_RAM_volt_c, sizeof(MINI_RAM_volt_c),
+                         "%u mV%u mV", mv_vdd2, mv_vddq);
+            else
+                snprintf(MINI_RAM_volt_c, sizeof(MINI_RAM_volt_c),
+                         "%u mV", mv_vdd2);
+        }
+
+        
+        int duty = safeFanDuty((int)Rotation_Duty);
+
         ///Thermal
-        snprintf(skin_temperature_c, sizeof skin_temperature_c, 
-            "%2.1f\u00B0C%2.1f\u00B0C%hu.%hhu\u00B0C (%2.0f%%)", 
-            SOC_temperatureF, PCB_temperatureF, 
-            skin_temperaturemiliC / 1000, (skin_temperaturemiliC / 100) % 10,
-            Rotation_Duty);
+        // ── SoC temperature line ───────────────────────────────
+        if (settings.showFanPercentage) {
+            snprintf(soc_temperature_c, sizeof soc_temperature_c,
+                     "%d°C (%d%%)",
+                     (int)SOC_temperatureF,
+                     (int)duty);          // or any percentage you prefer
+        } else {
+            snprintf(soc_temperature_c, sizeof soc_temperature_c,
+                     "%d°C",
+                     (int)SOC_temperatureF);
+        }
+
+        if (settings.showFanPercentage) {
+            snprintf(skin_temperature_c, sizeof skin_temperature_c,
+                "%d\u00B0C%d\u00B0C%hu\u00B0C (%d%%)",
+                (int)SOC_temperatureF, (int)PCB_temperatureF,
+                skin_temperaturemiliC / 1000,
+                (int)duty);
+        } else {
+            snprintf(skin_temperature_c, sizeof skin_temperature_c,
+                "%d\u00B0C%d\u00B0C%hu\u00B0C",
+                (int)SOC_temperatureF, (int)PCB_temperatureF,
+                skin_temperaturemiliC / 1000);
+        }
         //snprintf(Rotation_SpeedLevel_c, sizeof Rotation_SpeedLevel_c, "%2.1f%%", Rotation_Duty);
 
         char MINI_SOC_volt_c[16] = ""; 
-        if (settings.realVolts) { 
-            snprintf(MINI_SOC_volt_c, sizeof(MINI_SOC_volt_c), "%u.%u mV", realSOC_mV/1000, (realSOC_mV/100)%10);
-        } 
+        //if (settings.realVolts) { 
+        //    snprintf(MINI_SOC_volt_c, sizeof(MINI_SOC_volt_c), "%u.%u mV", realSOC_mV/1000, (realSOC_mV/100)%10);
+        //} 
+        /* ─── SoC ───────────────────────────────────────────── */
+        if (settings.realVolts) {
+            uint32_t mv = realSOC_mV / 1000;
+            snprintf(MINI_SOC_volt_c, sizeof(MINI_SOC_volt_c), "%u mV", mv);
+        }
 
         if (GameRunning && NxFps && resolutionShow) {
             if (!resolutionLookup) {
@@ -562,7 +657,7 @@ public:
                     if (Temp[0]) strcat(Temp, "\n");
                     strcat(Temp, MINI_CPU_compressed_c);
                     if (settings.realVolts) {
-                        strcat(Temp, "\n");
+                        strcat(Temp, "");
                         strcat(Temp, MINI_CPU_volt_c);
                     }
                     flags |= 1;
@@ -573,7 +668,7 @@ public:
                     if (Temp[0]) strcat(Temp, "\n");
                     strcat(Temp, MINI_GPU_Load_c);
                     if (settings.realVolts) {
-                        strcat(Temp, "\n");
+                        strcat(Temp, "");
                         strcat(Temp, MINI_GPU_volt_c);
                     }
                     flags |= 2;
@@ -584,48 +679,59 @@ public:
                     if (Temp[0]) strcat(Temp, "\n");
                     strcat(Temp, MINI_RAM_var_compressed_c);
                     if (settings.realVolts) {
-                        strcat(Temp, "\n");
+                        strcat(Temp, "");
                         strcat(Temp, MINI_RAM_volt_c);
                     }
                     flags |= 4;
                 }
             }},
-            {"TEMP", [&]() {
+            {"SOC", [&]() {
                 if (!(flags & 8)) {
                     if (Temp[0]) strcat(Temp, "\n");
-                    strcat(Temp, skin_temperature_c);
+                    strcat(Temp, soc_temperature_c); // <- use appropriate SOC string here
                     if (settings.realVolts) {
-                        strcat(Temp, "\n");
+                        strcat(Temp, "");
                         strcat(Temp, MINI_SOC_volt_c);
                     }
                     flags |= 8;
                 }
             }},
-            {"BAT", [&]() {
+            {"TMP", [&]() {
                 if (!(flags & 16)) {
                     if (Temp[0]) strcat(Temp, "\n");
-                    strcat(Temp, SoCPCB_temperature_c);
+                    strcat(Temp, skin_temperature_c);
+                    if (settings.realVolts) {
+                        strcat(Temp, "");
+                        strcat(Temp, MINI_SOC_volt_c);
+                    }
                     flags |= 16;
+                }
+            }},
+            {"BAT", [&]() {
+                if (!(flags & 32)) {
+                    if (Temp[0]) strcat(Temp, "\n");
+                    strcat(Temp, SoCPCB_temperature_c);
+                    flags |= 32;
                 }
             }},
             {"DRAW", [&]() {
-                if (!(flags & 16)) {
+                if (!(flags & 32)) {
                     if (Temp[0]) strcat(Temp, "\n");
                     strcat(Temp, SoCPCB_temperature_c);
-                    flags |= 16;
+                    flags |= 32;
                 }
             }},
             {"FPS", [&]() {
-                if (!(flags & 32) && GameRunning) {
+                if (!(flags & 64) && GameRunning) {
                     if (Temp[0]) strcat(Temp, "\n");
                     char Temp_s[24];
                     snprintf(Temp_s, sizeof(Temp_s), "%2.1f [%2.1f - %2.1f]", FPSavg, FPSmin, FPSmax);
                     strcat(Temp, Temp_s);
-                    flags |= 32;
+                    flags |= 64;
                 }
             }},
             {"RES", [&]() {
-                if (!(flags & 64) && GameRunning && m_resolutionOutput[0].width) {
+                if (!(flags & 128) && GameRunning && m_resolutionOutput[0].width) {
                     if (Temp[0]) strcat(Temp, "\n");
                     char Temp_s[32];
                     if (settings.showFullResolution) {
@@ -640,7 +746,7 @@ public:
                             snprintf(Temp_s, sizeof(Temp_s), "%d%d", m_resolutionOutput[0].height, m_resolutionOutput[1].height);
                     }
                     strcat(Temp, Temp_s);
-                    flags |= 64;
+                    flags |= 128;
                 }
             }}
         };
@@ -654,16 +760,30 @@ public:
         }
         mutexUnlock(&mutex_Misc);
         strcpy(Variables, Temp);
-
-        char remainingBatteryLife[8];
-        mutexLock(&mutex_BatteryChecker);
-        if (batTimeEstimate >= 0) {
-            snprintf(remainingBatteryLife, sizeof remainingBatteryLife, "%d:%02d", batTimeEstimate / 60, batTimeEstimate % 60);
-        }
-        else snprintf(remainingBatteryLife, sizeof remainingBatteryLife, "--:--");
         
-        snprintf(SoCPCB_temperature_c, sizeof SoCPCB_temperature_c, "%0.2fW%.1f%% [%s]", 
-            PowerConsumption, (float)_batteryChargeInfoFields.RawBatteryCharge / 1000, remainingBatteryLife);
+        /* ── Battery / power draw ───────────────────────────────────── */
+        char remainingBatteryLife[8];
+        
+        /* Normalise “-0.00” → “0.00” W */
+        float drawW = (fabsf(PowerConsumption) < 0.01f) ? 0.0f
+                                                         : PowerConsumption;
+        
+        mutexLock(&mutex_BatteryChecker);
+        
+        /* keep “--:--” whenever estimate is negative */
+        if (batTimeEstimate >= 0 && drawW >= 0.01f) {
+            snprintf(remainingBatteryLife, sizeof remainingBatteryLife,
+                     "%d:%02d", batTimeEstimate / 60, batTimeEstimate % 60);
+        } else {
+            strcpy(remainingBatteryLife, "--:--");
+        }
+        
+        snprintf(SoCPCB_temperature_c, sizeof SoCPCB_temperature_c,
+                 "%.2f W%.1f%% [%s]",
+                 drawW,
+                 (float)_batteryChargeInfoFields.RawBatteryCharge / 1000.0f,
+                 remainingBatteryLife);
+        
         mutexUnlock(&mutex_BatteryChecker);
 
         static bool runOnce = true;

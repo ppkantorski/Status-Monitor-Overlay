@@ -935,7 +935,11 @@ ALWAYS_INLINE bool isKeyComboPressed(uint64_t keysHeld, uint64_t keysDown) {
     return false;
 }
 
-
+inline int safeFanDuty(int raw) {
+    if (raw < 0)   return 0;
+    if (raw > 100) return 100;
+    return raw;
+}
 
 // Helper function to check if comboBitmask is satisfied with at least one key in keysDown and the rest in keysHeld
 //bool isKeyComboPressed2(uint64_t keysDown, uint64_t keysHeld) {
@@ -1136,8 +1140,10 @@ struct MiniSettings {
     bool realVolts;
     bool showFullCPU;
     bool showFullResolution;
+    bool showFanPercentage;
     size_t handheldFontSize;
     size_t dockedFontSize;
+    size_t spacing;
     uint16_t backgroundColor;
     uint16_t separatorColor;
     uint16_t catColor;
@@ -1199,17 +1205,19 @@ struct ResolutionSettings {
 
 ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
     // Initialize defaults
-    settings->realFrequencies = false;
+    settings->realFrequencies = true;
     settings->realVolts = true;
-    settings -> showFullCPU = true;
+    settings -> showFullCPU = false;
     settings -> showFullResolution = true;
+    settings -> showFanPercentage = true;
     settings->handheldFontSize = 15;
     settings->dockedFontSize = 15;
+    settings->spacing = 4;
     convertStrToRGBA4444("#0009", &(settings -> backgroundColor));
     convertStrToRGBA4444("#2DFF", &(settings -> separatorColor));
     convertStrToRGBA4444("#2DFF", &(settings -> catColor));
     convertStrToRGBA4444("#FFFF", &(settings -> textColor));
-    settings->show = "CPU+GPU+RAM+TEMP+BAT+FAN+FPS+RES";
+    settings->show = "CPU+GPU+RAM+SOC+BAT+FAN+FPS+RES";
     settings->showRAMLoad = true;
     settings->refreshRate = 1;
     settings->setPos = 0;
