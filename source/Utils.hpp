@@ -1212,7 +1212,7 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
     settings -> showFanPercentage = true;
     settings->handheldFontSize = 15;
     settings->dockedFontSize = 15;
-    settings->spacing = 4;
+    settings->spacing = 8;
     convertStrToRGBA4444("#0009", &(settings -> backgroundColor));
     convertStrToRGBA4444("#2DFF", &(settings -> separatorColor));
     convertStrToRGBA4444("#2DFF", &(settings -> catColor));
@@ -1276,6 +1276,11 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
     it = section.find("docked_font_size");
     if (it != section.end()) {
         settings->dockedFontSize = std::clamp(atol(it->second.c_str()), minFontSize, maxFontSize);
+    }
+
+    it = section.find("spacing");
+    if (it != section.end()) {
+        settings->spacing = atol(it->second.c_str());
     }
     
     // Process colors
