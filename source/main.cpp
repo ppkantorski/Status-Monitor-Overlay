@@ -243,13 +243,13 @@ public:
     virtual bool handleInput(u64 keysDown, u64 keysHeld, const HidTouchState &touchPos, HidAnalogStickState joyStickPosLeft, HidAnalogStickState joyStickPosRight) override {
         if (disableJumpTo)
             disableJumpTo = false;
-        //if (fixHiding) {
-        //    if (isKeyComboPressed2(keysDown, keysHeld)) {
-        //        tsl::Overlay::get()->hide();
-        //        fixHiding = false;
-        //        return true;
-        //    }
-        //}
+        if (fixHiding) {
+            if (isKeyComboPressed2(keysDown, keysHeld)) {
+                tsl::Overlay::get()->hide();
+                fixHiding = false;
+                return true;
+            }
+        }
 
         if (keysDown & KEY_B) {
             tsl::goBack();
