@@ -1,9 +1,7 @@
 [status-monitor]
-#key_combo=ZL+ZR+DDOWN
 battery_avg_iir_filter=false
 battery_time_left_refreshrate=60
 average_gpu_load=false
-font_cache=true
 
 [full]
 refresh_rate=1
@@ -18,29 +16,35 @@ show_res=true
 refresh_rate=1
 layer_width_align=left
 layer_height_align=top
-handheld_font_size=12
-docked_font_size=12
+handheld_font_size=15
+docked_font_size=15
+spacing=8
 real_freqs=true
 real_volts=true
-show=CPU+GPU+RAM+TEMP+BAT+FAN+FPS+RES
+show=CPU+GPU+RAM+SOC+BAT+FAN+FPS+RES
+show_full_cpu=false
+show_full_res=true
 replace_MB_with_RAM_load=true
-background_color=#1117
-cat_color=#ADFF
+background_color=#0009
+separator_color=2DFF
+cat_color=#2DFF
 text_color=#FFFF
+layer_width_align=left
 
 [micro]
 refresh_rate=1
 layer_height_align=top
-handheld_font_size=12
-docked_font_size=12
-text_align=left
+handheld_font_size=15
+docked_font_size=15
 real_freqs=true
 real_volts=true
 show=FPS+CPU+GPU+RAM+SOC+BAT
+show_full_cpu=false
+show_full_res=false
 replace_GB_with_RAM_load=true
-show_full_cpu=true
-background_color=#1117
-cat_color=#ADFF
+background_color=#0009
+separator_color=2DFF
+cat_color=#2DFF
 text_color=#FFFF
 
 [fps-counter]
