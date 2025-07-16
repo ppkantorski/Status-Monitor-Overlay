@@ -942,29 +942,29 @@ inline int safeFanDuty(int raw) {
 }
 
 // Helper function to check if comboBitmask is satisfied with at least one key in keysDown and the rest in keysHeld
-//bool isKeyComboPressed2(uint64_t keysDown, uint64_t keysHeld) {
-//    uint64_t requiredKeys = comboBitmask;
-//    bool hasKeyDown = false; // Tracks if at least one key is in keysDown
-//
-//    uint64_t keyBit;
-//    // Iterate over each bit in the comboBitmask
-//    while (requiredKeys) {
-//        keyBit = requiredKeys & ~(requiredKeys - 1); // Get the lowest bit set in requiredKeys
-//
-//        // Check if the key is in keysDown or keysHeld
-//        if (keysDown & keyBit) {
-//            hasKeyDown = true; // Found at least one key in keysDown
-//        } else if (!(keysHeld & keyBit)) {
-//            return false; // If the key is neither in keysDown nor keysHeld, the combo is incomplete
-//        }
-//
-//        // Remove the lowest bit and continue to check other keys
-//        requiredKeys &= ~keyBit;
-//    }
-//
-//    // Ensure that at least one key was in keysDown and the rest were in keysHeld
-//    return hasKeyDown;
-//}
+bool isKeyComboPressed2(uint64_t keysDown, uint64_t keysHeld) {
+    uint64_t requiredKeys = comboBitmask;
+    bool hasKeyDown = false; // Tracks if at least one key is in keysDown
+
+    uint64_t keyBit;
+    // Iterate over each bit in the comboBitmask
+    while (requiredKeys) {
+        keyBit = requiredKeys & ~(requiredKeys - 1); // Get the lowest bit set in requiredKeys
+
+        // Check if the key is in keysDown or keysHeld
+        if (keysDown & keyBit) {
+            hasKeyDown = true; // Found at least one key in keysDown
+        } else if (!(keysHeld & keyBit)) {
+            return false; // If the key is neither in keysDown nor keysHeld, the combo is incomplete
+        }
+
+        // Remove the lowest bit and continue to check other keys
+        requiredKeys &= ~keyBit;
+    }
+
+    // Ensure that at least one key was in keysDown and the rest were in keysHeld
+    return hasKeyDown;
+}
 
 
 // Custom utility function for parsing an ini file
