@@ -29,7 +29,6 @@ background_color=#0009
 separator_color=2DFF
 cat_color=#2DFF
 text_color=#FFFF
-layer_width_align=left
 
 [micro]
 refresh_rate=1
