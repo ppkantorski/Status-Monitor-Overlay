@@ -140,7 +140,16 @@ public:
                         if (!settings.realVolts) {
                             width = renderer->getTextDimensions("100%@4444.4", false, fontsize).first;
                         } else {
-                            width = renderer->getTextDimensions("100%@4444.44444.4 mV", false, fontsize).first;
+                            if (isMariko) {
+                                if (settings.showVDDQ && settings.showVDD2)
+                                    width = renderer->getTextDimensions("100%@4444.44444.4444 mV", false, fontsize).first;
+                                else if (settings.showVDDQ)
+                                    width = renderer->getTextDimensions("100%@4444.44444.4 mV", false, fontsize).first;
+                                else if (settings.showVDD2)
+                                    width = renderer->getTextDimensions("100%@4444.4444 mV", false, fontsize).first;
+                            } else {
+                                width = renderer->getTextDimensions("100%@4444.44444.4 mV", false, fontsize).first;
+                            }
                         }
                     } else if (key == "SOC") {                // new block
                         if (!settings.realVolts)
@@ -299,7 +308,7 @@ public:
             uint32_t margin = (fontsize * 4);
             
             // Draw background
-            renderer->drawRect(cachedBaseX, cachedBaseY, margin + rectangleWidth + (fontsize / 3) + settings.spacing, cachedHeight, renderer->a(settings.backgroundColor));
+            renderer->drawRect(cachedBaseX, cachedBaseY, margin + rectangleWidth + (fontsize / 3), cachedHeight, renderer->a(settings.backgroundColor));
             
             // Split Variables into lines for individual positioning
             std::vector<std::string> variableLines;
@@ -318,6 +327,7 @@ public:
             uint32_t currentY = cachedBaseY + fontsize + settings.spacing;
             size_t labelIndex = 0;
             
+            static std::vector<std::string> specialChars = {""};
             uint32_t labelWidth, labelCenterX;
             for (size_t i = 0; i < variableLines.size() && labelIndex < labelLines.size(); i++) {
                 // Draw label (centered in label region)
@@ -332,7 +342,7 @@ public:
                 // Draw variable data
                 //renderer->drawString(variableLines[i].c_str(), false, cachedBaseX + margin, currentY, fontsize, renderer->a(settings.textColor));
                 //renderer->drawStringWith(variableLines[i].c_str(), false, cachedBaseX + margin, currentY, fontsize, renderer->a(settings.textColor));
-                renderer->drawStringWithColoredSections(variableLines[i].c_str(), false, {""}, cachedBaseX + margin, currentY, fontsize, settings.textColor, a(settings.separatorColor));
+                renderer->drawStringWithColoredSections(variableLines[i].c_str(), false, specialChars, cachedBaseX + margin, currentY, fontsize, settings.textColor, a(settings.separatorColor));
 
                 currentY += fontsize + settings.spacing;   // previously += fontsize
                 ++labelIndex;
@@ -528,14 +538,23 @@ public:
         //} 
         /* ─── RAM ───────────────────────────────────────────── */
         if (settings.realVolts) {
-            float mv_vdd2 = (realRAM_mV / 10000) / 10.0f;   // VDD2 in µV → mV
-            uint32_t mv_vddq = (realRAM_mV % 10000) / 10;   // VDDQ in µV → mV
-            if (isMariko)
-                snprintf(MINI_RAM_volt_c, sizeof(MINI_RAM_volt_c),
-                         "%.1f mV%u mV", mv_vdd2, mv_vddq);
-            else
+            float mv_vdd2 = realRAM_mV / 100000.0f;         // µV → mV (float)
+            uint32_t mv_vddq = (realRAM_mV % 10000) / 10;   // µV → mV (int)
+        
+            if (isMariko) {
+                if (settings.showVDDQ && settings.showVDD2)
+                    snprintf(MINI_RAM_volt_c, sizeof(MINI_RAM_volt_c),
+                             "%.1f mV%u mV", mv_vdd2, mv_vddq);
+                else if (settings.showVDDQ)
+                    snprintf(MINI_RAM_volt_c, sizeof(MINI_RAM_volt_c),
+                             "%u mV", mv_vddq);
+                else if (settings.showVDD2)
+                    snprintf(MINI_RAM_volt_c, sizeof(MINI_RAM_volt_c),
+                             "%.1f mV", mv_vdd2);
+            } else {
                 snprintf(MINI_RAM_volt_c, sizeof(MINI_RAM_volt_c),
                          "%.1f mV", mv_vdd2);
+            }
         }
 
         

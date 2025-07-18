@@ -1236,6 +1236,8 @@ struct MiniSettings {
     bool showFullCPU;
     bool showFullResolution;
     bool showFanPercentage;
+    bool showVDDQ;
+    bool showVDD2;
     size_t handheldFontSize;
     size_t dockedFontSize;
     size_t spacing;
@@ -1305,6 +1307,9 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
     settings -> showFullCPU = false;
     settings -> showFullResolution = true;
     settings -> showFanPercentage = true;
+    settings -> showFullCPU = false;
+    settings -> showVDDQ = true;
+    settings -> showVDD2 = false;
     settings->handheldFontSize = 15;
     settings->dockedFontSize = 15;
     settings->spacing = 8;
@@ -1421,6 +1426,20 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
         std::string key = it->second;
         convertToUpper(key);
         settings->showFullResolution = !(key == "FALSE");
+    }
+
+    it = section.find("show_show_vddq");
+    if (it != section.end()) {
+        std::string key = it->second;
+        convertToUpper(key);
+        settings->showVDDQ = !(key == "FALSE");
+    }
+
+    it = section.find("show_show_vdd2");
+    if (it != section.end()) {
+        std::string key = it->second;
+        convertToUpper(key);
+        settings->showVDD2 = !(key == "FALSE");
     }
 
     // Process show string
