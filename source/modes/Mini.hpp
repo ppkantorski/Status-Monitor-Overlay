@@ -140,7 +140,7 @@ public:
                         if (!settings.realVolts) {
                             width = renderer->getTextDimensions("100%@4444.4", false, fontsize).first;
                         } else {
-                            width = renderer->getTextDimensions("100%@4444.44444 mV", false, fontsize).first;
+                            width = renderer->getTextDimensions("100%@4444.44444.4 mV", false, fontsize).first;
                         }
                     } else if (key == "SOC") {                // new block
                         if (!settings.realVolts)
@@ -299,7 +299,7 @@ public:
             uint32_t margin = (fontsize * 4);
             
             // Draw background
-            renderer->drawRect(cachedBaseX, cachedBaseY, margin + rectangleWidth + (fontsize / 3), cachedHeight, renderer->a(settings.backgroundColor));
+            renderer->drawRect(cachedBaseX, cachedBaseY, margin + rectangleWidth + (fontsize / 3) + settings.spacing, cachedHeight, renderer->a(settings.backgroundColor));
             
             // Split Variables into lines for individual positioning
             std::vector<std::string> variableLines;
@@ -528,14 +528,14 @@ public:
         //} 
         /* ─── RAM ───────────────────────────────────────────── */
         if (settings.realVolts) {
-            uint32_t mv_vdd2 = (realRAM_mV / 10000) / 10;   // VDD2 in µV → mV
+            float mv_vdd2 = (realRAM_mV / 10000) / 10.0f;   // VDD2 in µV → mV
             uint32_t mv_vddq = (realRAM_mV % 10000) / 10;   // VDDQ in µV → mV
             if (isMariko)
                 snprintf(MINI_RAM_volt_c, sizeof(MINI_RAM_volt_c),
-                         "%u mV%u mV", mv_vdd2, mv_vddq);
+                         "%.1f mV%u mV", mv_vdd2, mv_vddq);
             else
                 snprintf(MINI_RAM_volt_c, sizeof(MINI_RAM_volt_c),
-                         "%u mV", mv_vdd2);
+                         "%.1f mV", mv_vdd2);
         }
 
         
@@ -771,7 +771,7 @@ public:
         mutexLock(&mutex_BatteryChecker);
         
         /* keep “--:--” whenever estimate is negative */
-        if (batTimeEstimate >= 0 && drawW >= 0.01f) {
+        if (batTimeEstimate >= 0 && (drawW >= 0.01f || drawW <= -0.01f)) {
             snprintf(remainingBatteryLife, sizeof remainingBatteryLife,
                      "%d:%02d", batTimeEstimate / 60, batTimeEstimate % 60);
         } else {
@@ -786,9 +786,15 @@ public:
         
         mutexUnlock(&mutex_BatteryChecker);
 
-        static bool runOnce = true;
-        if (runOnce)
-            isRendering = true;
+        static bool skipOnce = true;
+
+        if (!skipOnce) {
+            static bool runOnce = true;
+            if (runOnce)
+                isRendering = true;
+        } else {
+            skipOnce = false;
+        }
 
     }
     virtual bool handleInput(u64 keysDown, u64 keysHeld, const HidTouchState &touchPos, HidAnalogStickState joyStickPosLeft, HidAnalogStickState joyStickPosRight) override {

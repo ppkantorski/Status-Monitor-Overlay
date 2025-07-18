@@ -41,8 +41,8 @@ Thread t6;
 Thread t7;
 Thread t5;
 uint64_t systemtickfrequency = 19200000;
-bool threadexit = false;
-bool threadexit2 = false;
+volatile bool threadexit = false;
+volatile bool threadexit2 = false;
 PwmChannelSession g_ICon;
 std::string folderpath = "sdmc:/switch/.overlays/";
 std::string filename = "";
@@ -270,14 +270,15 @@ bool CheckPort() {
 }
 
 void CheckIfGameRunning(void*) {
+    u32 counter;
     while (!threadexit2) {
         if (!check && R_FAILED(pmdmntGetApplicationProcessId(&PID))) {
             GameRunning = false;
             if (SharedMemoryUsed) {
-                (NxFps -> MAGIC) = 0;
-                (NxFps -> pluginActive) = false;
-                (NxFps -> FPS) = 0;
-                (NxFps -> FPSavg) = 0.0;
+                NxFps->MAGIC = 0;
+                NxFps->pluginActive = false;
+                NxFps->FPS = 0;
+                NxFps->FPSavg = 0.0;
                 FPS = 254;
                 FPSavg = 254.0;
             }
@@ -287,15 +288,36 @@ void CheckIfGameRunning(void*) {
             uintptr_t base = (uintptr_t)shmemGetAddr(&_sharedmemory);
             searchSharedMemoryBlock(base);
             if (NxFps) {
-                (NxFps -> pluginActive) = false;
-                svcSleepThread(100'000'000);
-                if ((NxFps -> pluginActive)) {
+                NxFps->pluginActive = false;
+
+                // 🔁 Replaces: svcSleepThread(100'000'000);
+                {
+                    const u64 endTick = armGetSystemTick() + armNsToTicks(100'000'000);
+                    const u64 checkIntervalNs = 1'000'000;
+                    u32 counter = 0;
+                    do {
+                        if ((++counter & 15) == 0 && threadexit2) break;
+                        svcSleepThread(checkIntervalNs);
+                    } while (armGetSystemTick() < endTick);
+                }
+
+                if (NxFps->pluginActive) {
                     GameRunning = true;
                     check = false;
                 }
             }
         }
-        svcSleepThread(1'000'000'000);
+
+        // 🔁 Replaces: svcSleepThread(1'000'000'000);
+        {
+            const u64 endTick = armGetSystemTick() + armNsToTicks(1'000'000'000);
+            const u64 checkIntervalNs = 1'000'000;
+            counter = 0;
+            do {
+                if ((++counter & 15) == 0 && threadexit2) break;
+                svcSleepThread(checkIntervalNs);
+            } while (armGetSystemTick() < endTick);
+        }
     }
 }
 
@@ -371,7 +393,12 @@ void BatteryChecker(void*) {
     int elements_to_avg;
     int32_t sum;
 
+    uint64_t elapsed_ns, sleep_ns;
+
     size_t idx;
+
+    u32 counterSleep;
+
     while (!threadexit) {
         mutexLock(&mutex_BatteryChecker);
         startTick = armGetSystemTick();
@@ -433,9 +460,24 @@ void BatteryChecker(void*) {
 
         mutexUnlock(&mutex_BatteryChecker);
         
-        // Optimized sleep with single system call
-        uint64_t elapsed_ns = armTicksToNs(armGetSystemTick() - startTick);
-        svcSleepThread((elapsed_ns < sleep_time_ns) ? (sleep_time_ns - elapsed_ns) : 1000);
+        // Calculate elapsed time in ns
+        elapsed_ns = armTicksToNs(armGetSystemTick() - startTick);
+    
+        // Calculate how much to sleep (target is sleep_time_ns)
+        sleep_ns = (elapsed_ns < sleep_time_ns) ? (sleep_time_ns - elapsed_ns) : 1000;
+    
+        // Responsive sleep loop with threadexit check every ~16 ms
+        {
+            const u64 startSleepTick = armGetSystemTick();
+            const u64 endSleepTick = startSleepTick + armNsToTicks(sleep_ns);
+            const u64 checkIntervalNs = 1'000'000; // 1ms
+            counterSleep = 0;
+    
+            do {
+                if ((++counterSleep & 15) == 0 && threadexit) break;
+                svcSleepThread(checkIntervalNs);
+            } while (armGetSystemTick() < endSleepTick);
+        }
     }
     
     // Fast cleanup
@@ -465,6 +507,9 @@ void gpuLoadThread(void*) {
 
 //Stuff that doesn't need multithreading
 void Misc(void*) {
+    u64 targetIntervalNs;
+    u32 counter;
+
     while (!threadexit) {
         mutexLock(&mutex_Misc);
         // CPU, GPU and RAM Frequency
@@ -553,11 +598,26 @@ void Misc(void*) {
         
         // Interval
         mutexUnlock(&mutex_Misc);
-        svcSleepThread(TeslaFPS < 10 ? (1'000'000'000 / TeslaFPS) : 100'000'000);
+        //svcSleepThread(TeslaFPS < 10 ? (1'000'000'000 / TeslaFPS) : 100'000'000);
+        {
+            targetIntervalNs = (TeslaFPS < 10) ? (1'000'000'000 / TeslaFPS) : 100'000'000;
+            const u64 startTick = armGetSystemTick();
+            const u64 endTick = startTick + armNsToTicks(targetIntervalNs);
+            const u64 checkIntervalNs = 1'000'000; // 1ms
+        
+            counter = 0;
+            do {
+                if (__builtin_expect((++counter & 15) == 0, 0)) {
+                    if (threadexit) break;
+                }
+                svcSleepThread(checkIntervalNs);
+            } while (__builtin_expect(armGetSystemTick() < endTick, 1));
+        }
     }
 }
 
 void Misc2(void*) {
+    u32 counter;
     while (!threadexit) {
         //DSP
         if (R_SUCCEEDED(audsnoopCheck)) audsnoopGetDspUsage(&DSP_Load_u);
@@ -574,11 +634,22 @@ void Misc2(void*) {
                 Nifm_profile_rc = nifmGetCurrentNetworkProfile((NifmNetworkProfileData*)&Nifm_profile);
         }
         // Interval
-        svcSleepThread(100'000'000);
+        //svcSleepThread(100'000'000);
+        {
+            const u64 endTick = armGetSystemTick() + armNsToTicks(100'000'000);
+            const u64 checkIntervalNs = 1'000'000; // 1ms
+            counter = 0;
+        
+            do {
+                if ((++counter & 15) == 0 && threadexit) break;
+                svcSleepThread(checkIntervalNs);
+            } while (armGetSystemTick() < endTick);
+        }
     }
 }
 
 void Misc3(void*) {
+    u32 counter;
     while (!threadexit) {
         mutexLock(&mutex_Misc);
 
@@ -613,7 +684,16 @@ void Misc3(void*) {
 
         // Interval
         mutexUnlock(&mutex_Misc);
-        svcSleepThread(1'000'000'000);
+        //svcSleepThread(1'000'000'000);
+        {
+            const u64 endTick = armGetSystemTick() + armNsToTicks(1'000'000'000);
+            const u64 checkIntervalNs = 1'000'000;
+            counter = 0;
+            do {
+                if ((++counter & 15) == 0 && threadexit2) break;
+                svcSleepThread(checkIntervalNs);
+            } while (armGetSystemTick() < endTick);
+        }
     }
 }
 
@@ -621,60 +701,63 @@ void Misc3(void*) {
 //Check each core for idled ticks in intervals, they cannot read info about other core than they are assigned
 //In case of getting more than systemtickfrequency in idle, make it equal to systemtickfrequency to get 0% as output and nothing less
 //This is because making each loop also takes time, which is not considered because this will take also additional time
-void CheckCore0(void*) {
-    uint64_t idletick_a0, idletick_b0;
+
+void CheckCore(void* arg) {
+    int coreIndex = *((int*)arg);
+    uint64_t* output = nullptr;
+
+    switch (coreIndex) {
+        case 0: output = &idletick0; break;
+        case 1: output = &idletick1; break;
+        case 2: output = &idletick2; break;
+        case 3: output = &idletick3; break;
+        default: return;
+    }
+
+    uint64_t prevIdleTick = 0, currIdleTick = 0;
+    svcGetInfo(&prevIdleTick, InfoType_IdleTickCount, INVALID_HANDLE, coreIndex);
+
+    static constexpr u64 checkIntervalNs = 1'000'000; // 1ms
+    static u32 lastFPS = 0;
+    static u64 cachedTargetTicks = 0;
+
+    u32 counter;
+    uint64_t delta, tickCap;
     while (!threadexit) {
-        idletick_a0 = 0;
-        idletick_b0 = 0;
-        svcGetInfo(&idletick_b0, InfoType_IdleTickCount, INVALID_HANDLE, 0);
-        svcSleepThread(1'000'000'000 / TeslaFPS);
-        svcGetInfo(&idletick_a0, InfoType_IdleTickCount, INVALID_HANDLE, 0);
-        idletick0 = idletick_a0 - idletick_b0;
+        if (__builtin_expect(TeslaFPS != lastFPS, 0)) {
+            cachedTargetTicks = armNsToTicks(1'000'000'000 / TeslaFPS);
+            lastFPS = TeslaFPS;
+        }
+
+        const u64 startTick = armGetSystemTick();
+        const u64 endTick = startTick + cachedTargetTicks;
+        counter = 0;
+
+        // Manual sleep loop
+        do {
+            if (__builtin_expect((++counter & 15) == 0, 0)) {
+                if (threadexit) break;
+            }
+            svcSleepThread(checkIntervalNs);
+        } while (__builtin_expect(armGetSystemTick() < endTick, 1));
+
+        // Get idle ticks and calculate delta
+        svcGetInfo(&currIdleTick, InfoType_IdleTickCount, INVALID_HANDLE, coreIndex);
+        delta = currIdleTick - prevIdleTick;
+        tickCap = cachedTargetTicks; // Cap to the expected sleep ticks
+
+        *output = (delta > tickCap) ? tickCap : delta;
+        prevIdleTick = currIdleTick;
     }
 }
 
-void CheckCore1(void*) {
-    uint64_t idletick_a1, idletick_b1;
-    while (!threadexit) {
-        idletick_a1 = 0;
-        idletick_b1 = 0;
-        svcGetInfo(&idletick_b1, InfoType_IdleTickCount, INVALID_HANDLE, 1);
-        svcSleepThread(1'000'000'000 / TeslaFPS);
-        svcGetInfo(&idletick_a1, InfoType_IdleTickCount, INVALID_HANDLE, 1);
-        idletick1 = idletick_a1 - idletick_b1;
-    }
-}
-
-void CheckCore2(void*) {
-    uint64_t idletick_a2, idletick_b2;
-    while (!threadexit) {
-        idletick_a2 = 0;
-        idletick_b2 = 0;
-        svcGetInfo(&idletick_b2, InfoType_IdleTickCount, INVALID_HANDLE, 2);
-        svcSleepThread(1'000'000'000 / TeslaFPS);
-        svcGetInfo(&idletick_a2, InfoType_IdleTickCount, INVALID_HANDLE, 2);
-        idletick2 = idletick_a2 - idletick_b2;
-    }
-}
-
-void CheckCore3(void*) {
-    uint64_t idletick_a3, idletick_b3;
-    while (!threadexit) {
-        idletick_a3 = 0;
-        idletick_b3 = 0;
-        svcGetInfo(&idletick_b3, InfoType_IdleTickCount, INVALID_HANDLE, 3);
-        svcSleepThread(1'000'000'000 / TeslaFPS);
-        svcGetInfo(&idletick_a3, InfoType_IdleTickCount, INVALID_HANDLE, 3);
-        idletick3 = idletick_a3 - idletick_b3;
-    }
-}
-
+int core0 = 0, core1 = 1, core2 = 2, core3 = 3;
 //Start reading all stats
 void StartThreads() {
-    threadCreate(&t0, CheckCore0, NULL, NULL, 0x1000, 0x10, 0);
-    threadCreate(&t1, CheckCore1, NULL, NULL, 0x1000, 0x10, 1);
-    threadCreate(&t2, CheckCore2, NULL, NULL, 0x1000, 0x10, 2);
-    threadCreate(&t3, CheckCore3, NULL, NULL, 0x1000, 0x10, 3);
+    threadCreate(&t0, CheckCore, &core0, NULL, 0x1000, 0x10, 0);
+    threadCreate(&t1, CheckCore, &core1, NULL, 0x1000, 0x10, 1);
+    threadCreate(&t2, CheckCore, &core2, NULL, 0x1000, 0x10, 2);
+    threadCreate(&t3, CheckCore, &core3, NULL, 0x1000, 0x10, 3);
     threadCreate(&t4, Misc, NULL, NULL, 0x1000, 0x3F, -2);
     threadCreate(&t5, gpuLoadThread, NULL, NULL, 0x1000, 0x3F, -2);
     if (SaltySD) {
@@ -721,6 +804,7 @@ void CloseThreads() {
 
 //Separate functions dedicated to "FPS Counter" mode
 void FPSCounter(void*) {
+    u32 counter;
     while (!threadexit) {
         if (GameRunning) {
             if (SharedMemoryUsed) {
@@ -729,7 +813,18 @@ void FPSCounter(void*) {
             }
         }
         else FPSavg = 254;
-        svcSleepThread(1'000'000'000 / TeslaFPS);
+        //svcSleepThread(1'000'000'000 / TeslaFPS);
+        {
+            const u64 sleepNs = 1'000'000'000ULL / TeslaFPS;
+            const u64 endTick = armGetSystemTick() + armNsToTicks(sleepNs);
+            const u64 checkIntervalNs = 1'000'000; // 1ms
+            u32 counter = 0;
+        
+            do {
+                if ((++counter & 15) == 0 && threadexit) break;
+                svcSleepThread(checkIntervalNs);
+            } while (armGetSystemTick() < endTick);
+        }
     }
 }
 
@@ -753,10 +848,10 @@ void EndFPSCounterThread() {
 }
 
 void StartInfoThread() {
-    threadCreate(&t1, CheckCore0, NULL, NULL, 0x1000, 0x10, 0);
-    threadCreate(&t2, CheckCore1, NULL, NULL, 0x1000, 0x10, 1);
-    threadCreate(&t3, CheckCore2, NULL, NULL, 0x1000, 0x10, 2);
-    threadCreate(&t4, CheckCore3, NULL, NULL, 0x1000, 0x10, 3);
+    threadCreate(&t0, CheckCore, &core0, NULL, 0x1000, 0x10, 0);
+    threadCreate(&t1, CheckCore, &core1, NULL, 0x1000, 0x10, 1);
+    threadCreate(&t2, CheckCore, &core2, NULL, 0x1000, 0x10, 2);
+    threadCreate(&t3, CheckCore, &core3, NULL, 0x1000, 0x10, 3);
     threadCreate(&t7, Misc3, NULL, NULL, 0x1000, 0x3F, -2);
     threadStart(&t1);
     threadStart(&t2);

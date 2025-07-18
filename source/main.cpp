@@ -58,13 +58,13 @@ public:
     virtual bool handleInput(u64 keysDown, u64 keysHeld, const HidTouchState &touchPos, HidAnalogStickState joyStickPosLeft, HidAnalogStickState joyStickPosRight) override {
         if (disableJumpTo)
             disableJumpTo = false;
-        //if (fixHiding) {
-        //    if (isKeyComboPressed2(keysDown, keysHeld)) {
-        //        tsl::Overlay::get()->hide();
-        //        fixHiding = false;
-        //        return true;
-        //    }
-        //}
+        if (fixHiding) {
+            if (isKeyComboPressed2(keysDown, keysHeld)) {
+                tsl::Overlay::get()->hide();
+                fixHiding = false;
+                return true;
+            }
+        }
 
         if (keysDown & KEY_B) {
             tsl::goBack();
@@ -125,13 +125,13 @@ public:
     virtual bool handleInput(u64 keysDown, u64 keysHeld, const HidTouchState &touchPos, HidAnalogStickState joyStickPosLeft, HidAnalogStickState joyStickPosRight) override {
         if (disableJumpTo)
             disableJumpTo = false;
-        //if (fixHiding) {
-        //    if (isKeyComboPressed2(keysDown, keysHeld)) {
-        //        tsl::Overlay::get()->hide();
-        //        fixHiding = false;
-        //        return true;
-        //    }
-        //}
+        if (fixHiding) {
+            if (isKeyComboPressed2(keysDown, keysHeld)) {
+                tsl::Overlay::get()->hide();
+                fixHiding = false;
+                return true;
+            }
+        }
 
         if (keysDown & KEY_B) {
             tsl::goBack();
@@ -564,22 +564,25 @@ int main(int argc, char **argv) {
         if (argv[arg][0] != '-') continue;  // Check first character
         
         if (strcasecmp(argv[arg], "--microOverlay") == 0) {
+            FullMode = false;
             setupMicroMode();
             return tsl::loop<MicroMode>(argc, argv);
         } 
         else if (strcasecmp(argv[arg], "--miniOverlay") == 0) {
+            FullMode = false;
             setupMiniMode();
             //ult::useRightAlignment = ult::useRightAlignment || (ult::parseValueFromIniSection("sdmc:/config/status-monitor/config.ini", "mini", "right_alignment") == ult::TRUE_STR);
             return tsl::loop<MiniEntryOverlay>(argc, argv);
         } 
         else if (strcasecmp(argv[arg], "-micro") == 0) {
-
+            FullMode = false;
             skipMain = true;
             ult::DefaultFramebufferWidth = 1280;
             ult::DefaultFramebufferHeight = 28;
             return tsl::loop<MicroMode>(argc, argv);
         } 
         else if (strcasecmp(argv[arg], "-mini") == 0) {
+            FullMode = false;
             skipMain = true;
             ult::useRightAlignment = ult::useRightAlignment || (ult::parseValueFromIniSection("sdmc:/config/status-monitor/config.ini", "mini", "right_alignment") == ult::TRUE_STR);
             return tsl::loop<MiniEntryOverlay>(argc, argv);

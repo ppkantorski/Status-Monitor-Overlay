@@ -101,9 +101,16 @@ public:
                 tempBatTimeEstimate
             );
         mutexUnlock(&mutex_BatteryChecker);
-        static bool runOnce = true;
-        if (runOnce)
-            isRendering = true;
+        
+        static bool skipOnce = true;
+
+        if (!skipOnce) {
+            static bool runOnce = true;
+            if (runOnce)
+                isRendering = true;
+        } else {
+            skipOnce = false;
+        }
     }
     virtual bool handleInput(uint64_t keysDown, uint64_t keysHeld, touchPosition touchInput, JoystickPosition leftJoyStick, JoystickPosition rightJoyStick) override {
         if (keysDown & KEY_B) {

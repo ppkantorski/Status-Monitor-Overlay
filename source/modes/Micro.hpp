@@ -554,17 +554,17 @@ public:
 
         /* ── RAM voltage ───────────────────────────── */
         if (settings.realVolts) {
-            /* realRAM_mV packs VDD2 | VDDQ in 10-µV units        *
-             * → split, convert to mV integers                   */
-            uint32_t mv_vdd2 = (realRAM_mV / 10000) / 10;   // VDD2
+            /* realRAM_mV packs VDD2 | VDDQ in 10-µV units        *
+             * → split, convert to mV                           */
+            float mv_vdd2 = (realRAM_mV / 10000) / 10.0f;   // VDD2
             uint32_t mv_vddq = (realRAM_mV % 10000) / 10;   // VDDQ
         
             if (isMariko) {
                 snprintf(RAM_volt_c, sizeof(RAM_volt_c),
-                         "%u mV%u mV", mv_vdd2, mv_vddq);
+                         "%.1f mV%u mV", mv_vdd2, mv_vddq);
             } else {
                 snprintf(RAM_volt_c, sizeof(RAM_volt_c),
-                         "%u mV", mv_vdd2);
+                         "%.1f mV", mv_vdd2);
             }
         }
         
@@ -578,7 +578,7 @@ public:
         mutexLock(&mutex_BatteryChecker);
 
         /* show a time only when the estimate is valid **and** draw ≥ 0.01 W */
-        if (batTimeEstimate >= 0 && drawW >= 0.01f) {
+        if (batTimeEstimate >= 0 && (drawW >= 0.01f || drawW <= -0.01f)) {
             snprintf(remainingBatteryLife, sizeof remainingBatteryLife,
                      "%d:%02d", batTimeEstimate / 60, batTimeEstimate % 60);
         } else {
@@ -710,9 +710,15 @@ public:
 
         mutexUnlock(&mutex_Misc);
 
-        static bool runOnce = true;
-        if (runOnce)
-            isRendering = true;
+        static bool skipOnce = true;
+
+        if (!skipOnce) {
+            static bool runOnce = true;
+            if (runOnce)
+                isRendering = true;
+        } else {
+            skipOnce = false;
+        }
     }
     
     virtual bool handleInput(u64 keysDown, u64 keysHeld, const HidTouchState &touchPos, HidAnalogStickState joyStickPosLeft, HidAnalogStickState joyStickPosRight) override {

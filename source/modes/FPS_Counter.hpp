@@ -116,9 +116,16 @@ public:
             fontsize = settings.dockedFontSize;
         }
         snprintf(FPSavg_c, sizeof FPSavg_c, "%2.1f", FPSavg);
-        static bool runOnce = true;
-        if (runOnce)
-            isRendering = true;
+        
+        static bool skipOnce = true;
+
+        if (!skipOnce) {
+            static bool runOnce = true;
+            if (runOnce)
+                isRendering = true;
+        } else {
+            skipOnce = false;
+        }
     }
     virtual bool handleInput(u64 keysDown, u64 keysHeld, const HidTouchState &touchPos, HidAnalogStickState joyStickPosLeft, HidAnalogStickState joyStickPosRight) override {
         if (isKeyComboPressed(keysHeld, keysDown)) {
