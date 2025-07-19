@@ -818,7 +818,7 @@ void FPSCounter(void*) {
             const u64 sleepNs = 1'000'000'000ULL / TeslaFPS;
             const u64 endTick = armGetSystemTick() + armNsToTicks(sleepNs);
             const u64 checkIntervalNs = 1'000'000; // 1ms
-            u32 counter = 0;
+            counter = 0;
         
             do {
                 if ((++counter & 15) == 0 && threadexit) break;
@@ -848,10 +848,10 @@ void EndFPSCounterThread() {
 }
 
 void StartInfoThread() {
-    threadCreate(&t0, CheckCore, &core0, NULL, 0x1000, 0x10, 0);
-    threadCreate(&t1, CheckCore, &core1, NULL, 0x1000, 0x10, 1);
-    threadCreate(&t2, CheckCore, &core2, NULL, 0x1000, 0x10, 2);
-    threadCreate(&t3, CheckCore, &core3, NULL, 0x1000, 0x10, 3);
+    threadCreate(&t1, CheckCore, &core0, NULL, 0x1000, 0x10, 0);
+    threadCreate(&t2, CheckCore, &core1, NULL, 0x1000, 0x10, 1);
+    threadCreate(&t3, CheckCore, &core2, NULL, 0x1000, 0x10, 2);
+    threadCreate(&t4, CheckCore, &core3, NULL, 0x1000, 0x10, 3);
     threadCreate(&t7, Misc3, NULL, NULL, 0x1000, 0x3F, -2);
     threadStart(&t1);
     threadStart(&t2);
