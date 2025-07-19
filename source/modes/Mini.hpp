@@ -790,7 +790,7 @@ public:
         mutexLock(&mutex_BatteryChecker);
         
         /* keep “--:--” whenever estimate is negative */
-        if (batTimeEstimate >= 0 && (drawW >= 0.01f || drawW <= -0.01f)) {
+        if (batTimeEstimate >= 0 && !(drawW <= 0.01f && drawW >= -0.01f)) {
             snprintf(remainingBatteryLife, sizeof remainingBatteryLife,
                      "%d:%02d", batTimeEstimate / 60, batTimeEstimate % 60);
         } else {
