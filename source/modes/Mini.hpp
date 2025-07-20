@@ -166,14 +166,14 @@ public:
                         //dimensions = renderer->drawString("88.8\u00B0C88.8\u00B0C88.8\u00B0C (100%)", false, 0, 0, fontsize, renderer->a(0x0000));
                         if (!settings.realVolts) {
                             if (settings.showFanPercentage)
-                                width = renderer->getTextDimensions("88\u00B0C88\u00B0C88\u00B0C (100%)", false, fontsize).first;
+                                width = renderer->getTextDimensions("88\u00B0C 88\u00B0C 88\u00B0C (100%)", false, fontsize).first;
                             else
-                                width = renderer->getTextDimensions("88\u00B0C88\u00B0C88\u00B0C", false, fontsize).first;
+                                width = renderer->getTextDimensions("88\u00B0C 88\u00B0C 88\u00B0C", false, fontsize).first;
                         } else {
                             if (settings.showFanPercentage)
-                                width = renderer->getTextDimensions("88\u00B0C88\u00B0C88\u00B0C4444.4 mV", false, fontsize).first;
+                                width = renderer->getTextDimensions("88\u00B0C 88\u00B0C 88\u00B0C (100%)4444.4 mV", false, fontsize).first;
                             else
-                                width = renderer->getTextDimensions("88\u00B0C88\u00B0C88\u00B0C4444.4 mV", false, fontsize).first;
+                                width = renderer->getTextDimensions("88\u00B0C 88\u00B0C 88\u00B0C4444.4 mV", false, fontsize).first;
                         }
                     } else if (key == "BAT") {
                         //dimensions = renderer->drawString("-44.44 W100.0% [44:44]", false, 0, 0, fontsize, renderer->a(0x0000));
@@ -575,13 +575,13 @@ public:
 
         if (settings.showFanPercentage) {
             snprintf(skin_temperature_c, sizeof skin_temperature_c,
-                "%d\u00B0C%d\u00B0C%hu\u00B0C (%d%%)",
+                "%d\u00B0C %d\u00B0C %hu\u00B0C (%d%%)",
                 (int)SOC_temperatureF, (int)PCB_temperatureF,
                 skin_temperaturemiliC / 1000,
                 (int)duty);
         } else {
             snprintf(skin_temperature_c, sizeof skin_temperature_c,
-                "%d\u00B0C%d\u00B0C%hu\u00B0C",
+                "%d\u00B0C %d\u00B0C %hu\u00B0C",
                 (int)SOC_temperatureF, (int)PCB_temperatureF,
                 skin_temperaturemiliC / 1000);
         }

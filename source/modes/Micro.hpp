@@ -339,46 +339,92 @@ public:
             // Calculate available space for distribution
             //uint32_t available_width = tsl::cfg::FramebufferWidth - (2 * layout.side_margin);
             //uint32_t remaining_space = available_width - total_all_width;
-            
-            // Calculate positions for even distribution
+                        
+            // Calculate positions based on alignment mode
             std::vector<uint32_t> item_positions;
             size_t N = all_items_ordered.size();
             if (N == 0) return;
+            
             if (N == 1) {
-                // Just one item flush left
-                item_positions.push_back(layout.side_margin);
+                // Single item positioning based on alignment
+                if (settings.alignTo == 2) { // RIGHT
+                    uint32_t total_width = all_layouts_ordered[0].total_width;
+                    item_positions.push_back(tsl::cfg::FramebufferWidth - layout.side_margin - total_width);
+                } else { // LEFT or CENTER
+                    item_positions.push_back(layout.side_margin);
+                }
             } else {
-                // Sum total widths of all items
                 uint32_t total_widths = 0;
                 for (const auto& layout : all_layouts_ordered) {
                     total_widths += layout.total_width;
                 }
-            
-                // Total available width for spacing = framebuffer width minus total item widths minus margins
-                int32_t total_spacing = (int32_t)tsl::cfg::FramebufferWidth - (2 * (int32_t)layout.side_margin) - (int32_t)total_widths;
-            
-                // Number of gaps between items is N-1
-                uint32_t gap = total_spacing > 0 ? (uint32_t)(total_spacing / (N - 1)) : 0;
-            
-                // Position first item flush left
-                item_positions.push_back(layout.side_margin);
-                uint32_t prev_pos, prev_width;
-                // Position subsequent items
-                for (size_t i = 1; i < N; ++i) {
-                    prev_pos = item_positions[i - 1];
-                    prev_width = all_layouts_ordered[i - 1].total_width;
-                    item_positions.push_back(prev_pos + prev_width + gap);
-                }
-            
-                // Now last item should be flush right or nearly flush right (depending on integer division)
-                // To fix any rounding error, shift all items horizontally if needed:
-                int32_t last_item_end = item_positions.back() + all_layouts_ordered.back().total_width;
-                int32_t overflow = (int32_t)tsl::cfg::FramebufferWidth - layout.side_margin - last_item_end;
                 
-                /* keep far-left fixed; nudge only items 1…N-1 */
-                if (overflow != 0) {
-                    for (size_t i = 1; i < item_positions.size(); ++i) {
-                        item_positions[i] += overflow;
+                if (settings.alignTo == 0) { // LEFT alignment
+                    // All items except last positioned from left with small gaps
+                    // Last item (battery if present) positioned at far right
+                    uint32_t small_gap = layout.item_spacing;
+                    
+                    // Position items from left
+                    uint32_t current_x = layout.side_margin;
+                    for (size_t i = 0; i < N - 1; ++i) {
+                        item_positions.push_back(current_x);
+                        current_x += all_layouts_ordered[i].total_width + small_gap;
+                    }
+                    
+                    // Position last item at far right
+                    uint32_t last_width = all_layouts_ordered[N-1].total_width;
+                    item_positions.push_back(tsl::cfg::FramebufferWidth - layout.side_margin - last_width);
+                    
+                } else if (settings.alignTo == 2) { // RIGHT alignment
+                    // First item at far left, remaining items packed at right
+                    uint32_t small_gap = layout.item_spacing;
+                    
+                    // Resize vector to hold all positions
+                    item_positions.resize(N);
+                    
+                    // Position first item at far left
+                    item_positions[0] = layout.side_margin;
+                    
+                    // Calculate total width of items 1 to N-1 plus gaps between them
+                    uint32_t right_group_width = 0;
+                    for (size_t i = 1; i < N; ++i) {
+                        right_group_width += all_layouts_ordered[i].total_width;
+                        if (i < N - 1) right_group_width += small_gap; // Gap after each item except the last
+                    }
+                    
+                    // Start positioning from right margin minus total width of right group
+                    uint32_t current_x = tsl::cfg::FramebufferWidth - layout.side_margin - right_group_width;
+                    
+                    // Position items 1 to N-1 sequentially from left to right within the right group
+                    for (size_t i = 1; i < N; ++i) {
+                        item_positions[i] = current_x;
+                        current_x += all_layouts_ordered[i].total_width + small_gap;
+                    }
+                } else { // CENTER alignment (default behavior)
+                    // Total available width for spacing = framebuffer width minus total item widths minus margins
+                    int32_t total_spacing = (int32_t)tsl::cfg::FramebufferWidth - (2 * (int32_t)layout.side_margin) - (int32_t)total_widths;
+            
+                    // Number of gaps between items is N-1
+                    uint32_t gap = total_spacing > 0 ? (uint32_t)(total_spacing / (N - 1)) : 0;
+            
+                    // Position first item flush left
+                    item_positions.push_back(layout.side_margin);
+                    uint32_t prev_pos, prev_width;
+                    // Position subsequent items
+                    for (size_t i = 1; i < N; ++i) {
+                        prev_pos = item_positions[i - 1];
+                        prev_width = all_layouts_ordered[i - 1].total_width;
+                        item_positions.push_back(prev_pos + prev_width + gap);
+                    }
+            
+                    // Fix any rounding error for center alignment
+                    int32_t last_item_end = item_positions.back() + all_layouts_ordered.back().total_width;
+                    int32_t overflow = (int32_t)tsl::cfg::FramebufferWidth - layout.side_margin - last_item_end;
+                    
+                    if (overflow != 0) {
+                        for (size_t i = 1; i < item_positions.size(); ++i) {
+                            item_positions[i] += overflow;
+                        }
                     }
                 }
             }
@@ -605,7 +651,7 @@ public:
         /* Integer SOC, PCB and skin temperatures + duty                    *
          *  skin_temperaturemiliC is in milli-degrees C → divide by 1000     */
         snprintf(skin_temperature_c, sizeof skin_temperature_c,
-                 "%d°C%d°C%hu°C (%d%%)",
+                 "%d°C %d°C %hu°C (%d%%)",
                  (int)SOC_temperatureF,          // SoC
                  (int)PCB_temperatureF,          // PCB
                  (uint16_t)(skin_temperaturemiliC / 1000), // skin
