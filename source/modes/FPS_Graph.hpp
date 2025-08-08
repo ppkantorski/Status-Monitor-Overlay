@@ -48,7 +48,8 @@ public:
         if (settings.setPos)
             tsl::gfx::Renderer::get().setLayerPos(0, 0);
         FullMode = true;
-        tsl::hlp::requestForeground(true);
+        fixForeground = true;
+        //tsl::hlp::requestForeground(true);
         //alphabackground = 0xD;
         deactivateOriginalFooter = false;
         EndInfoThread();

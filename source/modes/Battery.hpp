@@ -9,6 +9,7 @@ public:
     }
     ~BatteryOverlay() {
         CloseThreads();
+        fixForeground = true;
     }
 
     virtual tsl::elm::Element* createUI() override {

@@ -30,7 +30,8 @@ public:
 		TeslaFPS = 60;
 		EndFPSCounterThread();
 		deactivateOriginalFooter = false;
-		tsl::hlp::requestForeground(true);
+		//tsl::hlp::requestForeground(true);
+		fixForeground = true;
 		//alphabackground = 0xD;
 		FullMode = true;
 		if (settings.setPos)

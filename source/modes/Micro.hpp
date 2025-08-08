@@ -99,6 +99,7 @@ private:
 
 public:
     MicroOverlay() { 
+        tsl::hlp::requestForeground(false);
         disableJumpTo = true;
         tsl::initializeUltrahandSettings();
         GetConfigSettings(&settings);
@@ -127,6 +128,7 @@ public:
     
     ~MicroOverlay() {
         CloseThreads();
+        fixForeground = true;
         FullMode = true;
     }
     

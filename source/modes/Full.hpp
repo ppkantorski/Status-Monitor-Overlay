@@ -50,7 +50,8 @@ public:
     ~FullOverlay() {
         CloseThreads();
         //FullMode = true;
-        tsl::hlp::requestForeground(true);
+        fixForeground = true;
+        //tsl::hlp::requestForeground(true);
         //alphabackground = 0xD;
         if (settings.setPosRight) {
             tsl::gfx::Renderer::get().setLayerPos(0, 0);

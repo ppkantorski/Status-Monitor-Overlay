@@ -16,6 +16,7 @@ private:
     uint64_t systemtickfrequency_impl = systemtickfrequency;
 public:
     MiniOverlay() { 
+        tsl::hlp::requestForeground(false);
         disableJumpTo = true;
         //tsl::initializeUltrahandSettings();
         PowerConsumption = 0.0f;
@@ -43,7 +44,7 @@ public:
         mutexInit(&mutex_BatteryChecker);
         mutexInit(&mutex_Misc);
         //alphabackground = 0x0;
-        tsl::hlp::requestForeground(false);
+        
         FullMode = false;
         TeslaFPS = settings.refreshRate;
         systemtickfrequency_impl /= settings.refreshRate;
@@ -54,7 +55,8 @@ public:
 
         CloseThreads();
         FullMode = true;
-        tsl::hlp::requestForeground(true);
+        fixForeground = true;
+        //tsl::hlp::requestForeground(true);
         //alphabackground = 0xD;
         deactivateOriginalFooter = false;
     }

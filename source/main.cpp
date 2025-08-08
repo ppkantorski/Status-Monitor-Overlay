@@ -53,7 +53,12 @@ public:
         return rootFrame;
     }
 
-    virtual void update() override {}
+    virtual void update() override {
+        if (fixForeground) {
+            fixForeground = false;
+            tsl::hlp::requestForeground(true);
+        }
+    }
 
     virtual bool handleInput(u64 keysDown, u64 keysHeld, const HidTouchState &touchPos, HidAnalogStickState joyStickPosLeft, HidAnalogStickState joyStickPosRight) override {
         if (disableJumpTo)
@@ -120,7 +125,12 @@ public:
         return rootFrame;
     }
 
-    virtual void update() override {}
+    virtual void update() override {
+        if (fixForeground) {
+            fixForeground = false;
+            tsl::hlp::requestForeground(true);
+        }
+    }
 
     virtual bool handleInput(u64 keysDown, u64 keysHeld, const HidTouchState &touchPos, HidAnalogStickState joyStickPosLeft, HidAnalogStickState joyStickPosRight) override {
         if (disableJumpTo)
@@ -238,6 +248,10 @@ public:
         if (tsl::cfg::LayerPosX || tsl::cfg::LayerPosY) {
             tsl::gfx::Renderer::get().setLayerPos(0, 0);
         }
+        if (fixForeground) {
+            fixForeground = false;
+            tsl::hlp::requestForeground(true);
+        }
     }
 
     virtual bool handleInput(u64 keysDown, u64 keysHeld, const HidTouchState &touchPos, HidAnalogStickState joyStickPosLeft, HidAnalogStickState joyStickPosRight) override {
@@ -346,7 +360,7 @@ class MicroMode : public tsl::Overlay {
 public:
 
     virtual void initServices() override {
-        tsl::hlp::requestForeground(false);
+        //tsl::hlp::requestForeground(false);
         //Initialize services
         tsl::hlp::doWithSmSession([this]{
             apmInitialize();
@@ -431,7 +445,7 @@ public:
 
     virtual void initServices() override {
 
-        tsl::hlp::requestForeground(false);
+        //tsl::hlp::requestForeground(false);
         // Same service‐init as before
         tsl::hlp::doWithSmSession([this]{
             apmInitialize();
@@ -506,7 +520,7 @@ public:
     // **Override onShow** so that as soon as this Overlay appears, we let input pass through.
     virtual void onShow() override {
         // Request that Tesla stop grabbing all buttons/touches
-        tsl::hlp::requestForeground(false);
+        //tsl::hlp::requestForeground(false);
 
         // (Optional) hide Tesla’s footer if you don’t want it
         deactivateOriginalFooter = true;

@@ -28,7 +28,7 @@ extern "C"
 #define BASE_SNS_UOHM 5000
 
 static bool fixHiding = false;
-
+static bool fixForeground = false;
 
 //Common
 bool isMariko = false;
@@ -1012,14 +1012,14 @@ ALWAYS_INLINE bool isKeyComboPressed(uint64_t keysHeld, uint64_t keysDown) {
     // Check if any of the combo buttons are pressed down this frame
     // while the rest of the combo buttons are being held
     
-    uint64_t comboButtonsDown = keysDown & comboBitmask;
-    uint64_t comboButtonsHeld = keysHeld & comboBitmask;
+    const uint64_t comboButtonsDown = keysDown & comboBitmask;
+    const uint64_t comboButtonsHeld = keysHeld & comboBitmask;
     
     // If any combo buttons are pressed down this frame
     if (comboButtonsDown != 0) {
         // Check if the remaining combo buttons are being held
         // (the full combo should be active when combining held + down)
-        uint64_t totalComboActive = comboButtonsHeld | comboButtonsDown;
+        const uint64_t totalComboActive = comboButtonsHeld | comboButtonsDown;
         
         if (totalComboActive == comboBitmask) {
             fixHiding = true; // for fixing hiding when returning
