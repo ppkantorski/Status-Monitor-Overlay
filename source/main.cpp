@@ -431,7 +431,9 @@ public:
         apmExit();
     }
 
-    virtual void onShow() override {}    // Called before overlay wants to change from invisible to visible state
+    virtual void onShow() override { // Called before overlay wants to change from invisible to visible state
+        tsl::hlp::requestForeground(false);
+    }    
     virtual void onHide() override {}    // Called before overlay wants to change from visible to invisible state
 
     virtual std::unique_ptr<tsl::Gui> loadInitialGui() override {
@@ -520,7 +522,7 @@ public:
     // **Override onShow** so that as soon as this Overlay appears, we let input pass through.
     virtual void onShow() override {
         // Request that Tesla stop grabbing all buttons/touches
-        //tsl::hlp::requestForeground(false);
+        tsl::hlp::requestForeground(false);
 
         // (Optional) hide Tesla’s footer if you don’t want it
         deactivateOriginalFooter = true;
