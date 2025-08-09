@@ -18,7 +18,7 @@ private:
     char SOC_volt_c[16];
     char RES_var_compressed_c[32];
 
-    const uint32_t margin = 4;
+    static constexpr uint32_t margin = 4;
 
     // Performance optimization members
     bool Initialized = false;

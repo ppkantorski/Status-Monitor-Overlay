@@ -292,7 +292,7 @@ public:
     }
     virtual bool handleInput(u64 keysDown, u64 keysHeld, const HidTouchState &touchPos, HidAnalogStickState joyStickPosLeft, HidAnalogStickState joyStickPosRight) override {
         if (isKeyComboPressed(keysHeld, keysDown)) {
-        	isRendering = false;
+            isRendering = false;
             leventSignal(&renderingStopEvent);
             TeslaFPS = 60;
             tsl::goBack();

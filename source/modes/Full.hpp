@@ -18,7 +18,7 @@ private:
     char RAM_load_c[64] = "";
     char Resolutions_c[64] = "";
 
-    uint8_t COMMON_MARGIN = 20;
+    static constexpr uint8_t COMMON_MARGIN = 20;
     FullSettings settings;
     uint64_t systemtickfrequency_impl = systemtickfrequency;
     std::string formattedKeyCombo = keyCombo;

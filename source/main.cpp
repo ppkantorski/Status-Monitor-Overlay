@@ -318,17 +318,17 @@ public:
                 }
                 else sysclkCheck = 0;
             }
-		    if (R_SUCCEEDED(splInitialize())) {
-		    	u64 sku = 0;
-				splGetConfig(SplConfigItem_HardwareType, &sku);
-				switch(sku) {
-					case 2 ... 5:
-						isMariko = true;
-						break;
-					default:
-						isMariko = false;
-				}
-			}
+            if (R_SUCCEEDED(splInitialize())) {
+                u64 sku = 0;
+                splGetConfig(SplConfigItem_HardwareType, &sku);
+                switch(sku) {
+                    case 2 ... 5:
+                        isMariko = true;
+                        break;
+                    default:
+                        isMariko = false;
+                }
+            }
             splExit();
 
         });
