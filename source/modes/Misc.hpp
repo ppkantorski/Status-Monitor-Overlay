@@ -63,7 +63,7 @@ public:
     virtual tsl::elm::Element* createUI() override {
         tsl::elm::OverlayFrame* rootFrame = new tsl::elm::OverlayFrame("Status Monitor", APP_VERSION, true);
 
-        auto Status = new tsl::elm::CustomDrawer([this](tsl::gfx::Renderer *renderer, u16 x, u16 y, u16 w, u16 h) {
+        auto* Status = new tsl::elm::CustomDrawer([this](tsl::gfx::Renderer *renderer, u16 x, u16 y, u16 w, u16 h) {
             
             ///DSP
             if (R_SUCCEEDED(audsnoopCheck)) {

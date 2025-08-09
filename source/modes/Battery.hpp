@@ -15,7 +15,7 @@ public:
     virtual tsl::elm::Element* createUI() override {
         tsl::elm::OverlayFrame* rootFrame = new tsl::elm::OverlayFrame("Status Monitor", APP_VERSION, true);
 
-        auto Status = new tsl::elm::CustomDrawer([this](tsl::gfx::Renderer *renderer, u16 x, u16 y, u16 w, u16 h) {
+        auto* Status = new tsl::elm::CustomDrawer([this](tsl::gfx::Renderer *renderer, u16 x, u16 y, u16 w, u16 h) {
             renderer->drawString("Battery/Charger Stats:", false, 20, 120, 20, 0xFFFF);
             renderer->drawString(Battery_c, false, 20, 155, 18, 0xFFFF);
         });
@@ -35,15 +35,9 @@ public:
             snprintf(&tempBatTimeEstimate[0], sizeof(tempBatTimeEstimate), "%d:%02d", batTimeEstimate / 60, batTimeEstimate % 60);
         }
 
-        BatteryChargeInfoFieldsChargerType ChargerConnected = _batteryChargeInfoFields.ChargerType;
-        int32_t ChargerVoltageLimit = _batteryChargeInfoFields.ChargerVoltageLimit;
-        int32_t ChargerCurrentLimit = _batteryChargeInfoFields.ChargerCurrentLimit;
-
-        if (hosversionAtLeast(17,0,0)) {
-            ChargerConnected = ((BatteryChargeInfoFields17*)&_batteryChargeInfoFields) -> ChargerType;
-            ChargerVoltageLimit = ((BatteryChargeInfoFields17*)&_batteryChargeInfoFields) -> ChargerVoltageLimit;
-            ChargerCurrentLimit = ((BatteryChargeInfoFields17*)&_batteryChargeInfoFields) -> ChargerCurrentLimit;
-        }
+        const BatteryChargeInfoFieldsChargerType ChargerConnected = hosversionAtLeast(17,0,0) ? ((BatteryChargeInfoFields17*)&_batteryChargeInfoFields)->ChargerType : _batteryChargeInfoFields.ChargerType;
+        const int32_t ChargerVoltageLimit = hosversionAtLeast(17,0,0) ? ((BatteryChargeInfoFields17*)&_batteryChargeInfoFields)->ChargerVoltageLimit : _batteryChargeInfoFields.ChargerVoltageLimit;
+        const int32_t ChargerCurrentLimit = hosversionAtLeast(17,0,0) ? ((BatteryChargeInfoFields17*)&_batteryChargeInfoFields)->ChargerCurrentLimit : _batteryChargeInfoFields.ChargerCurrentLimit;
 
         if (ChargerConnected)
             snprintf(Battery_c, sizeof Battery_c,

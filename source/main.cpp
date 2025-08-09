@@ -26,9 +26,9 @@ public:
 
     virtual tsl::elm::Element* createUI() override {
         
-        auto list = new tsl::elm::List();
+        auto* list = new tsl::elm::List();
 
-        auto comFPSGraph = new tsl::elm::ListItem("Graph");
+        auto* comFPSGraph = new tsl::elm::ListItem("Graph");
         comFPSGraph->setClickListener([](uint64_t keys) {
             if (keys & KEY_A) {
                 tsl::changeTo<com_FPSGraph>();
@@ -38,7 +38,7 @@ public:
         });
         list->addItem(comFPSGraph);
 
-        auto comFPSCounter = new tsl::elm::ListItem("Counter");
+        auto* comFPSCounter = new tsl::elm::ListItem("Counter");
         comFPSCounter->setClickListener([](uint64_t keys) {
             if (keys & KEY_A) {
                 tsl::changeTo<com_FPS>();
@@ -87,9 +87,9 @@ public:
 
     virtual tsl::elm::Element* createUI() override {
         
-        auto list = new tsl::elm::List();
+        auto* list = new tsl::elm::List();
 
-        auto Battery = new tsl::elm::ListItem("Battery/Charger");
+        auto* Battery = new tsl::elm::ListItem("Battery/Charger");
         Battery->setClickListener([](uint64_t keys) {
             if (keys & KEY_A) {
                 tsl::changeTo<BatteryOverlay>();
@@ -99,7 +99,7 @@ public:
         });
         list->addItem(Battery);
 
-        auto Misc = new tsl::elm::ListItem("Miscellaneous");
+        auto* Misc = new tsl::elm::ListItem("Miscellaneous");
         Misc->setClickListener([](uint64_t keys) {
             if (keys & KEY_A) {
                 tsl::changeTo<MiscOverlay>();
@@ -110,7 +110,7 @@ public:
         list->addItem(Misc);
 
         if (SaltySD) {
-            auto Res = new tsl::elm::ListItem("Game Resolutions");
+            auto* Res = new tsl::elm::ListItem("Game Resolutions");
             Res->setClickListener([](uint64_t keys) {
                 if (keys & KEY_A) {
                     tsl::changeTo<ResolutionsOverlay>();
@@ -160,9 +160,9 @@ public:
 
     virtual tsl::elm::Element* createUI() override {
         
-        auto list = new tsl::elm::List();
+        auto* list = new tsl::elm::List();
         
-        auto Full = new tsl::elm::ListItem("Full");
+        auto* Full = new tsl::elm::ListItem("Full");
         Full->setClickListener([](uint64_t keys) {
             if (keys & KEY_A) {
                 tsl::changeTo<FullOverlay>();
@@ -171,7 +171,7 @@ public:
             return false;
         });
         list->addItem(Full);
-        //auto Mini = new tsl::elm::ListItem("Mini");
+        //auto* Mini = new tsl::elm::ListItem("Mini");
         //Mini->setClickListener([](uint64_t keys) {
         //    if (keys & KEY_A) {
         //        tsl::changeTo<MiniOverlay>();
@@ -197,7 +197,7 @@ public:
             }
         }
         if (fileExist) {
-            auto Mini = new tsl::elm::ListItem("Mini");
+            auto* Mini = new tsl::elm::ListItem("Mini");
             Mini->setClickListener([](uint64_t keys) {
                 if (keys & KEY_A) {
                     tsl::setNextOverlay(filepath, "--miniOverlay");
@@ -208,7 +208,7 @@ public:
             });
             list->addItem(Mini);
 
-            auto Micro = new tsl::elm::ListItem("Micro");
+            auto* Micro = new tsl::elm::ListItem("Micro");
             Micro->setClickListener([](uint64_t keys) {
                 if (keys & KEY_A) {
                     tsl::setNextOverlay(filepath, "--microOverlay");
@@ -220,7 +220,7 @@ public:
             list->addItem(Micro);
         }
         if (SaltySD) {
-            auto Graphs = new tsl::elm::ListItem("FPS");
+            auto* Graphs = new tsl::elm::ListItem("FPS");
             Graphs->setValue(ult::DROPDOWN_SYMBOL);
             Graphs->setClickListener([](uint64_t keys) {
                 if (keys & KEY_A) {
@@ -231,7 +231,7 @@ public:
             });
             list->addItem(Graphs);
         }
-        auto Other = new tsl::elm::ListItem("Other");
+        auto* Other = new tsl::elm::ListItem("Other");
         Other->setValue(ult::DROPDOWN_SYMBOL);
         Other->setClickListener([](uint64_t keys) {
             if (keys & KEY_A) {

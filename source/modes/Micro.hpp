@@ -143,8 +143,8 @@ public:
         size_t start = 0, end = 0;
         uint8_t seen_flags = 0;
         
-        size_t len;
-        uint32_t key3;
+        static size_t len;
+        static uint32_t key3;
         while (start < show.length()) {
             end = show.find('+', start);
             if (end == std::string::npos) end = show.length();
@@ -217,7 +217,7 @@ public:
     virtual tsl::elm::Element* createUI() override {
         tsl::elm::OverlayFrame* rootFrame = new tsl::elm::OverlayFrame("", "");
     
-        auto Status = new tsl::elm::CustomDrawer([this](tsl::gfx::Renderer *renderer, u16 x, u16 y, u16 w, u16 h) {
+        auto* Status = new tsl::elm::CustomDrawer([this](tsl::gfx::Renderer *renderer, u16 x, u16 y, u16 w, u16 h) {
             cachedMargin = renderer->getTextDimensions("CPUGPURAMSOCBAT[]", false, fontsize).second;
             if (!Initialized) {
                 //cachedMargin = renderer->drawString(" ", false, 0, 0, fontsize, renderer->a(0x0000)).first;

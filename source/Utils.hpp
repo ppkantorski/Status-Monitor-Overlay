@@ -281,16 +281,16 @@ void CheckIfGameRunning(void*) {
             check = true;
         }
         else if (!GameRunning && SharedMemoryUsed) {
-                uintptr_t base = (uintptr_t)shmemGetAddr(&_sharedmemory);
-                searchSharedMemoryBlock(base);
-                if (NxFps) {
-                    (NxFps -> pluginActive) = false;
-                    svcSleepThread(100'000'000);
-                    if ((NxFps -> pluginActive)) {
-                        GameRunning = true;
-                        check = false;
-                    }
+            const uintptr_t base = (uintptr_t)shmemGetAddr(&_sharedmemory);
+            searchSharedMemoryBlock(base);
+            if (NxFps) {
+                (NxFps -> pluginActive) = false;
+                svcSleepThread(100'000'000);
+                if ((NxFps -> pluginActive)) {
+                    GameRunning = true;
+                    check = false;
                 }
+            }
         }
     } while (!leventWait(&threadexit, 1'000'000'000));
 }
@@ -301,26 +301,34 @@ void BatteryChecker(void*) {
     if (R_FAILED(psmCheck) || R_FAILED(i2cCheck)){
         return;
     }
+    
+    // Pre-calculate constants (avoid repeated calculations)
+    static const float CURRENT_SCALE = 1.5625f / (max17050SenseResistor * max17050CGain);
+    static constexpr float VOLTAGE_SCALE = 0.625f;
+    static constexpr float TTE_SCALE = 5.625f / 60.0f;
+    static constexpr float MAX_BATTERY_TIME = 99.0f * 60.0f + 59.0f;
+    static constexpr uint64_t HALF_SECOND_NS = 500'000'000ULL;
+    static const float INV_ARRAY_SIZE = batteryFiltered ? 1.0f : 0.1f; // 1/ArraySize
+    static const int CACHE_ELEMENTS = sizeof(BatteryTimeCache) / sizeof(BatteryTimeCache[0]);
+    
     uint16_t data = 0;
-    float tempV = 0.0;
-    float tempA = 0.0;
+    float tempV, tempA;
     const size_t ArraySize = batteryFiltered ? 1 : 10;
-    //if (batteryFiltered) {
-    //    ArraySize = 1;
-    //}
+    
     float* readingsAmp = new float[ArraySize];
     float* readingsVolt = new float[ArraySize];
 
+    // Initial readings
     Max17050ReadReg(MAX17050_AvgCurrent, &data);
-    tempA = (1.5625 / (max17050SenseResistor * max17050CGain)) * (s16)data;
-    for (size_t i = 0; i < ArraySize; i++) {
-        readingsAmp[i] = tempA;
-    }
+    tempA = CURRENT_SCALE * (s16)data;
     Max17050ReadReg(MAX17050_AvgVCELL, &data);
-    tempV = 0.625 * (data >> 3);
-    for (size_t i = 0; i < ArraySize; i++) {
-        readingsVolt[i] = tempV;
-    }
+    tempV = VOLTAGE_SCALE * (data >> 3);
+    
+    // Initialize arrays (more efficient than individual assignments)
+    std::fill_n(readingsAmp, ArraySize, tempA);
+    std::fill_n(readingsVolt, ArraySize, tempV);
+    
+    // One-time capacity readings (unchanged)
     if (!actualFullBatCapacity) {
         Max17050ReadReg(MAX17050_FullCAP, &data);
         actualFullBatCapacity = data * (BASE_SNS_UOHM / MAX17050_BOARD_SNS_RESISTOR_UOHM) / MAX17050_BOARD_CGAIN;
@@ -329,93 +337,95 @@ void BatteryChecker(void*) {
         Max17050ReadReg(MAX17050_DesignCap, &data);
         designedFullBatCapacity = data * (BASE_SNS_UOHM / MAX17050_BOARD_SNS_RESISTOR_UOHM) / MAX17050_BOARD_CGAIN;
     }
-    if (readingsAmp[0] >= 0) {
+    
+    // Initial battery time estimate
+    if (tempA >= 0) {
         batTimeEstimate = -1;
-    }
-    else {
+    } else {
         Max17050ReadReg(MAX17050_TTE, &data);
-        const float batteryTimeEstimateInMinutes = (5.625 * data) / 60;
-        if (batteryTimeEstimateInMinutes > (99.0*60.0)+59.0) {
-            batTimeEstimate = (99*60)+59;
-        }
-        else batTimeEstimate = (int16_t)batteryTimeEstimateInMinutes;
+        const float batteryTimeEstimateInMinutes = TTE_SCALE * data;
+        batTimeEstimate = (batteryTimeEstimateInMinutes > MAX_BATTERY_TIME) ? 
+                         (99*60)+59 : (int16_t)batteryTimeEstimateInMinutes;
     }
 
     size_t counter = 0;
     uint64_t tick_TTE = svcGetSystemTick();
     uint64_t nanoseconds = 1000;
+    
     do {
         mutexLock(&mutex_BatteryChecker);
         const uint64_t startTick = svcGetSystemTick();
 
         psmGetBatteryChargeInfoFields(psmService, &_batteryChargeInfoFields);
 
-        // Calculation is based on Hekate's max17050.c
-        // Source: https://github.com/CTCaer/hekate/blob/master/bdk/power/max17050.c
-
+        // Read current and voltage (choose register set once)
         if (!batteryFiltered) {
             Max17050ReadReg(MAX17050_Current, &data);
-            tempA = (1.5625 / (max17050SenseResistor * max17050CGain)) * (s16)data;
+            tempA = CURRENT_SCALE * (s16)data;
             Max17050ReadReg(MAX17050_VCELL, &data);
-            tempV = 0.625 * (data >> 3);
+            tempV = VOLTAGE_SCALE * (data >> 3);
         } else {
             Max17050ReadReg(MAX17050_AvgCurrent, &data);
-            tempA = (1.5625 / (max17050SenseResistor * max17050CGain)) * (s16)data;
+            tempA = CURRENT_SCALE * (s16)data;
             Max17050ReadReg(MAX17050_AvgVCELL, &data);
-            tempV = 0.625 * (data >> 3);
+            tempV = VOLTAGE_SCALE * (data >> 3);
         }
 
+        // Update readings if valid
         if (tempA && tempV) {
-            readingsAmp[counter % ArraySize] = tempA;
-            readingsVolt[counter % ArraySize] = tempV;
+            const size_t index = counter % ArraySize;
+            readingsAmp[index] = tempA;
+            readingsVolt[index] = tempV;
             counter++;
         }
 
-        float batCurrent = 0.0;
-        float batVoltage = 0.0;
-        float batPowerAvg = 0.0;
+        // Calculate averages (single loop, pre-calculated inverse)
+        float batCurrent = 0.0f;
+        float batVoltage = 0.0f;
+        float batPowerSum = 0.0f;
         for (size_t x = 0; x < ArraySize; x++) {
             batCurrent += readingsAmp[x];
             batVoltage += readingsVolt[x];
-            batPowerAvg += (readingsAmp[x] * readingsVolt[x]) / 1'000;
+            batPowerSum += readingsAmp[x] * readingsVolt[x];
         }
-        batCurrent /= ArraySize;
-        batVoltage /= ArraySize;
-        batCurrentAvg = batCurrent;
-        batVoltageAvg = batVoltage;
-        batPowerAvg /= ArraySize * 1000;
-        PowerConsumption = batPowerAvg;
+        
+        // Apply scaling once (avoid repeated division)
+        batCurrentAvg = batCurrent * INV_ARRAY_SIZE;
+        batVoltageAvg = batVoltage * INV_ARRAY_SIZE;
+        PowerConsumption = (batPowerSum * INV_ARRAY_SIZE) / 1'000'000.0f; // Combined scaling
 
+        // Battery time estimation
         if (batCurrentAvg >= 0) {
             batTimeEstimate = -1;
-        } 
-        else {
+        } else {
             static float batteryTimeEstimateInMinutes = 0;
-            Max17050ReadReg(MAX17050_TTE, &data);
-            batteryTimeEstimateInMinutes = (5.625 * data) / 60;
-            if (batteryTimeEstimateInMinutes > (99.0*60.0)+59.0) {
-                batteryTimeEstimateInMinutes = (99.0*60.0)+59.0;
-            }
             static int itr = 0;
-            const int cacheElements = (sizeof(BatteryTimeCache) / sizeof(BatteryTimeCache[0]));
-            BatteryTimeCache[itr++ % cacheElements] = (int32_t)batteryTimeEstimateInMinutes;
-            uint64_t new_tick_TTE = svcGetSystemTick();
-            if (armTicksToNs(new_tick_TTE - tick_TTE) / 1'000'000'000 >= batteryTimeLeftRefreshRate) {
-                size_t to_divide = itr < cacheElements ? itr : cacheElements;
+            
+            Max17050ReadReg(MAX17050_TTE, &data);
+            batteryTimeEstimateInMinutes = TTE_SCALE * data;
+            if (batteryTimeEstimateInMinutes > MAX_BATTERY_TIME) {
+                batteryTimeEstimateInMinutes = MAX_BATTERY_TIME;
+            }
+            
+            BatteryTimeCache[itr++ % CACHE_ELEMENTS] = (int32_t)batteryTimeEstimateInMinutes;
+            
+            const uint64_t new_tick_TTE = svcGetSystemTick();
+            if (armTicksToNs(new_tick_TTE - tick_TTE) >= (uint64_t)batteryTimeLeftRefreshRate * 1'000'000'000ULL) {
+                const size_t to_divide = (itr < CACHE_ELEMENTS) ? itr : CACHE_ELEMENTS;
                 batTimeEstimate = (int16_t)(std::accumulate(&BatteryTimeCache[0], &BatteryTimeCache[to_divide], 0) / to_divide);
                 tick_TTE = new_tick_TTE;
             }
         }
 
         mutexUnlock(&mutex_BatteryChecker);
+        
+        // Calculate sleep time
         nanoseconds = armTicksToNs(svcGetSystemTick() - startTick);
-        if (nanoseconds < 1'000'000'000 / 2) {
-            nanoseconds = (1'000'000'000 / 2) - nanoseconds;
-        } else {
-            nanoseconds = 1000;
-        }
+        nanoseconds = (nanoseconds < HALF_SECOND_NS) ? HALF_SECOND_NS - nanoseconds : 1000;
+        
     } while(!leventWait(&threadexit, nanoseconds));
 
+    // Cleanup
     batTimeEstimate = -1;
     _batteryChargeInfoFields = {0};
     memset(BatteryTimeCache, 0, sizeof(BatteryTimeCache));
@@ -548,6 +558,7 @@ void Misc(void*) {
 }
 
 void Misc2(void*) {
+    u32 dummy = 0;
     do {
         //DSP
         if (R_SUCCEEDED(audsnoopCheck)) audsnoopGetDspUsage(&DSP_Load_u);
@@ -558,7 +569,7 @@ void Misc2(void*) {
         if (R_SUCCEEDED(nvjpgCheck)) mmuRequestGet(&nvjpgRequest, &NVJPG_Hz);
 
         if (R_SUCCEEDED(nifmCheck)) {
-            u32 dummy = 0;
+            //u32 dummy = 0;
             Nifm_internet_rc = nifmGetInternetConnectionStatus(&NifmConnectionType, &dummy, &NifmConnectionStatus);
             if (!Nifm_internet_rc && (NifmConnectionType == NifmInternetConnectionType_WiFi))
                 Nifm_profile_rc = nifmGetCurrentNetworkProfile((NifmNetworkProfileData*)&Nifm_profile);
@@ -567,6 +578,7 @@ void Misc2(void*) {
 }
 
 void Misc3(void*) {
+    double temp;
     do {
         mutexLock(&mutex_Misc);
         if (R_SUCCEEDED(sysclkCheck)) {
@@ -589,7 +601,7 @@ void Misc3(void*) {
         if (R_SUCCEEDED(tcCheck)) tcGetSkinTemperatureMilliC(&skin_temperaturemiliC);
         //Fan
         if (R_SUCCEEDED(pwmCheck)) {
-            double temp = 0;
+            temp = 0;
             if (R_SUCCEEDED(pwmChannelSessionGetDutyCycle(&g_ICon, &temp))) {
                 temp *= 10;
                 temp = trunc(temp);
@@ -618,28 +630,28 @@ void CheckCore(void* arg) {
         case 3: output = &idletick3; break;
         default: return;
     }
-    uint64_t prevIdleTick = 0, currIdleTick = 0;
+    
+    uint64_t prevIdleTick = 0;
     svcGetInfo(&prevIdleTick, InfoType_IdleTickCount, INVALID_HANDLE, coreIndex);
-    static u32 lastFPS = 0;
-    static u64 cachedIntervalNs = 0;
-    static u64 cachedTargetTicks = 0;
-    uint64_t delta, tickCap;
+    
+    thread_local u32 lastFPS = 0;
+    thread_local u64 cachedIntervalNs = 0;
+    thread_local u64 cachedTargetTicks = 0;
     
     do {
         if (__builtin_expect(TeslaFPS != lastFPS, 0)) {
-            cachedIntervalNs = 1'000'000'000 / TeslaFPS;
-            cachedTargetTicks = armNsToTicks(cachedIntervalNs);
             lastFPS = TeslaFPS;
+            cachedIntervalNs = 1'000'000'000 / lastFPS;
+            cachedTargetTicks = armNsToTicks(cachedIntervalNs);
         }
         
-        // Wait for the calculated interval or thread exit event
         if (leventWait(&threadexit, cachedIntervalNs)) break;
         
-        // Get idle ticks and calculate delta
+        uint64_t currIdleTick;
         svcGetInfo(&currIdleTick, InfoType_IdleTickCount, INVALID_HANDLE, coreIndex);
-        delta = currIdleTick - prevIdleTick;
-        tickCap = cachedTargetTicks; // Cap to the expected sleep ticks
-        *output = (delta > tickCap) ? tickCap : delta;
+        
+        const uint64_t delta = currIdleTick - prevIdleTick;
+        *output = (delta > cachedTargetTicks) ? cachedTargetTicks : delta;
         prevIdleTick = currIdleTick;
     } while (true);
 }
