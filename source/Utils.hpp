@@ -283,7 +283,7 @@ void CheckIfGameRunning(void*) {
             searchSharedMemoryBlock(base);
             if (NxFps) {
                 (NxFps -> pluginActive) = false;
-                svcSleepThread(100'000'000);
+                if (leventWait(&threadexit, 100'000'000)) return; // Exit-aware wait
                 if ((NxFps -> pluginActive)) {
                     GameRunning = true;
                     check = false;
@@ -292,7 +292,6 @@ void CheckIfGameRunning(void*) {
         }
     } while (!leventWait(&threadexit, 1'000'000'000));
 }
-
 
 Mutex mutex_BatteryChecker = {0};
 void BatteryChecker(void*) {
@@ -662,32 +661,26 @@ void StartThreads() {
     leventClear(&threadexit);
 
     threadCreate(&t0, CheckCore, &coreIds[0], NULL, 0x1000, 0x10, 0);
-    threadStart(&t0);
-    
     threadCreate(&t1, CheckCore, &coreIds[1], NULL, 0x1000, 0x10, 1);
-    threadStart(&t1);
-    
     threadCreate(&t2, CheckCore, &coreIds[2], NULL, 0x1000, 0x10, 2);
-    threadStart(&t2);
-    
     threadCreate(&t3, CheckCore, &coreIds[3], NULL, 0x1000, 0x10, 3);
-    threadStart(&t3);
-    
     threadCreate(&t4, Misc, NULL, NULL, 0x1000, 0x3F, -2);
-    threadStart(&t4);
-    
     threadCreate(&t5, gpuLoadThread, NULL, NULL, 0x1000, 0x3F, -2);
+    threadCreate(&t7, BatteryChecker, NULL, NULL, 0x4000, 0x3F, 3);
+
+    threadStart(&t0);
+    threadStart(&t1);
+    threadStart(&t2);
+    threadStart(&t3);
+    threadStart(&t4);
     threadStart(&t5);
-    
+    threadStart(&t7);
+
     if (SaltySD) {
         //Assign NX-FPS to default core
         threadCreate(&t6, CheckIfGameRunning, NULL, NULL, 0x1000, 0x38, -2);
-        //Start NX-FPS detection
         threadStart(&t6);
     }
-    
-    threadCreate(&t7, BatteryChecker, NULL, NULL, 0x4000, 0x3F, 3);
-    threadStart(&t7);
 }
 
 //End reading all stats
@@ -741,8 +734,8 @@ void StartFPSCounterThread() {
 void EndFPSCounterThread() {
     leventSignal(&threadexit);
     threadWaitForExit(&t6);
-    threadClose(&t6);
     threadWaitForExit(&t0);
+    threadClose(&t6);
     threadClose(&t0);
 }
 
@@ -751,18 +744,15 @@ void StartInfoThread() {
     leventClear(&threadexit);
     
     threadCreate(&t1, CheckCore, &coreIds[0], NULL, 0x1000, 0x10, 0);
-    threadStart(&t1);
-    
     threadCreate(&t2, CheckCore, &coreIds[1], NULL, 0x1000, 0x10, 1);
-    threadStart(&t2);
-    
     threadCreate(&t3, CheckCore, &coreIds[2], NULL, 0x1000, 0x10, 2);
-    threadStart(&t3);
-    
     threadCreate(&t4, CheckCore, &coreIds[3], NULL, 0x1000, 0x10, 3);
-    threadStart(&t4);
-    
     threadCreate(&t7, Misc3, NULL, NULL, 0x1000, 0x3F, -2);
+    
+    threadStart(&t1);
+    threadStart(&t2);
+    threadStart(&t3);
+    threadStart(&t4);
     threadStart(&t7);
 }
 
