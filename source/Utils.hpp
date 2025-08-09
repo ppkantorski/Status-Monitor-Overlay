@@ -251,7 +251,7 @@ bool CheckPort() {
     
     // Reduce retry attempts and initial delay
     static constexpr u64 initial_delay = 10'000;    // 0.05ms (was 0.1ms)
-    //static constexpr u64 max_delay = 5'000'000;     // 5ms (was 10ms)
+    static constexpr u64 max_delay = 5'000'000;     // 5ms (was 10ms)
     static constexpr int max_attempts = 50;         // Reduced from 20
     
     u64 delay = initial_delay;
@@ -261,7 +261,7 @@ bool CheckPort() {
             svcCloseHandle(saltysd);
             return true;
         }
-        //delay = std::min(delay * 2, max_delay);
+        delay = std::min(delay * 2, max_delay);
     }
     return false;
 }
@@ -1504,7 +1504,7 @@ ALWAYS_INLINE void GetConfigSettings(MicroSettings* settings) {
 
     if (parsedData[mode].find("handheld_font_size") != parsedData[mode].end()) {
         key = parsedData[mode]["handheld_font_size"];
-        long fontsize = atol(key.c_str());
+        const long fontsize = atol(key.c_str());
         if (fontsize < minFontSize)
             settings -> handheldFontSize = minFontSize;
         else if (fontsize > maxFontSize)
@@ -1513,7 +1513,7 @@ ALWAYS_INLINE void GetConfigSettings(MicroSettings* settings) {
     }
     if (parsedData[mode].find("docked_font_size") != parsedData[mode].end()) {
         key = parsedData[mode]["docked_font_size"];
-        long fontsize = atol(key.c_str());
+        const long fontsize = atol(key.c_str());
         if (fontsize < minFontSize)
             settings -> dockedFontSize = minFontSize;
         else if (fontsize > maxFontSize)
