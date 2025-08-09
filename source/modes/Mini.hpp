@@ -482,7 +482,7 @@ public:
         //} 
         /* ─── GPU ───────────────────────────────────────────── */
         if (settings.realVolts) {
-            uint32_t mv = realGPU_mV / 1000;
+            const uint32_t mv = realGPU_mV / 1000;
             snprintf(MINI_GPU_volt_c, sizeof(MINI_GPU_volt_c), "%u mV", mv);
         }
 

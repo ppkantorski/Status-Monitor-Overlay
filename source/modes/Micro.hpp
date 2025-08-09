@@ -503,7 +503,7 @@ public:
         // CPU frequency and voltage
         const char* cpuDiff = "@";
         if (realCPU_Hz) {
-            int32_t deltaCPU = (int32_t)(realCPU_Hz / 1000) - (CPU_Hz / 1000);
+            const int32_t deltaCPU = (int32_t)(realCPU_Hz / 1000) - (CPU_Hz / 1000);
             cpuDiff = getDifferenceSymbol(deltaCPU);
         }
         
