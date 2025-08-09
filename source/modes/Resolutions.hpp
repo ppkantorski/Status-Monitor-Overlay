@@ -5,6 +5,7 @@ private:
     ResolutionSettings settings;
 public:
     ResolutionsOverlay() {
+    	tsl::hlp::requestForeground(false);
         disableJumpTo = true;
         GetConfigSettings(&settings);
         switch(settings.setPos) {
@@ -19,12 +20,12 @@ public:
                 tsl::gfx::Renderer::get().setLayerPos(1248, 0);
                 break;
         }
-        StartFPSCounterThread();
+        
         deactivateOriginalFooter = true;
-        tsl::hlp::requestForeground(false);
         //alphabackground = 0x0;
         FullMode = false;
         TeslaFPS = settings.refreshRate;
+        StartFPSCounterThread();
     }
     ~ResolutionsOverlay() {
         EndFPSCounterThread();

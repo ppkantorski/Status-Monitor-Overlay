@@ -109,7 +109,7 @@ public:
         }
         else fontsize = settings.dockedFontSize;
         if (settings.setPosBottom) {
-            auto [horizontalUnderscanPixels, verticalUnderscanPixels] = tsl::gfx::getUnderscanPixels();
+            const auto [horizontalUnderscanPixels, verticalUnderscanPixels] = tsl::gfx::getUnderscanPixels();
             tsl::gfx::Renderer::get().setLayerPos(0, 1038-verticalUnderscanPixels);
         }
         mutexInit(&mutex_BatteryChecker);
@@ -546,7 +546,7 @@ public:
         // GPU frequency and voltage
         const char* gpuDiff = "@";
         if (realGPU_Hz) {
-            int32_t deltaGPU = (int32_t)(realGPU_Hz / 1000) - (GPU_Hz / 1000);
+            const int32_t deltaGPU = (int32_t)(realGPU_Hz / 1000) - (GPU_Hz / 1000);
             gpuDiff = getDifferenceSymbol(deltaGPU);
         }
         
