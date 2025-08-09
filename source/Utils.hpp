@@ -444,7 +444,7 @@ Mutex mutex_Misc = {0};
 
 void gpuLoadThread(void*) {
     if (!GPULoadPerFrame && R_SUCCEEDED(nvCheck)) do {
-        u8 average = 5;
+        static constexpr u8 average = 5;
         u32 temp = 0;
         nvIoctl(fd, NVGPU_GPU_IOCTL_PMU_GET_GPU_LOAD, &temp);
         GPU_Load_u = ((GPU_Load_u * (average-1)) + temp) / average;
@@ -609,7 +609,7 @@ void Misc3(void*) {
 //This is because making each loop also takes time, which is not considered because this will take also additional time
 
 void CheckCore(void* arg) {
-    int coreIndex = *((int*)arg);
+    const int coreIndex = *((int*)arg);
     uint64_t* output = nullptr;
     switch (coreIndex) {
         case 0: output = &idletick0; break;
@@ -926,7 +926,7 @@ constexpr uint64_t MapButtons(const std::string& buttonCombo) {
 
     static const std::string delimiter = "+";
     size_t pos = 0;
-    std::string button;
+    static std::string button;
     size_t max_delimiters = 4;
     while ((pos = comboCopy.find(delimiter)) != std::string::npos) {
         button = comboCopy.substr(0, pos);
