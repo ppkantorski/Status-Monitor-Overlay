@@ -225,7 +225,7 @@ public:
         static float last = 0;
         
         snprintf(FPSavg_c, sizeof FPSavg_c, "%2.1f",  FPSavg);
-        uint8_t SaltySharedDisplayRefreshRate = *(uint8_t*)((uintptr_t)shmemGetAddr(&_sharedmemory) + 1);
+        const uint8_t SaltySharedDisplayRefreshRate = *(uint8_t*)((uintptr_t)shmemGetAddr(&_sharedmemory) + 1);
         if (SaltySharedDisplayRefreshRate) 
             refreshRate = SaltySharedDisplayRefreshRate;
         else refreshRate = 60;
@@ -235,7 +235,7 @@ public:
             if ((s16)(readings.size()) >= rectangle_width) {
                 readings.erase(readings.begin());
             }
-            float whole = std::round(FPSavg);
+            const float whole = std::round(FPSavg);
             temp.value = static_cast<s16>(std::lround(FPSavg));
             if (FPSavg < whole+0.04 && FPSavg > whole-0.05) {
                 temp.zero_rounded = true;
