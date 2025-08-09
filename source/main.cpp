@@ -25,7 +25,7 @@ public:
     GraphsMenu() {}
 
     virtual tsl::elm::Element* createUI() override {
-        tsl::elm::OverlayFrame* rootFrame = new tsl::elm::OverlayFrame("Status Monitor", "FPS");
+        
         auto list = new tsl::elm::List();
 
         auto comFPSGraph = new tsl::elm::ListItem("Graph");
@@ -48,6 +48,7 @@ public:
         });
         list->addItem(comFPSCounter);
 
+        tsl::elm::OverlayFrame* rootFrame = new tsl::elm::OverlayFrame("Status Monitor", "FPS");
         rootFrame->setContent(list);
 
         return rootFrame;
@@ -85,7 +86,7 @@ public:
     OtherMenu() { }
 
     virtual tsl::elm::Element* createUI() override {
-        tsl::elm::OverlayFrame* rootFrame = new tsl::elm::OverlayFrame("Status Monitor", "Other");
+        
         auto list = new tsl::elm::List();
 
         auto Battery = new tsl::elm::ListItem("Battery/Charger");
@@ -120,6 +121,7 @@ public:
             list->addItem(Res);
         }
 
+        tsl::elm::OverlayFrame* rootFrame = new tsl::elm::OverlayFrame("Status Monitor", "Other");
         rootFrame->setContent(list);
 
         return rootFrame;
@@ -157,7 +159,7 @@ public:
     MainMenu() {}
 
     virtual tsl::elm::Element* createUI() override {
-        tsl::elm::OverlayFrame* rootFrame = new tsl::elm::OverlayFrame("Status Monitor", APP_VERSION);
+        
         auto list = new tsl::elm::List();
         
         auto Full = new tsl::elm::ListItem("Full");
@@ -240,7 +242,10 @@ public:
         });
         list->addItem(Other);
 
-        list->jumpToItem(lastSelectedItem);
+        if (!lastSelectedItem.empty())
+            list->jumpToItem(lastSelectedItem);
+
+        tsl::elm::OverlayFrame* rootFrame = new tsl::elm::OverlayFrame("Status Monitor", APP_VERSION);
         rootFrame->setContent(list);
 
         return rootFrame;

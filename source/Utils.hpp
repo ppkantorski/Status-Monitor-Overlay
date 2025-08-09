@@ -46,10 +46,10 @@ uint64_t systemtickfrequency = 19200000;
 
 LEvent threadexit = {0};
 PwmChannelSession g_ICon;
-std::string folderpath = "sdmc:/switch/.overlays/";
+const std::string folderpath = "sdmc:/switch/.overlays/";
 std::string filename = "";
 std::string filepath = "";
-std::string keyCombo = "L+DDOWN+RSTICK"; // default Tesla Menu combo
+std::string keyCombo = "ZL+ZR+DDOWN"; // default Ultrahand Menu combo
 
 //Misc2
 MmuRequest nvdecRequest;
@@ -346,7 +346,7 @@ void BatteryChecker(void*) {
     uint64_t nanoseconds = 1000;
     do {
         mutexLock(&mutex_BatteryChecker);
-        uint64_t startTick = svcGetSystemTick();
+        const uint64_t startTick = svcGetSystemTick();
 
         psmGetBatteryChargeInfoFields(psmService, &_batteryChargeInfoFields);
 
@@ -924,7 +924,7 @@ constexpr uint64_t MapButtons(const std::string& buttonCombo) {
     
     std::string comboCopy = buttonCombo;  // Make a copy of buttonCombo
 
-    std::string delimiter = "+";
+    static const std::string delimiter = "+";
     size_t pos = 0;
     std::string button;
     size_t max_delimiters = 4;
@@ -1068,7 +1068,7 @@ void ParseIniFile() {
             // Process battery_time_left_refreshrate
             auto refreshRateIt = section.find("battery_time_left_refreshrate");
             if (refreshRateIt != section.end()) {
-                long rate = std::clamp(atol(refreshRateIt->second.c_str()), 1L, 60L);
+                const long rate = std::clamp(atol(refreshRateIt->second.c_str()), 1L, 60L);
                 batteryTimeLeftRefreshRate = rate;
             }
             
@@ -1770,7 +1770,7 @@ ALWAYS_INLINE void GetConfigSettings(FullSettings* settings) {
         static constexpr long minFPS = 1;
         
         key = parsedData[mode]["refresh_rate"];
-        long rate = atol(key.c_str());
+        const long rate = atol(key.c_str());
         if (rate < minFPS) {
             settings -> refreshRate = minFPS;
         }
