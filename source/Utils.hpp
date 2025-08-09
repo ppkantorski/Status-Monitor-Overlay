@@ -41,8 +41,6 @@ Thread t5;
 Thread t6;
 Thread t7;
 uint64_t systemtickfrequency = 19200000;
-//volatile bool threadexit = false;
-//volatile bool threadexit2 = false;
 
 LEvent threadexit = {0};
 PwmChannelSession g_ICon;
@@ -663,42 +661,24 @@ void StartThreads() {
     // Clear the thread exit event for new threads
     leventClear(&threadexit);
 
-    // Wait for existing threads to exit
-    //threadWaitForExit(&t0);
-    //threadWaitForExit(&t1);
-    //threadWaitForExit(&t2);
-    //threadWaitForExit(&t3);
-    //threadWaitForExit(&t4);
-    //threadWaitForExit(&t5);
-    //threadWaitForExit(&t6);
-    //threadWaitForExit(&t7);
-    
-    // Close and recreate threads
-    //threadClose(&t0);
     threadCreate(&t0, CheckCore, &coreIds[0], NULL, 0x1000, 0x10, 0);
     threadStart(&t0);
     
-    //threadClose(&t1);
     threadCreate(&t1, CheckCore, &coreIds[1], NULL, 0x1000, 0x10, 1);
     threadStart(&t1);
     
-    //threadClose(&t2);
     threadCreate(&t2, CheckCore, &coreIds[2], NULL, 0x1000, 0x10, 2);
     threadStart(&t2);
     
-    //threadClose(&t3);
     threadCreate(&t3, CheckCore, &coreIds[3], NULL, 0x1000, 0x10, 3);
     threadStart(&t3);
     
-    //threadClose(&t4);
     threadCreate(&t4, Misc, NULL, NULL, 0x1000, 0x3F, -2);
     threadStart(&t4);
     
-    //threadClose(&t5);
     threadCreate(&t5, gpuLoadThread, NULL, NULL, 0x1000, 0x3F, -2);
     threadStart(&t5);
     
-    //threadClose(&t6);
     if (SaltySD) {
         //Assign NX-FPS to default core
         threadCreate(&t6, CheckIfGameRunning, NULL, NULL, 0x1000, 0x38, -2);
@@ -706,7 +686,6 @@ void StartThreads() {
         threadStart(&t6);
     }
     
-    //threadClose(&t7);
     threadCreate(&t7, BatteryChecker, NULL, NULL, 0x4000, 0x3F, 3);
     threadStart(&t7);
 }
@@ -714,7 +693,6 @@ void StartThreads() {
 //End reading all stats
 void CloseThreads() {
     leventSignal(&threadexit);
-    //if (wait) {
     threadWaitForExit(&t0);
     threadWaitForExit(&t1);
     threadWaitForExit(&t2);
@@ -731,7 +709,6 @@ void CloseThreads() {
     threadClose(&t5);
     threadClose(&t6);
     threadClose(&t7);
-    //}
 }
 
 //Separate functions dedicated to "FPS Counter" mode
@@ -752,15 +729,11 @@ void FPSCounter(void*) {
 }
 
 void StartFPSCounterThread() {
-    //threadWaitForExit(&t0);
-    //threadWaitForExit(&t6);
     leventClear(&threadexit);
 
-    //threadClose(&t6);
     threadCreate(&t6, CheckIfGameRunning, NULL, NULL, 0x1000, 0x38, -2);
     threadStart(&t6);
 
-    //threadClose(&t0);
     threadCreate(&t0, FPSCounter, NULL, NULL, 0x1000, 0x3F, 3);
     threadStart(&t0);
 }
@@ -773,35 +746,22 @@ void EndFPSCounterThread() {
     threadClose(&t0);
 }
 
-void StartInfoThread() {
-    // Wait for existing threads to exit
-    //threadWaitForExit(&t1);
-    //threadWaitForExit(&t2);
-    //threadWaitForExit(&t3);
-    //threadWaitForExit(&t4);
-    //threadWaitForExit(&t7);
-    
+void StartInfoThread() {    
     // Clear the thread exit event for new threads
     leventClear(&threadexit);
     
-    // Close and recreate threads
-    //threadClose(&t1);
     threadCreate(&t1, CheckCore, &coreIds[0], NULL, 0x1000, 0x10, 0);
     threadStart(&t1);
     
-    //threadClose(&t2);
     threadCreate(&t2, CheckCore, &coreIds[1], NULL, 0x1000, 0x10, 1);
     threadStart(&t2);
     
-    //threadClose(&t3);
     threadCreate(&t3, CheckCore, &coreIds[2], NULL, 0x1000, 0x10, 2);
     threadStart(&t3);
     
-    //threadClose(&t4);
     threadCreate(&t4, CheckCore, &coreIds[3], NULL, 0x1000, 0x10, 3);
     threadStart(&t4);
     
-    //threadClose(&t7);
     threadCreate(&t7, Misc3, NULL, NULL, 0x1000, 0x3F, -2);
     threadStart(&t7);
 }
