@@ -452,7 +452,6 @@ void gpuLoadThread(void*) {
 }
 
 //Stuff that doesn't need multithreading
-//Stuff that doesn't need multithreading
 void Misc(void*) {
     uint64_t timeout_ns = TeslaFPS < 10 ? (1'000'000'000 / TeslaFPS) : 100'000'000;
     do {
@@ -725,7 +724,7 @@ void CloseThreads() {
 
 //Separate functions dedicated to "FPS Counter" mode
 void FPSCounter(void*) {
-    u64 sleepNs = 1'000'000'000ULL / TeslaFPS;
+    const u64 sleepNs = 1'000'000'000ULL / TeslaFPS;
     do {
         if (GameRunning) {
             if (SharedMemoryUsed) {
@@ -736,7 +735,7 @@ void FPSCounter(void*) {
         else FPSavg = 254;
         
         // Wait for interval based on TeslaFPS or thread exit event
-        sleepNs = 1'000'000'000ULL / TeslaFPS;
+        //sleepNs = 1'000'000'000ULL / TeslaFPS;
     } while (!leventWait(&threadexit, sleepNs));
 }
 
