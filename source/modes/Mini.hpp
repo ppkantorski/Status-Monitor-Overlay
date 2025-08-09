@@ -85,7 +85,7 @@ public:
             static bool lastGameRunning = false; // Track game state changes
             
             // Check if we need to recalculate due to content changes
-            bool contentChanged = (std::string(Variables) != lastVariables) || 
+            const bool contentChanged = (std::string(Variables) != lastVariables) || 
                                 (GameRunning != lastGameRunning);
             
             // Only recalculate if settings changed or content changed
@@ -270,7 +270,7 @@ public:
                 
                 // Use the actual entry count for height calculation
                 cachedHeight = ((fontsize + settings.spacing) * actualEntryCount) + (fontsize / 3) + settings.spacing;
-                uint32_t margin = (fontsize * 4);
+                const uint32_t margin = (fontsize * 4);
                 
                 cachedBaseX = 0;
                 cachedBaseY = 0;
@@ -307,7 +307,7 @@ public:
             }
             
             // Fast rendering using cached values
-            uint32_t margin = (fontsize * 4);
+            const uint32_t margin = (fontsize * 4);
             
             // Draw background
             renderer->drawRect(cachedBaseX, cachedBaseY, margin + rectangleWidth + (fontsize / 3), cachedHeight, renderer->a(settings.backgroundColor));
@@ -329,8 +329,8 @@ public:
             uint32_t currentY = cachedBaseY + fontsize + settings.spacing;
             size_t labelIndex = 0;
             
-            static std::vector<std::string> specialChars = {""};
-            uint32_t labelWidth, labelCenterX;
+            static const std::vector<std::string> specialChars = {""};
+            static uint32_t labelWidth, labelCenterX;
             for (size_t i = 0; i < variableLines.size() && labelIndex < labelLines.size(); i++) {
                 // Draw label (centered in label region)
                 if (!labelLines[labelIndex].empty()) {
@@ -412,7 +412,7 @@ public:
         } else {
             // Show only max CPU usage
             // Extract numeric values from percentage strings
-            double usage0 = 0, usage1 = 0, usage2 = 0, usage3 = 0;
+            static double usage0 = 0, usage1 = 0, usage2 = 0, usage3 = 0;
             sscanf(MINI_CPU_Usage0, "%lf%%", &usage0);
             sscanf(MINI_CPU_Usage1, "%lf%%", &usage1);
             sscanf(MINI_CPU_Usage2, "%lf%%", &usage2);
@@ -449,7 +449,7 @@ public:
         //} 
         /* ─── CPU ───────────────────────────────────────────── */
         if (settings.realVolts) {
-            uint32_t mv = realCPU_mV / 1000;
+            const uint32_t mv = realCPU_mV / 1000;
             snprintf(MINI_CPU_volt_c, sizeof(MINI_CPU_volt_c), "%u mV", mv);
         }
 
@@ -492,10 +492,10 @@ public:
         
         if (R_FAILED(sysclkCheck) || !settings.showRAMLoad) {
             /* ── “used / total MB” branch ────────────────────────────────────────── */
-            float ramTotalGiB = (RAM_Total_application_u + RAM_Total_applet_u +
+            const float ramTotalGiB = (RAM_Total_application_u + RAM_Total_applet_u +
                                  RAM_Total_system_u + RAM_Total_systemunsafe_u) /
                                 (1024.0f * 1024.0f);           // MiB → GiB
-            float ramUsedGiB  = (RAM_Used_application_u + RAM_Used_applet_u +
+            const float ramUsedGiB  = (RAM_Used_application_u + RAM_Used_applet_u +
                                  RAM_Used_system_u + RAM_Used_systemunsafe_u) /
                                 (1024.0f * 1024.0f);
         
@@ -513,7 +513,7 @@ public:
         
         } else {
             /* ── “percentage” branch (integer %) ─────────────────────────────────── */
-            unsigned ramLoadInt = ramLoad[SysClkRamLoad_All] / 10;  // drop decimal
+            const unsigned ramLoadInt = ramLoad[SysClkRamLoad_All] / 10;  // drop decimal
         
             if (settings.realFrequencies && realRAM_Hz) {
                 snprintf(MINI_RAM_var_compressed_c, sizeof(MINI_RAM_var_compressed_c),
@@ -540,8 +540,8 @@ public:
         //} 
         /* ─── RAM ───────────────────────────────────────────── */
         if (settings.realVolts) {
-            float mv_vdd2 = realRAM_mV / 100000.0f;         // µV → mV (float)
-            uint32_t mv_vddq = (realRAM_mV % 10000) / 10;   // µV → mV (int)
+            const float mv_vdd2 = realRAM_mV / 100000.0f;         // µV → mV (float)
+            const uint32_t mv_vddq = (realRAM_mV % 10000) / 10;   // µV → mV (int)
         
             if (isMariko) {
                 if (settings.showVDDQ && settings.showVDD2)
@@ -560,7 +560,7 @@ public:
         }
 
         
-        int duty = safeFanDuty((int)Rotation_Duty);
+        const int duty = safeFanDuty((int)Rotation_Duty);
 
         ///Thermal
         // ── SoC temperature line ───────────────────────────────
@@ -595,7 +595,7 @@ public:
         //} 
         /* ─── SoC ───────────────────────────────────────────── */
         if (settings.realVolts) {
-            uint32_t mv = realSOC_mV / 1000;
+            const uint32_t mv = realSOC_mV / 1000;
             snprintf(MINI_SOC_volt_c, sizeof(MINI_SOC_volt_c), "%u mV", mv);
         }
 
@@ -639,7 +639,7 @@ public:
                     if (out_iter == 8) break;
                 }
                 if (out_iter < 8) {
-                    size_t out_iter_s = out_iter;
+                    const size_t out_iter_s = out_iter;
                     for (size_t x = 0; x < 8; x++) {
                         for (size_t y = 0; y < out_iter_s; y++) {
                             if (m_resolutionViewportCalls[x].width == 0) {
@@ -786,7 +786,7 @@ public:
         char remainingBatteryLife[8];
         
         /* Normalise “-0.00” → “0.00” W */
-        float drawW = (fabsf(PowerConsumption) < 0.01f) ? 0.0f
+        const float drawW = (fabsf(PowerConsumption) < 0.01f) ? 0.0f
                                                          : PowerConsumption;
         
         mutexLock(&mutex_BatteryChecker);

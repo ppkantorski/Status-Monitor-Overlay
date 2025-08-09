@@ -26,7 +26,7 @@ public:
                 tsl::gfx::Renderer::get().setLayerPos(1248, 0);
                 break;
         }
-        StartFPSCounterThread();
+        
         if (R_SUCCEEDED(SaltySD_Connect())) {
             if (R_FAILED(SaltySD_GetDisplayRefreshRate(&refreshRate)))
                 refreshRate = 0;
@@ -41,6 +41,7 @@ public:
         deactivateOriginalFooter = true;
         mutexInit(&mutex_Misc);
         StartInfoThread();
+        StartFPSCounterThread();
     }
 
     ~com_FPSGraph() {
@@ -138,12 +139,12 @@ public:
             }
 
             renderer->drawRect(base_x, base_y, rectangle_width + 21, rectangle_height + 12, a(settings.backgroundColor));
-            s16 size = (refreshRate > 60 || !refreshRate) ? 63 : (s32)(63.0/(60.0/refreshRate));
+            const s16 size = (refreshRate > 60 || !refreshRate) ? 63 : (s32)(63.0/(60.0/refreshRate));
             //std::pair<u32, u32> dimensions = renderer->drawString(FPSavg_c, false, 0, 0, size, renderer->a(0x0000));
-            auto width = renderer->getTextDimensions(FPSavg_c, false, size).first;
+            const auto width = renderer->getTextDimensions(FPSavg_c, false, size).first;
 
-            s16 pos_y = size + base_y + rectangle_y + ((rectangle_height - size) / 2);
-            s16 pos_x = base_x + rectangle_x + ((rectangle_width - width) / 2);
+            const s16 pos_y = size + base_y + rectangle_y + ((rectangle_height - size) / 2);
+            const s16 pos_x = base_x + rectangle_x + ((rectangle_width - width) / 2);
 
             if (FPSavg != 254.0)
                 renderer->drawString(FPSavg_c, false, pos_x, pos_y-5, size, settings.fpsColor);
@@ -154,8 +155,10 @@ public:
 
             size_t last_element = readings.size() - 1;
 
+            static s32 y_on_range;
+            static tsl::Color color = {0};
             for (s16 x = x_end; x > static_cast<s16>(x_end-readings.size()); x--) {
-                s32 y_on_range = readings[last_element].value + std::abs(rectangle_range_min) + 1;
+                y_on_range = readings[last_element].value + std::abs(rectangle_range_min) + 1;
                 if (y_on_range < 0) {
                     y_on_range = 0;
                 }
@@ -164,8 +167,8 @@ public:
                     y_on_range = range; 
                 }
                 
-                s16 y = rectangle_y + static_cast<s16>(std::lround((float)rectangle_height * ((float)(range - y_on_range) / (float)range))); // 320 + (80 * ((61 - 61)/61)) = 320
-                auto color = renderer->a(settings.mainLineColor);
+                const s16 y = rectangle_y + static_cast<s16>(std::lround((float)rectangle_height * ((float)(range - y_on_range) / (float)range))); // 320 + (80 * ((61 - 61)/61)) = 320
+                color = renderer->a(settings.mainLineColor);
                 if (y == y_old && !isAbove && readings[last_element].zero_rounded) {
                     if ((y == y_30FPS || y == y_60FPS))
                         color = renderer->a(settings.perfectLineColor);
@@ -194,8 +197,8 @@ public:
             }
 
             if (settings.showInfo) {
-                s16 info_x = base_x+rectangle_width+rectangle_x + 6;
-                s16 info_y = base_y + 3;
+                const s16 info_x = base_x+rectangle_width+rectangle_x + 6;
+                const s16 info_y = base_y + 3;
                 renderer->drawRect(info_x, 0, rectangle_width /2 - 4, rectangle_height + 12, a(settings.backgroundColor));
                 renderer->drawString("CPU\nGPU\nRAM\nSOC\nPCB\nSKN", false, info_x, info_y+11, 11, renderer->a(settings.borderColor));
 
@@ -259,10 +262,10 @@ public:
         if (idletick1 > systemtickfrequency_impl) idletick1 = systemtickfrequency_impl;
         if (idletick2 > systemtickfrequency_impl) idletick2 = systemtickfrequency_impl;
         if (idletick3 > systemtickfrequency_impl) idletick3 = systemtickfrequency_impl;
-        double cpu_usage0 = (1.d - ((double)idletick0 / systemtickfrequency_impl)) * 100;
-        double cpu_usage1 = (1.d - ((double)idletick1 / systemtickfrequency_impl)) * 100;
-        double cpu_usage2 = (1.d - ((double)idletick2 / systemtickfrequency_impl)) * 100;
-        double cpu_usage3 = (1.d - ((double)idletick3 / systemtickfrequency_impl)) * 100;
+        const double cpu_usage0 = (1.d - ((double)idletick0 / systemtickfrequency_impl)) * 100;
+        const double cpu_usage1 = (1.d - ((double)idletick1 / systemtickfrequency_impl)) * 100;
+        const double cpu_usage2 = (1.d - ((double)idletick2 / systemtickfrequency_impl)) * 100;
+        const double cpu_usage3 = (1.d - ((double)idletick3 / systemtickfrequency_impl)) * 100;
         double cpu_usageM = 0;
         if (cpu_usage0 > cpu_usageM)    cpu_usageM = cpu_usage0;
         if (cpu_usage1 > cpu_usageM)    cpu_usageM = cpu_usage1;

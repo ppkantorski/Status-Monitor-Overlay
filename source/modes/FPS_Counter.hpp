@@ -27,12 +27,13 @@ public:
                 tsl::gfx::Renderer::get().setLayerPos(1248, 0);
                 break;
         }
-        StartFPSCounterThread();
+        
         //alphabackground = 0x0;
         tsl::hlp::requestForeground(false);
         FullMode = false;
         TeslaFPS = settings.refreshRate;
         deactivateOriginalFooter = true;
+        StartFPSCounterThread();
     }
     ~com_FPS() {
         TeslaFPS = 60;
@@ -51,9 +52,9 @@ public:
 
         auto Status = new tsl::elm::CustomDrawer([this](tsl::gfx::Renderer *renderer, u16 x, u16 y, u16 w, u16 h) {
             //auto dimensions = renderer->drawString(FPSavg_c, false, 0, fontsize, fontsize, tsl::Color(0x0000));
-            auto width = renderer->getTextDimensions(FPSavg_c, false, fontsize).first;
-            size_t rectangleWidth = width;
-            size_t margin = (fontsize / 8);
+            const auto width = renderer->getTextDimensions(FPSavg_c, false, fontsize).first;
+            const size_t rectangleWidth = width;
+            const size_t margin = (fontsize / 8);
             int base_x = 0;
             int base_y = 0;
         

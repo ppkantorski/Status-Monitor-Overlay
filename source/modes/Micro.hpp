@@ -267,9 +267,9 @@ public:
             std::vector<ItemLayout> item_layouts;
             uint32_t total_main_width = 0;
 
-            static auto sep_width = renderer->getTextDimensions("", false, fontsize).first;
+            static const auto sep_width = renderer->getTextDimensions("", false, fontsize).first;
 
-            ItemLayout item_layout;
+            static ItemLayout item_layout;
             for (const auto& item : main_items) {
                 item_layout = {};
                 
@@ -344,13 +344,13 @@ public:
                         
             // Calculate positions based on alignment mode
             std::vector<uint32_t> item_positions;
-            size_t N = all_items_ordered.size();
+            const size_t N = all_items_ordered.size();
             if (N == 0) return;
             
             if (N == 1) {
                 // Single item positioning based on alignment
                 if (settings.alignTo == 2) { // RIGHT
-                    uint32_t total_width = all_layouts_ordered[0].total_width;
+                    const uint32_t total_width = all_layouts_ordered[0].total_width;
                     item_positions.push_back(tsl::cfg::FramebufferWidth - layout.side_margin - total_width);
                 } else { // LEFT or CENTER
                     item_positions.push_back(layout.side_margin);
@@ -364,7 +364,7 @@ public:
                 if (settings.alignTo == 0) { // LEFT alignment
                     // All items except last positioned from left with small gaps
                     // Last item (battery if present) positioned at far right
-                    uint32_t small_gap = layout.item_spacing;
+                    const uint32_t small_gap = layout.item_spacing;
                     
                     // Position items from left
                     uint32_t current_x = layout.side_margin;
@@ -374,12 +374,12 @@ public:
                     }
                     
                     // Position last item at far right
-                    uint32_t last_width = all_layouts_ordered[N-1].total_width;
+                    const uint32_t last_width = all_layouts_ordered[N-1].total_width;
                     item_positions.push_back(tsl::cfg::FramebufferWidth - layout.side_margin - last_width);
                     
                 } else if (settings.alignTo == 2) { // RIGHT alignment
                     // First item at far left, remaining items packed at right
-                    uint32_t small_gap = layout.item_spacing;
+                    const uint32_t small_gap = layout.item_spacing;
                     
                     // Resize vector to hold all positions
                     item_positions.resize(N);
@@ -404,14 +404,14 @@ public:
                     }
                 } else { // CENTER alignment (default behavior)
                     // Total available width for spacing = framebuffer width minus total item widths minus margins
-                    int32_t total_spacing = (int32_t)tsl::cfg::FramebufferWidth - (2 * (int32_t)layout.side_margin) - (int32_t)total_widths;
-            
+                    const int32_t total_spacing = (int32_t)tsl::cfg::FramebufferWidth - (2 * (int32_t)layout.side_margin) - (int32_t)total_widths;
+                    
                     // Number of gaps between items is N-1
-                    uint32_t gap = total_spacing > 0 ? (uint32_t)(total_spacing / (N - 1)) : 0;
-            
+                    const uint32_t gap = total_spacing > 0 ? (uint32_t)(total_spacing / (N - 1)) : 0;
+                    
                     // Position first item flush left
                     item_positions.push_back(layout.side_margin);
-                    uint32_t prev_pos, prev_width;
+                    static uint32_t prev_pos, prev_width;
                     // Position subsequent items
                     for (size_t i = 1; i < N; ++i) {
                         prev_pos = item_positions[i - 1];
@@ -420,8 +420,8 @@ public:
                     }
             
                     // Fix any rounding error for center alignment
-                    int32_t last_item_end = item_positions.back() + all_layouts_ordered.back().total_width;
-                    int32_t overflow = (int32_t)tsl::cfg::FramebufferWidth - layout.side_margin - last_item_end;
+                    const int32_t last_item_end = item_positions.back() + all_layouts_ordered.back().total_width;
+                    const int32_t overflow = (int32_t)tsl::cfg::FramebufferWidth - layout.side_margin - last_item_end;
                     
                     if (overflow != 0) {
                         for (size_t i = 1; i < item_positions.size(); ++i) {
@@ -507,7 +507,7 @@ public:
             cpuDiff = getDifferenceSymbol(deltaCPU);
         }
         
-        uint32_t cpuFreq = settings.realFrequencies && realCPU_Hz ? realCPU_Hz : CPU_Hz;
+        const uint32_t cpuFreq = settings.realFrequencies && realCPU_Hz ? realCPU_Hz : CPU_Hz;
         
         if (settings.showFullCPU) {
             snprintf(CPU_compressed_c, sizeof(CPU_compressed_c), 
@@ -520,12 +520,12 @@ public:
                 return strtod(usage_str, nullptr);
             };
             
-            double usage0 = extractUsage(CPU_Usage0);
-            double usage1 = extractUsage(CPU_Usage1);
-            double usage2 = extractUsage(CPU_Usage2);
-            double usage3 = extractUsage(CPU_Usage3);
+            const double usage0 = extractUsage(CPU_Usage0);
+            const double usage1 = extractUsage(CPU_Usage1);
+            const double usage2 = extractUsage(CPU_Usage2);
+            const double usage3 = extractUsage(CPU_Usage3);
             
-            double maxUsage = std::max({usage0, usage1, usage2, usage3});
+            const double maxUsage = std::max({usage0, usage1, usage2, usage3});
             
             snprintf(CPU_compressed_c, sizeof(CPU_compressed_c), 
                 "%.0f%%%s%u.%u", 
@@ -539,7 +539,7 @@ public:
 
         /* ── CPU voltage ───────────────────────────── */
         if (settings.realVolts) {
-            uint32_t mv = realCPU_mV / 1000;                 // µV → mV
+            const uint32_t mv = realCPU_mV / 1000;                 // µV → mV
             snprintf(CPU_volt_c, sizeof(CPU_volt_c), "%u mV", mv);
         }
         
@@ -550,7 +550,7 @@ public:
             gpuDiff = getDifferenceSymbol(deltaGPU);
         }
         
-        uint32_t gpuFreq = settings.realFrequencies && realGPU_Hz ? realGPU_Hz : GPU_Hz;
+        const uint32_t gpuFreq = settings.realFrequencies && realGPU_Hz ? realGPU_Hz : GPU_Hz;
         snprintf(GPU_Load_c, sizeof(GPU_Load_c),
                  "%u%%%s%u.%u",
                  GPU_Load_u / 10,
@@ -563,15 +563,15 @@ public:
 
         /* ── GPU voltage ───────────────────────────── */
         if (settings.realVolts) {
-            uint32_t mv = realGPU_mV / 1000;
+            const uint32_t mv = realGPU_mV / 1000;
             snprintf(GPU_volt_c, sizeof(GPU_volt_c), "%u mV", mv);
         }
         
         // RAM usage and frequency
         char MICRO_RAM_all_c[16];
         if (!settings.showRAMLoad || R_FAILED(sysclkCheck)) {
-            float RAM_Total_all_f = (RAM_Total_application_u + RAM_Total_applet_u + RAM_Total_system_u + RAM_Total_systemunsafe_u) / (1024.0f * 1024.0f * 1024.0f);
-            float RAM_Used_all_f = (RAM_Used_application_u + RAM_Used_applet_u + RAM_Used_system_u + RAM_Used_systemunsafe_u) / (1024.0f * 1024.0f * 1024.0f);
+            const float RAM_Total_all_f = (RAM_Total_application_u + RAM_Total_applet_u + RAM_Total_system_u + RAM_Total_systemunsafe_u) / (1024.0f * 1024.0f * 1024.0f);
+            const float RAM_Used_all_f = (RAM_Used_application_u + RAM_Used_applet_u + RAM_Used_system_u + RAM_Used_systemunsafe_u) / (1024.0f * 1024.0f * 1024.0f);
             snprintf(MICRO_RAM_all_c, sizeof(MICRO_RAM_all_c), "%.0f%.0fGB", RAM_Used_all_f, RAM_Total_all_f);
         } else {
             snprintf(MICRO_RAM_all_c, sizeof(MICRO_RAM_all_c), "%hu%%",
@@ -580,11 +580,11 @@ public:
 
         const char* ramDiff = "@";
         if (realRAM_Hz) {
-            int32_t deltaRAM = (int32_t)(realRAM_Hz / 1000) - (RAM_Hz / 1000);
+            const int32_t deltaRAM = (int32_t)(realRAM_Hz / 1000) - (RAM_Hz / 1000);
             ramDiff = getDifferenceSymbol(deltaRAM);
         }
         
-        uint32_t ramFreq = settings.realFrequencies && realRAM_Hz ? realRAM_Hz : RAM_Hz;
+        const uint32_t ramFreq = settings.realFrequencies && realRAM_Hz ? realRAM_Hz : RAM_Hz;
         snprintf(RAM_var_compressed_c, sizeof(RAM_var_compressed_c), 
             "%s%s%u.%u", MICRO_RAM_all_c, ramDiff, 
             ramFreq / 1000000, (ramFreq / 100000) % 10);
@@ -604,8 +604,8 @@ public:
         if (settings.realVolts) {
             /* realRAM_mV packs VDD2 | VDDQ in 10-µV units        *
              * → split, convert to mV                           */
-            float mv_vdd2 = (realRAM_mV / 10000) / 10.0f;   // VDD2
-            uint32_t mv_vddq = (realRAM_mV % 10000) / 10;   // VDDQ
+            const float mv_vdd2 = (realRAM_mV / 10000) / 10.0f;   // VDD2
+            const uint32_t mv_vddq = (realRAM_mV % 10000) / 10;   // VDDQ
         
             if (isMariko) {
                 snprintf(RAM_volt_c, sizeof(RAM_volt_c),
@@ -620,7 +620,7 @@ public:
         char remainingBatteryLife[8];
 
         /* Normalise “-0.00” → “0.00” W */
-        float drawW = (fabsf(PowerConsumption) < 0.01f) ? 0.0f
+        const float drawW = (fabsf(PowerConsumption) < 0.01f) ? 0.0f
                                                          : PowerConsumption;
 
         mutexLock(&mutex_BatteryChecker);
@@ -642,7 +642,7 @@ public:
         mutexUnlock(&mutex_BatteryChecker);
 
         // Thermal info
-        int duty = safeFanDuty((int)Rotation_Duty);
+        const int duty = safeFanDuty((int)Rotation_Duty);
 
         /* Integer SoC temperature + duty */
         snprintf(soc_temperature_c, sizeof soc_temperature_c,
@@ -666,7 +666,7 @@ public:
 
         /* ── SoC voltage ───────────────────────────── */
         if (settings.realVolts) {
-            uint32_t mv = realSOC_mV / 1000;
+            const uint32_t mv = realSOC_mV / 1000;
             snprintf(SOC_volt_c, sizeof(SOC_volt_c), "%u mV", mv);
         }
 
@@ -712,7 +712,7 @@ public:
                     if (out_iter == 8) break;
                 }
                 if (out_iter < 8) {
-                    size_t out_iter_s = out_iter;
+                    const size_t out_iter_s = out_iter;
                     for (size_t x = 0; x < 8; x++) {
                         for (size_t y = 0; y < out_iter_s; y++) {
                             if (m_resolutionViewportCalls[x].width == 0) {

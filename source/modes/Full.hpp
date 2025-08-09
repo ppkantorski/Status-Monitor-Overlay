@@ -71,7 +71,9 @@ public:
             
             //Print strings
             ///CPU
-            uint32_t height_offset = 162;
+            static uint32_t height_offset;
+
+            height_offset = 162;
 
             renderer->drawString("CPU Usage:", false, COMMON_MARGIN, height_offset - 42, 20, 0xFFFF);
             renderer->drawString(CPU_Hz_c, false, COMMON_MARGIN, height_offset - 15, 15, 0xFFFF);
@@ -95,7 +97,7 @@ public:
             renderer->drawString(RAM_load_c, false, COMMON_MARGIN, height_offset + 15, 15, 0xFFFF);
     
             if (R_SUCCEEDED(Hinted)) {
-                static auto dimensions = renderer->drawString("Total: \nApplication: \nApplet: \nSystem: \nSystem Unsafe: ", false, 0, height_offset + 40, 15, 0x0000);
+                static const auto dimensions = renderer->drawString("Total: \nApplication: \nApplet: \nSystem: \nSystem Unsafe: ", false, 0, height_offset + 40, 15, 0x0000);
                 renderer->drawString("Total: \nApplication: \nApplet: \nSystem: \nSystem Unsafe: ", false, COMMON_MARGIN, height_offset + 40, 15, 0xFFFF);
                 renderer->drawString(RAM_var_compressed_c, false, COMMON_MARGIN + dimensions.first, height_offset + 40, 15, 0xFFFF);
             }
@@ -104,7 +106,7 @@ public:
             height_offset = 522;
 
             renderer->drawString("Thermal:", false, COMMON_MARGIN, height_offset - 42, 20, 0xFFFF);
-            static auto dimensions1 = renderer->drawString("Temperatures: ", false, 0, height_offset - 15, 15, 0x0000);
+            static const auto dimensions1 = renderer->drawString("Temperatures: ", false, 0, height_offset - 15, 15, 0x0000);
             renderer->drawString("Temperatures:", false, COMMON_MARGIN, height_offset - 15, 15, 0xFFFF);
             renderer->drawString(SoCPCB_temperature_c, false, COMMON_MARGIN + dimensions1.first, height_offset - 15, 15, 0xFFFF);
             
@@ -151,16 +153,16 @@ public:
         snprintf(RAM_Hz_c, sizeof RAM_Hz_c, "Target Frequency: %u.%u MHz", RAM_Hz / 1000000, (RAM_Hz / 100000) % 10);
         snprintf(RealRAM_Hz_c, sizeof(RealRAM_Hz_c), "Real Frequency:     %u.%u MHz", realRAM_Hz / 1000000, (realRAM_Hz / 100000) % 10);
         
-        float RAM_Total_application_f = (float)RAM_Total_application_u / 1024 / 1024;
-        float RAM_Total_applet_f = (float)RAM_Total_applet_u / 1024 / 1024;
-        float RAM_Total_system_f = (float)RAM_Total_system_u / 1024 / 1024;
-        float RAM_Total_systemunsafe_f = (float)RAM_Total_systemunsafe_u / 1024 / 1024;
-        float RAM_Total_all_f = RAM_Total_application_f + RAM_Total_applet_f + RAM_Total_system_f + RAM_Total_systemunsafe_f;
-        float RAM_Used_application_f = (float)RAM_Used_application_u / 1024 / 1024;
-        float RAM_Used_applet_f = (float)RAM_Used_applet_u / 1024 / 1024;
-        float RAM_Used_system_f = (float)RAM_Used_system_u / 1024 / 1024;
-        float RAM_Used_systemunsafe_f = (float)RAM_Used_systemunsafe_u / 1024 / 1024;
-        float RAM_Used_all_f = RAM_Used_application_f + RAM_Used_applet_f + RAM_Used_system_f + RAM_Used_systemunsafe_f;
+        const float RAM_Total_application_f = (float)RAM_Total_application_u / 1024 / 1024;
+        const float RAM_Total_applet_f = (float)RAM_Total_applet_u / 1024 / 1024;
+        const float RAM_Total_system_f = (float)RAM_Total_system_u / 1024 / 1024;
+        const float RAM_Total_systemunsafe_f = (float)RAM_Total_systemunsafe_u / 1024 / 1024;
+        const float RAM_Total_all_f = RAM_Total_application_f + RAM_Total_applet_f + RAM_Total_system_f + RAM_Total_systemunsafe_f;
+        const float RAM_Used_application_f = (float)RAM_Used_application_u / 1024 / 1024;
+        const float RAM_Used_applet_f = (float)RAM_Used_applet_u / 1024 / 1024;
+        const float RAM_Used_system_f = (float)RAM_Used_system_u / 1024 / 1024;
+        const float RAM_Used_systemunsafe_f = (float)RAM_Used_systemunsafe_u / 1024 / 1024;
+        const float RAM_Used_all_f = RAM_Used_application_f + RAM_Used_applet_f + RAM_Used_system_f + RAM_Used_systemunsafe_f;
         snprintf(RAM_var_compressed_c, sizeof(RAM_var_compressed_c), "%4.2f / %4.2f MB\n%4.2f / %4.2f MB\n%4.2f / %4.2f MB\n%4.2f / %4.2f MB\n%4.2f / %4.2f MB", 
             RAM_Used_all_f, RAM_Total_all_f,
             RAM_Used_application_f, RAM_Total_application_f,
@@ -168,7 +170,7 @@ public:
             RAM_Used_system_f, RAM_Total_system_f,
             RAM_Used_systemunsafe_f, RAM_Total_systemunsafe_f);
         
-        int RAM_GPU_Load = ramLoad[SysClkRamLoad_All] - ramLoad[SysClkRamLoad_Cpu];
+        const int RAM_GPU_Load = ramLoad[SysClkRamLoad_All] - ramLoad[SysClkRamLoad_Cpu];
         snprintf(RAM_load_c, sizeof RAM_load_c, 
             "Load: %u.%u%% (CPU %u.%uGPU %u.%u)",
             ramLoad[SysClkRamLoad_All] / 10, ramLoad[SysClkRamLoad_All] % 10,
@@ -225,7 +227,7 @@ public:
                     if (out_iter == 8) break;
                 }
                 if (out_iter < 8) {
-                    size_t out_iter_s = out_iter;
+                    const size_t out_iter_s = out_iter;
                     for (size_t x = 0; x < 8; x++) {
                         for (size_t y = 0; y < out_iter_s; y++) {
                             if (m_resolutionViewportCalls[x].width == 0) {
