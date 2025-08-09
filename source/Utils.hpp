@@ -872,7 +872,8 @@ void formatButtonCombination(std::string& line) {
     }
     pos = 0;
     size_t old_pos = 0;
-    std::string button;
+
+    static std::string button;
     while ((pos = line.find(" + ", pos)) != std::string::npos) {
 
         button = line.substr(old_pos, pos - old_pos);
@@ -976,7 +977,7 @@ bool isKeyComboPressed2(uint64_t keysDown, uint64_t keysHeld) {
     uint64_t requiredKeys = comboBitmask;
     bool hasKeyDown = false; // Tracks if at least one key is in keysDown
 
-    uint64_t keyBit;
+    static uint64_t keyBit;
     // Iterate over each bit in the comboBitmask
     while (requiredKeys) {
         keyBit = requiredKeys & ~(requiredKeys - 1); // Get the lowest bit set in requiredKeys
@@ -1089,7 +1090,7 @@ void ParseIniFile() {
     const char* configPaths[] = {ultrahandConfigIniPath, teslaConfigIniPath};
     const char* sectionNames[] = {"ultrahand", "tesla"};
     
-    std::string fileData;
+    static std::string fileData;
     for (int i = 0; i < 2; ++i) {
         FILE* extConfigFile = fopen(configPaths[i], "r");
         if (extConfigFile) {
@@ -1127,7 +1128,7 @@ ALWAYS_INLINE bool isValidRGBA4Color(const std::string& hexColor) {
     const char* data = hexColor.data();
     const size_t size = hexColor.size();
     
-    unsigned char c;
+    static unsigned char c;
     for (size_t i = 0; i < size; ++i) {
         c = data[i];
         // Branchless hex digit check: (c >= '0' && c <= '9') || (c >= 'A' && c <= 'F') || (c >= 'a' && c <= 'f')
@@ -1447,7 +1448,7 @@ ALWAYS_INLINE void GetConfigSettings(MicroSettings* settings) {
     
     auto parsedData = ult::parseIni(fileDataString);
 
-    std::string key;
+    static std::string key;
     const char* mode = "micro";
     if (parsedData.find(mode) == parsedData.end())
         return;
@@ -1760,7 +1761,7 @@ ALWAYS_INLINE void GetConfigSettings(FullSettings* settings) {
     
     auto parsedData = ult::parseIni(fileDataString);
 
-    std::string key;
+    static std::string key;
     const char* mode = "full";
     if (parsedData.find(mode) == parsedData.end())
         return;
@@ -1829,7 +1830,7 @@ ALWAYS_INLINE void GetConfigSettings(ResolutionSettings* settings) {
     
     auto parsedData = ult::parseIni(fileDataString);
 
-    std::string key;
+    static std::string key;
     const char* mode = "game_resolutions";
     if (parsedData.find("game_resolutions") == parsedData.end())
         return;
