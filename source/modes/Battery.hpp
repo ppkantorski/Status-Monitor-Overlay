@@ -8,7 +8,7 @@ public:
         StartBatteryThread();
     }
     ~BatteryOverlay() {
-        CloseThreads();
+        CloseBatteryThread();
         fixForeground = true;
     }
 
@@ -104,11 +104,14 @@ public:
         mutexUnlock(&mutex_BatteryChecker);
         
         static bool skipOnce = true;
-
+    
         if (!skipOnce) {
             static bool runOnce = true;
-            if (runOnce)
+            if (runOnce) {
                 isRendering = true;
+                leventClear(&renderingStopEvent);
+                runOnce = false;  // Add this to prevent repeated calls
+            }
         } else {
             skipOnce = false;
         }
@@ -116,6 +119,7 @@ public:
     virtual bool handleInput(uint64_t keysDown, uint64_t keysHeld, touchPosition touchInput, JoystickPosition leftJoyStick, JoystickPosition rightJoyStick) override {
         if (keysDown & KEY_B) {
             isRendering = false;
+            leventSignal(&renderingStopEvent);
             tsl::goBack();
             return true;
         }

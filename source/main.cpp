@@ -579,10 +579,25 @@ int main(int argc, char **argv) {
     
     if (argc > 0) {
         filename = argv[0]; // set global
-        bool usingModeArgs = !(ult::parseValueFromIniSection(ult::OVERLAYS_INI_FILEPATH, filename, "mode_args").empty());
+        
+        // Read the entire INI file once
+        auto iniData = ult::getParsedDataFromIniFile(ult::OVERLAYS_INI_FILEPATH);
+        
+        // Check if mode_args exists in memory
+        bool usingModeArgs = false;
+        auto sectionIt = iniData.find(filename);
+        if (sectionIt != iniData.end()) {
+            auto keyIt = sectionIt->second.find("mode_args");
+            usingModeArgs = (keyIt != sectionIt->second.end() && !keyIt->second.empty());
+        }
+        
         if (!usingModeArgs) {
-            ult::setIniFileValue(ult::OVERLAYS_INI_FILEPATH, filename, "mode_args", "(-mini, -micro)");
-            ult::setIniFileValue(ult::OVERLAYS_INI_FILEPATH, filename, "mode_labels", "(Mini, Micro)");
+            // Modify in memory (no file I/O)
+            iniData[filename]["mode_args"] = "(-mini, -micro)";
+            iniData[filename]["mode_labels"] = "(Mini, Micro)";
+            
+            // Write once with all changes
+            ult::saveIniFileData(ult::OVERLAYS_INI_FILEPATH, iniData);
         }
     }
 
@@ -612,7 +627,7 @@ int main(int argc, char **argv) {
         else if (strcasecmp(argv[arg], "-mini") == 0) {
             FullMode = false;
             skipMain = true;
-            ult::useRightAlignment = ult::useRightAlignment || (ult::parseValueFromIniSection("sdmc:/config/status-monitor/config.ini", "mini", "right_alignment") == ult::TRUE_STR);
+            ult::useRightAlignment = (ult::parseValueFromIniSection("sdmc:/config/status-monitor/config.ini", "mini", "right_alignment") == ult::TRUE_STR);
             return tsl::loop<MiniEntryOverlay>(argc, argv);
         }
         else if (strcasecmp(argv[arg], "--lastSelectedItem") == 0) {

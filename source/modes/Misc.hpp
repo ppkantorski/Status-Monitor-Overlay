@@ -1,13 +1,25 @@
 void StartMiscThread() {
+    // Wait for existing thread to exit
+    threadWaitForExit(&t0);
+    
+    // Clear the thread exit event for new thread
+    leventClear(&threadexit);
+    
+    // Close and recreate thread
+    threadClose(&t0);
     threadCreate(&t0, Misc2, NULL, NULL, 0x1000, 0x3F, 3);
     threadStart(&t0);
 }
 
 void EndMiscThread() {
-    threadexit = true;
+    // Signal the thread exit event
+    leventSignal(&threadexit);
+    
+    // Wait for thread to exit
     threadWaitForExit(&t0);
+    
+    // Close thread handle
     threadClose(&t0);
-    threadexit = false;
 }
 
 class MiscOverlay : public tsl::Gui {
@@ -120,11 +132,14 @@ public:
         snprintf(Nifm_pass, sizeof Nifm_pass, "%s\n%s\n%s", pass_temp1, pass_temp2, pass_temp3);
         
         static bool skipOnce = true;
-
+    
         if (!skipOnce) {
             static bool runOnce = true;
-            if (runOnce)
+            if (runOnce) {
                 isRendering = true;
+                leventClear(&renderingStopEvent);
+                runOnce = false;  // Add this to prevent repeated calls
+            }
         } else {
             skipOnce = false;
         }
@@ -138,6 +153,7 @@ public:
 
         if (keysDown & KEY_B) {
             isRendering = false;
+            leventSignal(&renderingStopEvent);
             tsl::goBack();
             return true;
         }

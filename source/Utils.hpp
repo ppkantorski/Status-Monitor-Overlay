@@ -41,8 +41,10 @@ Thread t6;
 Thread t7;
 Thread t5;
 uint64_t systemtickfrequency = 19200000;
-volatile bool threadexit = false;
-volatile bool threadexit2 = false;
+//volatile bool threadexit = false;
+//volatile bool threadexit2 = false;
+
+LEvent threadexit = {0};
 PwmChannelSession g_ICon;
 std::string folderpath = "sdmc:/switch/.overlays/";
 std::string filename = "";
@@ -241,246 +243,179 @@ void searchSharedMemoryBlock(uintptr_t base) {
 bool CheckPort() {
     Handle saltysd;
     
-    // First, try immediate connection (most common case)
+    // Try immediate connection first (most common case)
     if (R_SUCCEEDED(svcConnectToNamedPort(&saltysd, "InjectServ"))) {
         svcCloseHandle(saltysd);
         return true;
     }
     
-    // If immediate connection fails, wait with exponential backoff
-    static const u64 initial_delay = 100'000;  // 0.1ms initial delay
-    static const u64 max_delay = 10'000'000;   // 10ms max delay
-    static const int max_attempts = 20;        // Reduced from 134 total attempts
+    // Reduce retry attempts and initial delay
+    static constexpr u64 initial_delay = 10'000;    // 0.05ms (was 0.1ms)
+    //static constexpr u64 max_delay = 5'000'000;     // 5ms (was 10ms)
+    static constexpr int max_attempts = 50;         // Reduced from 20
     
     u64 delay = initial_delay;
-    
     for (int i = 0; i < max_attempts; i++) {
         svcSleepThread(delay);
-        
         if (R_SUCCEEDED(svcConnectToNamedPort(&saltysd, "InjectServ"))) {
             svcCloseHandle(saltysd);
             return true;
         }
-        
-        // Exponential backoff with cap
-        delay = (delay < max_delay / 2) ? delay * 2 : max_delay;
+        //delay = std::min(delay * 2, max_delay);
     }
-    
     return false;
 }
 
 void CheckIfGameRunning(void*) {
-    u32 counter;
-    while (!threadexit2) {
+    do {
         if (!check && R_FAILED(pmdmntGetApplicationProcessId(&PID))) {
             GameRunning = false;
             if (SharedMemoryUsed) {
-                NxFps->MAGIC = 0;
-                NxFps->pluginActive = false;
-                NxFps->FPS = 0;
-                NxFps->FPSavg = 0.0;
+                (NxFps -> MAGIC) = 0;
+                (NxFps -> pluginActive) = false;
+                (NxFps -> FPS) = 0;
+                (NxFps -> FPSavg) = 0.0;
                 FPS = 254;
                 FPSavg = 254.0;
             }
             check = true;
         }
         else if (!GameRunning && SharedMemoryUsed) {
-            uintptr_t base = (uintptr_t)shmemGetAddr(&_sharedmemory);
-            searchSharedMemoryBlock(base);
-            if (NxFps) {
-                NxFps->pluginActive = false;
-
-                // 🔁 Replaces: svcSleepThread(100'000'000);
-                {
-                    const u64 endTick = armGetSystemTick() + armNsToTicks(100'000'000);
-                    const u64 checkIntervalNs = 1'000'000;
-                    u32 counter = 0;
-                    do {
-                        if ((++counter & 15) == 0 && threadexit2) break;
-                        svcSleepThread(checkIntervalNs);
-                    } while (armGetSystemTick() < endTick);
+                uintptr_t base = (uintptr_t)shmemGetAddr(&_sharedmemory);
+                searchSharedMemoryBlock(base);
+                if (NxFps) {
+                    (NxFps -> pluginActive) = false;
+                    svcSleepThread(100'000'000);
+                    if ((NxFps -> pluginActive)) {
+                        GameRunning = true;
+                        check = false;
+                    }
                 }
-
-                if (NxFps->pluginActive) {
-                    GameRunning = true;
-                    check = false;
-                }
-            }
         }
-
-        // 🔁 Replaces: svcSleepThread(1'000'000'000);
-        {
-            const u64 endTick = armGetSystemTick() + armNsToTicks(1'000'000'000);
-            const u64 checkIntervalNs = 1'000'000;
-            counter = 0;
-            do {
-                if ((++counter & 15) == 0 && threadexit2) break;
-                svcSleepThread(checkIntervalNs);
-            } while (armGetSystemTick() < endTick);
-        }
-    }
+    } while (!leventWait(&threadexit, 1'000'000'000));
 }
+
 
 Mutex mutex_BatteryChecker = {0};
 void BatteryChecker(void*) {
     if (R_FAILED(psmCheck) || R_FAILED(i2cCheck)){
         return;
     }
-    
-    // Pre-calculate all constants and cache frequently used values
-    const float current_multiplier = 1.5625f / (max17050SenseResistor * max17050CGain);
-    const float voltage_multiplier = 0.625f;
-    const float capacity_multiplier = (BASE_SNS_UOHM / MAX17050_BOARD_SNS_RESISTOR_UOHM) / MAX17050_BOARD_CGAIN;
-    const float time_multiplier = 5.625f / 60.0f;
-    const float max_time_minutes = 5999.0f; // (99*60)+59
-    const uint64_t sleep_time_ns = 500000000ULL;
-    const uint64_t refresh_rate_ns = batteryTimeLeftRefreshRate * 1000000000ULL;
-    const int cacheElements = sizeof(BatteryTimeCache) / sizeof(BatteryTimeCache[0]);
+    uint16_t data = 0;
+    float tempV = 0.0;
+    float tempA = 0.0;
     const size_t ArraySize = batteryFiltered ? 1 : 10;
-    const float inv_array_size = 1.0f / ArraySize;
-    const float power_divisor = inv_array_size / 1000000.0f;
-    
-    uint16_t data;
+    //if (batteryFiltered) {
+    //    ArraySize = 1;
+    //}
     float* readingsAmp = new float[ArraySize];
     float* readingsVolt = new float[ArraySize];
 
-    // Initial readings with single I2C calls
     Max17050ReadReg(MAX17050_AvgCurrent, &data);
-    float initial_current = current_multiplier * (s16)data;
-    Max17050ReadReg(MAX17050_AvgVCELL, &data);
-    float initial_voltage = voltage_multiplier * (data >> 3);
-    
-    // Initialize arrays efficiently
+    tempA = (1.5625 / (max17050SenseResistor * max17050CGain)) * (s16)data;
     for (size_t i = 0; i < ArraySize; i++) {
-        readingsAmp[i] = initial_current;
-        readingsVolt[i] = initial_voltage;
+        readingsAmp[i] = tempA;
     }
-    
-    // Cache capacity values once
+    Max17050ReadReg(MAX17050_AvgVCELL, &data);
+    tempV = 0.625 * (data >> 3);
+    for (size_t i = 0; i < ArraySize; i++) {
+        readingsVolt[i] = tempV;
+    }
     if (!actualFullBatCapacity) {
         Max17050ReadReg(MAX17050_FullCAP, &data);
-        actualFullBatCapacity = data * capacity_multiplier;
+        actualFullBatCapacity = data * (BASE_SNS_UOHM / MAX17050_BOARD_SNS_RESISTOR_UOHM) / MAX17050_BOARD_CGAIN;
     }
     if (!designedFullBatCapacity) {
         Max17050ReadReg(MAX17050_DesignCap, &data);
-        designedFullBatCapacity = data * capacity_multiplier;
+        designedFullBatCapacity = data * (BASE_SNS_UOHM / MAX17050_BOARD_SNS_RESISTOR_UOHM) / MAX17050_BOARD_CGAIN;
     }
-    
-    // Initial time estimate
-    if (initial_current >= 0) {
+    if (readingsAmp[0] >= 0) {
         batTimeEstimate = -1;
-    } else {
+    }
+    else {
         Max17050ReadReg(MAX17050_TTE, &data);
-        float time_est = time_multiplier * data;
-        batTimeEstimate = (time_est > max_time_minutes) ? 5999 : (int16_t)time_est;
+        const float batteryTimeEstimateInMinutes = (5.625 * data) / 60;
+        if (batteryTimeEstimateInMinutes > (99.0*60.0)+59.0) {
+            batTimeEstimate = (99*60)+59;
+        }
+        else batTimeEstimate = (int16_t)batteryTimeEstimateInMinutes;
     }
 
-    // Loop variables
     size_t counter = 0;
-    int itr = 0;
-    uint64_t tick_TTE = armGetSystemTick();
-    float tempA, tempV;
-    
-    // Register selection based on filter (avoid branching in loop)
-    const uint8_t current_reg = batteryFiltered ? MAX17050_AvgCurrent : MAX17050_Current;
-    const uint8_t voltage_reg = batteryFiltered ? MAX17050_AvgVCELL : MAX17050_VCELL;
-    
-    uint64_t startTick;
-    float sum_current, sum_voltage, sum_power;
-    float amp, volt;
-    float time_est;
-    uint64_t new_tick_TTE;
-    int elements_to_avg;
-    int32_t sum;
-
-    uint64_t elapsed_ns, sleep_ns;
-
-    size_t idx;
-
-    u32 counterSleep;
-
-    while (!threadexit) {
+    uint64_t tick_TTE = svcGetSystemTick();
+    uint64_t nanoseconds = 1000;
+    do {
         mutexLock(&mutex_BatteryChecker);
-        startTick = armGetSystemTick();
+        uint64_t startTick = svcGetSystemTick();
 
         psmGetBatteryChargeInfoFields(psmService, &_batteryChargeInfoFields);
 
-        // Single register reads
-        Max17050ReadReg(current_reg, &data);
-        tempA = current_multiplier * (s16)data;
-        Max17050ReadReg(voltage_reg, &data);
-        tempV = voltage_multiplier * (data >> 3);
+        // Calculation is based on Hekate's max17050.c
+        // Source: https://github.com/CTCaer/hekate/blob/master/bdk/power/max17050.c
 
-        // Update circular buffer only if valid data
-        if (tempA != 0.0f && tempV != 0.0f) {
-            idx = counter % ArraySize;
-            readingsAmp[idx] = tempA;
-            readingsVolt[idx] = tempV;
+        if (!batteryFiltered) {
+            Max17050ReadReg(MAX17050_Current, &data);
+            tempA = (1.5625 / (max17050SenseResistor * max17050CGain)) * (s16)data;
+            Max17050ReadReg(MAX17050_VCELL, &data);
+            tempV = 0.625 * (data >> 3);
+        } else {
+            Max17050ReadReg(MAX17050_AvgCurrent, &data);
+            tempA = (1.5625 / (max17050SenseResistor * max17050CGain)) * (s16)data;
+            Max17050ReadReg(MAX17050_AvgVCELL, &data);
+            tempV = 0.625 * (data >> 3);
+        }
+
+        if (tempA && tempV) {
+            readingsAmp[counter % ArraySize] = tempA;
+            readingsVolt[counter % ArraySize] = tempV;
             counter++;
         }
 
-        // Calculate averages and power in single pass
-        sum_current = sum_voltage = sum_power = 0.0f;
-        
-        for (size_t i = 0; i < ArraySize; i++) {
-            amp = readingsAmp[i];
-            volt = readingsVolt[i];
-            sum_current += amp;
-            sum_voltage += volt;
-            sum_power += amp * volt;
+        float batCurrent = 0.0;
+        float batVoltage = 0.0;
+        float batPowerAvg = 0.0;
+        for (size_t x = 0; x < ArraySize; x++) {
+            batCurrent += readingsAmp[x];
+            batVoltage += readingsVolt[x];
+            batPowerAvg += (readingsAmp[x] * readingsVolt[x]) / 1'000;
         }
-        
-        batCurrentAvg = sum_current * inv_array_size;
-        batVoltageAvg = sum_voltage * inv_array_size;
-        PowerConsumption = sum_power * power_divisor;
+        batCurrent /= ArraySize;
+        batVoltage /= ArraySize;
+        batCurrentAvg = batCurrent;
+        batVoltageAvg = batVoltage;
+        batPowerAvg /= ArraySize * 1000;
+        PowerConsumption = batPowerAvg;
 
-        // Time estimation with minimal branching
         if (batCurrentAvg >= 0) {
             batTimeEstimate = -1;
-        } else {
+        } 
+        else {
+            static float batteryTimeEstimateInMinutes = 0;
             Max17050ReadReg(MAX17050_TTE, &data);
-            time_est = time_multiplier * data;
-            time_est = (time_est > max_time_minutes) ? max_time_minutes : time_est;
-            
-            BatteryTimeCache[itr % cacheElements] = (int32_t)time_est;
-            itr++;
-            
-            new_tick_TTE = armGetSystemTick();
-            if (armTicksToNs(new_tick_TTE - tick_TTE) >= refresh_rate_ns) {
-                elements_to_avg = (itr < cacheElements) ? itr : cacheElements;
-                sum = 0;
-                int32_t* cache_ptr = BatteryTimeCache;
-                for (int i = elements_to_avg; i > 0; i--) {
-                    sum += *cache_ptr++;
-                }
-                batTimeEstimate = (int16_t)(sum / elements_to_avg);
+            batteryTimeEstimateInMinutes = (5.625 * data) / 60;
+            if (batteryTimeEstimateInMinutes > (99.0*60.0)+59.0) {
+                batteryTimeEstimateInMinutes = (99.0*60.0)+59.0;
+            }
+            static int itr = 0;
+            const int cacheElements = (sizeof(BatteryTimeCache) / sizeof(BatteryTimeCache[0]));
+            BatteryTimeCache[itr++ % cacheElements] = (int32_t)batteryTimeEstimateInMinutes;
+            uint64_t new_tick_TTE = svcGetSystemTick();
+            if (armTicksToNs(new_tick_TTE - tick_TTE) / 1'000'000'000 >= batteryTimeLeftRefreshRate) {
+                size_t to_divide = itr < cacheElements ? itr : cacheElements;
+                batTimeEstimate = (int16_t)(std::accumulate(&BatteryTimeCache[0], &BatteryTimeCache[to_divide], 0) / to_divide);
                 tick_TTE = new_tick_TTE;
             }
         }
 
         mutexUnlock(&mutex_BatteryChecker);
-        
-        // Calculate elapsed time in ns
-        elapsed_ns = armTicksToNs(armGetSystemTick() - startTick);
-    
-        // Calculate how much to sleep (target is sleep_time_ns)
-        sleep_ns = (elapsed_ns < sleep_time_ns) ? (sleep_time_ns - elapsed_ns) : 1000;
-    
-        // Responsive sleep loop with threadexit check every ~16 ms
-        {
-            const u64 startSleepTick = armGetSystemTick();
-            const u64 endSleepTick = startSleepTick + armNsToTicks(sleep_ns);
-            const u64 checkIntervalNs = 1'000'000; // 1ms
-            counterSleep = 0;
-    
-            do {
-                if ((++counterSleep & 15) == 0 && threadexit) break;
-                svcSleepThread(checkIntervalNs);
-            } while (armGetSystemTick() < endSleepTick);
+        nanoseconds = armTicksToNs(svcGetSystemTick() - startTick);
+        if (nanoseconds < 1'000'000'000 / 2) {
+            nanoseconds = (1'000'000'000 / 2) - nanoseconds;
+        } else {
+            nanoseconds = 1000;
         }
-    }
-    
-    // Fast cleanup
+    } while(!leventWait(&threadexit, nanoseconds));
+
     batTimeEstimate = -1;
     _batteryChargeInfoFields = {0};
     memset(BatteryTimeCache, 0, sizeof(BatteryTimeCache));
@@ -489,28 +424,38 @@ void BatteryChecker(void*) {
 }
 
 void StartBatteryThread() {
+    //if (!skip) {
+    //    threadWaitForExit(&t7);
+    //    threadClose(&t7);
+    //    leventClear(&threadexit);
+    //}
+    leventClear(&threadexit);
     threadCreate(&t7, BatteryChecker, NULL, NULL, 0x4000, 0x3F, 3);
     threadStart(&t7);
+}
+
+void CloseBatteryThread() {
+    leventSignal(&threadexit);
+    threadWaitForExit(&t7);
+    threadClose(&t7);
 }
 
 Mutex mutex_Misc = {0};
 
 void gpuLoadThread(void*) {
-    if (!GPULoadPerFrame && R_SUCCEEDED(nvCheck)) while(!threadexit) {
+    if (!GPULoadPerFrame && R_SUCCEEDED(nvCheck)) do {
         u8 average = 5;
         u32 temp = 0;
         nvIoctl(fd, NVGPU_GPU_IOCTL_PMU_GET_GPU_LOAD, &temp);
         GPU_Load_u = ((GPU_Load_u * (average-1)) + temp) / average;
-        svcSleepThread(16'666'000);
-    }
+    } while(!leventWait(&threadexit, 16'666'000));
 }
 
 //Stuff that doesn't need multithreading
+//Stuff that doesn't need multithreading
 void Misc(void*) {
-    u64 targetIntervalNs;
-    u32 counter;
-
-    while (!threadexit) {
+    uint64_t timeout_ns = TeslaFPS < 10 ? (1'000'000'000 / TeslaFPS) : 100'000'000;
+    do {
         mutexLock(&mutex_Misc);
         // CPU, GPU and RAM Frequency
         if (R_SUCCEEDED(clkrstCheck)) {
@@ -575,6 +520,7 @@ void Misc(void*) {
                 temp = trunc(temp);
                 temp /= 10;
                 Rotation_Duty = 100.0 - temp;
+                if (Rotation_Duty <= 0) Rotation_Duty = 0.0000001;
             }
         }
         
@@ -598,27 +544,12 @@ void Misc(void*) {
         
         // Interval
         mutexUnlock(&mutex_Misc);
-        //svcSleepThread(TeslaFPS < 10 ? (1'000'000'000 / TeslaFPS) : 100'000'000);
-        {
-            targetIntervalNs = (TeslaFPS < 10) ? (1'000'000'000 / TeslaFPS) : 100'000'000;
-            const u64 startTick = armGetSystemTick();
-            const u64 endTick = startTick + armNsToTicks(targetIntervalNs);
-            const u64 checkIntervalNs = 1'000'000; // 1ms
-        
-            counter = 0;
-            do {
-                if (__builtin_expect((++counter & 15) == 0, 0)) {
-                    if (threadexit) break;
-                }
-                svcSleepThread(checkIntervalNs);
-            } while (__builtin_expect(armGetSystemTick() < endTick, 1));
-        }
-    }
+        timeout_ns = (TeslaFPS < 10) ? (1'000'000'000 / TeslaFPS) : 100'000'000;
+    } while (!leventWait(&threadexit, timeout_ns));
 }
 
 void Misc2(void*) {
-    u32 counter;
-    while (!threadexit) {
+    do {
         //DSP
         if (R_SUCCEEDED(audsnoopCheck)) audsnoopGetDspUsage(&DSP_Load_u);
 
@@ -633,41 +564,30 @@ void Misc2(void*) {
             if (!Nifm_internet_rc && (NifmConnectionType == NifmInternetConnectionType_WiFi))
                 Nifm_profile_rc = nifmGetCurrentNetworkProfile((NifmNetworkProfileData*)&Nifm_profile);
         }
-        // Interval
-        //svcSleepThread(100'000'000);
-        {
-            const u64 endTick = armGetSystemTick() + armNsToTicks(100'000'000);
-            const u64 checkIntervalNs = 1'000'000; // 1ms
-            counter = 0;
-        
-            do {
-                if ((++counter & 15) == 0 && threadexit) break;
-                svcSleepThread(checkIntervalNs);
-            } while (armGetSystemTick() < endTick);
-        }
-    }
+    } while (!leventWait(&threadexit, 100'000'000));
 }
 
 void Misc3(void*) {
-    u32 counter;
-    while (!threadexit) {
+    do {
         mutexLock(&mutex_Misc);
-
         if (R_SUCCEEDED(sysclkCheck)) {
             SysClkContext sysclkCTX;
             if (R_SUCCEEDED(sysclkIpcGetCurrentContext(&sysclkCTX))) {
                 ramLoad[SysClkRamLoad_All] = sysclkCTX.ramLoad[SysClkRamLoad_All];
                 ramLoad[SysClkRamLoad_Cpu] = sysclkCTX.ramLoad[SysClkRamLoad_Cpu];
+                // Add voltage readings to Misc3 as well
+                realCPU_mV = sysclkCTX.realVolts[0]; 
+                realGPU_mV = sysclkCTX.realVolts[1]; 
+                realRAM_mV = sysclkCTX.realVolts[2]; 
+                realSOC_mV = sysclkCTX.realVolts[3];
             }
         }
-
         //Temperatures
         if (R_SUCCEEDED(i2cCheck)) {
             Tmp451GetSocTemp(&SOC_temperatureF);
             Tmp451GetPcbTemp(&PCB_temperatureF);
         }
         if (R_SUCCEEDED(tcCheck)) tcGetSkinTemperatureMilliC(&skin_temperaturemiliC);
-
         //Fan
         if (R_SUCCEEDED(pwmCheck)) {
             double temp = 0;
@@ -678,25 +598,12 @@ void Misc3(void*) {
                 Rotation_Duty = 100.0 - temp;
             }
         }
-
         //GPU Load
         if (R_SUCCEEDED(nvCheck)) nvIoctl(fd, NVGPU_GPU_IOCTL_PMU_GET_GPU_LOAD, &GPU_Load_u);
-
         // Interval
         mutexUnlock(&mutex_Misc);
-        //svcSleepThread(1'000'000'000);
-        {
-            const u64 endTick = armGetSystemTick() + armNsToTicks(1'000'000'000);
-            const u64 checkIntervalNs = 1'000'000;
-            counter = 0;
-            do {
-                if ((++counter & 15) == 0 && threadexit2) break;
-                svcSleepThread(checkIntervalNs);
-            } while (armGetSystemTick() < endTick);
-        }
-    }
+    } while (!leventWait(&threadexit, 1'000'000'000)); // 1 second timeout
 }
-
 
 //Check each core for idled ticks in intervals, they cannot read info about other core than they are assigned
 //In case of getting more than systemtickfrequency in idle, make it equal to systemtickfrequency to get 0% as output and nothing less
@@ -705,7 +612,6 @@ void Misc3(void*) {
 void CheckCore(void* arg) {
     int coreIndex = *((int*)arg);
     uint64_t* output = nullptr;
-
     switch (coreIndex) {
         case 0: output = &idletick0; break;
         case 1: output = &idletick1; break;
@@ -713,75 +619,91 @@ void CheckCore(void* arg) {
         case 3: output = &idletick3; break;
         default: return;
     }
-
     uint64_t prevIdleTick = 0, currIdleTick = 0;
     svcGetInfo(&prevIdleTick, InfoType_IdleTickCount, INVALID_HANDLE, coreIndex);
-
-    static constexpr u64 checkIntervalNs = 1'000'000; // 1ms
     static u32 lastFPS = 0;
+    static u64 cachedIntervalNs = 0;
     static u64 cachedTargetTicks = 0;
-
-    u32 counter;
     uint64_t delta, tickCap;
-    while (!threadexit) {
+    
+    do {
         if (__builtin_expect(TeslaFPS != lastFPS, 0)) {
-            cachedTargetTicks = armNsToTicks(1'000'000'000 / TeslaFPS);
+            cachedIntervalNs = 1'000'000'000 / TeslaFPS;
+            cachedTargetTicks = armNsToTicks(cachedIntervalNs);
             lastFPS = TeslaFPS;
         }
-
-        const u64 startTick = armGetSystemTick();
-        const u64 endTick = startTick + cachedTargetTicks;
-        counter = 0;
-
-        // Manual sleep loop
-        do {
-            if (__builtin_expect((++counter & 15) == 0, 0)) {
-                if (threadexit) break;
-            }
-            svcSleepThread(checkIntervalNs);
-        } while (__builtin_expect(armGetSystemTick() < endTick, 1));
-
+        
+        // Wait for the calculated interval or thread exit event
+        if (leventWait(&threadexit, cachedIntervalNs)) break;
+        
         // Get idle ticks and calculate delta
         svcGetInfo(&currIdleTick, InfoType_IdleTickCount, INVALID_HANDLE, coreIndex);
         delta = currIdleTick - prevIdleTick;
         tickCap = cachedTargetTicks; // Cap to the expected sleep ticks
-
         *output = (delta > tickCap) ? tickCap : delta;
         prevIdleTick = currIdleTick;
-    }
+    } while (true);
 }
 
-int core0 = 0, core1 = 1, core2 = 2, core3 = 3;
+static int coreIds[] = {0, 1, 2, 3};
+
 //Start reading all stats
 void StartThreads() {
-    threadCreate(&t0, CheckCore, &core0, NULL, 0x1000, 0x10, 0);
-    threadCreate(&t1, CheckCore, &core1, NULL, 0x1000, 0x10, 1);
-    threadCreate(&t2, CheckCore, &core2, NULL, 0x1000, 0x10, 2);
-    threadCreate(&t3, CheckCore, &core3, NULL, 0x1000, 0x10, 3);
+    // Clear the thread exit event for new threads
+    leventClear(&threadexit);
+
+    // Wait for existing threads to exit
+    //threadWaitForExit(&t0);
+    //threadWaitForExit(&t1);
+    //threadWaitForExit(&t2);
+    //threadWaitForExit(&t3);
+    //threadWaitForExit(&t4);
+    //threadWaitForExit(&t5);
+    //threadWaitForExit(&t6);
+    //threadWaitForExit(&t7);
+    
+    // Close and recreate threads
+    //threadClose(&t0);
+    threadCreate(&t0, CheckCore, &coreIds[0], NULL, 0x1000, 0x10, 0);
+    threadStart(&t0);
+    
+    //threadClose(&t1);
+    threadCreate(&t1, CheckCore, &coreIds[1], NULL, 0x1000, 0x10, 1);
+    threadStart(&t1);
+    
+    //threadClose(&t2);
+    threadCreate(&t2, CheckCore, &coreIds[2], NULL, 0x1000, 0x10, 2);
+    threadStart(&t2);
+    
+    //threadClose(&t3);
+    threadCreate(&t3, CheckCore, &coreIds[3], NULL, 0x1000, 0x10, 3);
+    threadStart(&t3);
+    
+    //threadClose(&t4);
     threadCreate(&t4, Misc, NULL, NULL, 0x1000, 0x3F, -2);
+    threadStart(&t4);
+    
+    //threadClose(&t5);
     threadCreate(&t5, gpuLoadThread, NULL, NULL, 0x1000, 0x3F, -2);
+    threadStart(&t5);
+    
+    //threadClose(&t6);
     if (SaltySD) {
         //Assign NX-FPS to default core
         threadCreate(&t6, CheckIfGameRunning, NULL, NULL, 0x1000, 0x38, -2);
-    }
-                
-    threadStart(&t0);
-    threadStart(&t1);
-    threadStart(&t2);
-    threadStart(&t3);
-    threadStart(&t4);
-    threadStart(&t5);
-    if (SaltySD) {
         //Start NX-FPS detection
         threadStart(&t6);
     }
-    StartBatteryThread();
+    
+    //threadClose(&t7);
+    threadCreate(&t7, BatteryChecker, NULL, NULL, 0x4000, 0x3F, 3);
+    threadStart(&t7);
 }
 
 //End reading all stats
 void CloseThreads() {
-    threadexit = true;
-    threadexit2 = true;
+    leventSignal(&threadexit);
+    //if (wait) {
     threadWaitForExit(&t0);
     threadWaitForExit(&t1);
     threadWaitForExit(&t2);
@@ -798,14 +720,13 @@ void CloseThreads() {
     threadClose(&t5);
     threadClose(&t6);
     threadClose(&t7);
-    threadexit = false;
-    threadexit2 = false;
+    //}
 }
 
 //Separate functions dedicated to "FPS Counter" mode
 void FPSCounter(void*) {
-    u32 counter;
-    while (!threadexit) {
+    u64 sleepNs = 1'000'000'000ULL / TeslaFPS;
+    do {
         if (GameRunning) {
             if (SharedMemoryUsed) {
                 FPS = (NxFps -> FPS);
@@ -813,70 +734,83 @@ void FPSCounter(void*) {
             }
         }
         else FPSavg = 254;
-        //svcSleepThread(1'000'000'000 / TeslaFPS);
-        {
-            const u64 sleepNs = 1'000'000'000ULL / TeslaFPS;
-            const u64 endTick = armGetSystemTick() + armNsToTicks(sleepNs);
-            const u64 checkIntervalNs = 1'000'000; // 1ms
-            counter = 0;
         
-            do {
-                if ((++counter & 15) == 0 && threadexit) break;
-                svcSleepThread(checkIntervalNs);
-            } while (armGetSystemTick() < endTick);
-        }
-    }
+        // Wait for interval based on TeslaFPS or thread exit event
+        sleepNs = 1'000'000'000ULL / TeslaFPS;
+    } while (!leventWait(&threadexit, sleepNs));
 }
 
 void StartFPSCounterThread() {
-    //Assign NX-FPS to default core
+    //threadWaitForExit(&t0);
+    //threadWaitForExit(&t6);
+    leventClear(&threadexit);
+
+    //threadClose(&t6);
     threadCreate(&t6, CheckIfGameRunning, NULL, NULL, 0x1000, 0x38, -2);
+    threadStart(&t6);
+
+    //threadClose(&t0);
     threadCreate(&t0, FPSCounter, NULL, NULL, 0x1000, 0x3F, 3);
     threadStart(&t0);
-    threadStart(&t6);
 }
 
 void EndFPSCounterThread() {
-    threadexit = true;
-    threadexit2 = true;
-    threadWaitForExit(&t0);
-    threadClose(&t0);
+    leventSignal(&threadexit);
     threadWaitForExit(&t6);
     threadClose(&t6);
-    threadexit = false;
-    threadexit2 = false;
 }
 
 void StartInfoThread() {
-    threadCreate(&t1, CheckCore, &core0, NULL, 0x1000, 0x10, 0);
-    threadCreate(&t2, CheckCore, &core1, NULL, 0x1000, 0x10, 1);
-    threadCreate(&t3, CheckCore, &core2, NULL, 0x1000, 0x10, 2);
-    threadCreate(&t4, CheckCore, &core3, NULL, 0x1000, 0x10, 3);
-    threadCreate(&t7, Misc3, NULL, NULL, 0x1000, 0x3F, -2);
+    // Wait for existing threads to exit
+    //threadWaitForExit(&t1);
+    //threadWaitForExit(&t2);
+    //threadWaitForExit(&t3);
+    //threadWaitForExit(&t4);
+    //threadWaitForExit(&t7);
+    
+    // Clear the thread exit event for new threads
+    leventClear(&threadexit);
+    
+    // Close and recreate threads
+    //threadClose(&t1);
+    threadCreate(&t1, CheckCore, &coreIds[0], NULL, 0x1000, 0x10, 0);
     threadStart(&t1);
+    
+    //threadClose(&t2);
+    threadCreate(&t2, CheckCore, &coreIds[1], NULL, 0x1000, 0x10, 1);
     threadStart(&t2);
+    
+    //threadClose(&t3);
+    threadCreate(&t3, CheckCore, &coreIds[2], NULL, 0x1000, 0x10, 2);
     threadStart(&t3);
+    
+    //threadClose(&t4);
+    threadCreate(&t4, CheckCore, &coreIds[3], NULL, 0x1000, 0x10, 3);
     threadStart(&t4);
+    
+    //threadClose(&t7);
+    threadCreate(&t7, Misc3, NULL, NULL, 0x1000, 0x3F, -2);
     threadStart(&t7);
 }
 
 void EndInfoThread() {
-    threadexit = true;
-    threadexit2 = true;
+    // Signal the thread exit event
+    leventSignal(&threadexit);
+    
+    // Wait for all threads to exit
     threadWaitForExit(&t1);
     threadWaitForExit(&t2);
     threadWaitForExit(&t3);
     threadWaitForExit(&t4);
     threadWaitForExit(&t7);
+    
+    // Close thread handles
     threadClose(&t1);
     threadClose(&t2);
     threadClose(&t3);
     threadClose(&t4);
     threadClose(&t7);
-    threadexit = false;
-    threadexit2 = false;
 }
-
 
 // String formatting functions
 void removeSpaces(std::string& str) {
@@ -957,7 +891,7 @@ void formatButtonCombination(std::string& line) {
 
 uint64_t comboBitmask = 0;
 
-uint64_t MapButtons(const std::string& buttonCombo) {
+constexpr uint64_t MapButtons(const std::string& buttonCombo) {
     static std::map<std::string, uint64_t> buttonMap = {
         {"A", HidNpadButton_A},
         {"B", HidNpadButton_B},
@@ -1087,7 +1021,7 @@ void ParseIniFile() {
     if (configFile) {
         // Get file size more efficiently
         fseek(configFile, 0, SEEK_END);
-        long fileSize = ftell(configFile);
+        const long fileSize = ftell(configFile);
         fseek(configFile, 0, SEEK_SET); // Use SEEK_SET instead of rewind for consistency
         
         // Reserve string capacity and read directly
@@ -1160,7 +1094,7 @@ void ParseIniFile() {
         if (extConfigFile) {
             // Get file size and read efficiently
             fseek(extConfigFile, 0, SEEK_END);
-            long fileSize = ftell(extConfigFile);
+            const long fileSize = ftell(extConfigFile);
             fseek(extConfigFile, 0, SEEK_SET);
             
             fileData = "";
@@ -1327,7 +1261,7 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
     if (!configFile) return;
     
     fseek(configFile, 0, SEEK_END);
-    long fileSize = ftell(configFile);
+    const long fileSize = ftell(configFile);
     fseek(configFile, 0, SEEK_SET);
 
     std::string fileData;
@@ -1503,7 +1437,7 @@ ALWAYS_INLINE void GetConfigSettings(MicroSettings* settings) {
     if (!configFileIn)
         return;
     fseek(configFileIn, 0, SEEK_END);
-    long fileSize = ftell(configFileIn);
+    const long fileSize = ftell(configFileIn);
     rewind(configFileIn);
 
     std::string fileDataString(fileSize, '\0');
@@ -1517,11 +1451,11 @@ ALWAYS_INLINE void GetConfigSettings(MicroSettings* settings) {
     if (parsedData.find(mode) == parsedData.end())
         return;
     if (parsedData[mode].find("refresh_rate") != parsedData[mode].end()) {
-        long maxFPS = 60;
-        long minFPS = 1;
+        static constexpr long maxFPS = 60;
+        static constexpr long minFPS = 1;
         
         key = parsedData[mode]["refresh_rate"];
-        long rate = atol(key.c_str());
+        const long rate = atol(key.c_str());
         if (rate < minFPS) {
             settings -> refreshRate = minFPS;
         }
@@ -1562,8 +1496,10 @@ ALWAYS_INLINE void GetConfigSettings(MicroSettings* settings) {
             settings -> alignTo = 2;
         }
     }
-    long maxFontSize = 18;
-    long minFontSize = 8;
+
+    static constexpr long maxFontSize = 18;
+    static constexpr long minFontSize = 8;
+
     if (parsedData[mode].find("handheld_font_size") != parsedData[mode].end()) {
         key = parsedData[mode]["handheld_font_size"];
         long fontsize = atol(key.c_str());
@@ -1637,7 +1573,7 @@ ALWAYS_INLINE void GetConfigSettings(FpsCounterSettings* settings) {
     if (!configFile) return;
     
     fseek(configFile, 0, SEEK_END);
-    long fileSize = ftell(configFile);
+    const long fileSize = ftell(configFile);
     fseek(configFile, 0, SEEK_SET);
 
     std::string fileData;
@@ -1654,8 +1590,8 @@ ALWAYS_INLINE void GetConfigSettings(FpsCounterSettings* settings) {
     const auto& section = sectionIt->second;
     
     // Process font sizes with shared bounds
-    constexpr long minFontSize = 8;
-    constexpr long maxFontSize = 150;
+    static constexpr long minFontSize = 8;
+    static constexpr long maxFontSize = 150;
     
     auto it = section.find("handheld_font_size");
     if (it != section.end()) {
@@ -1726,7 +1662,7 @@ ALWAYS_INLINE void GetConfigSettings(FpsGraphSettings* settings) {
     if (!configFile) return;
     
     fseek(configFile, 0, SEEK_END);
-    long fileSize = ftell(configFile);
+    const long fileSize = ftell(configFile);
     fseek(configFile, 0, SEEK_SET);
 
     std::string fileData;
@@ -1814,7 +1750,7 @@ ALWAYS_INLINE void GetConfigSettings(FullSettings* settings) {
     if (!configFileIn)
         return;
     fseek(configFileIn, 0, SEEK_END);
-    long fileSize = ftell(configFileIn);
+    const long fileSize = ftell(configFileIn);
     rewind(configFileIn);
 
     std::string fileDataString(fileSize, '\0');
@@ -1828,8 +1764,8 @@ ALWAYS_INLINE void GetConfigSettings(FullSettings* settings) {
     if (parsedData.find(mode) == parsedData.end())
         return;
     if (parsedData[mode].find("refresh_rate") != parsedData[mode].end()) {
-        long maxFPS = 60;
-        long minFPS = 1;
+        static constexpr long maxFPS = 60;
+        static constexpr long minFPS = 1;
         
         key = parsedData[mode]["refresh_rate"];
         long rate = atol(key.c_str());
@@ -1883,7 +1819,7 @@ ALWAYS_INLINE void GetConfigSettings(ResolutionSettings* settings) {
     if (!configFileIn)
         return;
     fseek(configFileIn, 0, SEEK_END);
-    long fileSize = ftell(configFileIn);
+    const long fileSize = ftell(configFileIn);
     rewind(configFileIn);
 
     std::string fileDataString(fileSize, '\0');
@@ -1897,11 +1833,11 @@ ALWAYS_INLINE void GetConfigSettings(ResolutionSettings* settings) {
     if (parsedData.find("game_resolutions") == parsedData.end())
         return;
     if (parsedData[mode].find("refresh_rate") != parsedData[mode].end()) {
-        long maxFPS = 60;
-        long minFPS = 1;
+        static constexpr long maxFPS = 60;
+        static constexpr long minFPS = 1;
 
         key = parsedData[mode]["refresh_rate"];
-        long rate = atol(key.c_str());
+        const long rate = atol(key.c_str());
         if (rate < minFPS) {
             settings -> refreshRate = minFPS;
         }

@@ -101,7 +101,7 @@ public:
     MicroOverlay() { 
         tsl::hlp::requestForeground(false);
         disableJumpTo = true;
-        tsl::initializeUltrahandSettings();
+        //tsl::initializeUltrahandSettings();
         GetConfigSettings(&settings);
         apmGetPerformanceMode(&performanceMode);
         if (performanceMode == ApmPerformanceMode_Normal) {
@@ -759,11 +759,14 @@ public:
         mutexUnlock(&mutex_Misc);
 
         static bool skipOnce = true;
-
+    
         if (!skipOnce) {
             static bool runOnce = true;
-            if (runOnce)
+            if (runOnce) {
                 isRendering = true;
+                //leventClear(&renderingStopEvent);
+                runOnce = false;  // Add this to prevent repeated calls
+            }
         } else {
             skipOnce = false;
         }
@@ -772,6 +775,7 @@ public:
     virtual bool handleInput(u64 keysDown, u64 keysHeld, const HidTouchState &touchPos, HidAnalogStickState joyStickPosLeft, HidAnalogStickState joyStickPosRight) override {
         if (isKeyComboPressed(keysHeld, keysDown)) {
             isRendering = false;
+            leventSignal(&renderingStopEvent);
             TeslaFPS = 60;
             if (skipMain)
                 tsl::goBack();

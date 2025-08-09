@@ -119,11 +119,14 @@ public:
         snprintf(FPSavg_c, sizeof FPSavg_c, "%2.1f", FPSavg);
         
         static bool skipOnce = true;
-
+    
         if (!skipOnce) {
             static bool runOnce = true;
-            if (runOnce)
+            if (runOnce) {
                 isRendering = true;
+                leventClear(&renderingStopEvent);
+                runOnce = false;  // Add this to prevent repeated calls
+            }
         } else {
             skipOnce = false;
         }
@@ -131,6 +134,7 @@ public:
     virtual bool handleInput(u64 keysDown, u64 keysHeld, const HidTouchState &touchPos, HidAnalogStickState joyStickPosLeft, HidAnalogStickState joyStickPosRight) override {
         if (isKeyComboPressed(keysHeld, keysDown)) {
             isRendering = false;
+            leventSignal(&renderingStopEvent);
             tsl::goBack();
             return true;
         }
