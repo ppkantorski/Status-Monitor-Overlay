@@ -65,8 +65,7 @@ public:
     uint8_t resolutionLookup = 0;
 
     virtual tsl::elm::Element* createUI() override {
-        tsl::elm::OverlayFrame* rootFrame = new tsl::elm::OverlayFrame("Status Monitor", APP_VERSION, true);
-
+        
         auto* Status = new tsl::elm::CustomDrawer([this](tsl::gfx::Renderer *renderer, u16 x, u16 y, u16 w, u16 h) {
             
             //Print strings
@@ -125,7 +124,8 @@ public:
             renderer->drawStringWithColoredSections(message.c_str(), false, KEY_SYMBOLS, COMMON_MARGIN, 693, 23,  a(tsl::bottomTextColor), a(tsl::buttonColor));
             
         });
-
+        
+        tsl::elm::OverlayFrame* rootFrame = new tsl::elm::OverlayFrame("Status Monitor", APP_VERSION, true);
         rootFrame->setContent(Status);
 
         return rootFrame;

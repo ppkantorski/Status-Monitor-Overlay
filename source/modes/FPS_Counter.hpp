@@ -48,8 +48,7 @@ public:
     }
 
     virtual tsl::elm::Element* createUI() override {
-        tsl::elm::OverlayFrame* rootFrame = new tsl::elm::OverlayFrame("", "");
-
+         
         auto* Status = new tsl::elm::CustomDrawer([this](tsl::gfx::Renderer *renderer, u16 x, u16 y, u16 w, u16 h) {
             //auto dimensions = renderer->drawString(FPSavg_c, false, 0, fontsize, fontsize, tsl::Color(0x0000));
             const auto width = renderer->getTextDimensions(FPSavg_c, false, fontsize).first;
@@ -104,6 +103,7 @@ public:
             renderer->drawString((FPSavg != 254.0) ? FPSavg_c : "0.0", false, base_x + (margin / 2), base_y + (fontsize - margin), fontsize, settings.textColor);
         });
 
+        tsl::elm::OverlayFrame* rootFrame = new tsl::elm::OverlayFrame("", "");
         rootFrame->setContent(Status);
 
         return rootFrame;

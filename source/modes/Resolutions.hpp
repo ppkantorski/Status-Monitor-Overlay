@@ -45,7 +45,6 @@ public:
     uint8_t resolutionLookup = 0;
 
     virtual tsl::elm::Element* createUI() override {
-        tsl::elm::OverlayFrame* rootFrame = new tsl::elm::OverlayFrame("", "");
         
         auto* Status = new tsl::elm::CustomDrawer([this](tsl::gfx::Renderer *renderer, u16 x, u16 y, u16 w, u16 h) {
             int base_y = 0;
@@ -113,8 +112,8 @@ public:
                 renderer->drawString("Game is not running or it's incompatible.", false, base_x, base_y+20, 18, renderer->a(0xF00F));
             }
         });
-
-
+        
+        tsl::elm::OverlayFrame* rootFrame = new tsl::elm::OverlayFrame("", "");
         rootFrame->setContent(Status);
 
         return rootFrame;
