@@ -219,6 +219,7 @@ public:
         }
         if (SaltySD) {
             auto Graphs = new tsl::elm::ListItem("FPS");
+            Graphs->setValue(ult::DROPDOWN_SYMBOL);
             Graphs->setClickListener([](uint64_t keys) {
                 if (keys & KEY_A) {
                     tsl::changeTo<GraphsMenu>();
@@ -229,6 +230,7 @@ public:
             list->addItem(Graphs);
         }
         auto Other = new tsl::elm::ListItem("Other");
+        Other->setValue(ult::DROPDOWN_SYMBOL);
         Other->setClickListener([](uint64_t keys) {
             if (keys & KEY_A) {
                 tsl::changeTo<OtherMenu>();

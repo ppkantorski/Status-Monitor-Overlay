@@ -758,6 +758,8 @@ void EndFPSCounterThread() {
     leventSignal(&threadexit);
     threadWaitForExit(&t6);
     threadClose(&t6);
+    threadWaitForExit(&t0);
+    threadClose(&t0);
 }
 
 void StartInfoThread() {
