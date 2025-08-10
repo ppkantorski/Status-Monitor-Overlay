@@ -834,24 +834,23 @@ public:
         }
 
     }
-
+                
     virtual bool handleInput(u64 keysDown, u64 keysHeld, const HidTouchState &touchPos, HidAnalogStickState joyStickPosLeft, HidAnalogStickState joyStickPosRight) override {
         // Static variables to maintain drag state between function calls
-        //static bool isDragging = false;
         static bool oldTouchDetected = false;
+        static bool oldMinusHeld = false;
         static HidTouchState initialTouchPos = {0};
         static int initialFrameOffsetX = 0;
         static int initialFrameOffsetY = 0;
-        static constexpr int TOUCH_THRESHOLD = 8; // Reduced threshold for better responsiveness
+        static constexpr int TOUCH_THRESHOLD = 8;
         static bool hasMoved = false;
         static u64 lastTouchTime = 0;
         static constexpr u64 TOUCH_DEBOUNCE_NS = 16000000ULL; // 16ms debounce
     
         // Get current time for debouncing
-        u64 currentTime = armTicksToNs(armGetSystemTick());
+        const u64 currentTime = armTicksToNs(armGetSystemTick());
         
         // Better touch detection - check if coordinates are within reasonable screen bounds
-        // and different from invalid/default values
         bool currentTouchDetected = (touchPos.x > 0 && touchPos.y > 0 && 
                                     touchPos.x < 1280 && touchPos.y < 720);
         
@@ -864,10 +863,10 @@ public:
             }
         }
         
-        // Calculate overlay bounds more carefully
+        // Calculate overlay bounds
         const uint32_t margin = (fontsize * 4);
         
-        // Get the exact same calculation as in createUI - use static variables to cache
+        // Cache bounds calculation
         static int cachedBaseX = 0;
         static int cachedBaseY = 0;
         static uint32_t cachedOverlayHeight = 0;
@@ -877,7 +876,7 @@ public:
         // Only recalculate bounds when Variables change or first time
         if (boundsNeedUpdate || std::string(Variables) != lastVariables) {
             // Calculate actual entry count from Variables string
-            size_t actualEntryCount = 1; // Start with 1 for the first line
+            size_t actualEntryCount = 1;
             for (size_t i = 0; Variables[i] != '\0'; i++) {
                 if (Variables[i] == '\n') {
                     actualEntryCount++;
@@ -887,7 +886,7 @@ public:
             cachedOverlayHeight = ((fontsize + settings.spacing) * actualEntryCount) + 
                                  (fontsize / 3) + settings.spacing + topPadding + bottomPadding;
             
-            // Position calculation based on settings (matching createUI logic)
+            // Position calculation based on settings
             cachedBaseX = 0;
             cachedBaseY = 0;
             
@@ -929,8 +928,8 @@ public:
         const int overlayWidth = margin + rectangleWidth + (fontsize / 3);
         const int overlayHeight = cachedOverlayHeight;
         
-        // Add some padding to make touch detection more forgiving
-        const int touchPadding = 5;
+        // Add padding to make touch detection more forgiving
+        static constexpr int touchPadding = 5;
         const int touchableX = overlayX - touchPadding;
         const int touchableY = overlayY - touchPadding;
         const int touchableWidth = overlayWidth + (touchPadding * 2);
@@ -939,93 +938,125 @@ public:
         // Screen boundaries for clamping
         static constexpr int screenWidth = 1280;
         static constexpr int screenHeight = 720;
-        const int minX = -cachedBaseX + 10; // Keep some margin from screen edge
+        const int minX = -cachedBaseX + 10;
         const int maxX = screenWidth - overlayWidth - cachedBaseX - 10;
         const int minY = -cachedBaseY + 10;
         const int maxY = screenHeight - overlayHeight - cachedBaseY - 10;
     
-        if (currentTouchDetected) {
+        // Check KEY_MINUS state
+        const bool currentMinusHeld = (keysHeld & KEY_MINUS);
+    
+        // Handle touch dragging
+        if (currentTouchDetected && !isDragging) {
+            // Touch detected and not currently dragging - check if we should start
             const int touchX = touchPos.x;
             const int touchY = touchPos.y;
             
             if (!oldTouchDetected) {
-                // Touch just started - check if touch is within overlay bounds (with padding)
+                // Touch just started - check if within overlay bounds
                 if (touchX >= touchableX && touchX <= touchableX + touchableWidth &&
                     touchY >= touchableY && touchY <= touchableY + touchableHeight) {
                     
-                    // Initialize drag state
+                    // Start touch dragging
                     isDragging = true;
-                    isRendering = false; // Stop rendering during active drag
+                    isRendering = false;
                     leventSignal(&renderingStopEvent);
                     hasMoved = false;
                     initialTouchPos = touchPos;
                     initialFrameOffsetX = frameOffsetX;
                     initialFrameOffsetY = frameOffsetY;
-                    
-                    // Optionally provide haptic feedback or visual indication
-                    // You could add a brief color change or vibration here
-                }
-            } else if (isDragging) {
-                // Continue dragging
-                const int deltaX = touchX - initialTouchPos.x;
-                const int deltaY = touchY - initialTouchPos.y;
-                
-                // Check if we've moved enough to consider this a drag
-                if (!hasMoved) {
-                    const int totalMovement = abs(deltaX) + abs(deltaY);
-                    if (totalMovement >= TOUCH_THRESHOLD) {
-                        hasMoved = true;
-                        
-                    }
-                }
-                
-                if (hasMoved) {
-                    // Update frame offsets with boundary checking
-                    //int newFrameOffsetX = initialFrameOffsetX + deltaX;
-                    //int newFrameOffsetY = initialFrameOffsetY + deltaY;
-                    
-                    // Clamp to screen boundaries
-                    const int newFrameOffsetX = std::max(minX, std::min(maxX, initialFrameOffsetX + deltaX));
-                    const int newFrameOffsetY = std::max(minY, std::min(maxY, initialFrameOffsetY + deltaY));
-                    
-                    frameOffsetX = newFrameOffsetX;
-                    frameOffsetY = newFrameOffsetY;
-                    
-                    // Force bounds recalculation on next frame
-                    boundsNeedUpdate = true;
                 }
             }
-        } else {
-            // Touch released or no touch
-            if (oldTouchDetected && isDragging) {
-                // Touch just ended
-                if (hasMoved) {
-                    
-                    
-                    // Optional: Save the new position to your settings
-                    // This would persist the overlay position across sessions
-                    // GetConfigSettings(&settings);
-                    // settings.overlayOffsetX = frameOffsetX;
-                    // settings.overlayOffsetY = frameOffsetY;
-                    // SaveConfigSettings(&settings);
+        } else if (currentTouchDetected && isDragging && !currentMinusHeld) {
+            // Continue touch dragging (only if MINUS is not held)
+            const int touchX = touchPos.x;
+            const int touchY = touchPos.y;
+            const int deltaX = touchX - initialTouchPos.x;
+            const int deltaY = touchY - initialTouchPos.y;
+            
+            // Check if we've moved enough to consider this a drag
+            if (!hasMoved) {
+                const int totalMovement = abs(deltaX) + abs(deltaY);
+                if (totalMovement >= TOUCH_THRESHOLD) {
+                    hasMoved = true;
                 }
-                //isRendering = true; // Resume rendering
-                //leventClear(&renderingStopEvent);
             }
             
-            // Reset drag state
-            if (isDragging && !currentTouchDetected) {
+            if (hasMoved) {
+                // Update frame offsets with boundary checking
+                const int newFrameOffsetX = std::max(minX, std::min(maxX, initialFrameOffsetX + deltaX));
+                const int newFrameOffsetY = std::max(minY, std::min(maxY, initialFrameOffsetY + deltaY));
+                
+                frameOffsetX = newFrameOffsetX;
+                frameOffsetY = newFrameOffsetY;
+                boundsNeedUpdate = true;
+            }
+        } else if (!currentTouchDetected && oldTouchDetected && isDragging && !currentMinusHeld) {
+            // Touch just released and we were touch dragging
+            if (hasMoved) {
+                // Save position when touch drag ends
                 ult::setIniFileValue("sdmc:/config/status-monitor/config.ini", "mini", "frame_offset_x", std::to_string(frameOffsetX));
                 ult::setIniFileValue("sdmc:/config/status-monitor/config.ini", "mini", "frame_offset_y", std::to_string(frameOffsetY));
-                isDragging = false;
-                hasMoved = false;
-                isRendering = true; // Ensure rendering is back on
-                leventClear(&renderingStopEvent);
             }
+            
+            // Reset touch drag state
+            isDragging = false;
+            hasMoved = false;
+            isRendering = true;
+            leventClear(&renderingStopEvent);
+        }
+    
+        // Handle KEY_MINUS + joystick dragging
+        if (currentMinusHeld && !isDragging) {
+            // Start joystick dragging
+            isDragging = true;
+            isRendering = false;
+            leventSignal(&renderingStopEvent);
+        } else if (currentMinusHeld && isDragging) {
+            // Continue joystick dragging
+            static constexpr float JOYSTICK_BASE_SENSITIVITY = 0.0002f; // Slow for small movements
+            static constexpr float JOYSTICK_MAX_SENSITIVITY = 0.0006f;  // Reduced max speed
+            static constexpr int JOYSTICK_DEADZONE = 6000;
+            
+            // Only move if joystick is outside deadzone
+            if (abs(joyStickPosRight.x) > JOYSTICK_DEADZONE || abs(joyStickPosRight.y) > JOYSTICK_DEADZONE) {
+                // Calculate joystick magnitude (distance from center)
+                const float magnitude = sqrt((float)(joyStickPosRight.x * joyStickPosRight.x + joyStickPosRight.y * joyStickPosRight.y));
+                const float normalizedMagnitude = magnitude / 32767.0f; // Normalize to 0-1 range
+                
+                // Create an even steeper curve: stays slow for ~75% of range
+                // Using quartic curve (x^4) for very wide range of slow movements
+                const float sensitivityMultiplier = normalizedMagnitude * normalizedMagnitude * normalizedMagnitude * normalizedMagnitude;
+                const float currentSensitivity = JOYSTICK_BASE_SENSITIVITY + (JOYSTICK_MAX_SENSITIVITY - JOYSTICK_BASE_SENSITIVITY) * sensitivityMultiplier;
+                
+                // Calculate movement delta based on joystick position with scaled sensitivity
+                const float deltaX = (float)joyStickPosRight.x * currentSensitivity;
+                const float deltaY = -(float)joyStickPosRight.y * currentSensitivity; // Invert Y axis
+                
+                // Update frame offsets with boundary checking
+                //int newFrameOffsetX = frameOffsetX + (int)deltaX;
+                //int newFrameOffsetY = frameOffsetY + (int)deltaY;
+                
+                // Clamp to screen boundaries
+                const int newFrameOffsetX = std::max(minX, std::min(maxX, frameOffsetX + (int)deltaX));
+                const int newFrameOffsetY = std::max(minY, std::min(maxY, frameOffsetY + (int)deltaY));
+                
+                frameOffsetX = newFrameOffsetX;
+                frameOffsetY = newFrameOffsetY;
+                boundsNeedUpdate = true;
+            }
+        } else if (!currentMinusHeld && oldMinusHeld && isDragging) {
+            // KEY_MINUS just released - stop joystick dragging
+            ult::setIniFileValue("sdmc:/config/status-monitor/config.ini", "mini", "frame_offset_x", std::to_string(frameOffsetX));
+            ult::setIniFileValue("sdmc:/config/status-monitor/config.ini", "mini", "frame_offset_y", std::to_string(frameOffsetY));
+            isDragging = false;
+            isRendering = true;
+            leventClear(&renderingStopEvent);
         }
         
-        // Update touch state for next frame
+        // Update state for next frame
         oldTouchDetected = currentTouchDetected;
+        oldMinusHeld = currentMinusHeld;
         
         // Handle existing key input logic (but don't interfere with dragging)
         if (!isDragging) {
