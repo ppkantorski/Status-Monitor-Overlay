@@ -49,8 +49,8 @@ public:
         //alphabackground = 0x0;
         frameOffsetX = settings.frameOffsetX;
         frameOffsetY = settings.frameOffsetY;
-        topPadding = 3;
-        bottomPadding = 0;
+        topPadding = 5;
+        bottomPadding = 2;
         
         FullMode = false;
         TeslaFPS = settings.refreshRate;
@@ -321,7 +321,7 @@ public:
                 : settings.backgroundColor;
 
             //renderer->drawRect(cachedBaseX, cachedBaseY, margin + rectangleWidth + (fontsize / 3), cachedHeight, renderer->a(settings.backgroundColor));
-            renderer->drawRoundedRectSingleThreaded(cachedBaseX + frameOffsetX, cachedBaseY + frameOffsetY, margin + rectangleWidth + (fontsize / 3), cachedHeight, 11, a(bgColor));
+            renderer->drawRoundedRectSingleThreaded(cachedBaseX + frameOffsetX, cachedBaseY + frameOffsetY, margin + rectangleWidth + (fontsize / 3), cachedHeight, 16, a(bgColor));
             
             
             // Split Variables into lines for individual positioning
@@ -929,7 +929,7 @@ public:
         const int overlayHeight = cachedOverlayHeight;
         
         // Add padding to make touch detection more forgiving
-        static constexpr int touchPadding = 5;
+        static constexpr int touchPadding = 4;
         const int touchableX = overlayX - touchPadding;
         const int touchableY = overlayY - touchPadding;
         const int touchableWidth = overlayWidth + (touchPadding * 2);
@@ -995,10 +995,10 @@ public:
             // Touch just released and we were touch dragging
             if (hasMoved) {
                 // Save position when touch drag ends
-                auto iniData = ult::getParsedDataFromIniFile("sdmc:/config/status-monitor/config.ini");
+                auto iniData = ult::getParsedDataFromIniFile(configIniPath);
                 iniData["mini"]["frame_offset_x"] = std::to_string(frameOffsetX);
                 iniData["mini"]["frame_offset_y"] = std::to_string(frameOffsetY);
-                ult::saveIniFileData("sdmc:/config/status-monitor/config.ini", iniData);
+                ult::saveIniFileData(configIniPath, iniData);
             }
             
             // Reset touch drag state
@@ -1016,9 +1016,9 @@ public:
             leventSignal(&renderingStopEvent);
         } else if (currentMinusHeld && isDragging) {
             // Continue joystick dragging
-            static constexpr float JOYSTICK_BASE_SENSITIVITY = 0.0002f; // Slow for small movements
-            static constexpr float JOYSTICK_MAX_SENSITIVITY = 0.0006f;  // Reduced max speed
-            static constexpr int JOYSTICK_DEADZONE = 6000;
+            static constexpr float JOYSTICK_BASE_SENSITIVITY = 0.00008f; // Slow for small movements
+            static constexpr float JOYSTICK_MAX_SENSITIVITY = 0.0005f;  // Reduced max speed
+            static constexpr int JOYSTICK_DEADZONE = 1000;
             
             // Only move if joystick is outside deadzone
             if (abs(joyStickPosRight.x) > JOYSTICK_DEADZONE || abs(joyStickPosRight.y) > JOYSTICK_DEADZONE) {
@@ -1049,10 +1049,10 @@ public:
             }
         } else if (!currentMinusHeld && oldMinusHeld && isDragging) {
             // KEY_MINUS just released - stop joystick dragging
-            auto iniData = ult::getParsedDataFromIniFile("sdmc:/config/status-monitor/config.ini");
+            auto iniData = ult::getParsedDataFromIniFile(configIniPath);
             iniData["mini"]["frame_offset_x"] = std::to_string(frameOffsetX);
             iniData["mini"]["frame_offset_y"] = std::to_string(frameOffsetY);
-            ult::saveIniFileData("sdmc:/config/status-monitor/config.ini", iniData);
+            ult::saveIniFileData(configIniPath, iniData);
             isDragging = false;
             isRendering = true;
             leventClear(&renderingStopEvent);

@@ -624,7 +624,7 @@ int main(int argc, char **argv) {
         else if (strcasecmp(argv[arg], "--miniOverlay") == 0) {
             FullMode = false;
             setupMiniMode();
-            //ult::useRightAlignment = ult::useRightAlignment || (ult::parseValueFromIniSection("sdmc:/config/status-monitor/config.ini", "mini", "right_alignment") == ult::TRUE_STR);
+            //ult::useRightAlignment = ult::useRightAlignment || (ult::parseValueFromIniSection(configIniPath, "mini", "right_alignment") == ult::TRUE_STR);
             return tsl::loop<MiniEntryOverlay>(argc, argv);
         } 
         else if (strcasecmp(argv[arg], "-micro") == 0) {
@@ -639,7 +639,7 @@ int main(int argc, char **argv) {
             skipMain = true;
             ult::DefaultFramebufferWidth = 1280;
             ult::DefaultFramebufferHeight = 720;
-            ult::useRightAlignment = (ult::parseValueFromIniSection("sdmc:/config/status-monitor/config.ini", "mini", "right_alignment") == ult::TRUE_STR);
+            ult::useRightAlignment = (ult::parseValueFromIniSection(configIniPath, "mini", "right_alignment") == ult::TRUE_STR);
             return tsl::loop<MiniEntryOverlay>(argc, argv);
         }
         else if (strcasecmp(argv[arg], "--lastSelectedItem") == 0) {

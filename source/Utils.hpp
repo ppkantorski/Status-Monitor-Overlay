@@ -45,6 +45,13 @@ uint64_t systemtickfrequency = 19200000;
 LEvent threadexit = {0};
 PwmChannelSession g_ICon;
 const std::string folderpath = "sdmc:/switch/.overlays/";
+
+// Use const string_view for paths to avoid string copying
+constexpr const char* directoryPath = "sdmc:/config/status-monitor/";
+constexpr const char* configIniPath = "sdmc:/config/status-monitor/config.ini";
+constexpr const char* ultrahandConfigIniPath = "sdmc:/config/ultrahand/config.ini";
+constexpr const char* teslaConfigIniPath = "sdmc:/config/tesla/config.ini";
+
 std::string filename = "";
 std::string filepath = "";
 std::string keyCombo = "ZL+ZR+DDOWN"; // default Ultrahand Menu combo
@@ -966,13 +973,6 @@ bool isKeyComboPressed2(uint64_t keysDown, uint64_t keysHeld) {
 
 // Custom utility function for parsing an ini file
 void ParseIniFile() {
-    // Use const string_view for paths to avoid string copying
-    constexpr const char* directoryPath = "sdmc:/config/status-monitor/";
-    //constexpr const char* ultrahandDirectoryPath = "sdmc:/config/ultrahand/";
-    //constexpr const char* teslaDirectoryPath = "sdmc:/config/tesla/";
-    constexpr const char* configIniPath = "sdmc:/config/status-monitor/config.ini";
-    constexpr const char* ultrahandConfigIniPath = "sdmc:/config/ultrahand/config.ini";
-    constexpr const char* teslaConfigIniPath = "sdmc:/config/tesla/config.ini";
     
     tsl::hlp::ini::IniData parsedData;
     
@@ -1230,7 +1230,7 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
     settings -> frameOffsetY = 8;
 
     // Open and read file efficiently
-    FILE* configFile = fopen("sdmc:/config/status-monitor/config.ini", "r");
+    FILE* configFile = fopen(configIniPath, "r");
     if (!configFile) return;
     
     fseek(configFile, 0, SEEK_END);
@@ -1416,7 +1416,7 @@ ALWAYS_INLINE void GetConfigSettings(MicroSettings* settings) {
     settings -> setPosBottom = false;
     settings -> refreshRate = 1;
 
-    FILE* configFileIn = fopen("sdmc:/config/status-monitor/config.ini", "r");
+    FILE* configFileIn = fopen(configIniPath, "r");
     if (!configFileIn)
         return;
     fseek(configFileIn, 0, SEEK_END);
@@ -1552,7 +1552,7 @@ ALWAYS_INLINE void GetConfigSettings(FpsCounterSettings* settings) {
     settings->refreshRate = 31;
 
     // Open and read file efficiently
-    FILE* configFile = fopen("sdmc:/config/status-monitor/config.ini", "r");
+    FILE* configFile = fopen(configIniPath, "r");
     if (!configFile) return;
     
     fseek(configFile, 0, SEEK_END);
@@ -1641,7 +1641,7 @@ ALWAYS_INLINE void GetConfigSettings(FpsGraphSettings* settings) {
     settings->refreshRate = 31;
 
     // Open and read file efficiently
-    FILE* configFile = fopen("sdmc:/config/status-monitor/config.ini", "r");
+    FILE* configFile = fopen(configIniPath, "r");
     if (!configFile) return;
     
     fseek(configFile, 0, SEEK_END);
@@ -1730,7 +1730,7 @@ ALWAYS_INLINE void GetConfigSettings(FullSettings* settings) {
     settings -> showRES = true;
     settings -> showRDSD = true;
 
-    FILE* configFileIn = fopen("sdmc:/config/status-monitor/config.ini", "r");
+    FILE* configFileIn = fopen(configIniPath, "r");
     if (!configFileIn)
         return;
     fseek(configFileIn, 0, SEEK_END);
@@ -1804,7 +1804,7 @@ ALWAYS_INLINE void GetConfigSettings(ResolutionSettings* settings) {
     settings -> refreshRate = 10;
     settings -> setPos = 0;
 
-    FILE* configFileIn = fopen("sdmc:/config/status-monitor/config.ini", "r");
+    FILE* configFileIn = fopen(configIniPath, "r");
     if (!configFileIn)
         return;
     fseek(configFileIn, 0, SEEK_END);
