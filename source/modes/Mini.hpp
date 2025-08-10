@@ -14,6 +14,9 @@ private:
     bool Initialized = false;
     ApmPerformanceMode performanceMode = ApmPerformanceMode_Invalid;
     uint64_t systemtickfrequency_impl = systemtickfrequency;
+    int frameOffsetX, frameOffsetY;
+    int topPadding, bottomPadding;
+    bool isDragging = false;
 public:
     MiniOverlay() { 
         tsl::hlp::requestForeground(false);
@@ -44,6 +47,10 @@ public:
         mutexInit(&mutex_BatteryChecker);
         mutexInit(&mutex_Misc);
         //alphabackground = 0x0;
+        frameOffsetX = settings.frameOffsetX;
+        frameOffsetY = settings.frameOffsetY;
+        topPadding = 3;
+        bottomPadding = 0;
         
         FullMode = false;
         TeslaFPS = settings.refreshRate;
@@ -268,7 +275,7 @@ public:
                 }
                 
                 // Use the actual entry count for height calculation
-                cachedHeight = ((fontsize + settings.spacing) * actualEntryCount) + (fontsize / 3) + settings.spacing;
+                cachedHeight = ((fontsize + settings.spacing) * actualEntryCount) + (fontsize / 3) + settings.spacing + topPadding + bottomPadding;
                 const uint32_t margin = (fontsize * 4);
                 
                 cachedBaseX = 0;
@@ -309,7 +316,13 @@ public:
             const uint32_t margin = (fontsize * 4);
             
             // Draw background
-            renderer->drawRect(cachedBaseX, cachedBaseY, margin + rectangleWidth + (fontsize / 3), cachedHeight, renderer->a(settings.backgroundColor));
+            const tsl::Color bgColor = isDragging
+                ? tsl::Color({0,0,0,15}) // full opacity
+                : settings.backgroundColor;
+
+            //renderer->drawRect(cachedBaseX, cachedBaseY, margin + rectangleWidth + (fontsize / 3), cachedHeight, renderer->a(settings.backgroundColor));
+            renderer->drawRoundedRectSingleThreaded(cachedBaseX + frameOffsetX, cachedBaseY + frameOffsetY, margin + rectangleWidth + (fontsize / 3), cachedHeight, 11, a(bgColor));
+            
             
             // Split Variables into lines for individual positioning
             std::vector<std::string> variableLines;
@@ -325,7 +338,7 @@ public:
             }
             
             // Draw each label and variable line individually
-            uint32_t currentY = cachedBaseY + fontsize + settings.spacing;
+            uint32_t currentY = cachedBaseY + fontsize + settings.spacing + topPadding;
             size_t labelIndex = 0;
             
             static const std::vector<std::string> specialChars = {""};
@@ -337,13 +350,13 @@ public:
                     //u32 width = renderer->getTextDimensions(labelLines[labelIndex].c_str(), fontsize);
                     labelWidth = renderer->getTextDimensions(labelLines[labelIndex].c_str(), false, fontsize).first;
                     labelCenterX = cachedBaseX + (margin / 2) - (labelWidth / 2);
-                    renderer->drawString(labelLines[labelIndex].c_str(), false, labelCenterX, currentY, fontsize, settings.catColor);
+                    renderer->drawString(labelLines[labelIndex].c_str(), false, labelCenterX + frameOffsetX, currentY + frameOffsetY, fontsize, settings.catColor);
                 }
                 
                 // Draw variable data
                 //renderer->drawString(variableLines[i].c_str(), false, cachedBaseX + margin, currentY, fontsize, renderer->a(settings.textColor));
                 //renderer->drawStringWith(variableLines[i].c_str(), false, cachedBaseX + margin, currentY, fontsize, renderer->a(settings.textColor));
-                renderer->drawStringWithColoredSections(variableLines[i].c_str(), false, specialChars, cachedBaseX + margin, currentY, fontsize, settings.textColor, a(settings.separatorColor));
+                renderer->drawStringWithColoredSections(variableLines[i].c_str(), false, specialChars, cachedBaseX + margin + frameOffsetX, currentY + frameOffsetY, fontsize, settings.textColor, a(settings.separatorColor));
 
                 currentY += fontsize + settings.spacing;   // previously += fontsize
                 ++labelIndex;
@@ -821,23 +834,220 @@ public:
         }
 
     }
+
     virtual bool handleInput(u64 keysDown, u64 keysHeld, const HidTouchState &touchPos, HidAnalogStickState joyStickPosLeft, HidAnalogStickState joyStickPosRight) override {
-        if (isKeyComboPressed(keysHeld, keysDown)) {
-            isRendering = false;
-            leventSignal(&renderingStopEvent);
-            TeslaFPS = 60;
-            if (skipMain)
-                tsl::goBack();
-            else {
-                tsl::setNextOverlay(filepath.c_str(), "--lastSelectedItem Mini");
-                tsl::Overlay::get()->close();
+        // Static variables to maintain drag state between function calls
+        //static bool isDragging = false;
+        static bool oldTouchDetected = false;
+        static HidTouchState initialTouchPos = {0};
+        static int initialFrameOffsetX = 0;
+        static int initialFrameOffsetY = 0;
+        static constexpr int TOUCH_THRESHOLD = 8; // Reduced threshold for better responsiveness
+        static bool hasMoved = false;
+        static u64 lastTouchTime = 0;
+        static constexpr u64 TOUCH_DEBOUNCE_NS = 16000000ULL; // 16ms debounce
+    
+        // Get current time for debouncing
+        u64 currentTime = armTicksToNs(armGetSystemTick());
+        
+        // Better touch detection - check if coordinates are within reasonable screen bounds
+        // and different from invalid/default values
+        bool currentTouchDetected = (touchPos.x > 0 && touchPos.y > 0 && 
+                                    touchPos.x < 1280 && touchPos.y < 720);
+        
+        // Debounce touch detection
+        if (currentTouchDetected && !oldTouchDetected) {
+            if (currentTime - lastTouchTime < TOUCH_DEBOUNCE_NS) {
+                currentTouchDetected = false; // Ignore rapid touch changes
+            } else {
+                lastTouchTime = currentTime;
             }
-            return true;
         }
-        else if (((keysDown & KEY_L) && (keysDown & KEY_ZL)) || ((keysDown & KEY_L) && (keysHeld & KEY_ZL)) || ((keysHeld & KEY_L) && (keysDown & KEY_ZL))) { 
-            FPSmin = 254; 
-            FPSmax = 0; 
-        } 
-        return false;
+        
+        // Calculate overlay bounds more carefully
+        const uint32_t margin = (fontsize * 4);
+        
+        // Get the exact same calculation as in createUI - use static variables to cache
+        static int cachedBaseX = 0;
+        static int cachedBaseY = 0;
+        static uint32_t cachedOverlayHeight = 0;
+        static bool boundsNeedUpdate = true;
+        static std::string lastVariables = "";
+        
+        // Only recalculate bounds when Variables change or first time
+        if (boundsNeedUpdate || std::string(Variables) != lastVariables) {
+            // Calculate actual entry count from Variables string
+            size_t actualEntryCount = 1; // Start with 1 for the first line
+            for (size_t i = 0; Variables[i] != '\0'; i++) {
+                if (Variables[i] == '\n') {
+                    actualEntryCount++;
+                }
+            }
+            
+            cachedOverlayHeight = ((fontsize + settings.spacing) * actualEntryCount) + 
+                                 (fontsize / 3) + settings.spacing + topPadding + bottomPadding;
+            
+            // Position calculation based on settings (matching createUI logic)
+            cachedBaseX = 0;
+            cachedBaseY = 0;
+            
+            if (ult::useRightAlignment) {
+                cachedBaseX = 448 - (margin + rectangleWidth + (fontsize / 3));
+            } else {
+                switch (settings.setPos) {
+                    case 1:
+                        cachedBaseX = 224 - ((margin + rectangleWidth + (fontsize / 3)) / 2);
+                        break;
+                    case 4:
+                        cachedBaseX = 224 - ((margin + rectangleWidth + (fontsize / 3)) / 2);
+                        cachedBaseY = 360 - cachedOverlayHeight / 2;
+                        break;
+                    case 7:
+                        cachedBaseX = 224 - ((margin + rectangleWidth + (fontsize / 3)) / 2);
+                        cachedBaseY = 720 - cachedOverlayHeight;
+                        break;
+                    case 2:
+                        cachedBaseX = 448 - (margin + rectangleWidth + (fontsize / 3));
+                        break;
+                    case 5:
+                        cachedBaseX = 448 - (margin + rectangleWidth + (fontsize / 3));
+                        cachedBaseY = 360 - cachedOverlayHeight / 2;
+                        break;
+                    case 8:
+                        cachedBaseX = 448 - (margin + rectangleWidth + (fontsize / 3));
+                        cachedBaseY = 720 - cachedOverlayHeight;
+                        break;
+                }
+            }
+            
+            boundsNeedUpdate = false;
+            lastVariables = Variables;
+        }
+        
+        const int overlayX = cachedBaseX + frameOffsetX;
+        const int overlayY = cachedBaseY + frameOffsetY;
+        const int overlayWidth = margin + rectangleWidth + (fontsize / 3);
+        const int overlayHeight = cachedOverlayHeight;
+        
+        // Add some padding to make touch detection more forgiving
+        const int touchPadding = 5;
+        const int touchableX = overlayX - touchPadding;
+        const int touchableY = overlayY - touchPadding;
+        const int touchableWidth = overlayWidth + (touchPadding * 2);
+        const int touchableHeight = overlayHeight + (touchPadding * 2);
+        
+        // Screen boundaries for clamping
+        static constexpr int screenWidth = 1280;
+        static constexpr int screenHeight = 720;
+        const int minX = -cachedBaseX + 10; // Keep some margin from screen edge
+        const int maxX = screenWidth - overlayWidth - cachedBaseX - 10;
+        const int minY = -cachedBaseY + 10;
+        const int maxY = screenHeight - overlayHeight - cachedBaseY - 10;
+    
+        if (currentTouchDetected) {
+            const int touchX = touchPos.x;
+            const int touchY = touchPos.y;
+            
+            if (!oldTouchDetected) {
+                // Touch just started - check if touch is within overlay bounds (with padding)
+                if (touchX >= touchableX && touchX <= touchableX + touchableWidth &&
+                    touchY >= touchableY && touchY <= touchableY + touchableHeight) {
+                    
+                    // Initialize drag state
+                    isDragging = true;
+                    isRendering = false; // Stop rendering during active drag
+                    leventSignal(&renderingStopEvent);
+                    hasMoved = false;
+                    initialTouchPos = touchPos;
+                    initialFrameOffsetX = frameOffsetX;
+                    initialFrameOffsetY = frameOffsetY;
+                    
+                    // Optionally provide haptic feedback or visual indication
+                    // You could add a brief color change or vibration here
+                }
+            } else if (isDragging) {
+                // Continue dragging
+                const int deltaX = touchX - initialTouchPos.x;
+                const int deltaY = touchY - initialTouchPos.y;
+                
+                // Check if we've moved enough to consider this a drag
+                if (!hasMoved) {
+                    const int totalMovement = abs(deltaX) + abs(deltaY);
+                    if (totalMovement >= TOUCH_THRESHOLD) {
+                        hasMoved = true;
+                        
+                    }
+                }
+                
+                if (hasMoved) {
+                    // Update frame offsets with boundary checking
+                    //int newFrameOffsetX = initialFrameOffsetX + deltaX;
+                    //int newFrameOffsetY = initialFrameOffsetY + deltaY;
+                    
+                    // Clamp to screen boundaries
+                    const int newFrameOffsetX = std::max(minX, std::min(maxX, initialFrameOffsetX + deltaX));
+                    const int newFrameOffsetY = std::max(minY, std::min(maxY, initialFrameOffsetY + deltaY));
+                    
+                    frameOffsetX = newFrameOffsetX;
+                    frameOffsetY = newFrameOffsetY;
+                    
+                    // Force bounds recalculation on next frame
+                    boundsNeedUpdate = true;
+                }
+            }
+        } else {
+            // Touch released or no touch
+            if (oldTouchDetected && isDragging) {
+                // Touch just ended
+                if (hasMoved) {
+                    
+                    
+                    // Optional: Save the new position to your settings
+                    // This would persist the overlay position across sessions
+                    // GetConfigSettings(&settings);
+                    // settings.overlayOffsetX = frameOffsetX;
+                    // settings.overlayOffsetY = frameOffsetY;
+                    // SaveConfigSettings(&settings);
+                }
+                //isRendering = true; // Resume rendering
+                //leventClear(&renderingStopEvent);
+            }
+            
+            // Reset drag state
+            if (isDragging && !currentTouchDetected) {
+                ult::setIniFileValue("sdmc:/config/status-monitor/config.ini", "mini", "frame_offset_x", std::to_string(frameOffsetX));
+                ult::setIniFileValue("sdmc:/config/status-monitor/config.ini", "mini", "frame_offset_y", std::to_string(frameOffsetY));
+                isDragging = false;
+                hasMoved = false;
+                isRendering = true; // Ensure rendering is back on
+                leventClear(&renderingStopEvent);
+            }
+        }
+        
+        // Update touch state for next frame
+        oldTouchDetected = currentTouchDetected;
+        
+        // Handle existing key input logic (but don't interfere with dragging)
+        if (!isDragging) {
+            if (isKeyComboPressed(keysHeld, keysDown)) {
+                isRendering = false;
+                leventSignal(&renderingStopEvent);
+                TeslaFPS = 60;
+                if (skipMain)
+                    tsl::goBack();
+                else {
+                    tsl::setNextOverlay(filepath.c_str(), "--lastSelectedItem Mini");
+                    tsl::Overlay::get()->close();
+                }
+                return true;
+            }
+            else if (((keysDown & KEY_L) && (keysDown & KEY_ZL)) || ((keysDown & KEY_L) && (keysHeld & KEY_ZL)) || ((keysHeld & KEY_L) && (keysDown & KEY_ZL))) { 
+                FPSmin = 254; 
+                FPSmax = 0; 
+            }
+        }
+        
+        // Return true if we handled the input (during dragging)
+        return isDragging;
     }
 };

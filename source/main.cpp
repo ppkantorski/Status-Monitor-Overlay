@@ -549,6 +549,9 @@ bool checkOverlayFile(const std::string& filename) {
 
 // Helper function to setup micro mode paths
 void setupMiniMode() {
+    ult::DefaultFramebufferWidth = 1280;
+    ult::DefaultFramebufferHeight = 720;
+
     // Try user-specified filename first, then fallback to default
     const std::string primaryPath = folderpath + filename;
     
@@ -634,6 +637,8 @@ int main(int argc, char **argv) {
         else if (strcasecmp(argv[arg], "-mini") == 0) {
             FullMode = false;
             skipMain = true;
+            ult::DefaultFramebufferWidth = 1280;
+            ult::DefaultFramebufferHeight = 720;
             ult::useRightAlignment = (ult::parseValueFromIniSection("sdmc:/config/status-monitor/config.ini", "mini", "right_alignment") == ult::TRUE_STR);
             return tsl::loop<MiniEntryOverlay>(argc, argv);
         }

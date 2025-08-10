@@ -160,10 +160,14 @@ struct NxFpsSharedBlock {
     uint8_t SetBuffers;
     uint8_t ActiveBuffers;
     uint8_t SetActiveBuffers;
-    uint8_t displaySync;
+    bool displaySync;
     resolutionCalls renderCalls[8];
     resolutionCalls viewportCalls[8];
     bool forceOriginalRefreshRate;
+    bool dontForce60InDocked;
+    bool forceSuspend;
+    uint8_t currentRefreshRate;
+    float readSpeedPerSecond;
 } NX_PACKED;
 
 NxFpsSharedBlock* NxFps = 0;
@@ -748,7 +752,7 @@ void StartInfoThread() {
     threadCreate(&t3, CheckCore, &coreIds[2], NULL, 0x1000, 0x10, 2);
     threadCreate(&t4, CheckCore, &coreIds[3], NULL, 0x1000, 0x10, 3);
     threadCreate(&t7, Misc3, NULL, NULL, 0x1000, 0x3F, -2);
-    
+
     threadStart(&t1);
     threadStart(&t2);
     threadStart(&t3);
@@ -1125,6 +1129,7 @@ struct FullSettings {
     bool showTargetFreqs;
     bool showFPS;
     bool showRES;
+    bool showRDSD;
 };
 
 struct MiniSettings {
@@ -1146,6 +1151,8 @@ struct MiniSettings {
     std::string show;
     bool showRAMLoad;
     int setPos;
+    int frameOffsetX;
+    int frameOffsetY;
 };
 
 struct MicroSettings {
@@ -1219,6 +1226,8 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
     settings->showRAMLoad = true;
     settings->refreshRate = 1;
     settings->setPos = 0;
+    settings -> frameOffsetX = 8;
+    settings -> frameOffsetY = 8;
 
     // Open and read file efficiently
     FILE* configFile = fopen("sdmc:/config/status-monitor/config.ini", "r");
@@ -1377,6 +1386,16 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
         } else if (key == "BOTTOM") {
             settings->setPos += 6;
         }
+    }
+
+    it = section.find("frame_offset_x");
+    if (it != section.end()) {
+        settings->frameOffsetX = atol(it->second.c_str());
+    }
+
+    it = section.find("frame_offset_y");
+    if (it != section.end()) {
+        settings->frameOffsetY = atol(it->second.c_str());
     }
 }
 
@@ -1709,6 +1728,7 @@ ALWAYS_INLINE void GetConfigSettings(FullSettings* settings) {
     settings -> showTargetFreqs = true;
     settings -> showFPS = true;
     settings -> showRES = true;
+    settings -> showRDSD = true;
 
     FILE* configFileIn = fopen("sdmc:/config/status-monitor/config.ini", "r");
     if (!configFileIn)
@@ -1769,6 +1789,11 @@ ALWAYS_INLINE void GetConfigSettings(FullSettings* settings) {
         key = parsedData[mode]["show_res"];
         convertToUpper(key);
         settings -> showRES = key.compare("FALSE");
+    }
+    if (parsedData[mode].find("show_read_speed") != parsedData[mode].end()) {
+        key = parsedData[mode]["show_read_speed"];
+        convertToUpper(key);
+        settings -> showRDSD = key.compare("FALSE");
     }
 }
 
