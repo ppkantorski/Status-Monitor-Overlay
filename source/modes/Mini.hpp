@@ -995,8 +995,10 @@ public:
             // Touch just released and we were touch dragging
             if (hasMoved) {
                 // Save position when touch drag ends
-                ult::setIniFileValue("sdmc:/config/status-monitor/config.ini", "mini", "frame_offset_x", std::to_string(frameOffsetX));
-                ult::setIniFileValue("sdmc:/config/status-monitor/config.ini", "mini", "frame_offset_y", std::to_string(frameOffsetY));
+                auto iniData = ult::getParsedDataFromIniFile("sdmc:/config/status-monitor/config.ini");
+                iniData["mini"]["frame_offset_x"] = std::to_string(frameOffsetX);
+                iniData["mini"]["frame_offset_y"] = std::to_string(frameOffsetY);
+                ult::saveIniFileData("sdmc:/config/status-monitor/config.ini", iniData);
             }
             
             // Reset touch drag state
@@ -1047,8 +1049,10 @@ public:
             }
         } else if (!currentMinusHeld && oldMinusHeld && isDragging) {
             // KEY_MINUS just released - stop joystick dragging
-            ult::setIniFileValue("sdmc:/config/status-monitor/config.ini", "mini", "frame_offset_x", std::to_string(frameOffsetX));
-            ult::setIniFileValue("sdmc:/config/status-monitor/config.ini", "mini", "frame_offset_y", std::to_string(frameOffsetY));
+            auto iniData = ult::getParsedDataFromIniFile("sdmc:/config/status-monitor/config.ini");
+            iniData["mini"]["frame_offset_x"] = std::to_string(frameOffsetX);
+            iniData["mini"]["frame_offset_y"] = std::to_string(frameOffsetY);
+            ult::saveIniFileData("sdmc:/config/status-monitor/config.ini", iniData);
             isDragging = false;
             isRendering = true;
             leventClear(&renderingStopEvent);
