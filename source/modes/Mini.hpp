@@ -1016,9 +1016,9 @@ public:
             leventSignal(&renderingStopEvent);
         } else if (currentMinusHeld && isDragging) {
             // Continue joystick dragging
-            static constexpr float JOYSTICK_BASE_SENSITIVITY = 0.00008f; // Slow for small movements
+            static constexpr float JOYSTICK_BASE_SENSITIVITY = 0.00006f; // Slow for small movements
             static constexpr float JOYSTICK_MAX_SENSITIVITY = 0.0005f;  // Reduced max speed
-            static constexpr int JOYSTICK_DEADZONE = 1000;
+            static constexpr int JOYSTICK_DEADZONE = 400;
             
             // Only move if joystick is outside deadzone
             if (abs(joyStickPosRight.x) > JOYSTICK_DEADZONE || abs(joyStickPosRight.y) > JOYSTICK_DEADZONE) {
