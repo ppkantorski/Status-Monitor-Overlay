@@ -628,19 +628,34 @@ public:
         //}
 
         /* ── RAM voltage ───────────────────────────── */
-        if (settings.realVolts) {
+        if (settings.realVolts && (settings.showVDD2 || settings.showVDDQ)) {
             /* realRAM_mV packs VDD2 | VDDQ in 10-µV units        *
              * → split, convert to mV                           */
             const float mv_vdd2 = (realRAM_mV / 10000) / 10.0f;   // VDD2
             const uint32_t mv_vddq = (realRAM_mV % 10000) / 10;   // VDDQ
         
-            if (isMariko) {
-                snprintf(RAM_volt_c, sizeof(RAM_volt_c),
-                         "%.1f mV%u mV", mv_vdd2, mv_vddq);
-            } else {
-                snprintf(RAM_volt_c, sizeof(RAM_volt_c),
-                         "%.1f mV", mv_vdd2);
+            // Build voltage string based on settings
+            RAM_volt_c[0] = '\0'; // Start with empty string
+            char temp_buffer[16];
+            
+            if (settings.showVDD2) {
+                if (settings.decimalVDD2) {
+                    snprintf(temp_buffer, sizeof(temp_buffer), "%.1f mV", mv_vdd2);
+                } else {
+                    snprintf(temp_buffer, sizeof(temp_buffer), "%u mV", (uint32_t)mv_vdd2);
+                }
+                strcat(RAM_volt_c, temp_buffer);
             }
+            
+            if (settings.showVDDQ && isMariko) {
+                if (RAM_volt_c[0] != '\0') {
+                    strcat(RAM_volt_c, "");
+                }
+                snprintf(temp_buffer, sizeof(temp_buffer), "%u mV", mv_vddq);
+                strcat(RAM_volt_c, temp_buffer);
+            }
+        } else {
+            RAM_volt_c[0] = '\0'; // Empty if voltages disabled
         }
         
         /* ── Battery / power draw ───────────────────────────── */

@@ -1141,6 +1141,7 @@ struct MiniSettings {
     bool showFanPercentage;
     bool showVDDQ;
     bool showVDD2;
+    bool decimalVDD2;
     bool showDTC;
     std::string dtcFormat;
     size_t handheldFontSize;
@@ -1162,6 +1163,9 @@ struct MicroSettings {
     bool realFrequencies;
     bool realVolts; 
     bool showFullCPU; 
+    bool showVDDQ;
+    bool showVDD2;
+    bool decimalVDD2;
     bool showFullResolution;
     size_t handheldFontSize;
     size_t dockedFontSize;
@@ -1217,6 +1221,7 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
     settings -> showFullCPU = false;
     settings -> showVDDQ = false;
     settings -> showVDD2 = true;
+    settings -> decimalVDD2 = false;
     settings -> showDTC = true;
     settings -> dtcFormat = "%m-%d-%Y%H:%M:%S";//"%Y-%m-%d %I:%M:%S %p";
     settings->handheldFontSize = 15;
@@ -1252,8 +1257,11 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
     auto sectionIt = parsedData.find("mini");
     if (sectionIt == parsedData.end()) return;
     
+    std::string key;
+    uint16_t temp;
+
     const auto& section = sectionIt->second;
-    
+
     // Process refresh_rate
     auto it = section.find("refresh_rate");
     if (it != section.end()) {
@@ -1263,14 +1271,14 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
     // Process boolean flags
     it = section.find("real_freqs");
     if (it != section.end()) {
-        std::string key = it->second;
+        key = it->second;
         convertToUpper(key);
         settings->realFrequencies = (key == "TRUE");
     }
     
     it = section.find("real_volts");
     if (it != section.end()) {
-        std::string key = it->second;
+        key = it->second;
         convertToUpper(key);
         settings->realVolts = (key == "TRUE");
     }
@@ -1297,14 +1305,14 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
     // Process colors
     it = section.find("background_color");
     if (it != section.end()) {
-        uint16_t temp = 0;
+        temp = 0;
         if (convertStrToRGBA4444(it->second, &temp))
             settings->backgroundColor = temp;
     }
     
     it = section.find("separator_color");
     if (it != section.end()) {
-        uint16_t temp = 0;
+        temp = 0;
         if (convertStrToRGBA4444(it->second, &temp))
             settings->separatorColor = temp;
     }
@@ -1312,14 +1320,14 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
 
     it = section.find("cat_color");
     if (it != section.end()) {
-        uint16_t temp = 0;
+        temp = 0;
         if (convertStrToRGBA4444(it->second, &temp))
             settings->catColor = temp;
     }
     
     it = section.find("text_color");
     if (it != section.end()) {
-        uint16_t temp = 0;
+        temp = 0;
         if (convertStrToRGBA4444(it->second, &temp))
             settings->textColor = temp;
     }
@@ -1327,35 +1335,42 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
     // Process RAM load flag
     it = section.find("show_full_cpu");
     if (it != section.end()) {
-        std::string key = it->second;
+        key = it->second;
         convertToUpper(key);
         settings->showFullCPU = !(key == "FALSE");
     }
 
     it = section.find("show_full_res");
     if (it != section.end()) {
-        std::string key = it->second;
+        key = it->second;
         convertToUpper(key);
         settings->showFullResolution = !(key == "FALSE");
     }
 
     it = section.find("show_vddq");
     if (it != section.end()) {
-        std::string key = it->second;
+        key = it->second;
         convertToUpper(key);
         settings->showVDDQ = !(key == "FALSE");
     }
 
     it = section.find("show_vdd2");
     if (it != section.end()) {
-        std::string key = it->second;
+        key = it->second;
         convertToUpper(key);
         settings->showVDD2 = !(key == "FALSE");
     }
 
+    it = section.find("decimal_vdd2");
+    if (it != section.end()) {
+        key = it->second;
+        convertToUpper(key);
+        settings->decimalVDD2 = !(key == "FALSE");
+    }
+
     it = section.find("show_dtc");
     if (it != section.end()) {
-        std::string key = it->second;
+        key = it->second;
         convertToUpper(key);
         settings->showDTC = !(key == "FALSE");
     }
@@ -1363,7 +1378,7 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
     // Process show string
     it = section.find("show");
     if (it != section.end()) {
-        std::string key = it->second;
+        key = it->second;
         convertToUpper(key);
         settings->show = std::move(key);
     }
@@ -1371,7 +1386,7 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
     // Process RAM load flag
     it = section.find("replace_MB_with_RAM_load");
     if (it != section.end()) {
-        std::string key = it->second;
+        key = it->second;
         convertToUpper(key);
         settings->showRAMLoad = (key != "FALSE");
     }
@@ -1379,7 +1394,7 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
     // Process alignment settings
     it = section.find("layer_width_align");
     if (it != section.end()) {
-        std::string key = it->second;
+        key = it->second;
         convertToUpper(key);
         if (key == "CENTER") {
             settings->setPos = 1;
@@ -1390,7 +1405,7 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
     
     it = section.find("layer_height_align");
     if (it != section.end()) {
-        std::string key = it->second;
+        key = it->second;
         convertToUpper(key);
         if (key == "CENTER") {
             settings->setPos += 3;
@@ -1411,145 +1426,185 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
 }
 
 ALWAYS_INLINE void GetConfigSettings(MicroSettings* settings) {
-    settings -> realFrequencies = true;
-    settings -> realVolts = true;
-    settings -> showFullCPU = false;
-    settings -> showFullResolution = false;
-    settings -> handheldFontSize = 15;
-    settings -> dockedFontSize = 15;
-    settings -> alignTo = 1;
-    convertStrToRGBA4444("#0009", &(settings -> backgroundColor));
-    convertStrToRGBA4444("#2DFF", &(settings -> separatorColor));
-    convertStrToRGBA4444("#2DFF", &(settings -> catColor));
-    convertStrToRGBA4444("#FFFF", &(settings -> textColor));
-    settings -> show = "FPS+CPU+GPU+RAM+SOC+BAT";
-    settings -> showRAMLoad = true;
-    settings -> setPosBottom = false;
-    settings -> refreshRate = 1;
+    // Initialize defaults
+    settings->realFrequencies = true;
+    settings->realVolts = true;
+    settings->showFullCPU = false;
+    settings->showVDDQ = true;
+    settings->showVDD2 = true;
+    settings->decimalVDD2 = false;
+    settings->showFullResolution = false;
+    settings->handheldFontSize = 15;
+    settings->dockedFontSize = 15;
+    settings->alignTo = 1;
+    convertStrToRGBA4444("#0009", &(settings->backgroundColor));
+    convertStrToRGBA4444("#2DFF", &(settings->separatorColor));
+    convertStrToRGBA4444("#2DFF", &(settings->catColor));
+    convertStrToRGBA4444("#FFFF", &(settings->textColor));
+    settings->show = "FPS+CPU+GPU+RAM+SOC+BAT";
+    settings->showRAMLoad = true;
+    settings->setPosBottom = false;
+    settings->refreshRate = 1;
 
-    FILE* configFileIn = fopen(configIniPath, "r");
-    if (!configFileIn)
-        return;
-    fseek(configFileIn, 0, SEEK_END);
-    const long fileSize = ftell(configFileIn);
-    rewind(configFileIn);
-
-    std::string fileDataString(fileSize, '\0');
-    fread(&fileDataString[0], sizeof(char), fileSize, configFileIn);
-    fclose(configFileIn);
+    // Open and read file efficiently
+    FILE* configFile = fopen(configIniPath, "r");
+    if (!configFile) return;
     
-    auto parsedData = ult::parseIni(fileDataString);
+    fseek(configFile, 0, SEEK_END);
+    const long fileSize = ftell(configFile);
+    fseek(configFile, 0, SEEK_SET);
 
-    static std::string key;
-    const char* mode = "micro";
-    if (parsedData.find(mode) == parsedData.end())
-        return;
-    if (parsedData[mode].find("refresh_rate") != parsedData[mode].end()) {
-        static constexpr long maxFPS = 60;
-        static constexpr long minFPS = 1;
-        
-        key = parsedData[mode]["refresh_rate"];
-        const long rate = atol(key.c_str());
-        if (rate < minFPS) {
-            settings -> refreshRate = minFPS;
-        }
-        else if (rate > maxFPS)
-            settings -> refreshRate = maxFPS;
-        else settings -> refreshRate = rate;    
+    std::string fileData;
+    fileData.resize(fileSize);
+    fread(fileData.data(), 1, fileSize, configFile);
+    fclose(configFile);
+    
+    auto parsedData = ult::parseIni(fileData);
+
+    // Cache section lookup
+    auto sectionIt = parsedData.find("micro");
+    if (sectionIt == parsedData.end()) return;
+    
+    std::string key;
+    uint16_t temp;
+
+    const auto& section = sectionIt->second;
+
+    // Process refresh_rate
+    auto it = section.find("refresh_rate");
+    if (it != section.end()) {
+        settings->refreshRate = std::clamp(atol(it->second.c_str()), 1L, 60L);
     }
-    if (parsedData[mode].find("real_freqs") != parsedData[mode].end()) {
-        key = parsedData[mode]["real_freqs"];
+    
+    // Process boolean flags
+    it = section.find("real_freqs");
+    if (it != section.end()) {
+        key = it->second;
         convertToUpper(key);
-        settings -> realFrequencies = !(key.compare("TRUE"));
+        settings->realFrequencies = (key == "TRUE");
     }
-    if (parsedData[mode].find("real_volts") != parsedData[mode].end()) {  
-        key = parsedData[mode]["real_volts"];  
-        convertToUpper(key);  
-        settings -> realVolts = !(key.compare("TRUE"));  
-    }  
-    if (parsedData[mode].find("show_full_cpu") != parsedData[mode].end()) { 
-        key = parsedData[mode]["show_full_cpu"]; 
-        convertToUpper(key); 
-        settings -> showFullCPU = !(key.compare("TRUE")); 
-    } 
-    if (parsedData[mode].find("show_full_res") != parsedData[mode].end()) { 
-        key = parsedData[mode]["show_full_res"]; 
+    
+    it = section.find("real_volts");
+    if (it != section.end()) {
+        key = it->second;
         convertToUpper(key);
-        settings -> showFullResolution = !(key.compare("TRUE")); 
-    } 
-    if (parsedData[mode].find("text_align") != parsedData[mode].end()) {
-        key = parsedData[mode]["text_align"];
+        settings->realVolts = (key == "TRUE");
+    }
+    
+    it = section.find("show_full_cpu");
+    if (it != section.end()) {
+        key = it->second;
         convertToUpper(key);
-        if (!key.compare("LEFT")) {
-            settings -> alignTo = 0;
-        }
-        else if (!key.compare("CENTER")) {
-            settings -> alignTo = 1;
-        }        
-        else if (!key.compare("RIGHT")) {
-            settings -> alignTo = 2;
-        }
+        settings->showFullCPU = (key == "TRUE");
+    }
+    
+    it = section.find("show_full_res");
+    if (it != section.end()) {
+        key = it->second;
+        convertToUpper(key);
+        settings->showFullResolution = (key == "TRUE");
     }
 
-    static constexpr long maxFontSize = 18;
-    static constexpr long minFontSize = 8;
+    it = section.find("show_vddq");
+    if (it != section.end()) {
+        key = it->second;
+        convertToUpper(key);
+        settings->showVDDQ = !(key == "FALSE");
+    }
 
-    if (parsedData[mode].find("handheld_font_size") != parsedData[mode].end()) {
-        key = parsedData[mode]["handheld_font_size"];
-        const long fontsize = atol(key.c_str());
-        if (fontsize < minFontSize)
-            settings -> handheldFontSize = minFontSize;
-        else if (fontsize > maxFontSize)
-            settings -> handheldFontSize = maxFontSize;
-        else settings -> handheldFontSize = fontsize;    
-    }
-    if (parsedData[mode].find("docked_font_size") != parsedData[mode].end()) {
-        key = parsedData[mode]["docked_font_size"];
-        const long fontsize = atol(key.c_str());
-        if (fontsize < minFontSize)
-            settings -> dockedFontSize = minFontSize;
-        else if (fontsize > maxFontSize)
-            settings -> dockedFontSize = maxFontSize;
-        else settings -> dockedFontSize = fontsize;    
-    }
-    if (parsedData[mode].find("background_color") != parsedData[mode].end()) {
-        key = parsedData[mode]["background_color"];
-        uint16_t temp = 0;
-        if (convertStrToRGBA4444(key, &temp))
-            settings -> backgroundColor = temp;
-    }
-    if (parsedData[mode].find("separator_color") != parsedData[mode].end()) {
-        key = parsedData[mode]["separator_color"];
-        uint16_t temp = 0;
-        if (convertStrToRGBA4444(key, &temp))
-            settings -> separatorColor = temp;
-    }
-    if (parsedData[mode].find("cat_color") != parsedData[mode].end()) {
-        key = parsedData[mode]["cat_color"];
-        uint16_t temp = 0;
-        if (convertStrToRGBA4444(key, &temp))
-            settings -> catColor = temp;
-    }
-    if (parsedData[mode].find("text_color") != parsedData[mode].end()) {
-        key = parsedData[mode]["text_color"];
-        uint16_t temp = 0;
-        if (convertStrToRGBA4444(key, &temp))
-            settings -> textColor = temp;
-    }
-    if (parsedData[mode].find("replace_GB_with_RAM_load") != parsedData[mode].end()) {
-        key = parsedData[mode]["replace_GB_with_RAM_load"];
+    it = section.find("show_vdd2");
+    if (it != section.end()) {
+        key = it->second;
         convertToUpper(key);
-        settings -> showRAMLoad = key.compare("FALSE");
+        settings->showVDD2 = !(key == "FALSE");
     }
-    if (parsedData[mode].find("show") != parsedData[mode].end()) {
-        key = parsedData[mode]["show"];
+
+    it = section.find("decimal_vdd2");
+    if (it != section.end()) {
+        key = it->second;
         convertToUpper(key);
-        settings -> show = key;
+        settings->decimalVDD2 = !(key == "FALSE");
     }
-    if (parsedData[mode].find("layer_height_align") != parsedData[mode].end()) {
-        key = parsedData[mode]["layer_height_align"];
+    
+    // Process font sizes with shared bounds
+    constexpr long minFontSize = 8;
+    constexpr long maxFontSize = 18;
+    
+    it = section.find("handheld_font_size");
+    if (it != section.end()) {
+        settings->handheldFontSize = std::clamp(atol(it->second.c_str()), minFontSize, maxFontSize);
+    }
+    
+    it = section.find("docked_font_size");
+    if (it != section.end()) {
+        settings->dockedFontSize = std::clamp(atol(it->second.c_str()), minFontSize, maxFontSize);
+    }
+    
+    // Process colors
+    it = section.find("background_color");
+    if (it != section.end()) {
+        temp = 0;
+        if (convertStrToRGBA4444(it->second, &temp))
+            settings->backgroundColor = temp;
+    }
+    
+    it = section.find("separator_color");
+    if (it != section.end()) {
+        temp = 0;
+        if (convertStrToRGBA4444(it->second, &temp))
+            settings->separatorColor = temp;
+    }
+    
+    it = section.find("cat_color");
+    if (it != section.end()) {
+        temp = 0;
+        if (convertStrToRGBA4444(it->second, &temp))
+            settings->catColor = temp;
+    }
+    
+    it = section.find("text_color");
+    if (it != section.end()) {
+        temp = 0;
+        if (convertStrToRGBA4444(it->second, &temp))
+            settings->textColor = temp;
+    }
+    
+    // Process text alignment
+    it = section.find("text_align");
+    if (it != section.end()) {
+        key = it->second;
         convertToUpper(key);
-        settings -> setPosBottom = !key.compare("BOTTOM");
+        if (key == "LEFT") {
+            settings->alignTo = 0;
+        } else if (key == "CENTER") {
+            settings->alignTo = 1;
+        } else if (key == "RIGHT") {
+            settings->alignTo = 2;
+        }
+    }
+    
+    // Process RAM load flag
+    it = section.find("replace_GB_with_RAM_load");
+    if (it != section.end()) {
+        key = it->second;
+        convertToUpper(key);
+        settings->showRAMLoad = (key != "FALSE");
+    }
+    
+    // Process show string
+    it = section.find("show");
+    if (it != section.end()) {
+        key = it->second;
+        convertToUpper(key);
+        settings->show = std::move(key);
+    }
+    
+    // Process layer height alignment
+    it = section.find("layer_height_align");
+    if (it != section.end()) {
+        key = it->second;
+        convertToUpper(key);
+        settings->setPosBottom = (key == "BOTTOM");
     }
 }
 

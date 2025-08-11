@@ -149,14 +149,21 @@ public:
                             width = renderer->getTextDimensions("100%@4444.4", false, fontsize).first;
                         } else {
                             if (isMariko) {
-                                if (settings.showVDDQ && settings.showVDD2)
+                                if (settings.showVDD2 && settings.decimalVDD2 && settings.showVDDQ)
                                     width = renderer->getTextDimensions("100%@4444.44444.4444 mV", false, fontsize).first;
-                                else if (settings.showVDDQ)
+                                else if (settings.showVDD2 && !settings.decimalVDD2 && settings.showVDDQ)
+                                    width = renderer->getTextDimensions("100%@4444.44444444 mV", false, fontsize).first;
+                                else if (settings.showVDD2 && settings.decimalVDD2)
                                     width = renderer->getTextDimensions("100%@4444.44444.4 mV", false, fontsize).first;
-                                else if (settings.showVDD2)
+                                else if (settings.showVDD2 && !settings.decimalVDD2)
+                                    width = renderer->getTextDimensions("100%@4444.44444 mV", false, fontsize).first;
+                                else if (settings.showVDDQ)
                                     width = renderer->getTextDimensions("100%@4444.4444 mV", false, fontsize).first;
                             } else {
-                                width = renderer->getTextDimensions("100%@4444.44444.4 mV", false, fontsize).first;
+                                if (settings.decimalVDD2)
+                                    width = renderer->getTextDimensions("100%@4444.44444.4 mV", false, fontsize).first;
+                                else
+                                    width = renderer->getTextDimensions("100%@4444.44444 mV", false, fontsize).first;
                             }
                         }
                     } else if (key == "SOC") {                // new block
@@ -334,20 +341,20 @@ public:
                 : settings.backgroundColor;
 
             int clippingOffsetX = 0, clippingOffsetY = 0;
-            static constexpr int touchPadding = 4;
+            static constexpr int framePadding = 10;
             
             // Check X bounds and calculate clipping offset
-            if (cachedBaseX + frameOffsetX < touchPadding) {
-                clippingOffsetX = touchPadding - (cachedBaseX + frameOffsetX);
-            } else if ((cachedBaseX + frameOffsetX + margin + rectangleWidth + (fontsize / 3)) > 1280 - touchPadding) {
-                clippingOffsetX = (1280 - touchPadding) - (cachedBaseX + frameOffsetX + margin + rectangleWidth + (fontsize / 3));
+            if (cachedBaseX + frameOffsetX < framePadding) {
+                clippingOffsetX = framePadding - (cachedBaseX + frameOffsetX);
+            } else if ((cachedBaseX + frameOffsetX + margin + rectangleWidth + (fontsize / 3)) > 1280 - framePadding) {
+                clippingOffsetX = (1280 - framePadding) - (cachedBaseX + frameOffsetX + margin + rectangleWidth + (fontsize / 3));
             }
             
             // Check Y bounds and calculate clipping offset  
-            if (cachedBaseY + frameOffsetY < touchPadding) {
-                clippingOffsetY = touchPadding - (cachedBaseY + frameOffsetY);
-            } else if ((cachedBaseY + frameOffsetY + cachedHeight) > 720 - touchPadding) {
-                clippingOffsetY = (720 - touchPadding) - (cachedBaseY + frameOffsetY + cachedHeight);
+            if (cachedBaseY + frameOffsetY < framePadding) {
+                clippingOffsetY = framePadding - (cachedBaseY + frameOffsetY);
+            } else if ((cachedBaseY + frameOffsetY + cachedHeight) > 720 - framePadding) {
+                clippingOffsetY = (720 - framePadding) - (cachedBaseY + frameOffsetY + cachedHeight);
             }
             
             // Apply to all drawing calls
@@ -623,22 +630,38 @@ public:
         //} 
         /* ─── RAM ───────────────────────────────────────────── */
         if (settings.realVolts) {
-            const float mv_vdd2 = realRAM_mV / 100000.0f;         // µV → mV (float)
-            const uint32_t mv_vddq = (realRAM_mV % 10000) / 10;   // µV → mV (int)
+            const float mv_vdd2_f = realRAM_mV / 100000.0f;        // µV → VDD2 mV float
+            const uint32_t mv_vdd2_i = realRAM_mV / 100000;        // µV → VDD2 mV int
+            const uint32_t mv_vddq   = (realRAM_mV % 10000) / 10;  // µV → VDDQ mV int
         
             if (isMariko) {
-                if (settings.showVDDQ && settings.showVDD2)
-                    snprintf(MINI_RAM_volt_c, sizeof(MINI_RAM_volt_c),
-                             "%.1f mV%u mV", mv_vdd2, mv_vddq);
-                else if (settings.showVDDQ)
+                if (settings.showVDDQ && settings.showVDD2) {
+                    if (settings.decimalVDD2)
+                        snprintf(MINI_RAM_volt_c, sizeof(MINI_RAM_volt_c),
+                                 "%.1f mV%u mV", mv_vdd2_f, mv_vddq);
+                    else
+                        snprintf(MINI_RAM_volt_c, sizeof(MINI_RAM_volt_c),
+                                 "%u mV%u mV", mv_vdd2_i, mv_vddq);
+                }
+                else if (settings.showVDDQ) {
                     snprintf(MINI_RAM_volt_c, sizeof(MINI_RAM_volt_c),
                              "%u mV", mv_vddq);
-                else if (settings.showVDD2)
-                    snprintf(MINI_RAM_volt_c, sizeof(MINI_RAM_volt_c),
-                             "%.1f mV", mv_vdd2);
+                }
+                else if (settings.showVDD2) {
+                    if (settings.decimalVDD2)
+                        snprintf(MINI_RAM_volt_c, sizeof(MINI_RAM_volt_c),
+                                 "%.1f mV", mv_vdd2_f);
+                    else
+                        snprintf(MINI_RAM_volt_c, sizeof(MINI_RAM_volt_c),
+                                 "%u mV", mv_vdd2_i);
+                }
             } else {
-                snprintf(MINI_RAM_volt_c, sizeof(MINI_RAM_volt_c),
-                         "%.1f mV", mv_vdd2);
+                if (settings.decimalVDD2)
+                    snprintf(MINI_RAM_volt_c, sizeof(MINI_RAM_volt_c),
+                             "%.1f mV", mv_vdd2_f);
+                else
+                    snprintf(MINI_RAM_volt_c, sizeof(MINI_RAM_volt_c),
+                             "%u mV", mv_vdd2_i);
             }
         }
 
