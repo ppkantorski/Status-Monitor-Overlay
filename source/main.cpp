@@ -2,6 +2,7 @@
 #include <tesla.hpp>
 #include "Utils.hpp"
 #include <cstdlib>
+#include <ctime>
 
 //static tsl::elm::OverlayFrame* rootFrame = nullptr;
 static bool skipMain = false;

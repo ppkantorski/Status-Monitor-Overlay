@@ -77,7 +77,7 @@ public:
     virtual tsl::elm::Element* createUI() override {
 
         auto* Status = new tsl::elm::CustomDrawer([this](tsl::gfx::Renderer *renderer, u16 x, u16 y, u16 w, u16 h) {
-            const u16 frameWidth = 448;
+            static constexpr u16 frameWidth = 448;
             
             // Cache parsed settings and calculations
             static std::vector<std::string> showKeys;
@@ -195,6 +195,14 @@ public:
                             width = renderer->getTextDimensions("3840x21603840x2160", false, fontsize).first;
                         else
                             width = renderer->getTextDimensions("2160p2160p", false, fontsize).first;
+                    } else if (key == "DTC" && settings.showDTC) {
+                        // Calculate width based on the datetime format
+                        // Use a sample datetime string to measure width
+                        char sampleDateTime[64];
+                        time_t rawtime = time(NULL);
+                        struct tm *timeinfo = localtime(&rawtime);
+                        strftime(sampleDateTime, sizeof(sampleDateTime), settings.dtcFormat.c_str(), timeinfo);
+                        width = renderer->getTextDimensions(sampleDateTime, false, fontsize).first;
                     } else {
                         continue;
                     }
@@ -253,7 +261,12 @@ public:
                         labelText = "RES";
                         flags |= 128;
                         resolutionShow = true;
+                    } else if (key == "DTC" && !(flags & 256) && settings.showDTC) {
+                        shouldAdd = true;
+                        labelText = "DTC";
+                        flags |= 256;
                     }
+
                     
                     if (shouldAdd) {
                         labelLines.push_back(labelText);
@@ -320,9 +333,33 @@ public:
                 ? tsl::Color({0,0,0,15}) // full opacity
                 : settings.backgroundColor;
 
-            //renderer->drawRect(cachedBaseX, cachedBaseY, margin + rectangleWidth + (fontsize / 3), cachedHeight, renderer->a(settings.backgroundColor));
-            renderer->drawRoundedRectSingleThreaded(cachedBaseX + frameOffsetX, cachedBaseY + frameOffsetY, margin + rectangleWidth + (fontsize / 3), cachedHeight, 16, a(bgColor));
+            int clippingOffsetX = 0, clippingOffsetY = 0;
+            static constexpr int touchPadding = 4;
             
+            // Check X bounds and calculate clipping offset
+            if (cachedBaseX + frameOffsetX < touchPadding) {
+                clippingOffsetX = touchPadding - (cachedBaseX + frameOffsetX);
+            } else if ((cachedBaseX + frameOffsetX + margin + rectangleWidth + (fontsize / 3)) > 1280 - touchPadding) {
+                clippingOffsetX = (1280 - touchPadding) - (cachedBaseX + frameOffsetX + margin + rectangleWidth + (fontsize / 3));
+            }
+            
+            // Check Y bounds and calculate clipping offset  
+            if (cachedBaseY + frameOffsetY < touchPadding) {
+                clippingOffsetY = touchPadding - (cachedBaseY + frameOffsetY);
+            } else if ((cachedBaseY + frameOffsetY + cachedHeight) > 720 - touchPadding) {
+                clippingOffsetY = (720 - touchPadding) - (cachedBaseY + frameOffsetY + cachedHeight);
+            }
+            
+            // Apply to all drawing calls
+            renderer->drawRoundedRectSingleThreaded(
+                cachedBaseX + frameOffsetX + clippingOffsetX, 
+                cachedBaseY + frameOffsetY + clippingOffsetY, 
+                margin + rectangleWidth + (fontsize / 3), 
+                cachedHeight, 
+                16, 
+                a(bgColor)
+            );
+                        
             
             // Split Variables into lines for individual positioning
             std::vector<std::string> variableLines;
@@ -343,20 +380,24 @@ public:
             
             static const std::vector<std::string> specialChars = {""};
             static uint32_t labelWidth, labelCenterX;
-            for (size_t i = 0; i < variableLines.size() && labelIndex < labelLines.size(); i++) {
+            static std::vector<std::string> _variableLines;
+            if (!delayUpdate)
+                _variableLines = variableLines;
+            for (size_t i = 0; i < _variableLines.size() && labelIndex < labelLines.size(); i++) {
                 // Draw label (centered in label region)
                 if (!labelLines[labelIndex].empty()) {
                     //std::pair<u32, u32> labelDimensions = renderer->drawString(labelLines[labelIndex].c_str(), false, 0, 0, fontsize, renderer->a(0x0000));
                     //u32 width = renderer->getTextDimensions(labelLines[labelIndex].c_str(), fontsize);
-                    labelWidth = renderer->getTextDimensions(labelLines[labelIndex].c_str(), false, fontsize).first;
+                    labelWidth = renderer->getTextDimensions(labelLines[labelIndex], false, fontsize).first;
                     labelCenterX = cachedBaseX + (margin / 2) - (labelWidth / 2);
-                    renderer->drawString(labelLines[labelIndex].c_str(), false, labelCenterX + frameOffsetX, currentY + frameOffsetY, fontsize, settings.catColor);
+                    renderer->drawString(labelLines[labelIndex], false, labelCenterX + frameOffsetX + clippingOffsetX, currentY + frameOffsetY + clippingOffsetY, fontsize, settings.catColor);
                 }
                 
                 // Draw variable data
                 //renderer->drawString(variableLines[i].c_str(), false, cachedBaseX + margin, currentY, fontsize, renderer->a(settings.textColor));
                 //renderer->drawStringWith(variableLines[i].c_str(), false, cachedBaseX + margin, currentY, fontsize, renderer->a(settings.textColor));
-                renderer->drawStringWithColoredSections(variableLines[i].c_str(), false, specialChars, cachedBaseX + margin + frameOffsetX, currentY + frameOffsetY, fontsize, settings.textColor, a(settings.separatorColor));
+                
+                renderer->drawStringWithColoredSections(_variableLines[i], false, specialChars, cachedBaseX + margin + frameOffsetX + clippingOffsetX, currentY + frameOffsetY + clippingOffsetY, fontsize, settings.textColor, a(settings.separatorColor));
 
                 currentY += fontsize + settings.spacing;   // previously += fontsize
                 ++labelIndex;
@@ -811,6 +852,21 @@ public:
                     strcat(Temp, Temp_s);
                     flags |= 128;
                 }
+            }},
+            {"DTC", [&]() {
+                if (!(flags & 256) && settings.showDTC) {
+                    if (Temp[0]) strcat(Temp, "\n");
+                    
+                    // Format current datetime
+                    char dateTimeStr[64];
+                    time_t rawtime = time(NULL);
+                    struct tm *timeinfo = localtime(&rawtime);
+                    strftime(dateTimeStr, sizeof(dateTimeStr), settings.dtcFormat.c_str(), timeinfo);
+                    
+                    strcat(Temp, dateTimeStr);
+                    flags |= 256;
+                }
+
             }}
         };
         
@@ -850,7 +906,7 @@ public:
         mutexUnlock(&mutex_BatteryChecker);
 
         static bool skipOnce = true;
-    
+        
         if (!skipOnce) {
             static bool runOnce = true;
             if (runOnce) {
@@ -1047,7 +1103,7 @@ public:
             // Continue joystick dragging
             static constexpr float JOYSTICK_BASE_SENSITIVITY = 0.00006f; // Slow for small movements
             static constexpr float JOYSTICK_MAX_SENSITIVITY = 0.0005f;  // Reduced max speed
-            static constexpr int JOYSTICK_DEADZONE = 400;
+            static constexpr int JOYSTICK_DEADZONE = 100;
             
             // Only move if joystick is outside deadzone
             if (abs(joyStickPosRight.x) > JOYSTICK_DEADZONE || abs(joyStickPosRight.y) > JOYSTICK_DEADZONE) {

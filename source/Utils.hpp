@@ -1141,6 +1141,8 @@ struct MiniSettings {
     bool showFanPercentage;
     bool showVDDQ;
     bool showVDD2;
+    bool showDTC;
+    std::string dtcFormat;
     size_t handheldFontSize;
     size_t dockedFontSize;
     size_t spacing;
@@ -1213,8 +1215,10 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
     settings -> showFullResolution = true;
     settings -> showFanPercentage = true;
     settings -> showFullCPU = false;
-    settings -> showVDDQ = true;
-    settings -> showVDD2 = false;
+    settings -> showVDDQ = false;
+    settings -> showVDD2 = true;
+    settings -> showDTC = true;
+    settings -> dtcFormat = "%m-%d-%Y%H:%M:%S";//"%Y-%m-%d %I:%M:%S %p";
     settings->handheldFontSize = 15;
     settings->dockedFontSize = 15;
     settings->spacing = 8;
@@ -1222,7 +1226,7 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
     convertStrToRGBA4444("#2DFF", &(settings -> separatorColor));
     convertStrToRGBA4444("#2DFF", &(settings -> catColor));
     convertStrToRGBA4444("#FFFF", &(settings -> textColor));
-    settings->show = "CPU+GPU+RAM+SOC+BAT+FPS+RES";
+    settings->show = "DTC+BAT+CPU+GPU+RAM+SOC+FPS+RES";
     settings->showRAMLoad = true;
     settings->refreshRate = 1;
     settings->setPos = 0;
@@ -1335,18 +1339,25 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
         settings->showFullResolution = !(key == "FALSE");
     }
 
-    it = section.find("show_show_vddq");
+    it = section.find("show_vddq");
     if (it != section.end()) {
         std::string key = it->second;
         convertToUpper(key);
         settings->showVDDQ = !(key == "FALSE");
     }
 
-    it = section.find("show_show_vdd2");
+    it = section.find("show_vdd2");
     if (it != section.end()) {
         std::string key = it->second;
         convertToUpper(key);
         settings->showVDD2 = !(key == "FALSE");
+    }
+
+    it = section.find("show_dtc");
+    if (it != section.end()) {
+        std::string key = it->second;
+        convertToUpper(key);
+        settings->showDTC = !(key == "FALSE");
     }
 
     // Process show string
