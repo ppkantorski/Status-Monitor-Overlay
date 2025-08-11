@@ -561,6 +561,27 @@ public:
         //        realGPU_mV/1000, (isMariko ? (realGPU_mV/100)%10 : (realGPU_mV/10)%100));
         //}
 
+        // For properly handling sleep exit
+        const auto GPU_Load_u_int = int(GPU_Load_u / 10);
+        static auto lastGPU_Load_u = GPU_Load_u_int;
+        if (GPU_Load_u_int == 0 && lastGPU_Load_u != 0) {
+            isRendering = false;
+            leventSignal(&renderingStopEvent);
+            
+            ult::setIniFileValue(
+                ult::ULTRAHAND_CONFIG_INI_PATH,
+                ult::ULTRAHAND_PROJECT_NAME,
+                ult::IN_OVERLAY_STR,
+                ult::FALSE_STR
+            );
+            tsl::setNextOverlay(
+                ult::OVERLAY_PATH + "ovlmenu.ovl"
+            );
+            tsl::Overlay::get()->close();
+            return;
+        }
+        lastGPU_Load_u = GPU_Load_u_int;
+
         /* ── GPU voltage ───────────────────────────── */
         if (settings.realVolts) {
             const uint32_t mv = realGPU_mV / 1000;
