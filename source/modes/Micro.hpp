@@ -17,6 +17,7 @@ private:
     char RAM_volt_c[32];
     char SOC_volt_c[16];
     char RES_var_compressed_c[32];
+    char DTC_c[32];
 
     static constexpr uint32_t margin = 4;
 
@@ -206,6 +207,12 @@ public:
                             seen_flags |= 64;
                         }
                         break;
+                    case 0x445443: // "DTC" 
+                        if (!(seen_flags & 256) && settings.showDTC) {
+                            renderItems.push_back({8, "DTC", DTC_c, nullptr, false});
+                            seen_flags |= 256;
+                        }
+                        break;
                 }
             }
             start = end + 1;
@@ -239,16 +246,19 @@ public:
             
             // Separate battery from other items
             std::vector<RenderItem> main_items;
-            RenderItem* battery_item = nullptr;
+            //RenderItem* battery_item = nullptr;
             
             for (auto& item : renderItems) {
-                if (item.type == 6) { // BAT
-                    battery_item = &item;
-                } else if (item.type == 5 && (!GameRunning || (strcmp(FPS_var_compressed_c, "254.0") == 0))) {
+                //if (item.type == 6) { // BAT
+                //    battery_item = &item;
+                if (item.type == 5 && (!GameRunning || (strcmp(FPS_var_compressed_c, "254.0") == 0))) {
                     // Skip FPS if no game running
                     continue;
                 } else if (item.type == 7 && (!GameRunning || !m_resolutionOutput[0].width)) {
                     // Skip RES if no game running or no resolution data yet
+                    continue;
+                } else if (item.type == 8 && !settings.showDTC) {
+                    // Skip DTC if disabled in settings
                     continue;
                 } else {
                     main_items.push_back(item);
@@ -315,21 +325,21 @@ public:
             }
             
             // Add battery as the last item if present
-            if (battery_item) {
-                //auto bat_label_dim = renderer->drawString("BAT", false, 0, 0, fontsize, renderer->a(0x0000));
-                //auto bat_label_dim = renderer->getTextDimensions("BAT", fontsize);
-                //auto bat_data_dim = renderer->drawString(battery_item->data_ptr, false, 0, 0, fontsize, renderer->a(0x0000));
-                //auto bat_data_dim = renderer->getTextDimensions(battery_item->data_ptr, fontsize);
-                
-                ItemLayout battery_layout = {};
-                battery_layout.label_width = renderer->getTextDimensions("BAT", false, fontsize).first;
-                battery_layout.data_width = renderer->getTextDimensions(battery_item->data_ptr, false, fontsize).first;
-                battery_layout.volt_width = 0;
-                battery_layout.total_width = battery_layout.label_width + layout.label_data_gap + battery_layout.data_width;
-                
-                all_items_ordered.push_back(*battery_item);
-                all_layouts_ordered.push_back(battery_layout);
-            }
+            //if (battery_item) {
+            //    //auto bat_label_dim = renderer->drawString("BAT", false, 0, 0, fontsize, renderer->a(0x0000));
+            //    //auto bat_label_dim = renderer->getTextDimensions("BAT", fontsize);
+            //    //auto bat_data_dim = renderer->drawString(battery_item->data_ptr, false, 0, 0, fontsize, renderer->a(0x0000));
+            //    //auto bat_data_dim = renderer->getTextDimensions(battery_item->data_ptr, fontsize);
+            //    
+            //    ItemLayout battery_layout = {};
+            //    battery_layout.label_width = renderer->getTextDimensions("BAT", false, fontsize).first;
+            //    battery_layout.data_width = renderer->getTextDimensions(battery_item->data_ptr, false, fontsize).first;
+            //    battery_layout.volt_width = 0;
+            //    battery_layout.total_width = battery_layout.label_width + layout.label_data_gap + battery_layout.data_width;
+            //    
+            //    all_items_ordered.push_back(*battery_item);
+            //    all_layouts_ordered.push_back(battery_layout);
+            //}
             
             // Calculate total width of all items
             uint32_t total_all_width = 0;
@@ -682,6 +692,14 @@ public:
                  remainingBatteryLife);
 
         mutexUnlock(&mutex_BatteryChecker);
+
+
+        // Format current datetime for DTC
+        if (settings.showDTC) {
+            time_t rawtime = time(NULL);
+            struct tm *timeinfo = localtime(&rawtime);
+            strftime(DTC_c, sizeof(DTC_c), settings.dtcFormat.c_str(), timeinfo);
+        }
 
         // Thermal info
         const int duty = safeFanDuty((int)Rotation_Duty);

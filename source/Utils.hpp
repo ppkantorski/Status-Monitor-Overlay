@@ -1166,6 +1166,8 @@ struct MicroSettings {
     bool showVDDQ;
     bool showVDD2;
     bool decimalVDD2;
+    bool showDTC;
+    std::string dtcFormat;
     bool showFullResolution;
     size_t handheldFontSize;
     size_t dockedFontSize;
@@ -1430,18 +1432,20 @@ ALWAYS_INLINE void GetConfigSettings(MicroSettings* settings) {
     settings->realFrequencies = true;
     settings->realVolts = true;
     settings->showFullCPU = false;
-    settings->showVDDQ = true;
+    settings->showVDDQ = false;
     settings->showVDD2 = true;
     settings->decimalVDD2 = false;
+    settings->showDTC = true;
+    settings->dtcFormat = "%H:%M:%S";//"%Y-%m-%d %I:%M:%S %p";
     settings->showFullResolution = false;
     settings->handheldFontSize = 15;
     settings->dockedFontSize = 15;
-    settings->alignTo = 1;
+    settings->alignTo = 1; // CENTER
     convertStrToRGBA4444("#0009", &(settings->backgroundColor));
     convertStrToRGBA4444("#2DFF", &(settings->separatorColor));
     convertStrToRGBA4444("#2DFF", &(settings->catColor));
     convertStrToRGBA4444("#FFFF", &(settings->textColor));
-    settings->show = "FPS+CPU+GPU+RAM+SOC+BAT";
+    settings->show = "FPS+CPU+GPU+RAM+SOC+BAT+DTC";
     settings->showRAMLoad = true;
     settings->setPosBottom = false;
     settings->refreshRate = 1;
