@@ -204,7 +204,7 @@ uint32_t realSOC_mV = 0;
 uint8_t refreshRate = 0;
 
 int compare (const void* elem1, const void* elem2) {
-    if ((((resolutionCalls*)(elem1)) -> calls) > (((resolutionCalls*)(elem2)) -> calls)) return -1;
+    if ((((resolutionCalls*)(elem1))->calls) > (((resolutionCalls*)(elem2))->calls)) return -1;
     else return 1;
 }
 
@@ -239,7 +239,7 @@ void searchSharedMemoryBlock(uintptr_t base) {
     ptrdiff_t search_offset = 0;
     while(search_offset < 0x1000) {
         NxFps = (NxFpsSharedBlock*)(base + search_offset);
-        if (NxFps -> MAGIC == 0x465053) {
+        if (NxFps->MAGIC == 0x465053) {
             return;
         }
         else search_offset += 4;
@@ -280,10 +280,10 @@ void CheckIfGameRunning(void*) {
         if (!check && R_FAILED(pmdmntGetApplicationProcessId(&PID))) {
             GameRunning = false;
             if (SharedMemoryUsed) {
-                (NxFps -> MAGIC) = 0;
-                (NxFps -> pluginActive) = false;
-                (NxFps -> FPS) = 0;
-                (NxFps -> FPSavg) = 0.0;
+                (NxFps->MAGIC) = 0;
+                (NxFps->pluginActive) = false;
+                (NxFps->FPS) = 0;
+                (NxFps->FPSavg) = 0.0;
                 FPS = 254;
                 FPSavg = 254.0;
             }
@@ -293,9 +293,9 @@ void CheckIfGameRunning(void*) {
             const uintptr_t base = (uintptr_t)shmemGetAddr(&_sharedmemory);
             searchSharedMemoryBlock(base);
             if (NxFps) {
-                (NxFps -> pluginActive) = false;
+                (NxFps->pluginActive) = false;
                 if (leventWait(&threadexit, 100'000'000)) return; // Exit-aware wait
-                if ((NxFps -> pluginActive)) {
+                if ((NxFps->pluginActive)) {
                     GameRunning = true;
                     check = false;
                 }
@@ -547,8 +547,8 @@ void Misc(void*) {
         //FPS
         if (GameRunning) {
             if (SharedMemoryUsed) {
-                FPS = (NxFps -> FPS);
-                FPSavg = 19'200'000.f / (std::accumulate<uint32_t*, float>(&(NxFps -> FPSticks[0]), &(NxFps -> FPSticks[10]), 0) / 10);
+                FPS = (NxFps->FPS);
+                FPSavg = 19'200'000.f / (std::accumulate<uint32_t*, float>(&(NxFps->FPSticks[0]), &(NxFps->FPSticks[10]), 0) / 10);
                 if (FPSavg > FPSmax)    FPSmax = FPSavg; 
                 if (FPSavg < FPSmin)    FPSmin = FPSavg; 
             }
@@ -721,8 +721,8 @@ void FPSCounter(void*) {
     do {
         if (GameRunning) {
             if (SharedMemoryUsed) {
-                FPS = (NxFps -> FPS);
-                FPSavg = 19'200'000.f / (std::accumulate<uint32_t*, float>(&(NxFps -> FPSticks[0]), &(NxFps -> FPSticks[10]), 0) / 10);
+                FPS = (NxFps->FPS);
+                FPSavg = 19'200'000.f / (std::accumulate<uint32_t*, float>(&(NxFps->FPSticks[0]), &(NxFps->FPSticks[10]), 0) / 10);
             }
         }
         else FPSavg = 254;
@@ -1143,6 +1143,7 @@ struct MiniSettings {
     bool showVDD2;
     bool decimalVDD2;
     bool showDTC;
+    bool useDTCSymbol;
     std::string dtcFormat;
     size_t handheldFontSize;
     size_t dockedFontSize;
@@ -1167,6 +1168,7 @@ struct MicroSettings {
     bool showVDD2;
     bool decimalVDD2;
     bool showDTC;
+    bool useDTCSymbol;
     std::string dtcFormat;
     bool showFullResolution;
     size_t handheldFontSize;
@@ -1217,28 +1219,29 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
     // Initialize defaults
     settings->realFrequencies = true;
     settings->realVolts = true;
-    settings -> showFullCPU = false;
-    settings -> showFullResolution = true;
-    settings -> showFanPercentage = true;
-    settings -> showFullCPU = false;
-    settings -> showVDDQ = false;
-    settings -> showVDD2 = true;
-    settings -> decimalVDD2 = false;
-    settings -> showDTC = true;
-    settings -> dtcFormat = "%m-%d-%Y%H:%M:%S";//"%Y-%m-%d %I:%M:%S %p";
+    settings->showFullCPU = false;
+    settings->showFullResolution = true;
+    settings->showFanPercentage = true;
+    settings->showFullCPU = false;
+    settings->showVDDQ = false;
+    settings->showVDD2 = true;
+    settings->decimalVDD2 = false;
+    settings->showDTC = true;
+    settings->useDTCSymbol = true;
+    settings->dtcFormat = "%m-%d-%Y%H:%M:%S";//"%Y-%m-%d %I:%M:%S %p";
     settings->handheldFontSize = 15;
     settings->dockedFontSize = 15;
     settings->spacing = 8;
-    convertStrToRGBA4444("#0009", &(settings -> backgroundColor));
-    convertStrToRGBA4444("#2DFF", &(settings -> separatorColor));
-    convertStrToRGBA4444("#2DFF", &(settings -> catColor));
-    convertStrToRGBA4444("#FFFF", &(settings -> textColor));
-    settings->show = "DTC+BAT+CPU+GPU+RAM+SOC+FPS+RES";
+    convertStrToRGBA4444("#0009", &(settings->backgroundColor));
+    convertStrToRGBA4444("#2DFF", &(settings->separatorColor));
+    convertStrToRGBA4444("#2DFF", &(settings->catColor));
+    convertStrToRGBA4444("#FFFF", &(settings->textColor));
+    settings->show = "DTC+BAT+CPU+GPU+RAM+TMP+FPS+RES";
     settings->showRAMLoad = true;
     settings->refreshRate = 1;
     settings->setPos = 0;
-    settings -> frameOffsetX = 8;
-    settings -> frameOffsetY = 8;
+    settings->frameOffsetX = 8;
+    settings->frameOffsetY = 8;
 
     // Open and read file efficiently
     FILE* configFile = fopen(configIniPath, "r");
@@ -1377,6 +1380,19 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
         settings->showDTC = !(key == "FALSE");
     }
 
+    it = section.find("use_dtc_symbol");
+    if (it != section.end()) {
+        key = it->second;
+        convertToUpper(key);
+        settings->useDTCSymbol = !(key == "FALSE");
+    }
+
+    it = section.find("dtc_format");
+    if (it != section.end()) {
+        key = it->second;
+        settings->dtcFormat = std::move(key);
+    }
+
     // Process show string
     it = section.find("show");
     if (it != section.end()) {
@@ -1436,6 +1452,7 @@ ALWAYS_INLINE void GetConfigSettings(MicroSettings* settings) {
     settings->showVDD2 = true;
     settings->decimalVDD2 = false;
     settings->showDTC = true;
+    settings->useDTCSymbol = true;
     settings->dtcFormat = "%H:%M:%S";//"%Y-%m-%d %I:%M:%S %p";
     settings->showFullResolution = false;
     settings->handheldFontSize = 15;
@@ -1528,6 +1545,26 @@ ALWAYS_INLINE void GetConfigSettings(MicroSettings* settings) {
         key = it->second;
         convertToUpper(key);
         settings->decimalVDD2 = !(key == "FALSE");
+    }
+
+    it = section.find("show_dtc");
+    if (it != section.end()) {
+        key = it->second;
+        convertToUpper(key);
+        settings->showDTC = !(key == "FALSE");
+    }
+
+    it = section.find("use_dtc_symbol");
+    if (it != section.end()) {
+        key = it->second;
+        convertToUpper(key);
+        settings->useDTCSymbol = !(key == "FALSE");
+    }
+
+    it = section.find("dtc_format");
+    if (it != section.end()) {
+        key = it->second;
+        settings->dtcFormat = std::move(key);
     }
     
     // Process font sizes with shared bounds
@@ -1791,14 +1828,14 @@ ALWAYS_INLINE void GetConfigSettings(FpsGraphSettings* settings) {
 }
 
 ALWAYS_INLINE void GetConfigSettings(FullSettings* settings) {
-    settings -> setPosRight = false;
-    settings -> refreshRate = 1;
-    settings -> showRealFreqs = true;
-    settings -> showDeltas = true;
-    settings -> showTargetFreqs = true;
-    settings -> showFPS = true;
-    settings -> showRES = true;
-    settings -> showRDSD = true;
+    settings->setPosRight = false;
+    settings->refreshRate = 1;
+    settings->showRealFreqs = true;
+    settings->showDeltas = true;
+    settings->showTargetFreqs = true;
+    settings->showFPS = true;
+    settings->showRES = true;
+    settings->showRDSD = true;
 
     FILE* configFileIn = fopen(configIniPath, "r");
     if (!configFileIn)
@@ -1824,55 +1861,55 @@ ALWAYS_INLINE void GetConfigSettings(FullSettings* settings) {
         key = parsedData[mode]["refresh_rate"];
         const long rate = atol(key.c_str());
         if (rate < minFPS) {
-            settings -> refreshRate = minFPS;
+            settings->refreshRate = minFPS;
         }
         else if (rate > maxFPS)
-            settings -> refreshRate = maxFPS;
-        else settings -> refreshRate = rate;    
+            settings->refreshRate = maxFPS;
+        else settings->refreshRate = rate;    
     }
     if (parsedData[mode].find("layer_width_align") != parsedData[mode].end()) {
         key = parsedData[mode]["layer_width_align"];
         convertToUpper(key);
-        settings -> setPosRight = !key.compare("RIGHT");
+        settings->setPosRight = !key.compare("RIGHT");
     }
     if (parsedData[mode].find("show_real_freqs") != parsedData[mode].end()) {
         key = parsedData[mode]["show_real_freqs"];
         convertToUpper(key);
-        settings -> showRealFreqs = key.compare("FALSE");
+        settings->showRealFreqs = key.compare("FALSE");
     }
     if (parsedData[mode].find("show_deltas") != parsedData[mode].end()) {
         key = parsedData[mode]["show_deltas"];
         convertToUpper(key);
-        settings -> showDeltas = key.compare("FALSE");
+        settings->showDeltas = key.compare("FALSE");
     }
     if (parsedData[mode].find("show_target_freqs") != parsedData[mode].end()) {
         key = parsedData[mode]["show_target_freqs"];
         convertToUpper(key);
-        settings -> showTargetFreqs = key.compare("FALSE");
+        settings->showTargetFreqs = key.compare("FALSE");
     }
     if (parsedData[mode].find("show_fps") != parsedData[mode].end()) {
         key = parsedData[mode]["show_fps"];
         convertToUpper(key);
-        settings -> showFPS = key.compare("FALSE");
+        settings->showFPS = key.compare("FALSE");
     }
     if (parsedData[mode].find("show_res") != parsedData[mode].end()) {
         key = parsedData[mode]["show_res"];
         convertToUpper(key);
-        settings -> showRES = key.compare("FALSE");
+        settings->showRES = key.compare("FALSE");
     }
     if (parsedData[mode].find("show_read_speed") != parsedData[mode].end()) {
         key = parsedData[mode]["show_read_speed"];
         convertToUpper(key);
-        settings -> showRDSD = key.compare("FALSE");
+        settings->showRDSD = key.compare("FALSE");
     }
 }
 
 ALWAYS_INLINE void GetConfigSettings(ResolutionSettings* settings) {
-    convertStrToRGBA4444("#1117", &(settings -> backgroundColor));
-    convertStrToRGBA4444("#FFFF", &(settings -> catColor));
-    convertStrToRGBA4444("#FFFF", &(settings -> textColor));
-    settings -> refreshRate = 10;
-    settings -> setPos = 0;
+    convertStrToRGBA4444("#1117", &(settings->backgroundColor));
+    convertStrToRGBA4444("#FFFF", &(settings->catColor));
+    convertStrToRGBA4444("#FFFF", &(settings->textColor));
+    settings->refreshRate = 10;
+    settings->setPos = 0;
 
     FILE* configFileIn = fopen(configIniPath, "r");
     if (!configFileIn)
@@ -1898,49 +1935,49 @@ ALWAYS_INLINE void GetConfigSettings(ResolutionSettings* settings) {
         key = parsedData[mode]["refresh_rate"];
         const long rate = atol(key.c_str());
         if (rate < minFPS) {
-            settings -> refreshRate = minFPS;
+            settings->refreshRate = minFPS;
         }
         else if (rate > maxFPS)
-            settings -> refreshRate = maxFPS;
-        else settings -> refreshRate = rate;    
+            settings->refreshRate = maxFPS;
+        else settings->refreshRate = rate;    
     }
 
     if (parsedData[mode].find("background_color") != parsedData[mode].end()) {
         key = parsedData[mode]["background_color"];
         uint16_t temp = 0;
         if (convertStrToRGBA4444(key, &temp))
-            settings -> backgroundColor = temp;
+            settings->backgroundColor = temp;
     }
     if (parsedData[mode].find("cat_color") != parsedData[mode].end()) {
         key = parsedData[mode]["cat_color"];
         uint16_t temp = 0;
         if (convertStrToRGBA4444(key, &temp))
-            settings -> catColor = temp;
+            settings->catColor = temp;
     }
     if (parsedData[mode].find("text_color") != parsedData[mode].end()) {
         key = parsedData[mode]["text_color"];
         uint16_t temp = 0;
         if (convertStrToRGBA4444(key, &temp))
-            settings -> textColor = temp;
+            settings->textColor = temp;
     }
     if (parsedData[mode].find("layer_width_align") != parsedData[mode].end()) {
         key = parsedData[mode]["layer_width_align"];
         convertToUpper(key);
         if (!key.compare("CENTER")) {
-            settings -> setPos = 1;
+            settings->setPos = 1;
         }
         if (!key.compare("RIGHT")) {
-            settings -> setPos = 2;
+            settings->setPos = 2;
         }
     }
     if (parsedData[mode].find("layer_height_align") != parsedData[mode].end()) {
         key = parsedData[mode]["layer_height_align"];
         convertToUpper(key);
         if (!key.compare("CENTER")) {
-            settings -> setPos += 3;
+            settings->setPos += 3;
         }
         if (!key.compare("BOTTOM")) {
-            settings -> setPos += 6;
+            settings->setPos += 6;
         }
     }
 }

@@ -186,9 +186,9 @@ public:
                                 width = renderer->getTextDimensions("88\u00B0C 88\u00B0C 88\u00B0C", false, fontsize).first;
                         } else {
                             if (settings.showFanPercentage)
-                                width = renderer->getTextDimensions("88\u00B0C 88\u00B0C 88\u00B0C (100%)4444.4 mV", false, fontsize).first;
+                                width = renderer->getTextDimensions("88\u00B0C 88\u00B0C 88\u00B0C (100%)444 mV", false, fontsize).first;
                             else
-                                width = renderer->getTextDimensions("88\u00B0C 88\u00B0C 88\u00B0C4444.4 mV", false, fontsize).first;
+                                width = renderer->getTextDimensions("88\u00B0C 88\u00B0C 88\u00B0C444 mV", false, fontsize).first;
                         }
                     } else if (key == "BAT") {
                         //dimensions = renderer->drawString("-44.44 W100.0% [44:44]", false, 0, 0, fontsize, renderer->a(0x0000));
@@ -270,7 +270,7 @@ public:
                         resolutionShow = true;
                     } else if (key == "DTC" && !(flags & 256) && settings.showDTC) {
                         shouldAdd = true;
-                        labelText = "DTC";
+                        labelText = "\uE007";
                         flags |= 256;
                     }
 
@@ -393,20 +393,112 @@ public:
             for (size_t i = 0; i < _variableLines.size() && labelIndex < labelLines.size(); i++) {
                 // Draw label (centered in label region)
                 if (!labelLines[labelIndex].empty()) {
-                    //std::pair<u32, u32> labelDimensions = renderer->drawString(labelLines[labelIndex].c_str(), false, 0, 0, fontsize, renderer->a(0x0000));
-                    //u32 width = renderer->getTextDimensions(labelLines[labelIndex].c_str(), fontsize);
                     labelWidth = renderer->getTextDimensions(labelLines[labelIndex], false, fontsize).first;
                     labelCenterX = cachedBaseX + (margin / 2) - (labelWidth / 2);
                     renderer->drawString(labelLines[labelIndex], false, labelCenterX + frameOffsetX + clippingOffsetX, currentY + frameOffsetY + clippingOffsetY, fontsize, settings.catColor);
                 }
                 
-                // Draw variable data
-                //renderer->drawString(variableLines[i].c_str(), false, cachedBaseX + margin, currentY, fontsize, renderer->a(settings.textColor));
-                //renderer->drawStringWith(variableLines[i].c_str(), false, cachedBaseX + margin, currentY, fontsize, renderer->a(settings.textColor));
+                // Determine rendering method based on label type
+                const std::string& currentLine = _variableLines[i];
+                const int baseX = cachedBaseX + margin + frameOffsetX + clippingOffsetX;
+                const int baseY = currentY + frameOffsetY + clippingOffsetY;
                 
-                renderer->drawStringWithColoredSections(_variableLines[i], false, specialChars, cachedBaseX + margin + frameOffsetX + clippingOffsetX, currentY + frameOffsetY + clippingOffsetY, fontsize, settings.textColor, a(settings.separatorColor));
-
-                currentY += fontsize + settings.spacing;   // previously += fontsize
+                if (labelIndex < labelLines.size() && labelLines[labelIndex] == "SOC") {
+                    // SOC temperature rendering with gradient
+                    const size_t degreesPos = currentLine.find("°");
+                    if (degreesPos != std::string::npos) {
+                        // Find the 'C' after the degrees symbol
+                        const size_t cPos = currentLine.find("C", degreesPos);
+                        if (cPos != std::string::npos) {
+                            const size_t tempEnd = cPos + 1; // Include the 'C'
+                            
+                            // Extract temperature value and apply gradient
+                            const int temp = atoi(currentLine.c_str());
+                            const tsl::Color tempColor = tsl::GradientColor((float)temp);
+                            
+                            // Split into temperature part and remaining part
+                            const std::string tempPart = currentLine.substr(0, tempEnd);
+                            const std::string restPart = currentLine.substr(tempEnd);
+                            
+                            // Render temperature with gradient color
+                            int currentX = baseX;
+                            renderer->drawString(tempPart, false, currentX, baseY, fontsize, tempColor);
+                            
+                            // Render remaining text with normal color
+                            if (!restPart.empty()) {
+                                currentX += renderer->getTextDimensions(tempPart, false, fontsize).first;
+                                renderer->drawString(restPart, false, currentX, baseY, fontsize, settings.textColor);
+                            }
+                        } else {
+                            // Fallback: no C found after degrees, render normally
+                            renderer->drawStringWithColoredSections(currentLine, false, specialChars, baseX, baseY, fontsize, settings.textColor, a(settings.separatorColor));
+                        }
+                    } else {
+                        // Fallback: no degrees symbol found, render normally
+                        renderer->drawStringWithColoredSections(currentLine, false, specialChars, baseX, baseY, fontsize, settings.textColor, a(settings.separatorColor));
+                    }
+                    
+                } else if (labelIndex < labelLines.size() && labelLines[labelIndex] == "TMP") {
+                    // TMP multiple temperatures rendering with gradients
+                    int currentX = baseX;
+                    size_t pos = 0;
+                    bool parseSuccess = true;
+                    
+                    // Parse up to 3 temperatures in the format "XX°C XX°C XX°C (XX%)"
+                    for (int tempCount = 0; tempCount < 3 && parseSuccess && pos < currentLine.length(); tempCount++) {
+                        // Find start of current temperature (skip any leading spaces)
+                        while (pos < currentLine.length() && currentLine[pos] == ' ') {
+                            renderer->drawString(" ", false, currentX, baseY, fontsize, settings.textColor);
+                            currentX += renderer->getTextDimensions(" ", false, fontsize).first;
+                            pos++;
+                        }
+                        
+                        if (pos >= currentLine.length()) break;
+                        
+                        // Find degrees symbol
+                        const size_t degreesPos = currentLine.find("°", pos);
+                        if (degreesPos == std::string::npos) {
+                            parseSuccess = false;
+                            break;
+                        }
+                        
+                        // Find 'C' after degrees symbol
+                        const size_t cPos = currentLine.find("C", degreesPos);
+                        if (cPos == std::string::npos) {
+                            parseSuccess = false;
+                            break;
+                        }
+                        
+                        const size_t tempEnd = cPos + 1; // Include the 'C'
+                        
+                        // Extract and render temperature with gradient
+                        const std::string tempPart = currentLine.substr(pos, tempEnd - pos);
+                        const int temp = atoi(tempPart.c_str());
+                        const tsl::Color tempColor = tsl::GradientColor((float)temp);
+                        
+                        renderer->drawString(tempPart, false, currentX, baseY, fontsize, tempColor);
+                        currentX += renderer->getTextDimensions(tempPart, false, fontsize).first;
+                        
+                        pos = tempEnd;
+                    }
+                    
+                    // Render any remaining text (like " (50%)" or voltage info)
+                    if (pos < currentLine.length()) {
+                        std::string restPart = currentLine.substr(pos);
+                        renderer->drawStringWithColoredSections(restPart, false, specialChars, currentX, baseY, fontsize, settings.textColor, a(settings.separatorColor));
+                    }
+                    
+                    // If parsing failed, fall back to normal rendering
+                    if (!parseSuccess) {
+                        renderer->drawStringWithColoredSections(currentLine, false, specialChars, baseX, baseY, fontsize, settings.textColor, a(settings.separatorColor));
+                    }
+                                    
+                } else {
+                    // Normal rendering for all other line types (CPU, GPU, RAM, BAT, FPS, RES, DTC)
+                    renderer->drawStringWithColoredSections(currentLine, false, specialChars, baseX, baseY, fontsize, settings.textColor, a(settings.separatorColor));
+                }
+                
+                currentY += fontsize + settings.spacing;
                 ++labelIndex;
             }
         });
