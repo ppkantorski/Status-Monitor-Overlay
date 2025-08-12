@@ -1151,6 +1151,7 @@ struct MiniSettings {
     size_t dockedFontSize;
     size_t spacing;
     uint16_t backgroundColor;
+    uint16_t focusBackgroundColor;
     uint16_t separatorColor;
     uint16_t catColor;
     uint16_t textColor;
@@ -1239,10 +1240,11 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
     settings->dockedFontSize = 15;
     settings->spacing = 8;
     convertStrToRGBA4444("#0009", &(settings->backgroundColor));
+    convertStrToRGBA4444("#000F", &(settings->focusBackgroundColor));
     convertStrToRGBA4444("#2DFF", &(settings->separatorColor));
     convertStrToRGBA4444("#2DFF", &(settings->catColor));
     convertStrToRGBA4444("#FFFF", &(settings->textColor));
-    settings->show = "DTC+BAT+CPU+GPU+RAM+TMP+FPS+RES";
+    settings->show = "DTC+BAT+CPU+GPU+RAM+SOC+FPS+RES";
     settings->showRAMLoad = true;
     settings->refreshRate = 1;
     settings->setPos = 0;
@@ -1319,6 +1321,12 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
         temp = 0;
         if (convertStrToRGBA4444(it->second, &temp))
             settings->backgroundColor = temp;
+    }
+    it = section.find("focus_background_color");
+    if (it != section.end()) {
+        temp = 0;
+        if (convertStrToRGBA4444(it->second, &temp))
+            settings->focusBackgroundColor = temp;
     }
     
     it = section.find("separator_color");

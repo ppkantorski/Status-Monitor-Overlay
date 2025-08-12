@@ -350,9 +350,9 @@ public:
             const uint32_t margin = (fontsize * 4);
             
             // Draw background
-            const tsl::Color bgColor = isDragging
-                ? tsl::Color({0,0,0,15}) // full opacity
-                : settings.backgroundColor;
+            const tsl::Color bgColor = !isDragging
+                ? settings.backgroundColor // full opacity
+                : settings.focusBackgroundColor;
 
             int clippingOffsetX = 0, clippingOffsetY = 0;
             static constexpr int framePadding = 10;
