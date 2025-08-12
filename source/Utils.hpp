@@ -1157,7 +1157,7 @@ struct MiniSettings {
     uint16_t textColor;
     std::string show;
     bool showRAMLoad;
-    int setPos;
+    //int setPos;
     int frameOffsetX;
     int frameOffsetY;
 };
@@ -1247,7 +1247,7 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
     settings->show = "DTC+BAT+CPU+GPU+RAM+SOC+FPS+RES";
     settings->showRAMLoad = true;
     settings->refreshRate = 1;
-    settings->setPos = 0;
+    //settings->setPos = 0;
     settings->frameOffsetX = 8;
     settings->frameOffsetY = 8;
 
@@ -1297,8 +1297,8 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
     }
     
     // Process font sizes with shared bounds
-    constexpr long minFontSize = 8;
-    constexpr long maxFontSize = 22;
+    static constexpr long minFontSize = 8;
+    static constexpr long maxFontSize = 22;
     
     it = section.find("handheld_font_size");
     if (it != section.end()) {
@@ -1612,8 +1612,8 @@ ALWAYS_INLINE void GetConfigSettings(MicroSettings* settings) {
     }
     
     // Process font sizes with shared bounds
-    constexpr long minFontSize = 8;
-    constexpr long maxFontSize = 18;
+    static constexpr long minFontSize = 8;
+    static constexpr long maxFontSize = 18;
     
     it = section.find("handheld_font_size");
     if (it != section.end()) {
