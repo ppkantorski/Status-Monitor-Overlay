@@ -17,6 +17,10 @@ private:
     int frameOffsetX, frameOffsetY;
     int topPadding, bottomPadding;
     bool isDragging = false;
+
+    static constexpr int framePadding = 10;
+    static constexpr int screenWidth = 1280;
+    static constexpr int screenHeight = 720;
 public:
     MiniOverlay() { 
         tsl::hlp::requestForeground(false);
@@ -355,20 +359,20 @@ public:
                 : settings.focusBackgroundColor;
 
             int clippingOffsetX = 0, clippingOffsetY = 0;
-            static constexpr int framePadding = 10;
+            
             
             // Check X bounds and calculate clipping offset
             if (cachedBaseX + frameOffsetX < framePadding) {
                 clippingOffsetX = framePadding - (cachedBaseX + frameOffsetX);
-            } else if ((cachedBaseX + frameOffsetX + margin + rectangleWidth + (fontsize / 3)) > 1280 - framePadding) {
-                clippingOffsetX = (1280 - framePadding) - (cachedBaseX + frameOffsetX + margin + rectangleWidth + (fontsize / 3));
+            } else if ((cachedBaseX + frameOffsetX + margin + rectangleWidth + (fontsize / 3)) > screenWidth - framePadding) {
+                clippingOffsetX = (screenWidth - framePadding) - (cachedBaseX + frameOffsetX + margin + rectangleWidth + (fontsize / 3));
             }
             
             // Check Y bounds and calculate clipping offset  
             if (cachedBaseY + frameOffsetY < framePadding) {
                 clippingOffsetY = framePadding - (cachedBaseY + frameOffsetY);
-            } else if ((cachedBaseY + frameOffsetY + cachedHeight) > 720 - framePadding) {
-                clippingOffsetY = (720 - framePadding) - (cachedBaseY + frameOffsetY + cachedHeight);
+            } else if ((cachedBaseY + frameOffsetY + cachedHeight) > screenHeight - framePadding) {
+                clippingOffsetY = (screenHeight - framePadding) - (cachedBaseY + frameOffsetY + cachedHeight);
             }
             
             // Apply to all drawing calls
@@ -384,7 +388,7 @@ public:
             
             // Split Variables into lines for individual positioning
             std::vector<std::string> variableLines;
-            std::string variablesStr(Variables);
+            const std::string variablesStr(Variables);
             size_t start = 0;
             size_t pos = 0;
             while ((pos = variablesStr.find('\n', start)) != std::string::npos) {
@@ -1071,8 +1075,8 @@ public:
         //const u64 currentTime = armTicksToNs(armGetSystemTick());
         
         // Better touch detection - check if coordinates are within reasonable screen bounds
-        bool currentTouchDetected = (touchPos.x > 0 && touchPos.y > 0 && 
-                                    touchPos.x < 1280 && touchPos.y < 720);
+        const bool currentTouchDetected = (touchPos.x > 0 && touchPos.y > 0 && 
+                                    touchPos.x < screenWidth && touchPos.y < screenHeight);
         
         // Debounce touch detection
         //if (currentTouchDetected && !oldTouchDetected) {
@@ -1156,12 +1160,10 @@ public:
         const int touchableHeight = overlayHeight + (touchPadding * 2);
         
         // Screen boundaries for clamping
-        static constexpr int screenWidth = 1280;
-        static constexpr int screenHeight = 720;
-        const int minX = -cachedBaseX + 10;
-        const int maxX = screenWidth - overlayWidth - cachedBaseX - 10;
-        const int minY = -cachedBaseY + 10;
-        const int maxY = screenHeight - overlayHeight - cachedBaseY - 10;
+        const int minX = -cachedBaseX + framePadding;
+        const int maxX = screenWidth - overlayWidth - cachedBaseX - framePadding;
+        const int minY = -cachedBaseY + framePadding;
+        const int maxY = screenHeight - overlayHeight - cachedBaseY - framePadding;
     
         // Check button states
         const bool currentMinusHeld = (keysHeld & KEY_MINUS) && !(keysHeld & ~KEY_MINUS & ALL_KEYS_MASK);
@@ -1249,8 +1251,8 @@ public:
                 const float normalizedMagnitude = magnitude / 32767.0f; // Normalize to 0-1 range
                 
                 // Single smooth curve: stays very slow for wide range, then accelerates
-                const float baseSensitivity = 0.00008f;  // Higher so small movements register
-                const float maxSensitivity = 0.0005f;
+                static constexpr float baseSensitivity = 0.00008f;  // Higher so small movements register
+                static constexpr float maxSensitivity = 0.0005f;
                 
                 // Use x^8 curve - stays very low until ~70% then curves up sharply
                 const float curveValue = pow(normalizedMagnitude, 8.0f);
