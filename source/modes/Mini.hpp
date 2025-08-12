@@ -446,7 +446,7 @@ public:
                                 // Render remaining text with normal color
                                 if (!restPart.empty()) {
                                     currentX += renderer->getTextDimensions(tempPart, false, fontsize).first;
-                                    renderer->drawString(restPart, false, currentX, baseY, fontsize, settings.textColor);
+                                    renderer->drawStringWithColoredSections(restPart, false, specialChars, currentX, baseY, fontsize, settings.textColor, a(settings.separatorColor));
                                 }
                             } else {
                                 // Fallback: no C found after degrees, render normally
