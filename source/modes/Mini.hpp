@@ -1237,8 +1237,6 @@ public:
             leventSignal(&renderingStopEvent);
         } else if ((currentMinusHeld || currentPlusHeld) && isDragging) {
             // Continue joystick dragging
-            static constexpr float JOYSTICK_BASE_SENSITIVITY = 0.00001f; // Slow for small movements
-            static constexpr float JOYSTICK_MAX_SENSITIVITY = 0.0005f;  // Reduced max speed
             static constexpr int JOYSTICK_DEADZONE = 20;
             
             // Choose the appropriate joystick based on which button is held
@@ -1250,18 +1248,30 @@ public:
                 const float magnitude = sqrt((float)(activeJoystick.x * activeJoystick.x + activeJoystick.y * activeJoystick.y));
                 const float normalizedMagnitude = magnitude / 32767.0f; // Normalize to 0-1 range
                 
-                // Create an even steeper curve: stays slow for ~75% of range
-                // Using quartic curve (x^4) for very wide range of slow movements
-                const float sensitivityMultiplier = normalizedMagnitude * normalizedMagnitude * normalizedMagnitude * normalizedMagnitude;
-                const float currentSensitivity = JOYSTICK_BASE_SENSITIVITY + (JOYSTICK_MAX_SENSITIVITY - JOYSTICK_BASE_SENSITIVITY) * sensitivityMultiplier;
+                // Single smooth curve: stays very slow for wide range, then accelerates
+                const float baseSensitivity = 0.00008f;  // Higher so small movements register
+                const float maxSensitivity = 0.0005f;
                 
-                // Calculate movement delta based on joystick position with scaled sensitivity
-                const float deltaX = (float)activeJoystick.x * currentSensitivity;
-                const float deltaY = -(float)activeJoystick.y * currentSensitivity; // Invert Y axis
+                // Use x^8 curve - stays very low until ~70% then curves up sharply
+                const float curveValue = pow(normalizedMagnitude, 8.0f);
+                const float currentSensitivity = baseSensitivity + (maxSensitivity - baseSensitivity) * curveValue;
+                
+                // Calculate movement delta with fractional accumulation
+                static float accumulatedX = 0.0f;
+                static float accumulatedY = 0.0f;
+                
+                accumulatedX += (float)activeJoystick.x * currentSensitivity;
+                accumulatedY += -(float)activeJoystick.y * currentSensitivity;
+                
+                // Extract integer movement and keep fractional part
+                const int deltaX = (int)accumulatedX;
+                const int deltaY = (int)accumulatedY;
+                accumulatedX -= deltaX;
+                accumulatedY -= deltaY;
                 
                 // Update frame offsets with boundary checking
-                const int newFrameOffsetX = std::max(minX, std::min(maxX, frameOffsetX + (int)deltaX));
-                const int newFrameOffsetY = std::max(minY, std::min(maxY, frameOffsetY + (int)deltaY));
+                const int newFrameOffsetX = std::max(minX, std::min(maxX, frameOffsetX + deltaX));
+                const int newFrameOffsetY = std::max(minY, std::min(maxY, frameOffsetY + deltaY));
                 
                 frameOffsetX = newFrameOffsetX;
                 frameOffsetY = newFrameOffsetY;
