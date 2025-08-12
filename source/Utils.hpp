@@ -1438,27 +1438,27 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
     }
     
     // Process alignment settings
-    it = section.find("layer_width_align");
-    if (it != section.end()) {
-        key = it->second;
-        convertToUpper(key);
-        if (key == "CENTER") {
-            settings->setPos = 1;
-        } else if (key == "RIGHT") {
-            settings->setPos = 2;
-        }
-    }
-    
-    it = section.find("layer_height_align");
-    if (it != section.end()) {
-        key = it->second;
-        convertToUpper(key);
-        if (key == "CENTER") {
-            settings->setPos += 3;
-        } else if (key == "BOTTOM") {
-            settings->setPos += 6;
-        }
-    }
+    //it = section.find("layer_width_align");
+    //if (it != section.end()) {
+    //    key = it->second;
+    //    convertToUpper(key);
+    //    if (key == "CENTER") {
+    //        settings->setPos = 1;
+    //    } else if (key == "RIGHT") {
+    //        settings->setPos = 2;
+    //    }
+    //}
+    //
+    //it = section.find("layer_height_align");
+    //if (it != section.end()) {
+    //    key = it->second;
+    //    convertToUpper(key);
+    //    if (key == "CENTER") {
+    //        settings->setPos += 3;
+    //    } else if (key == "BOTTOM") {
+    //        settings->setPos += 6;
+    //    }
+    //}
 
     it = section.find("frame_offset_x");
     if (it != section.end()) {

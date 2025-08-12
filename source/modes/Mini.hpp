@@ -32,18 +32,18 @@ public:
             fontsize = settings.handheldFontSize;
         }
         else fontsize = settings.dockedFontSize;
-        switch(settings.setPos) {
-            case 1:
-            case 4:
-            case 7:
-                tsl::gfx::Renderer::get().setLayerPos(624, 0);
-                break;
-            case 2:
-            case 5:
-            case 8:
-                tsl::gfx::Renderer::get().setLayerPos(1248, 0);
-                break;
-        }
+        //switch(settings.setPos) {
+        //    case 1:
+        //    case 4:
+        //    case 7:
+        //        tsl::gfx::Renderer::get().setLayerPos(624, 0);
+        //        break;
+        //    case 2:
+        //    case 5:
+        //    case 8:
+        //        tsl::gfx::Renderer::get().setLayerPos(1248, 0);
+        //        break;
+        //}
         mutexInit(&mutex_BatteryChecker);
         mutexInit(&mutex_Misc);
         //alphabackground = 0x0;
@@ -77,7 +77,7 @@ public:
     virtual tsl::elm::Element* createUI() override {
 
         auto* Status = new tsl::elm::CustomDrawer([this](tsl::gfx::Renderer *renderer, u16 x, u16 y, u16 w, u16 h) {
-            static constexpr u16 frameWidth = 448;
+            //static constexpr u16 frameWidth = 448;
             
             // Cache parsed settings and calculations
             static std::vector<std::string> showKeys;
@@ -310,39 +310,39 @@ public:
                 
                 // Use the actual entry count for height calculation
                 cachedHeight = ((fontsize + settings.spacing) * actualEntryCount) + (fontsize / 3) + settings.spacing + topPadding + bottomPadding;
-                const uint32_t margin = (fontsize * 4);
+                //const uint32_t margin = (fontsize * 4);
                 
                 cachedBaseX = 0;
                 cachedBaseY = 0;
                 
-                if (ult::useRightAlignment) {
-                    cachedBaseX = frameWidth - (margin + rectangleWidth + (fontsize / 3));
-                } else {
-                    switch (settings.setPos) {
-                        case 1:
-                            cachedBaseX = 224 - ((margin + rectangleWidth + (fontsize / 3)) / 2);
-                            break;
-                        case 4:
-                            cachedBaseX = 224 - ((margin + rectangleWidth + (fontsize / 3)) / 2);
-                            cachedBaseY = 360 - cachedHeight / 2;
-                            break;
-                        case 7:
-                            cachedBaseX = 224 - ((margin + rectangleWidth + (fontsize / 3)) / 2);
-                            cachedBaseY = 720 - cachedHeight;
-                            break;
-                        case 2:
-                            cachedBaseX = 448 - (margin + rectangleWidth + (fontsize / 3));
-                            break;
-                        case 5:
-                            cachedBaseX = 448 - (margin + rectangleWidth + (fontsize / 3));
-                            cachedBaseY = 360 - cachedHeight / 2;
-                            break;
-                        case 8:
-                            cachedBaseX = 448 - (margin + rectangleWidth + (fontsize / 3));
-                            cachedBaseY = 720 - cachedHeight;
-                            break;
-                    }
-                }
+                //if (ult::useRightAlignment) {
+                //    cachedBaseX = frameWidth - (margin + rectangleWidth + (fontsize / 3));
+                //} else {
+                //switch (settings.setPos) {
+                //    case 1:
+                //        cachedBaseX = 224 - ((margin + rectangleWidth + (fontsize / 3)) / 2);
+                //        break;
+                //    case 4:
+                //        cachedBaseX = 224 - ((margin + rectangleWidth + (fontsize / 3)) / 2);
+                //        cachedBaseY = 360 - cachedHeight / 2;
+                //        break;
+                //    case 7:
+                //        cachedBaseX = 224 - ((margin + rectangleWidth + (fontsize / 3)) / 2);
+                //        cachedBaseY = 720 - cachedHeight;
+                //        break;
+                //    case 2:
+                //        cachedBaseX = 448 - (margin + rectangleWidth + (fontsize / 3));
+                //        break;
+                //    case 5:
+                //        cachedBaseX = 448 - (margin + rectangleWidth + (fontsize / 3));
+                //        cachedBaseY = 360 - cachedHeight / 2;
+                //        break;
+                //    case 8:
+                //        cachedBaseX = 448 - (margin + rectangleWidth + (fontsize / 3));
+                //        cachedBaseY = 720 - cachedHeight;
+                //        break;
+                //}
+                ///}
                 needsRecalc = false;
             }
             
@@ -1109,34 +1109,34 @@ public:
             cachedBaseX = 0;
             cachedBaseY = 0;
             
-            if (ult::useRightAlignment) {
-                cachedBaseX = 448 - (margin + rectangleWidth + (fontsize / 3));
-            } else {
-                switch (settings.setPos) {
-                    case 1:
-                        cachedBaseX = 224 - ((margin + rectangleWidth + (fontsize / 3)) / 2);
-                        break;
-                    case 4:
-                        cachedBaseX = 224 - ((margin + rectangleWidth + (fontsize / 3)) / 2);
-                        cachedBaseY = 360 - cachedOverlayHeight / 2;
-                        break;
-                    case 7:
-                        cachedBaseX = 224 - ((margin + rectangleWidth + (fontsize / 3)) / 2);
-                        cachedBaseY = 720 - cachedOverlayHeight;
-                        break;
-                    case 2:
-                        cachedBaseX = 448 - (margin + rectangleWidth + (fontsize / 3));
-                        break;
-                    case 5:
-                        cachedBaseX = 448 - (margin + rectangleWidth + (fontsize / 3));
-                        cachedBaseY = 360 - cachedOverlayHeight / 2;
-                        break;
-                    case 8:
-                        cachedBaseX = 448 - (margin + rectangleWidth + (fontsize / 3));
-                        cachedBaseY = 720 - cachedOverlayHeight;
-                        break;
-                }
-            }
+            //if (ult::useRightAlignment) {
+            //    cachedBaseX = 448 - (margin + rectangleWidth + (fontsize / 3));
+            //} else {
+            //switch (settings.setPos) {
+            //    case 1:
+            //        cachedBaseX = 224 - ((margin + rectangleWidth + (fontsize / 3)) / 2);
+            //        break;
+            //    case 4:
+            //        cachedBaseX = 224 - ((margin + rectangleWidth + (fontsize / 3)) / 2);
+            //        cachedBaseY = 360 - cachedOverlayHeight / 2;
+            //        break;
+            //    case 7:
+            //        cachedBaseX = 224 - ((margin + rectangleWidth + (fontsize / 3)) / 2);
+            //        cachedBaseY = 720 - cachedOverlayHeight;
+            //        break;
+            //    case 2:
+            //        cachedBaseX = 448 - (margin + rectangleWidth + (fontsize / 3));
+            //        break;
+            //    case 5:
+            //        cachedBaseX = 448 - (margin + rectangleWidth + (fontsize / 3));
+            //        cachedBaseY = 360 - cachedOverlayHeight / 2;
+            //        break;
+            //    case 8:
+            //        cachedBaseX = 448 - (margin + rectangleWidth + (fontsize / 3));
+            //        cachedBaseY = 720 - cachedOverlayHeight;
+            //        break;
+            //}
+            //}
             
             boundsNeedUpdate = false;
             lastVariables = Variables;
