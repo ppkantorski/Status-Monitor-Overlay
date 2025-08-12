@@ -14,8 +14,6 @@ show_res=true
 
 [mini]
 refresh_rate=1
-layer_width_align=left
-layer_height_align=top
 handheld_font_size=15
 docked_font_size=15
 spacing=8
@@ -30,7 +28,7 @@ show_vdd2=true
 decimal_vdd2=false
 show_dtc=true
 use_dtc_symbol=true
-dtc_format=%m-%d-%Y%H:%M:%S
+dtc_format=%m-%d-%Y%H:%M:%S
 frame_offset_x=8
 frame_offset_y=8
 show=DTC+BAT+CPU+GPU+RAM+SOC+FPS+RES
