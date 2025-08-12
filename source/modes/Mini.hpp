@@ -1058,29 +1058,30 @@ public:
         // Static variables to maintain drag state between function calls
         static bool oldTouchDetected = false;
         static bool oldMinusHeld = false;
+        static bool oldPlusHeld = false;
         static HidTouchState initialTouchPos = {0};
         static int initialFrameOffsetX = 0;
         static int initialFrameOffsetY = 0;
         static constexpr int TOUCH_THRESHOLD = 8;
         static bool hasMoved = false;
-        static u64 lastTouchTime = 0;
-        static constexpr u64 TOUCH_DEBOUNCE_NS = 16000000ULL; // 16ms debounce
+        //static u64 lastTouchTime = 0;
+        //static constexpr u64 TOUCH_DEBOUNCE_NS = 16000000ULL; // 16ms debounce
     
         // Get current time for debouncing
-        const u64 currentTime = armTicksToNs(armGetSystemTick());
+        //const u64 currentTime = armTicksToNs(armGetSystemTick());
         
         // Better touch detection - check if coordinates are within reasonable screen bounds
         bool currentTouchDetected = (touchPos.x > 0 && touchPos.y > 0 && 
                                     touchPos.x < 1280 && touchPos.y < 720);
         
         // Debounce touch detection
-        if (currentTouchDetected && !oldTouchDetected) {
-            if (currentTime - lastTouchTime < TOUCH_DEBOUNCE_NS) {
-                currentTouchDetected = false; // Ignore rapid touch changes
-            } else {
-                lastTouchTime = currentTime;
-            }
-        }
+        //if (currentTouchDetected && !oldTouchDetected) {
+        //    if (currentTime - lastTouchTime < TOUCH_DEBOUNCE_NS) {
+        //        currentTouchDetected = false; // Ignore rapid touch changes
+        //    } else {
+        //        lastTouchTime = currentTime;
+        //    }
+        //}
         
         // Calculate overlay bounds
         const uint32_t margin = (fontsize * 4);
@@ -1162,8 +1163,9 @@ public:
         const int minY = -cachedBaseY + 10;
         const int maxY = screenHeight - overlayHeight - cachedBaseY - 10;
     
-        // Check KEY_MINUS state
-        const bool currentMinusHeld = (keysHeld & KEY_MINUS);
+        // Check button states
+        const bool currentMinusHeld = (keysHeld & KEY_MINUS) && !(keysHeld & ~KEY_MINUS & ALL_KEYS_MASK);
+        const bool currentPlusHeld = (keysHeld & KEY_PLUS) && !(keysHeld & ~KEY_PLUS & ALL_KEYS_MASK);
     
         // Handle touch dragging
         if (currentTouchDetected && !isDragging) {
@@ -1186,8 +1188,8 @@ public:
                     initialFrameOffsetY = frameOffsetY;
                 }
             }
-        } else if (currentTouchDetected && isDragging && !currentMinusHeld) {
-            // Continue touch dragging (only if MINUS is not held)
+        } else if (currentTouchDetected && isDragging && !currentMinusHeld && !currentPlusHeld) {
+            // Continue touch dragging (only if neither MINUS nor PLUS is held)
             const int touchX = touchPos.x;
             const int touchY = touchPos.y;
             const int deltaX = touchX - initialTouchPos.x;
@@ -1210,7 +1212,7 @@ public:
                 frameOffsetY = newFrameOffsetY;
                 boundsNeedUpdate = true;
             }
-        } else if (!currentTouchDetected && oldTouchDetected && isDragging && !currentMinusHeld) {
+        } else if (!currentTouchDetected && oldTouchDetected && isDragging && !currentMinusHeld && !currentPlusHeld) {
             // Touch just released and we were touch dragging
             if (hasMoved) {
                 // Save position when touch drag ends
@@ -1227,22 +1229,25 @@ public:
             leventClear(&renderingStopEvent);
         }
     
-        // Handle KEY_MINUS + joystick dragging
-        if (currentMinusHeld && !isDragging) {
+        // Handle joystick dragging (MINUS + right joystick OR PLUS + left joystick)
+        if ((currentMinusHeld || currentPlusHeld) && !isDragging) {
             // Start joystick dragging
             isDragging = true;
             isRendering = false;
             leventSignal(&renderingStopEvent);
-        } else if (currentMinusHeld && isDragging) {
+        } else if ((currentMinusHeld || currentPlusHeld) && isDragging) {
             // Continue joystick dragging
-            static constexpr float JOYSTICK_BASE_SENSITIVITY = 0.00006f; // Slow for small movements
+            static constexpr float JOYSTICK_BASE_SENSITIVITY = 0.00001f; // Slow for small movements
             static constexpr float JOYSTICK_MAX_SENSITIVITY = 0.0005f;  // Reduced max speed
-            static constexpr int JOYSTICK_DEADZONE = 100;
+            static constexpr int JOYSTICK_DEADZONE = 20;
+            
+            // Choose the appropriate joystick based on which button is held
+            const HidAnalogStickState& activeJoystick = currentMinusHeld ? joyStickPosRight : joyStickPosLeft;
             
             // Only move if joystick is outside deadzone
-            if (abs(joyStickPosRight.x) > JOYSTICK_DEADZONE || abs(joyStickPosRight.y) > JOYSTICK_DEADZONE) {
+            if (abs(activeJoystick.x) > JOYSTICK_DEADZONE || abs(activeJoystick.y) > JOYSTICK_DEADZONE) {
                 // Calculate joystick magnitude (distance from center)
-                const float magnitude = sqrt((float)(joyStickPosRight.x * joyStickPosRight.x + joyStickPosRight.y * joyStickPosRight.y));
+                const float magnitude = sqrt((float)(activeJoystick.x * activeJoystick.x + activeJoystick.y * activeJoystick.y));
                 const float normalizedMagnitude = magnitude / 32767.0f; // Normalize to 0-1 range
                 
                 // Create an even steeper curve: stays slow for ~75% of range
@@ -1251,14 +1256,10 @@ public:
                 const float currentSensitivity = JOYSTICK_BASE_SENSITIVITY + (JOYSTICK_MAX_SENSITIVITY - JOYSTICK_BASE_SENSITIVITY) * sensitivityMultiplier;
                 
                 // Calculate movement delta based on joystick position with scaled sensitivity
-                const float deltaX = (float)joyStickPosRight.x * currentSensitivity;
-                const float deltaY = -(float)joyStickPosRight.y * currentSensitivity; // Invert Y axis
+                const float deltaX = (float)activeJoystick.x * currentSensitivity;
+                const float deltaY = -(float)activeJoystick.y * currentSensitivity; // Invert Y axis
                 
                 // Update frame offsets with boundary checking
-                //int newFrameOffsetX = frameOffsetX + (int)deltaX;
-                //int newFrameOffsetY = frameOffsetY + (int)deltaY;
-                
-                // Clamp to screen boundaries
                 const int newFrameOffsetX = std::max(minX, std::min(maxX, frameOffsetX + (int)deltaX));
                 const int newFrameOffsetY = std::max(minY, std::min(maxY, frameOffsetY + (int)deltaY));
                 
@@ -1266,8 +1267,8 @@ public:
                 frameOffsetY = newFrameOffsetY;
                 boundsNeedUpdate = true;
             }
-        } else if (!currentMinusHeld && oldMinusHeld && isDragging) {
-            // KEY_MINUS just released - stop joystick dragging
+        } else if (((!currentMinusHeld && oldMinusHeld) || (!currentPlusHeld && oldPlusHeld)) && isDragging) {
+            // Button just released - stop joystick dragging
             auto iniData = ult::getParsedDataFromIniFile(configIniPath);
             iniData["mini"]["frame_offset_x"] = std::to_string(frameOffsetX);
             iniData["mini"]["frame_offset_y"] = std::to_string(frameOffsetY);
@@ -1280,6 +1281,7 @@ public:
         // Update state for next frame
         oldTouchDetected = currentTouchDetected;
         oldMinusHeld = currentMinusHeld;
+        oldPlusHeld = currentPlusHeld;
         
         // Handle existing key input logic (but don't interfere with dragging)
         if (!isDragging) {
