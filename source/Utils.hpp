@@ -1139,6 +1139,8 @@ struct MiniSettings {
     bool showFullCPU;
     bool showFullResolution;
     bool showFanPercentage;
+    bool showSOCVoltage;
+    bool useDynamicColors;
     bool showVDDQ;
     bool showVDD2;
     bool decimalVDD2;
@@ -1163,14 +1165,16 @@ struct MicroSettings {
     uint8_t refreshRate;
     bool realFrequencies;
     bool realVolts; 
-    bool showFullCPU; 
+    bool showFullCPU;
+    bool showFullResolution;
+    bool showSOCVoltage;
+    bool useDynamicColors;
     bool showVDDQ;
     bool showVDD2;
     bool decimalVDD2;
     bool showDTC;
     bool useDTCSymbol;
     std::string dtcFormat;
-    bool showFullResolution;
     size_t handheldFontSize;
     size_t dockedFontSize;
     uint8_t alignTo;
@@ -1222,7 +1226,9 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
     settings->showFullCPU = false;
     settings->showFullResolution = true;
     settings->showFanPercentage = true;
+    settings->useDynamicColors = true;
     settings->showFullCPU = false;
+    settings->showSOCVoltage = true;
     settings->showVDDQ = false;
     settings->showVDD2 = true;
     settings->decimalVDD2 = false;
@@ -1352,6 +1358,20 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
         settings->showFullResolution = !(key == "FALSE");
     }
 
+    it = section.find("show_soc_voltage");
+    if (it != section.end()) {
+        key = it->second;
+        convertToUpper(key);
+        settings->showSOCVoltage = !(key == "FALSE");
+    }
+
+    it = section.find("use_dynamic_colors");
+    if (it != section.end()) {
+        key = it->second;
+        convertToUpper(key);
+        settings->useDynamicColors = (key == "TRUE");
+    }
+
     it = section.find("show_vddq");
     if (it != section.end()) {
         key = it->second;
@@ -1448,13 +1468,15 @@ ALWAYS_INLINE void GetConfigSettings(MicroSettings* settings) {
     settings->realFrequencies = true;
     settings->realVolts = true;
     settings->showFullCPU = false;
+    settings->showFullResolution = false;
+    settings->showSOCVoltage = true;
+    settings->useDynamicColors = true;
     settings->showVDDQ = false;
     settings->showVDD2 = true;
     settings->decimalVDD2 = false;
     settings->showDTC = true;
     settings->useDTCSymbol = true;
     settings->dtcFormat = "%H:%M:%S";//"%Y-%m-%d %I:%M:%S %p";
-    settings->showFullResolution = false;
     settings->handheldFontSize = 15;
     settings->dockedFontSize = 15;
     settings->alignTo = 1; // CENTER
@@ -1524,6 +1546,20 @@ ALWAYS_INLINE void GetConfigSettings(MicroSettings* settings) {
         key = it->second;
         convertToUpper(key);
         settings->showFullResolution = (key == "TRUE");
+    }
+
+    it = section.find("show_soc_voltage");
+    if (it != section.end()) {
+        key = it->second;
+        convertToUpper(key);
+        settings->showSOCVoltage = !(key == "FALSE");
+    }
+
+    it = section.find("use_dynamic_colors");
+    if (it != section.end()) {
+        key = it->second;
+        convertToUpper(key);
+        settings->useDynamicColors = (key == "TRUE");
     }
 
     it = section.find("show_vddq");

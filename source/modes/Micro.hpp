@@ -178,13 +178,13 @@ public:
                         break;
                     case 0x534F43: // "SOC"
                         if (!(seen_flags & 8)) {
-                            renderItems.push_back({3, "SOC", soc_temperature_c, SOC_volt_c, settings.realVolts});
+                            renderItems.push_back({3, "SOC", soc_temperature_c, SOC_volt_c, settings.realVolts && settings.showSOCVoltage});
                             seen_flags |= 8;
                         }
                         break;
                     case 0x544D50: // "TMP"
                         if (!(seen_flags & 16)) {
-                            renderItems.push_back({4, "TMP", skin_temperature_c, SOC_volt_c, settings.realVolts});
+                            renderItems.push_back({4, "TMP", skin_temperature_c, SOC_volt_c, settings.realVolts && settings.showSOCVoltage});
                             seen_flags |= 16;
                         }
                         break;
@@ -456,97 +456,103 @@ public:
                 
                 // Draw data
                 //renderer->drawString(item.data_ptr, false, current_x, base_y + fontsize, fontsize, textColorA);
-                // Draw data with temperature gradient support
-                if (item.type == 3) { // SOC temperature
-                    // Parse SOC temperature: "XX°C (XX%)"
-                    std::string dataStr(item.data_ptr);
-                    const size_t degreesPos = dataStr.find("°");
-                    if (degreesPos != std::string::npos) {
-                        const size_t cPos = dataStr.find("C", degreesPos);
-                        if (cPos != std::string::npos) {
-                            const size_t tempEnd = cPos + 1; // Include the 'C'
-                            
-                            // Extract temperature value and apply gradient
-                            const int temp = atoi(item.data_ptr);
-                            const tsl::Color tempColor = tsl::GradientColor((float)temp);
-                            
-                            // Split into temperature part and remaining part
-                            const std::string tempPart = dataStr.substr(0, tempEnd);
-                            const std::string restPart = dataStr.substr(tempEnd);
-                            
-                            // Render temperature with gradient color
-                            renderer->drawString(tempPart, false, current_x, base_y + cachedMargin, fontsize, tempColor);
-                            
-                            // Render remaining text with normal color
-                            if (!restPart.empty()) {
-                                const uint32_t tempPartWidth = renderer->getTextDimensions(tempPart, false, fontsize).first;
-                                renderer->drawStringWithColoredSections(restPart, false, specialChars, current_x + tempPartWidth, base_y + cachedMargin, fontsize, textColorA, a(settings.separatorColor));
+
+                if (settings.useDynamicColors) {
+                    // Draw data with temperature gradient support
+                    if (item.type == 3) { // SOC temperature
+                        // Parse SOC temperature: "XX°C (XX%)"
+                        std::string dataStr(item.data_ptr);
+                        const size_t degreesPos = dataStr.find("°");
+                        if (degreesPos != std::string::npos) {
+                            const size_t cPos = dataStr.find("C", degreesPos);
+                            if (cPos != std::string::npos) {
+                                const size_t tempEnd = cPos + 1; // Include the 'C'
+                                
+                                // Extract temperature value and apply gradient
+                                const int temp = atoi(item.data_ptr);
+                                const tsl::Color tempColor = tsl::GradientColor((float)temp);
+                                
+                                // Split into temperature part and remaining part
+                                const std::string tempPart = dataStr.substr(0, tempEnd);
+                                const std::string restPart = dataStr.substr(tempEnd);
+                                
+                                // Render temperature with gradient color
+                                renderer->drawString(tempPart, false, current_x, base_y + cachedMargin, fontsize, tempColor);
+                                
+                                // Render remaining text with normal color
+                                if (!restPart.empty()) {
+                                    const uint32_t tempPartWidth = renderer->getTextDimensions(tempPart, false, fontsize).first;
+                                    renderer->drawStringWithColoredSections(restPart, false, specialChars, current_x + tempPartWidth, base_y + cachedMargin, fontsize, textColorA, a(settings.separatorColor));
+                                }
+                            } else {
+                                // Fallback: render normally
+                                renderer->drawStringWithColoredSections(item.data_ptr, false, specialChars, current_x, base_y + cachedMargin, fontsize, textColorA, a(settings.separatorColor));
                             }
                         } else {
                             // Fallback: render normally
                             renderer->drawStringWithColoredSections(item.data_ptr, false, specialChars, current_x, base_y + cachedMargin, fontsize, textColorA, a(settings.separatorColor));
                         }
+                        
+                    } else if (item.type == 4) { // TMP multiple temperatures
+                        // Parse TMP temperatures: "XX°C XX°C XX°C (XX%)"
+                        std::string dataStr(item.data_ptr);
+                        uint32_t renderX = current_x;
+                        size_t pos = 0;
+                        bool parseSuccess = true;
+                        
+                        // Parse up to 3 temperatures
+                        for (int tempCount = 0; tempCount < 3 && parseSuccess && pos < dataStr.length(); tempCount++) {
+                            // Skip any leading spaces
+                            while (pos < dataStr.length() && dataStr[pos] == ' ') {
+                                renderer->drawString(" ", false, renderX, base_y + cachedMargin, fontsize, textColorA);
+                                renderX += renderer->getTextDimensions(" ", false, fontsize).first;
+                                pos++;
+                            }
+                            
+                            if (pos >= dataStr.length()) break;
+                            
+                            // Find degrees symbol
+                            const size_t degreesPos = dataStr.find("°", pos);
+                            if (degreesPos == std::string::npos) {
+                                parseSuccess = false;
+                                break;
+                            }
+                            
+                            // Find 'C' after degrees symbol
+                            const size_t cPos = dataStr.find("C", degreesPos);
+                            if (cPos == std::string::npos) {
+                                parseSuccess = false;
+                                break;
+                            }
+                            
+                            const size_t tempEnd = cPos + 1; // Include the 'C'
+                            
+                            // Extract and render temperature with gradient
+                            const std::string tempPart = dataStr.substr(pos, tempEnd - pos);
+                            const int temp = atoi(tempPart.c_str());
+                            const tsl::Color tempColor = tsl::GradientColor((float)temp);
+                            
+                            renderer->drawStringWithColoredSections(tempPart, false, specialChars, renderX, base_y + cachedMargin, fontsize, tempColor, a(settings.separatorColor));
+                            renderX += renderer->getTextDimensions(tempPart, false, fontsize).first;
+                            
+                            pos = tempEnd;
+                        }
+                        
+                        // Render any remaining text (like " (50%)")
+                        if (pos < dataStr.length()) {
+                            const std::string restPart = dataStr.substr(pos);
+                            renderer->drawStringWithColoredSections(restPart, false, specialChars, renderX, base_y + cachedMargin, fontsize, textColorA, a(settings.separatorColor));
+                        }
+                        
+                        // If parsing failed, fall back to normal rendering
+                        if (!parseSuccess) {
+                            renderer->drawStringWithColoredSections(item.data_ptr, false, specialChars, current_x, base_y + cachedMargin, fontsize, textColorA, a(settings.separatorColor));
+                        }
+                        
                     } else {
-                        // Fallback: render normally
+                        // Normal rendering for all other item types
                         renderer->drawStringWithColoredSections(item.data_ptr, false, specialChars, current_x, base_y + cachedMargin, fontsize, textColorA, a(settings.separatorColor));
                     }
-                    
-                } else if (item.type == 4) { // TMP multiple temperatures
-                    // Parse TMP temperatures: "XX°C XX°C XX°C (XX%)"
-                    std::string dataStr(item.data_ptr);
-                    uint32_t renderX = current_x;
-                    size_t pos = 0;
-                    bool parseSuccess = true;
-                    
-                    // Parse up to 3 temperatures
-                    for (int tempCount = 0; tempCount < 3 && parseSuccess && pos < dataStr.length(); tempCount++) {
-                        // Skip any leading spaces
-                        while (pos < dataStr.length() && dataStr[pos] == ' ') {
-                            renderer->drawString(" ", false, renderX, base_y + cachedMargin, fontsize, textColorA);
-                            renderX += renderer->getTextDimensions(" ", false, fontsize).first;
-                            pos++;
-                        }
-                        
-                        if (pos >= dataStr.length()) break;
-                        
-                        // Find degrees symbol
-                        const size_t degreesPos = dataStr.find("°", pos);
-                        if (degreesPos == std::string::npos) {
-                            parseSuccess = false;
-                            break;
-                        }
-                        
-                        // Find 'C' after degrees symbol
-                        const size_t cPos = dataStr.find("C", degreesPos);
-                        if (cPos == std::string::npos) {
-                            parseSuccess = false;
-                            break;
-                        }
-                        
-                        const size_t tempEnd = cPos + 1; // Include the 'C'
-                        
-                        // Extract and render temperature with gradient
-                        const std::string tempPart = dataStr.substr(pos, tempEnd - pos);
-                        const int temp = atoi(tempPart.c_str());
-                        const tsl::Color tempColor = tsl::GradientColor((float)temp);
-                        
-                        renderer->drawStringWithColoredSections(tempPart, false, specialChars, renderX, base_y + cachedMargin, fontsize, tempColor, a(settings.separatorColor));
-                        renderX += renderer->getTextDimensions(tempPart, false, fontsize).first;
-                        
-                        pos = tempEnd;
-                    }
-                    
-                    // Render any remaining text (like " (50%)")
-                    if (pos < dataStr.length()) {
-                        const std::string restPart = dataStr.substr(pos);
-                        renderer->drawStringWithColoredSections(restPart, false, specialChars, renderX, base_y + cachedMargin, fontsize, textColorA, a(settings.separatorColor));
-                    }
-                    
-                    // If parsing failed, fall back to normal rendering
-                    if (!parseSuccess) {
-                        renderer->drawStringWithColoredSections(item.data_ptr, false, specialChars, current_x, base_y + cachedMargin, fontsize, textColorA, a(settings.separatorColor));
-                    }
-                    
                 } else {
                     // Normal rendering for all other item types
                     renderer->drawStringWithColoredSections(item.data_ptr, false, specialChars, current_x, base_y + cachedMargin, fontsize, textColorA, a(settings.separatorColor));
@@ -819,9 +825,11 @@ public:
         //}
 
         /* ── SoC voltage ───────────────────────────── */
-        if (settings.realVolts) {
+        if (settings.realVolts && settings.showSOCVoltage) {
             const uint32_t mv = realSOC_mV / 1000;
             snprintf(SOC_volt_c, sizeof(SOC_volt_c), "%u mV", mv);
+        } else {
+            SOC_volt_c[0] = '\0'; // Clear the buffer when disabled
         }
 
         // Resolution processing
