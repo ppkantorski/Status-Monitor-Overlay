@@ -4,7 +4,7 @@
 #include <cstdlib>
 #include <ctime>
 
-//static tsl::elm::OverlayFrame* rootFrame = nullptr;
+//static tsl::elm::HeaderOverlayFrame* rootFrame = nullptr;
 static bool skipMain = false;
 static std::string lastSelectedItem;
 
@@ -16,70 +16,72 @@ static std::string lastSelectedItem;
 #include "modes/Battery.hpp"
 #include "modes/Misc.hpp"
 #include "modes/Resolutions.hpp"
-
+#include "modes/Configurator.hpp" 
 
 
 
 //Graphs
-class GraphsMenu : public tsl::Gui {
-public:
-    GraphsMenu() {}
-
-    virtual tsl::elm::Element* createUI() override {
-        
-        auto* list = new tsl::elm::List();
-
-        auto* comFPSGraph = new tsl::elm::ListItem("Graph");
-        comFPSGraph->setClickListener([](uint64_t keys) {
-            if (keys & KEY_A) {
-                tsl::changeTo<com_FPSGraph>();
-                return true;
-            }
-            return false;
-        });
-        list->addItem(comFPSGraph);
-
-        auto* comFPSCounter = new tsl::elm::ListItem("Counter");
-        comFPSCounter->setClickListener([](uint64_t keys) {
-            if (keys & KEY_A) {
-                tsl::changeTo<com_FPS>();
-                return true;
-            }
-            return false;
-        });
-        list->addItem(comFPSCounter);
-
-        tsl::elm::OverlayFrame* rootFrame = new tsl::elm::OverlayFrame("Status Monitor", "FPS");
-        rootFrame->setContent(list);
-
-        return rootFrame;
-    }
-
-    virtual void update() override {
-        if (fixForeground) {
-            fixForeground = false;
-            tsl::hlp::requestForeground(true);
-        }
-    }
-
-    virtual bool handleInput(u64 keysDown, u64 keysHeld, const HidTouchState &touchPos, HidAnalogStickState joyStickPosLeft, HidAnalogStickState joyStickPosRight) override {
-        if (disableJumpTo)
-            disableJumpTo = false;
-        if (fixHiding) {
-            if (isKeyComboPressed2(keysDown, keysHeld)) {
-                tsl::Overlay::get()->hide();
-                fixHiding = false;
-                return true;
-            }
-        }
-
-        if (keysDown & KEY_B) {
-            tsl::goBack();
-            return true;
-        }
-        return false;
-    }
-};
+//class GraphsMenu : public tsl::Gui {
+//public:
+//    GraphsMenu() {}
+//
+//    virtual tsl::elm::Element* createUI() override {
+//        
+//        auto* list = new tsl::elm::List();
+//
+//        list->addItem(new tsl::elm::CategoryHeader("FPS"));
+//
+//        auto* comFPSGraph = new tsl::elm::ListItem("Graph");
+//        comFPSGraph->setClickListener([](uint64_t keys) {
+//            if (keys & KEY_A) {
+//                tsl::changeTo<com_FPSGraph>();
+//                return true;
+//            }
+//            return false;
+//        });
+//        list->addItem(comFPSGraph);
+//
+//        auto* comFPSCounter = new tsl::elm::ListItem("Counter");
+//        comFPSCounter->setClickListener([](uint64_t keys) {
+//            if (keys & KEY_A) {
+//                tsl::changeTo<com_FPS>();
+//                return true;
+//            }
+//            return false;
+//        });
+//        list->addItem(comFPSCounter);
+//
+//        tsl::elm::HeaderOverlayFrame* rootFrame = new tsl::elm::HeaderOverlayFrame("Status Monitor", "Modes");
+//        rootFrame->setContent(list);
+//
+//        return rootFrame;
+//    }
+//
+//    virtual void update() override {
+//        if (fixForeground) {
+//            fixForeground = false;
+//            tsl::hlp::requestForeground(true);
+//        }
+//    }
+//
+//    virtual bool handleInput(u64 keysDown, u64 keysHeld, const HidTouchState &touchPos, HidAnalogStickState joyStickPosLeft, HidAnalogStickState joyStickPosRight) override {
+//        if (disableJumpTo)
+//            disableJumpTo = false;
+//        if (fixHiding) {
+//            if (isKeyComboPressed2(keysDown, keysHeld)) {
+//                tsl::Overlay::get()->hide();
+//                fixHiding = false;
+//                return true;
+//            }
+//        }
+//
+//        if (keysDown & KEY_B) {
+//            tsl::goBack();
+//            return true;
+//        }
+//        return false;
+//    }
+//};
 
 //Other
 class OtherMenu : public tsl::Gui {
@@ -89,6 +91,8 @@ public:
     virtual tsl::elm::Element* createUI() override {
         
         auto* list = new tsl::elm::List();
+
+        list->addItem(new tsl::elm::CategoryHeader("Other"));
 
         auto* Battery = new tsl::elm::ListItem("Battery/Charger");
         Battery->setClickListener([](uint64_t keys) {
@@ -110,19 +114,19 @@ public:
         });
         list->addItem(Misc);
 
-        if (SaltySD) {
-            auto* Res = new tsl::elm::ListItem("Game Resolutions");
-            Res->setClickListener([](uint64_t keys) {
-                if (keys & KEY_A) {
-                    tsl::changeTo<ResolutionsOverlay>();
-                    return true;
-                }
-                return false;
-            });
-            list->addItem(Res);
-        }
+        //if (SaltySD) {
+        //    auto* Res = new tsl::elm::ListItem("Game Resolutions");
+        //    Res->setClickListener([](uint64_t keys) {
+        //        if (keys & KEY_A) {
+        //            tsl::changeTo<ResolutionsOverlay>();
+        //            return true;
+        //        }
+        //        return false;
+        //    });
+        //    list->addItem(Res);
+        //}
 
-        tsl::elm::OverlayFrame* rootFrame = new tsl::elm::OverlayFrame("Status Monitor", "Other");
+        tsl::elm::HeaderOverlayFrame* rootFrame = new tsl::elm::HeaderOverlayFrame("Status Monitor", "Modes");
         rootFrame->setContent(list);
 
         return rootFrame;
@@ -163,10 +167,18 @@ public:
         
         auto* list = new tsl::elm::List();
         
+        //list->addItem(new tsl::elm::CategoryHeader("Modes " + ult::DIVIDER_SYMBOL + " \uE0E0 Enter " + ult::DIVIDER_SYMBOL + " \uE0E3 Configure"));
+        list->addItem(new tsl::elm::CategoryHeader("Modes " + ult::DIVIDER_SYMBOL + " \uE0E3 Configure"));
+
         auto* Full = new tsl::elm::ListItem("Full");
         Full->setClickListener([](uint64_t keys) {
             if (keys & KEY_A) {
                 tsl::changeTo<FullOverlay>();
+                return true;
+            }
+            if (keys & KEY_Y) {
+                // Launch configurator for Mini mode
+                tsl::changeTo<ConfiguratorOverlay>("Full");
                 return true;
             }
             return false;
@@ -205,6 +217,11 @@ public:
                     tsl::Overlay::get()->close();
                     return true;
                 }
+                if (keys & KEY_Y) {
+                    // Launch configurator for Mini mode
+                    tsl::changeTo<ConfiguratorOverlay>("Mini");
+                    return true;
+                }
                 return false;
             });
             list->addItem(Mini);
@@ -216,21 +233,57 @@ public:
                     tsl::Overlay::get()->close();
                     return true;
                 }
+                if (keys & KEY_Y) {
+                    // Launch configurator for Micro mode
+                    tsl::changeTo<ConfiguratorOverlay>("Micro");
+                    return true;
+                }
                 return false;
             });
             list->addItem(Micro);
         }
         if (SaltySD) {
-            auto* Graphs = new tsl::elm::ListItem("FPS");
-            Graphs->setValue(ult::DROPDOWN_SYMBOL);
-            Graphs->setClickListener([](uint64_t keys) {
+            //auto* Graphs = new tsl::elm::ListItem("FPS");
+            //Graphs->setValue(ult::DROPDOWN_SYMBOL);
+            //Graphs->setClickListener([](uint64_t keys) {
+            //    if (keys & KEY_A) {
+            //        tsl::changeTo<GraphsMenu>();
+            //        return true;
+            //    }
+            //    return false;
+            //});
+            //list->addItem(Graphs);
+
+            auto* comFPSGraph = new tsl::elm::ListItem("FPS Graph");
+            comFPSGraph->setClickListener([](uint64_t keys) {
                 if (keys & KEY_A) {
-                    tsl::changeTo<GraphsMenu>();
+                    tsl::changeTo<com_FPSGraph>();
                     return true;
                 }
                 return false;
             });
-            list->addItem(Graphs);
+            list->addItem(comFPSGraph);
+
+            auto* comFPSCounter = new tsl::elm::ListItem("FPS Counter");
+            comFPSCounter->setClickListener([](uint64_t keys) {
+                if (keys & KEY_A) {
+                    tsl::changeTo<com_FPS>();
+                    return true;
+                }
+                return false;
+            });
+            list->addItem(comFPSCounter);
+
+            auto* Res = new tsl::elm::ListItem("Game Resolutions");
+            Res->setClickListener([](uint64_t keys) {
+                if (keys & KEY_A) {
+                    tsl::changeTo<ResolutionsOverlay>();
+                    return true;
+                }
+                return false;
+            });
+            list->addItem(Res);
+
         }
         auto* Other = new tsl::elm::ListItem("Other");
         Other->setValue(ult::DROPDOWN_SYMBOL);
@@ -246,15 +299,20 @@ public:
         if (!lastSelectedItem.empty())
             list->jumpToItem(lastSelectedItem);
 
-        tsl::elm::OverlayFrame* rootFrame = new tsl::elm::OverlayFrame("Status Monitor", APP_VERSION);
+        tsl::elm::HeaderOverlayFrame* rootFrame = new tsl::elm::HeaderOverlayFrame("Status Monitor", APP_VERSION);
         rootFrame->setContent(list);
 
         return rootFrame;
     }
 
     virtual void update() override {
-        if (tsl::cfg::LayerPosX || tsl::cfg::LayerPosY) {
+        if (!ult::useRightAlignment) {
+            //if ((tsl::cfg::LayerPosX || tsl::cfg::LayerPosY)) {
             tsl::gfx::Renderer::get().setLayerPos(0, 0);
+            //}
+        } else {
+            const auto [horizontalUnderscanPixels, verticalUnderscanPixels] = tsl::gfx::getUnderscanPixels();
+            tsl::gfx::Renderer::get().setLayerPos(1280-32 - horizontalUnderscanPixels, 0);
         }
         if (fixForeground) {
             fixForeground = false;

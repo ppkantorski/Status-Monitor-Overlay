@@ -9,6 +9,8 @@ private:
     char GPU_Load_c[12] = "";
     char RAM_Load_c[12] = "";
     char TEMP_c[32] = "";
+    bool skipOnce = true;
+    bool runOnce = true;
 public:
     bool isStarted = false;
     com_FPSGraph() { 
@@ -23,7 +25,8 @@ public:
             case 2:
             case 5:
             case 8:
-                tsl::gfx::Renderer::get().setLayerPos(1248, 0);
+                const auto [horizontalUnderscanPixels, verticalUnderscanPixels] = tsl::gfx::getUnderscanPixels();
+                tsl::gfx::Renderer::get().setLayerPos(1280-32 - horizontalUnderscanPixels, 0);
                 break;
         }
         
@@ -46,8 +49,8 @@ public:
 
     ~com_FPSGraph() {
         EndFPSCounterThread();
-        if (settings.setPos)
-            tsl::gfx::Renderer::get().setLayerPos(0, 0);
+        //if (settings.setPos)
+        //    tsl::gfx::Renderer::get().setLayerPos(0, 0);
         FullMode = true;
         fixForeground = true;
         //tsl::hlp::requestForeground(true);
@@ -221,7 +224,7 @@ public:
             }
         });
 
-        tsl::elm::OverlayFrame* rootFrame = new tsl::elm::OverlayFrame("", "");
+        tsl::elm::HeaderOverlayFrame* rootFrame = new tsl::elm::HeaderOverlayFrame("", "");
         rootFrame->setContent(Status);
 
         return rootFrame;
@@ -244,7 +247,7 @@ public:
         else refreshRate = 60;
         if (FPSavg < 254) {
             snprintf(FPSavg_c, sizeof(FPSavg_c), "%.1f", FPSavg);
-            
+
             if (FPSavg == last) return;
             else last = FPSavg;
             if ((s16)(readings.size()) >= rectangle_width) {
@@ -296,10 +299,10 @@ public:
         
         mutexUnlock(&mutex_Misc);
         
-        static bool skipOnce = true;
+        //static bool skipOnce = true;
     
         if (!skipOnce) {
-            static bool runOnce = true;
+            //static bool runOnce = true;
             if (runOnce) {
                 isRendering = true;
                 leventClear(&renderingStopEvent);
@@ -313,6 +316,8 @@ public:
         if (isKeyComboPressed(keysHeld, keysDown)) {
             isRendering = false;
             leventSignal(&renderingStopEvent);
+            runOnce = true;
+            skipOnce = true;
             TeslaFPS = 60;
             tsl::goBack();
             return true;

@@ -1,6 +1,8 @@
 class BatteryOverlay : public tsl::Gui {
 private:
     char Battery_c[512];
+    bool skipOnce = true;
+    bool runOnce = true;
 public:
     BatteryOverlay() {
         disableJumpTo = true;
@@ -19,7 +21,7 @@ public:
             renderer->drawString(Battery_c, false, 20, 155, 18, 0xFFFF);
         });
 
-        tsl::elm::OverlayFrame* rootFrame = new tsl::elm::OverlayFrame("Status Monitor", APP_VERSION, true);
+        tsl::elm::HeaderOverlayFrame* rootFrame = new tsl::elm::HeaderOverlayFrame("Status Monitor", APP_VERSION, true);
         rootFrame->setContent(Status);
 
         return rootFrame;
@@ -97,10 +99,10 @@ public:
             );
         mutexUnlock(&mutex_BatteryChecker);
         
-        static bool skipOnce = true;
+        //static bool skipOnce = true;
     
         if (!skipOnce) {
-            static bool runOnce = true;
+            //static bool runOnce = true;
             if (runOnce) {
                 isRendering = true;
                 leventClear(&renderingStopEvent);
@@ -114,6 +116,8 @@ public:
         if (keysDown & KEY_B) {
             isRendering = false;
             leventSignal(&renderingStopEvent);
+            skipOnce = true;
+            runOnce = true;
             tsl::goBack();
             return true;
         }

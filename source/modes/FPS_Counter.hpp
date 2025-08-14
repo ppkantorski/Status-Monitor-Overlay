@@ -4,6 +4,8 @@ private:
     FpsCounterSettings settings;
     size_t fontsize = 0;
     ApmPerformanceMode performanceMode = ApmPerformanceMode_Invalid;
+    bool skipOnce = true;
+    bool runOnce = true;
 public:
     com_FPS() { 
         disableJumpTo = true;
@@ -24,7 +26,8 @@ public:
             case 2:
             case 5:
             case 8:
-                tsl::gfx::Renderer::get().setLayerPos(1248, 0);
+                const auto [horizontalUnderscanPixels, verticalUnderscanPixels] = tsl::gfx::getUnderscanPixels();
+                tsl::gfx::Renderer::get().setLayerPos(1280-32 - horizontalUnderscanPixels, 0);
                 break;
         }
         
@@ -38,8 +41,8 @@ public:
     ~com_FPS() {
         TeslaFPS = 60;
         EndFPSCounterThread();
-        if (settings.setPos)
-            tsl::gfx::Renderer::get().setLayerPos(0, 0);
+        //if (settings.setPos)
+        //    tsl::gfx::Renderer::get().setLayerPos(0, 0);
         FullMode = true;
         fixForeground = true;
         //tsl::hlp::requestForeground(true);
@@ -103,7 +106,7 @@ public:
             renderer->drawString((FPSavg != 254.0) ? FPSavg_c : "0.0", false, base_x + (margin / 2), base_y + (fontsize - margin), fontsize, settings.textColor);
         });
 
-        tsl::elm::OverlayFrame* rootFrame = new tsl::elm::OverlayFrame("", "");
+        tsl::elm::HeaderOverlayFrame* rootFrame = new tsl::elm::HeaderOverlayFrame("", "");
         rootFrame->setContent(Status);
 
         return rootFrame;
@@ -119,10 +122,10 @@ public:
         }
         snprintf(FPSavg_c, sizeof FPSavg_c, "%2.1f", FPSavg);
         
-        static bool skipOnce = true;
+        //static bool skipOnce = true;
     
         if (!skipOnce) {
-            static bool runOnce = true;
+            //static bool runOnce = true;
             if (runOnce) {
                 isRendering = true;
                 leventClear(&renderingStopEvent);
@@ -136,6 +139,8 @@ public:
         if (isKeyComboPressed(keysHeld, keysDown)) {
             isRendering = false;
             leventSignal(&renderingStopEvent);
+            runOnce = true;
+            skipOnce = true;
             tsl::goBack();
             return true;
         }

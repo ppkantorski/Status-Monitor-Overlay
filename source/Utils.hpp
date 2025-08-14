@@ -1229,7 +1229,7 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
     settings->showFanPercentage = true;
     settings->useDynamicColors = true;
     settings->showFullCPU = false;
-    settings->showSOCVoltage = true;
+    settings->showSOCVoltage = false;
     settings->showVDDQ = false;
     settings->showVDD2 = true;
     settings->decimalVDD2 = false;
@@ -1244,7 +1244,7 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
     convertStrToRGBA4444("#2DFF", &(settings->separatorColor));
     convertStrToRGBA4444("#2DFF", &(settings->catColor));
     convertStrToRGBA4444("#FFFF", &(settings->textColor));
-    settings->show = "DTC+BAT+CPU+GPU+RAM+SOC+FPS+RES";
+    settings->show = "DTC+BAT+CPU+GPU+RAM+TMP+FPS+RES";
     settings->showRAMLoad = true;
     settings->refreshRate = 1;
     //settings->setPos = 0;

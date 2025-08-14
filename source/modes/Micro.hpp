@@ -53,6 +53,9 @@ private:
     tsl::Color textColorA = 0;
     uint32_t base_y = 0;
     bool renderDataDirty = true;
+
+    bool skipOnce = true;
+    bool runOnce = true;
     
     // Fixed spacing system - calculate actual widths at render time
     struct LayoutMetrics {
@@ -111,7 +114,7 @@ public:
         else fontsize = settings.dockedFontSize;
         if (settings.setPosBottom) {
             const auto [horizontalUnderscanPixels, verticalUnderscanPixels] = tsl::gfx::getUnderscanPixels();
-            tsl::gfx::Renderer::get().setLayerPos(0, 1038-verticalUnderscanPixels);
+            tsl::gfx::Renderer::get().setLayerPos(0, !verticalUnderscanPixels ? 1038 : 1038-verticalUnderscanPixels*1.98);
         }
         mutexInit(&mutex_BatteryChecker);
         mutexInit(&mutex_Misc);
@@ -209,7 +212,7 @@ public:
                         break;
                     case 0x445443: // "DTC" 
                         if (!(seen_flags & 256) && settings.showDTC) {
-                            renderItems.push_back({8, "\uE007", DTC_c, nullptr, false});
+                            renderItems.push_back({8, settings.useDTCSymbol ? "\uE007" : "DTC", DTC_c, nullptr, false});
                             seen_flags |= 256;
                         }
                         break;
@@ -231,14 +234,15 @@ public:
                 catColorA = settings.catColor;
                 textColorA = settings.textColor;
                 base_y = settings.setPosBottom ? 
-                    tsl::cfg::FramebufferHeight - (fontsize + (fontsize / 4)) : 0;
+                    tsl::cfg::FramebufferHeight - (fontsize + (fontsize / 4)) +1: 0;
                 Initialized = true;
                 renderDataDirty = true;
                 layout.calculated = false; // Force recalculation
                 tsl::hlp::requestForeground(false);
             }
             
-            renderer->drawRect(0, 0, tsl::cfg::FramebufferWidth, cachedMargin + 4, a(settings.backgroundColor));
+            //renderer->drawRect(0, 0, tsl::cfg::FramebufferWidth, cachedMargin + 4, a(settings.backgroundColor));
+            renderer->drawRect(0, settings.setPosBottom ? base_y-1 : 0, tsl::cfg::FramebufferWidth, cachedMargin + 4, a(settings.backgroundColor));
 
             // Prepare render items if settings changed
             prepareRenderItems();
@@ -571,26 +575,29 @@ public:
             }
         });
         
-        tsl::elm::OverlayFrame* rootFrame = new tsl::elm::OverlayFrame("", "");
+        tsl::elm::HeaderOverlayFrame* rootFrame = new tsl::elm::HeaderOverlayFrame("", "");
         rootFrame->setContent(Status);
         return rootFrame;
     }
 
     virtual void update() override {
-        static bool triggerExit = false;
-        if (triggerExit) {
-            ult::setIniFileValue(
-                ult::ULTRAHAND_CONFIG_INI_PATH,
-                ult::ULTRAHAND_PROJECT_NAME,
-                ult::IN_OVERLAY_STR,
-                ult::FALSE_STR
-            );
-            tsl::setNextOverlay(
-                ult::OVERLAY_PATH + "ovlmenu.ovl"
-            );
-            tsl::Overlay::get()->close();
+        if (triggerExitNow)
             return;
-        }
+
+        //static bool triggerExit = false;
+        //if (triggerExit) {
+        //    ult::setIniFileValue(
+        //        ult::ULTRAHAND_CONFIG_INI_PATH,
+        //        ult::ULTRAHAND_PROJECT_NAME,
+        //        ult::IN_OVERLAY_STR,
+        //        ult::FALSE_STR
+        //    );
+        //    tsl::setNextOverlay(
+        //        ult::OVERLAY_PATH + "ovlmenu.ovl"
+        //    );
+        //    tsl::Overlay::get()->close();
+        //    return;
+        //}
 
         apmGetPerformanceMode(&performanceMode);
         if (performanceMode == ApmPerformanceMode_Normal) {
@@ -693,7 +700,7 @@ public:
             isRendering = false;
             leventSignal(&renderingStopEvent);
             
-            triggerExit = true;
+            triggerExitNow = true;
             return;
         }
         lastGPU_Hz_int = GPU_Hz_int;
@@ -920,13 +927,13 @@ public:
 
         mutexUnlock(&mutex_Misc);
 
-        static bool skipOnce = true;
+        //static bool skipOnce = true;
     
         if (!skipOnce) {
-            static bool runOnce = true;
+            //static bool runOnce = true;
             if (runOnce) {
                 isRendering = true;
-                //leventClear(&renderingStopEvent);
+                leventClear(&renderingStopEvent);
                 runOnce = false;  // Add this to prevent repeated calls
             }
         } else {
@@ -938,6 +945,8 @@ public:
         if (isKeyComboPressed(keysHeld, keysDown)) {
             isRendering = false;
             leventSignal(&renderingStopEvent);
+            skipOnce = true;
+            runOnce = true;
             TeslaFPS = 60;
             if (skipMain)
                 tsl::goBack();

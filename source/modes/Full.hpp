@@ -34,6 +34,11 @@ private:
         "\uE0E2", "\uE0E3", "\uE08A", "\uE08B",
         "\uE0B6", "\uE0B5"
     };
+
+    bool skipOnce = true;
+    bool runOnce = true;
+
+    bool originalUseRightAlignment = ult::useRightAlignment;
 public:
     FullOverlay() { 
         disableJumpTo = true;
@@ -48,7 +53,12 @@ public:
         idletick2 = systemtickfrequency_impl;
         idletick3 = systemtickfrequency_impl;
         if (settings.setPosRight) {
-            tsl::gfx::Renderer::get().setLayerPos(1248, 0);
+            const auto [horizontalUnderscanPixels, verticalUnderscanPixels] = tsl::gfx::getUnderscanPixels();
+            tsl::gfx::Renderer::get().setLayerPos(1280-32 - horizontalUnderscanPixels, 0);
+            ult::useRightAlignment = true;
+        } else {
+            tsl::gfx::Renderer::get().setLayerPos(0, 0);
+            ult::useRightAlignment = false;
         }
         deactivateOriginalFooter = true;
         formatButtonCombination(formattedKeyCombo);
@@ -59,11 +69,10 @@ public:
         CloseThreads();
         //FullMode = true;
         fixForeground = true;
+        ult::useRightAlignment = originalUseRightAlignment;
         //tsl::hlp::requestForeground(true);
         //alphabackground = 0xD;
-        if (settings.setPosRight) {
-            tsl::gfx::Renderer::get().setLayerPos(0, 0);
-        }
+        
         deactivateOriginalFooter = false;
     }
 
@@ -211,7 +220,7 @@ public:
             
         });
         
-        auto rootFrame = new tsl::elm::OverlayFrame("Status Monitor", APP_VERSION);
+        auto rootFrame = new tsl::elm::HeaderOverlayFrame("Status Monitor", APP_VERSION);
         rootFrame->setContent(Status);
 
         return rootFrame;
@@ -375,6 +384,18 @@ public:
         snprintf(BatteryDraw_c, sizeof BatteryDraw_c, "Battery Power Flow: %+.2fW[%s]", PowerConsumption, remainingBatteryLife);
         mutexUnlock(&mutex_BatteryChecker);
         
+        //static bool skipOnce = true;
+        
+        if (!skipOnce) {
+            //static bool runOnce = true;
+            if (runOnce) {
+                isRendering = true;
+                leventClear(&renderingStopEvent);
+                runOnce = false;  // Add this to prevent repeated calls
+            }
+        } else {
+            skipOnce = false;
+        }
     }
 
 
@@ -382,6 +403,8 @@ public:
         if (isKeyComboPressed(keysHeld, keysDown)) {
             isRendering = false;
             leventSignal(&renderingStopEvent);
+            skipOnce = true;
+            runOnce = true;
             TeslaFPS = 60;
             tsl::goBack();
             return true;

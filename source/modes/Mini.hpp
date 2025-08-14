@@ -18,6 +18,9 @@ private:
     int topPadding, bottomPadding;
     bool isDragging = false;
 
+    bool skipOnce = true;
+    bool runOnce = true;
+
     static constexpr int framePadding = 10;
     static constexpr int screenWidth = 1280;
     static constexpr int screenHeight = 720;
@@ -288,7 +291,7 @@ public:
                         resolutionShow = true;
                     } else if (key == "DTC" && !(flags & 256) && settings.showDTC) {
                         shouldAdd = true;
-                        labelText = "\uE007";
+                        labelText = settings.useDTCSymbol ? "\uE007" : "DTC";
                         flags |= 256;
                     }
 
@@ -526,26 +529,28 @@ public:
             }
         });
         
-        tsl::elm::OverlayFrame* rootFrame = new tsl::elm::OverlayFrame("", "");
+        tsl::elm::HeaderOverlayFrame* rootFrame = new tsl::elm::HeaderOverlayFrame("", "");
         rootFrame->setContent(Status);
         return rootFrame;
     }
 
     virtual void update() override {
-        static bool triggerExit = false;
-        if (triggerExit) {
-            ult::setIniFileValue(
-                ult::ULTRAHAND_CONFIG_INI_PATH,
-                ult::ULTRAHAND_PROJECT_NAME,
-                ult::IN_OVERLAY_STR,
-                ult::FALSE_STR
-            );
-            tsl::setNextOverlay(
-                ult::OVERLAY_PATH + "ovlmenu.ovl"
-            );
-            tsl::Overlay::get()->close();
+        if (triggerExitNow)
             return;
-        }
+        //static bool triggerExit = false;
+        //if (triggerExit) {
+        //    ult::setIniFileValue(
+        //        ult::ULTRAHAND_CONFIG_INI_PATH,
+        //        ult::ULTRAHAND_PROJECT_NAME,
+        //        ult::IN_OVERLAY_STR,
+        //        ult::FALSE_STR
+        //    );
+        //    tsl::setNextOverlay(
+        //        ult::OVERLAY_PATH + "ovlmenu.ovl"
+        //    );
+        //    tsl::Overlay::get()->close();
+        //    return;
+        //}
 
         apmGetPerformanceMode(&performanceMode);
         if (performanceMode == ApmPerformanceMode_Normal) {
@@ -671,7 +676,7 @@ public:
             isRendering = false;
             leventSignal(&renderingStopEvent);
             
-            triggerExit = true;
+            triggerExitNow = true;
             return;
         }
         lastGPU_Hz_int = GPU_Hz_int;
@@ -1043,10 +1048,10 @@ public:
         
         mutexUnlock(&mutex_BatteryChecker);
 
-        static bool skipOnce = true;
+        //static bool skipOnce = true;
         
         if (!skipOnce) {
-            static bool runOnce = true;
+            //static bool runOnce = true;
             if (runOnce) {
                 isRendering = true;
                 leventClear(&renderingStopEvent);
@@ -1300,6 +1305,8 @@ public:
             if (isKeyComboPressed(keysHeld, keysDown)) {
                 isRendering = false;
                 leventSignal(&renderingStopEvent);
+                skipOnce = true;
+                runOnce = true;
                 TeslaFPS = 60;
                 if (skipMain)
                     tsl::goBack();

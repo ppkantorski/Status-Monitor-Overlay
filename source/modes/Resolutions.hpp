@@ -3,6 +3,8 @@ private:
     char Resolutions_c[512];
     char Resolutions2_c[512];
     ResolutionSettings settings;
+    bool skipOnce = true;
+    bool runOnce = true;
 public:
     ResolutionsOverlay() {
     	tsl::hlp::requestForeground(false);
@@ -17,7 +19,8 @@ public:
             case 2:
             case 5:
             case 8:
-                tsl::gfx::Renderer::get().setLayerPos(1248, 0);
+                const auto [horizontalUnderscanPixels, verticalUnderscanPixels] = tsl::gfx::getUnderscanPixels();
+                tsl::gfx::Renderer::get().setLayerPos(1280-32 - horizontalUnderscanPixels, 0);
                 break;
         }
         
@@ -92,10 +95,10 @@ public:
             if (gameStart && NxFps -> API >= 1) {
                 renderer->drawRect(base_x, base_y, 360, 200, renderer->a(settings.backgroundColor));
         
-                renderer->drawString("Depth:", false, base_x + 20, base_y + 20, 20, renderer->a(settings.catColor));
-                renderer->drawString(Resolutions_c, false, base_x + 20, base_y + 55, 18, renderer->a(settings.textColor));
-                renderer->drawString("Viewport:", false, base_x + 180, base_y + 20, 20, renderer->a(settings.catColor));
-                renderer->drawString(Resolutions2_c, false, base_x + 180, base_y + 55, 18, renderer->a(settings.textColor));
+                renderer->drawString("Depth:", false, base_x + 20, base_y + 20, 20, (settings.catColor));
+                renderer->drawString(Resolutions_c, false, base_x + 20, base_y + 55, 18, (settings.textColor));
+                renderer->drawString("Viewport:", false, base_x + 180, base_y + 20, 20, (settings.catColor));
+                renderer->drawString(Resolutions2_c, false, base_x + 180, base_y + 55, 18, (settings.textColor));
             }
             // When game is not using NVN or is incompatible
             else {
@@ -109,11 +112,11 @@ public:
                 }
         
                 renderer->drawRect(base_x, base_y, 360, 28, a(settings.backgroundColor));
-                renderer->drawString("Game is not running or it's incompatible.", false, base_x, base_y+20, 18, renderer->a(0xF00F));
+                renderer->drawString("Game is not running or it's incompatible.", false, base_x, base_y+20, 18, (0xF00F));
             }
         });
-        
-        tsl::elm::OverlayFrame* rootFrame = new tsl::elm::OverlayFrame("", "");
+
+        tsl::elm::HeaderOverlayFrame* rootFrame = new tsl::elm::HeaderOverlayFrame("", "");
         rootFrame->setContent(Status);
 
         return rootFrame;
@@ -179,10 +182,10 @@ public:
             resolutionLookup = false;
         }
         
-        static bool skipOnce = true;
+        //static bool skipOnce = true;
     
         if (!skipOnce) {
-            static bool runOnce = true;
+            //static bool runOnce = true;
             if (runOnce) {
                 isRendering = true;
                 leventClear(&renderingStopEvent);
@@ -196,6 +199,8 @@ public:
         if (isKeyComboPressed(keysHeld, keysDown)) {
             isRendering = false;
             leventSignal(&renderingStopEvent);
+            skipOnce = true;
+            runOnce = true;
             tsl::goBack();
             return true;
         }
