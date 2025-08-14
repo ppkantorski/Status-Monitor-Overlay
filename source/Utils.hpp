@@ -1697,10 +1697,10 @@ ALWAYS_INLINE void GetConfigSettings(FpsCounterSettings* settings) {
     // Initialize defaults
     settings->handheldFontSize = 40;
     settings->dockedFontSize = 40;
-    convertStrToRGBA4444("#1117", &(settings->backgroundColor));
+    convertStrToRGBA4444("#0009", &(settings->backgroundColor));
     convertStrToRGBA4444("#FFFF", &(settings->textColor));
     settings->setPos = 0;
-    settings->refreshRate = 31;
+    settings->refreshRate = 30;
 
     // Open and read file efficiently
     FILE* configFile = fopen(configIniPath, "r");
@@ -1780,16 +1780,16 @@ ALWAYS_INLINE void GetConfigSettings(FpsGraphSettings* settings) {
     // Initialize defaults
     settings->showInfo = false;
     settings->setPos = 0;
-    convertStrToRGBA4444("#1117", &(settings->backgroundColor));
+    convertStrToRGBA4444("#0009", &(settings->backgroundColor));
     convertStrToRGBA4444("#4444", &(settings->fpsColor));
-    convertStrToRGBA4444("#F77F", &(settings->borderColor));
+    convertStrToRGBA4444("#F00F", &(settings->borderColor));
     convertStrToRGBA4444("#8888", &(settings->dashedLineColor));
     convertStrToRGBA4444("#FFFF", &(settings->maxFPSTextColor));
     convertStrToRGBA4444("#FFFF", &(settings->minFPSTextColor));
     convertStrToRGBA4444("#FFFF", &(settings->mainLineColor));
     convertStrToRGBA4444("#F0FF", &(settings->roundedLineColor));
     convertStrToRGBA4444("#0C0F", &(settings->perfectLineColor));
-    settings->refreshRate = 31;
+    settings->refreshRate = 30;
 
     // Open and read file efficiently
     FILE* configFile = fopen(configIniPath, "r");
@@ -1949,7 +1949,7 @@ ALWAYS_INLINE void GetConfigSettings(FullSettings* settings) {
 }
 
 ALWAYS_INLINE void GetConfigSettings(ResolutionSettings* settings) {
-    convertStrToRGBA4444("#1117", &(settings->backgroundColor));
+    convertStrToRGBA4444("#0009", &(settings->backgroundColor));
     convertStrToRGBA4444("#FFFF", &(settings->catColor));
     convertStrToRGBA4444("#FFFF", &(settings->textColor));
     settings->refreshRate = 10;

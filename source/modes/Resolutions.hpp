@@ -5,6 +5,10 @@ private:
     ResolutionSettings settings;
     bool skipOnce = true;
     bool runOnce = true;
+    bool positionOnce = true;
+
+    bool originalUseRightAlignment = ult::useRightAlignment;
+
 public:
     ResolutionsOverlay() {
     	tsl::hlp::requestForeground(false);
@@ -34,12 +38,13 @@ public:
         EndFPSCounterThread();
         TeslaFPS = 60;
         deactivateOriginalFooter = false;
+        ult::useRightAlignment = originalUseRightAlignment;
         //tsl::hlp::requestForeground(true);
         fixForeground = true;
         //alphabackground = 0xD;
         FullMode = true;
-        if (settings.setPos)
-            tsl::gfx::Renderer::get().setLayerPos(0, 0);
+        //if (settings.setPos)
+        //    tsl::gfx::Renderer::get().setLayerPos(0, 0);
     }
 
     resolutionCalls m_resolutionRenderCalls[8] = {0};
@@ -48,6 +53,29 @@ public:
     uint8_t resolutionLookup = 0;
 
     virtual tsl::elm::Element* createUI() override {
+        
+        if (positionOnce) {
+            if (settings.setPos != 8) {
+                tsl::gfx::Renderer::get().setLayerPos(0, 0);
+                ult::useRightAlignment = false;
+            }
+
+            switch(settings.setPos) {
+                case 1: // Center Top
+                case 4: // Center Center
+                case 7: // Center Bottom
+                    tsl::gfx::Renderer::get().setLayerPos(639, 0);
+                    break;
+                case 2: // Right Top
+                case 5: // Right Center
+                case 8: // Right Bottom
+                    const auto [horizontalUnderscanPixels, verticalUnderscanPixels] = tsl::gfx::getUnderscanPixels();
+                    tsl::gfx::Renderer::get().setLayerPos(1280-32 - horizontalUnderscanPixels, 0);
+                    ult::useRightAlignment = true;
+                    break;
+            }
+            positionOnce = false;
+        }
         
         auto* Status = new tsl::elm::CustomDrawer([this](tsl::gfx::Renderer *renderer, u16 x, u16 y, u16 w, u16 h) {
             int base_y = 0;
@@ -87,9 +115,9 @@ public:
             }
         
             // Adjust for right-side alignment
-            if (ult::useRightAlignment) {
-                base_x = frameWidth - base_x - 360; // Subtract width of the box (360px) from the frame width
-            }
+            //if (ult::useRightAlignment) {
+            //    base_x = frameWidth - base_x - 360; // Subtract width of the box (360px) from the frame width
+            //}
         
             // Drawing when game is running and NVN is used
             if (gameStart && NxFps -> API >= 1) {

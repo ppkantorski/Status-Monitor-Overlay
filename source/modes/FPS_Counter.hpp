@@ -4,8 +4,11 @@ private:
     FpsCounterSettings settings;
     size_t fontsize = 0;
     ApmPerformanceMode performanceMode = ApmPerformanceMode_Invalid;
+    bool positionOnce = true;
     bool skipOnce = true;
     bool runOnce = true;
+
+    bool originalUseRightAlignment = ult::useRightAlignment;
 public:
     com_FPS() { 
         disableJumpTo = true;
@@ -16,19 +19,6 @@ public:
         }
         else if (performanceMode == ApmPerformanceMode_Boost) {
             fontsize = settings.dockedFontSize;
-        }
-        switch(settings.setPos) {
-            case 1:
-            case 4:
-            case 7:
-                tsl::gfx::Renderer::get().setLayerPos(624, 0);
-                break;
-            case 2:
-            case 5:
-            case 8:
-                const auto [horizontalUnderscanPixels, verticalUnderscanPixels] = tsl::gfx::getUnderscanPixels();
-                tsl::gfx::Renderer::get().setLayerPos(1280-32 - horizontalUnderscanPixels, 0);
-                break;
         }
         
         //alphabackground = 0x0;
@@ -45,6 +35,7 @@ public:
         //    tsl::gfx::Renderer::get().setLayerPos(0, 0);
         FullMode = true;
         fixForeground = true;
+        ult::useRightAlignment = originalUseRightAlignment;
         //tsl::hlp::requestForeground(true);
         //alphabackground = 0xD;
         deactivateOriginalFooter = false;
@@ -52,6 +43,30 @@ public:
 
     virtual tsl::elm::Element* createUI() override {
          
+        if (positionOnce) {
+            if (settings.setPos != 8) {
+                tsl::gfx::Renderer::get().setLayerPos(0, 0);
+                ult::useRightAlignment = false;
+            }
+
+            switch(settings.setPos) {
+                case 1:
+                case 4:
+                case 7:
+                    tsl::gfx::Renderer::get().setLayerPos(624, 0);
+                    break;
+                case 2:
+                case 5:
+                case 8:
+                    const auto [horizontalUnderscanPixels, verticalUnderscanPixels] = tsl::gfx::getUnderscanPixels();
+                    tsl::gfx::Renderer::get().setLayerPos(1280-32 - horizontalUnderscanPixels, 0);
+                    ult::useRightAlignment = true;
+                    break;
+            }
+            positionOnce = false;
+        }
+
+
         auto* Status = new tsl::elm::CustomDrawer([this](tsl::gfx::Renderer *renderer, u16 x, u16 y, u16 w, u16 h) {
             //auto dimensions = renderer->drawString(FPSavg_c, false, 0, fontsize, fontsize, tsl::Color(0x0000));
             const auto width = renderer->getTextDimensions(FPSavg_c, false, fontsize).first;
@@ -60,46 +75,56 @@ public:
             int base_x = 0;
             int base_y = 0;
         
-            // Vertical alignment (base_y) based on settings.setPos (this part remains unchanged)
+            // Vertical alignment (base_y) - add missing cases
             switch (settings.setPos) {
-                case 1:
+                case 0:  // Left Top
+                    base_y = 0;
+                    break;
+                case 1:  // Center Top
                     base_y = 0;  // Top of the frame
                     break;
-                case 4:
-                    base_y = 360 - ((fontsize + (margin / 2)) / 2);  // Centered vertically
-                    break;
-                case 7:
-                    base_y = 720 - (fontsize + (margin / 2));  // Bottom of the frame
-                    break;
-                case 2:
+                case 2:  // Right Top
                     base_y = 0;  // Top-right corner
                     break;
-                case 5:
+                case 3:  // Left Center
+                    base_y = 360 - ((fontsize + (margin / 2)) / 2);  // Left center
+                    break;
+                case 4:  // Center Center
+                    base_y = 360 - ((fontsize + (margin / 2)) / 2);  // Centered vertically
+                    break;
+                case 5:  // Right Center
                     base_y = 360 - ((fontsize + (margin / 2)) / 2);  // Centered vertically, right-aligned
                     break;
-                case 8:
+                case 6:  // Left Bottom
+                    base_y = 720 - (fontsize + (margin / 2));  // Left bottom
+                    break;
+                case 7:  // Center Bottom
+                    base_y = 720 - (fontsize + (margin / 2));  // Bottom of the frame
+                    break;
+                case 8:  // Right Bottom
                     base_y = 720 - (fontsize + (margin / 2));  // Bottom-right corner
                     break;
             }
-        
-            // Horizontal alignment (base_x)
-            if (ult::useRightAlignment) {
-                base_x = 448 - (rectangleWidth + margin);  // Align to the right
-            } else {
-                // Default alignment based on settings.setPos
-                switch (settings.setPos) {
-                    case 1:
-                    case 4:
-                    case 7:
-                        base_x = 224 - ((rectangleWidth + margin) / 2);  // Centered horizontally
-                        break;
-                    case 2:
-                    case 5:
-                    case 8:
-                        base_x = 448 - (rectangleWidth + margin);  // Align to the right
-                        break;
-                }
+            
+            // Horizontal alignment (base_x) - add missing cases
+            switch (settings.setPos) {
+                case 0:  // Left Top
+                case 3:  // Left Center
+                case 6:  // Left Bottom
+                    base_x = 0;  // Align to the left
+                    break;
+                case 1:  // Center Top
+                case 4:  // Center Center
+                case 7:  // Center Bottom
+                    base_x = 224 - ((rectangleWidth + margin) / 2);  // Centered horizontally
+                    break;
+                case 2:  // Right Top
+                case 5:  // Right Center
+                case 8:  // Right Bottom
+                    base_x = 448 - (rectangleWidth + margin);  // Align to the right
+                    break;
             }
+            //}
         
             // Draw rectangle and text
             renderer->drawRect(base_x, base_y, rectangleWidth + margin, fontsize + (margin / 2), renderer->a(settings.backgroundColor));
@@ -139,6 +164,7 @@ public:
         if (isKeyComboPressed(keysHeld, keysDown)) {
             isRendering = false;
             leventSignal(&renderingStopEvent);
+            positionOnce = true;
             runOnce = true;
             skipOnce = true;
             tsl::goBack();

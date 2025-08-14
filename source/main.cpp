@@ -260,6 +260,11 @@ public:
                     tsl::changeTo<com_FPSGraph>();
                     return true;
                 }
+                if (keys & KEY_Y) {
+                    // Launch configurator for Micro mode
+                    tsl::changeTo<ConfiguratorOverlay>("FPS Graph");
+                    return true;
+                }
                 return false;
             });
             list->addItem(comFPSGraph);
@@ -270,6 +275,11 @@ public:
                     tsl::changeTo<com_FPS>();
                     return true;
                 }
+                if (keys & KEY_Y) {
+                    // Launch configurator for Micro mode
+                    tsl::changeTo<ConfiguratorOverlay>("FPS Counter");
+                    return true;
+                }
                 return false;
             });
             list->addItem(comFPSCounter);
@@ -278,6 +288,11 @@ public:
             Res->setClickListener([](uint64_t keys) {
                 if (keys & KEY_A) {
                     tsl::changeTo<ResolutionsOverlay>();
+                    return true;
+                }
+                if (keys & KEY_Y) {
+                    // Launch configurator for Micro mode
+                    tsl::changeTo<ConfiguratorOverlay>("Game Resolutions");
                     return true;
                 }
                 return false;

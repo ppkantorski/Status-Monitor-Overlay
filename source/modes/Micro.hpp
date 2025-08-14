@@ -114,7 +114,7 @@ public:
         else fontsize = settings.dockedFontSize;
         if (settings.setPosBottom) {
             const auto [horizontalUnderscanPixels, verticalUnderscanPixels] = tsl::gfx::getUnderscanPixels();
-            tsl::gfx::Renderer::get().setLayerPos(0, !verticalUnderscanPixels ? 1038 : 1038-verticalUnderscanPixels*1.98);
+            tsl::gfx::Renderer::get().setLayerPos(0, !verticalUnderscanPixels ? 1038 : 1038- (tsl::cfg::ScreenHeight/720. * verticalUnderscanPixels) +0.5);
         }
         mutexInit(&mutex_BatteryChecker);
         mutexInit(&mutex_Misc);

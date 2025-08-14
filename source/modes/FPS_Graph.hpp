@@ -11,25 +11,15 @@ private:
     char TEMP_c[32] = "";
     bool skipOnce = true;
     bool runOnce = true;
+    bool positionOnce = true;
+
+    bool originalUseRightAlignment = ult::useRightAlignment;
 public:
     bool isStarted = false;
     com_FPSGraph() { 
         disableJumpTo = true;
         GetConfigSettings(&settings);
-        switch(settings.setPos) {
-            case 1:
-            case 4:
-            case 7:
-                tsl::gfx::Renderer::get().setLayerPos(624, 0);
-                break;
-            case 2:
-            case 5:
-            case 8:
-                const auto [horizontalUnderscanPixels, verticalUnderscanPixels] = tsl::gfx::getUnderscanPixels();
-                tsl::gfx::Renderer::get().setLayerPos(1280-32 - horizontalUnderscanPixels, 0);
-                break;
-        }
-        
+
         if (R_SUCCEEDED(SaltySD_Connect())) {
             if (R_FAILED(SaltySD_GetDisplayRefreshRate(&refreshRate)))
                 refreshRate = 0;
@@ -53,6 +43,7 @@ public:
         //    tsl::gfx::Renderer::get().setLayerPos(0, 0);
         FullMode = true;
         fixForeground = true;
+        ult::useRightAlignment = originalUseRightAlignment;
         //tsl::hlp::requestForeground(true);
         //alphabackground = 0xD;
         deactivateOriginalFooter = false;
@@ -85,6 +76,29 @@ public:
 
     virtual tsl::elm::Element* createUI() override {
 
+        if (positionOnce) {
+            if (settings.setPos != 8) {
+                tsl::gfx::Renderer::get().setLayerPos(0, 0);
+                ult::useRightAlignment = false;
+            }
+
+            switch(settings.setPos) {
+                case 1: // Center Top
+                case 4: // Center Center
+                case 7: // Center Bottom
+                    tsl::gfx::Renderer::get().setLayerPos(624, 0);
+                    break;
+                case 2: // Right Top
+                case 5: // Right Center
+                case 8: // Right Bottom
+                    const auto [horizontalUnderscanPixels, verticalUnderscanPixels] = tsl::gfx::getUnderscanPixels();
+                    tsl::gfx::Renderer::get().setLayerPos(1280-32 - horizontalUnderscanPixels, 0);
+                    ult::useRightAlignment = true;
+                    break;
+            }
+            positionOnce = false;
+        }
+
         auto* Status = new tsl::elm::CustomDrawer([this](tsl::gfx::Renderer *renderer, u16 x, u16 y, u16 w, u16 h) {
 
             if (refreshRate && refreshRate < 240) {
@@ -107,48 +121,59 @@ public:
             };
             
             switch(settings.setPos) {
-                case 1:
+                case 0:  // Left Top
+                    base_x = 0;
+                    break;
+                case 1:  // Center Top
                     base_x = 224 - ((rectangle_width + 21) / 2);
                     break;
-                case 4:
+                case 2:  // Right Top
+                    base_x = 448 - (rectangle_width + 21);
+                    break;
+                case 3:  // Left Center
+                    base_x = 0;
+                    base_y = 360 - ((rectangle_height + 12) / 2);
+                    break;
+                case 4:  // Center Center
                     base_x = 224 - ((rectangle_width + 21) / 2);
                     base_y = 360 - ((rectangle_height + 12) / 2);
                     break;
-                case 7:
+                case 5:  // Right Center
+                    base_x = 448 - (rectangle_width + 21);
+                    base_y = 360 - ((rectangle_height + 12) / 2);
+                    break;
+                case 6:  // Left Bottom
+                    base_x = 0;
+                    base_y = 720 - (rectangle_height + 12);
+                    break;
+                case 7:  // Center Bottom
                     base_x = 224 - ((rectangle_width + 21) / 2);
                     base_y = 720 - (rectangle_height + 12);
                     break;
-                case 2:
-                    base_x = 448 - (rectangle_width + 21);
-                    break;
-                case 5:
-                    base_x = 448 - (rectangle_width + 21);
-                    base_y = 360 - ((rectangle_height + 12) / 2);
-                    break;
-                case 8:
+                case 8:  // Right Bottom
                     base_x = 448 - (rectangle_width + 21);
                     base_y = 720 - (rectangle_height + 12);
                     break;
             }
 
             // Horizontal alignment (base_x)
-            if (ult::useRightAlignment) {
-                base_x = 448 - (rectangle_width + 21);  // Align to the right
-            } else {
-                // Default horizontal alignment based on settings.setPos
-                switch (settings.setPos) {
-                    case 1:
-                    case 4:
-                    case 7:
-                        base_x = 224 - ((rectangle_width + 21) / 2);  // Centered horizontally
-                        break;
-                    case 2:
-                    case 5:
-                    case 8:
-                        base_x = 448 - (rectangle_width + 21);  // Align to the right
-                        break;
-                }
+            //if (ult::useRightAlignment) {
+            //    base_x = 448 - (rectangle_width + 21);  // Align to the right
+            //} else {
+            // Default horizontal alignment based on settings.setPos
+            switch (settings.setPos) {
+                case 1:
+                case 4:
+                case 7:
+                    base_x = 224 - ((rectangle_width + 21) / 2);  // Centered horizontally
+                    break;
+                case 2:
+                case 5:
+                case 8:
+                    base_x = 448 - (rectangle_width + 21);  // Align to the right
+                    break;
             }
+            //}
 
             renderer->drawRect(base_x, base_y, rectangle_width + ((refreshRate < 100) ? 21 : 28), rectangle_height + 12, a(settings.backgroundColor));
             const s16 size = (refreshRate > 60 || !refreshRate) ? 63 : (s32)(63.0/(60.0/refreshRate));
@@ -316,6 +341,7 @@ public:
         if (isKeyComboPressed(keysHeld, keysDown)) {
             isRendering = false;
             leventSignal(&renderingStopEvent);
+            positionOnce = true;
             runOnce = true;
             skipOnce = true;
             TeslaFPS = 60;
