@@ -3,7 +3,6 @@
 #include "../Utils.hpp"
 
 #include <unordered_set>
-#include <sstream>
 
 // External variables for navigation (add these to your globals)
 extern std::string jumpItemName;
@@ -744,7 +743,7 @@ public:
     virtual tsl::elm::Element* createUI() override {
         auto* list = new tsl::elm::List();
         
-        list->addItem(new tsl::elm::CategoryHeader("Elements " + ult::DIVIDER_SYMBOL + "\uE0E3 Move Down / \uE0E2 Move Up"));
+        list->addItem(new tsl::elm::CategoryHeader("Elements " + ult::DIVIDER_SYMBOL + "\uE0E3 Move Up / \uE0E2 Move Down"));
 
         // Get current show string
         const std::string section = isMiniMode ? "mini" : (isMicroMode ? "micro" : "full");
@@ -760,9 +759,9 @@ public:
         
         // Parse enabled elements
         enabledElements.clear();
-        std::stringstream ss(showValue);
+        ult::StringStream ss(showValue);
         std::string item;
-        while (std::getline(ss, item, '+')) {
+        while (ss.getline(item, '+')) {
             if (!item.empty()) {
                 enabledElements.insert(item);
             }
@@ -772,17 +771,17 @@ public:
         elementOrder.clear();
         if (!orderValue.empty()) {
             convertToUpper(orderValue);
-            std::stringstream orderSS(orderValue);
+            ult::StringStream orderSS(orderValue);  // Use your custom StringStream
             std::string orderItem;
-            while (std::getline(orderSS, orderItem, '+')) {
+            while (orderSS.getline(orderItem, '+')) {  // Call getline as a member function
                 if (!orderItem.empty()) {
                     elementOrder.push_back(orderItem);
                 }
             }
         } else {
             // First time setup - use show string as order
-            std::stringstream ss2(showValue);
-            while (std::getline(ss2, item, '+')) {
+            ult::StringStream ss2(showValue);
+            while (ss2.getline(item, '+')) {
                 if (!item.empty()) {
                     elementOrder.push_back(item);
                 }
