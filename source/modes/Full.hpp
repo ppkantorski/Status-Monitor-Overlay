@@ -60,6 +60,9 @@ public:
             tsl::gfx::Renderer::get().setLayerPos(0, 0);
             ult::useRightAlignment = false;
         }
+        if (settings.disableScreenshots) {
+            tsl::gfx::Renderer::get().removeScreenshotStacks();
+        }
         deactivateOriginalFooter = true;
         formatButtonCombination(formattedKeyCombo);
         message = "Press " + formattedKeyCombo + " to Exit";
@@ -72,7 +75,9 @@ public:
         ult::useRightAlignment = originalUseRightAlignment;
         //tsl::hlp::requestForeground(true);
         //alphabackground = 0xD;
-        
+        if (settings.disableScreenshots) {
+            tsl::gfx::Renderer::get().addScreenshotStacks();
+        }
         deactivateOriginalFooter = false;
     }
 

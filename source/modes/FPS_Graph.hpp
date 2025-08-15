@@ -31,6 +31,9 @@ public:
         FullMode = false;
         TeslaFPS = settings.refreshRate;
         systemtickfrequency_impl /= settings.refreshRate;
+        if (settings.disableScreenshots) {
+            tsl::gfx::Renderer::get().removeScreenshotStacks();
+        }
         deactivateOriginalFooter = true;
         mutexInit(&mutex_Misc);
         StartInfoThread();
@@ -46,6 +49,9 @@ public:
         ult::useRightAlignment = originalUseRightAlignment;
         //tsl::hlp::requestForeground(true);
         //alphabackground = 0xD;
+        if (settings.disableScreenshots) {
+            tsl::gfx::Renderer::get().addScreenshotStacks();
+        }
         deactivateOriginalFooter = false;
         EndInfoThread();
     }
@@ -181,7 +187,7 @@ public:
             //}
             
             // Draw the main rectangle (extended to include info area if needed)
-            renderer->drawRect(base_x, base_y, total_width, rectangle_height + 12, a(settings.backgroundColor));
+            renderer->drawRect(base_x, base_y, total_width, rectangle_height + 12, aWithOpacity(settings.backgroundColor));
 
             const s16 size = (refreshRate > 60 || !refreshRate) ? 63 : (s32)(63.0/(60.0/refreshRate));
             //std::pair<u32, u32> dimensions = renderer->drawString(FPSavg_c, false, 0, 0, size, renderer->a(0x0000));
@@ -192,9 +198,9 @@ public:
 
             if (FPSavg != 254.0)
                 renderer->drawString(FPSavg_c, false, pos_x, pos_y-5, size, settings.fpsColor);
-            renderer->drawEmptyRect(base_x+(rectangle_x - 1), base_y+(rectangle_y - 1), rectangle_width + 2, rectangle_height + 4, renderer->a(settings.borderColor));
-            renderer->drawDashedLine(base_x+rectangle_x, base_y+y_30FPS, base_x+rectangle_x+rectangle_width, base_y+y_30FPS, 6, renderer->a(settings.dashedLineColor));
-            renderer->drawString(&legend_max[0], false, base_x+(rectangle_x-((refreshRate < 100) ? 15 : 22)), base_y+(rectangle_y+7), 10, renderer->a(settings.maxFPSTextColor));
+            renderer->drawEmptyRect(base_x+(rectangle_x - 1), base_y+(rectangle_y - 1), rectangle_width + 2, rectangle_height + 4, aWithOpacity(settings.borderColor));
+            renderer->drawDashedLine(base_x+rectangle_x, base_y+y_30FPS, base_x+rectangle_x+rectangle_width, base_y+y_30FPS, 6, a(settings.dashedLineColor));
+            renderer->drawString(&legend_max[0], false, base_x+(rectangle_x-((refreshRate < 100) ? 15 : 22)), base_y+(rectangle_y+7), 10, (settings.maxFPSTextColor));
             renderer->drawString(&legend_min[0], false, base_x+(rectangle_x-10), base_y+(rectangle_y+rectangle_height+3), 10, settings.minFPSTextColor);
 
             size_t last_element = readings.size() - 1;

@@ -25,6 +25,9 @@ public:
         tsl::hlp::requestForeground(false);
         FullMode = false;
         TeslaFPS = settings.refreshRate;
+        if (settings.disableScreenshots) {
+            tsl::gfx::Renderer::get().removeScreenshotStacks();
+        }
         deactivateOriginalFooter = true;
         StartFPSCounterThread();
     }
@@ -38,6 +41,9 @@ public:
         ult::useRightAlignment = originalUseRightAlignment;
         //tsl::hlp::requestForeground(true);
         //alphabackground = 0xD;
+        if (settings.disableScreenshots) {
+            tsl::gfx::Renderer::get().addScreenshotStacks();
+        }
         deactivateOriginalFooter = false;
     }
 
@@ -127,7 +133,7 @@ public:
             //}
         
             // Draw rectangle and text
-            renderer->drawRect(base_x, base_y, rectangleWidth + margin, fontsize + (margin / 2), renderer->a(settings.backgroundColor));
+            renderer->drawRect(base_x, base_y, rectangleWidth + margin, fontsize + (margin / 2), aWithOpacity(settings.backgroundColor));
             renderer->drawString((FPSavg != 254.0) ? FPSavg_c : "0.0", false, base_x + (margin / 2), base_y + (fontsize - margin), fontsize, settings.textColor);
         });
 

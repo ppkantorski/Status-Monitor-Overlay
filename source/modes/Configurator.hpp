@@ -149,6 +149,8 @@ private:
     bool isMicroMode;
     bool isFullMode;
     bool isFPSGraphMode;
+    bool isGameResolutionsMode;
+    bool isFPSCounterMode;
     
 public:
     TogglesConfig(const std::string& mode) : modeName(mode) {
@@ -156,6 +158,8 @@ public:
         isMicroMode = (mode == "Micro");
         isFullMode = (mode == "Full");
         isFPSGraphMode = (mode == "FPS Graph");
+        isGameResolutionsMode = (mode == "Game Resolutions");
+        isFPSCounterMode = (mode == "FPS Counter");
     }
     
     virtual tsl::elm::Element* createUI() override {
@@ -163,12 +167,18 @@ public:
         list->addItem(new tsl::elm::CategoryHeader("Toggles"));
         
         if (isFPSGraphMode) {
-            // FPS Graph: only show_info
+            // FPS Graph: show_info and disable_screenshots
             auto* showInfo = new tsl::elm::ToggleListItem("Show Info", getCurrentShowInfo());
             showInfo->setStateChangedListener([this](bool state) {
                 ult::setIniFileValue(configIniPath, "fps-graph", "show_info", state ? "true" : "false");
             });
             list->addItem(showInfo);
+
+            auto* disableScreenshots = new tsl::elm::ToggleListItem("Disable Screenshots", getCurrentDisableScreenshots("fps-graph"));
+            disableScreenshots->setStateChangedListener([this](bool state) {
+                ult::setIniFileValue(configIniPath, "fps-graph", "disable_screenshots", state ? "true" : "false");
+            });
+            list->addItem(disableScreenshots);
             
         } else if (isFullMode) {
             // Full mode: specific full toggles
@@ -207,6 +217,12 @@ public:
                 ult::setIniFileValue(configIniPath, "full", "show_read_speed", state ? "true" : "false");
             });
             list->addItem(showRDSD);
+
+            auto* disableScreenshots = new tsl::elm::ToggleListItem("Disable Screenshots", getCurrentDisableScreenshots("full"));
+            disableScreenshots->setStateChangedListener([this](bool state) {
+                ult::setIniFileValue(configIniPath, "full", "disable_screenshots", state ? "true" : "false");
+            });
+            list->addItem(disableScreenshots);
             
         } else if (isMiniMode || isMicroMode) {
             // Mini/Micro modes: shared toggles
@@ -254,9 +270,25 @@ public:
             });
             list->addItem(dynamicColors);
 
-            auto* disableScreenshots = new tsl::elm::ToggleListItem("Disable Screenshots", getCurrentDisableScreenshots());
+            auto* disableScreenshots = new tsl::elm::ToggleListItem("Disable Screenshots", getCurrentDisableScreenshots(section));
             disableScreenshots->setStateChangedListener([this, section](bool state) {
                 ult::setIniFileValue(configIniPath, section, "disable_screenshots", state ? "true" : "false");
+            });
+            list->addItem(disableScreenshots);
+            
+        } else if (isGameResolutionsMode) {
+            // Game Resolutions mode: only disable_screenshots
+            auto* disableScreenshots = new tsl::elm::ToggleListItem("Disable Screenshots", getCurrentDisableScreenshots("game_resolutions"));
+            disableScreenshots->setStateChangedListener([this](bool state) {
+                ult::setIniFileValue(configIniPath, "game_resolutions", "disable_screenshots", state ? "true" : "false");
+            });
+            list->addItem(disableScreenshots);
+            
+        } else if (isFPSCounterMode) {
+            // FPS Counter mode: only disable_screenshots
+            auto* disableScreenshots = new tsl::elm::ToggleListItem("Disable Screenshots", getCurrentDisableScreenshots("fps-counter"));
+            disableScreenshots->setStateChangedListener([this](bool state) {
+                ult::setIniFileValue(configIniPath, "fps-counter", "disable_screenshots", state ? "true" : "false");
             });
             list->addItem(disableScreenshots);
         }
@@ -346,8 +378,7 @@ private:
         return value == "TRUE";
     }
 
-    bool getCurrentDisableScreenshots() {
-        const std::string section = isMiniMode ? "mini" : "micro";
+    bool getCurrentDisableScreenshots(const std::string& section) {
         std::string value = ult::parseValueFromIniSection(configIniPath, section, "disable_screenshots");
         if (value.empty()) return false;  // Default is false (screenshots enabled)
         convertToUpper(value);
@@ -1182,19 +1213,19 @@ public:
             list->addItem(colors);
         }
         
-        // 3. Toggles (Mini/Micro/Full/FPS Graph only - Game Resolutions and FPS Counter have no toggles)
-        if (isMiniMode || isMicroMode || isFullMode || isFPSGraphMode) {
-            auto* toggles = new tsl::elm::ListItem("Toggles");
-            toggles->setValue(ult::DROPDOWN_SYMBOL);
-            toggles->setClickListener([this](uint64_t keys) {
-                if (keys & KEY_A) {
-                    tsl::changeTo<TogglesConfig>(modeName);
-                    return true;
-                }
-                return false;
-            });
-            list->addItem(toggles);
-        }
+        // 3. Toggles (All modes)
+        //if (isMiniMode || isMicroMode || isFullMode || isFPSGraphMode) {
+        auto* toggles = new tsl::elm::ListItem("Toggles");
+        toggles->setValue(ult::DROPDOWN_SYMBOL);
+        toggles->setClickListener([this](uint64_t keys) {
+            if (keys & KEY_A) {
+                tsl::changeTo<TogglesConfig>(modeName);
+                return true;
+            }
+            return false;
+        });
+        list->addItem(toggles);
+        //}
         
         // 4. Font Sizes (Mini/Micro/FPS Counter only)
         if (isMiniMode || isMicroMode || isFPSCounterMode) {

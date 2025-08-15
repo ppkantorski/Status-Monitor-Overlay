@@ -28,6 +28,9 @@ public:
                 break;
         }
         
+        if (settings.disableScreenshots) {
+            tsl::gfx::Renderer::get().removeScreenshotStacks();
+        }
         deactivateOriginalFooter = true;
         //alphabackground = 0x0;
         FullMode = false;
@@ -37,6 +40,9 @@ public:
     ~ResolutionsOverlay() {
         EndFPSCounterThread();
         TeslaFPS = 60;
+        if (settings.disableScreenshots) {
+            tsl::gfx::Renderer::get().addScreenshotStacks();
+        }
         deactivateOriginalFooter = false;
         ult::useRightAlignment = originalUseRightAlignment;
         //tsl::hlp::requestForeground(true);
@@ -121,7 +127,7 @@ public:
         
             // Drawing when game is running and NVN is used
             if (gameStart && NxFps -> API >= 1) {
-                renderer->drawRect(base_x, base_y, 360, 200, renderer->a(settings.backgroundColor));
+                renderer->drawRect(base_x, base_y, 360, 200, aWithOpacity(settings.backgroundColor));
         
                 renderer->drawString("Depth:", false, base_x + 20, base_y + 20, 20, (settings.catColor));
                 renderer->drawString(Resolutions_c, false, base_x + 20, base_y + 55, 18, (settings.textColor));
@@ -139,7 +145,7 @@ public:
                         break;
                 }
         
-                renderer->drawRect(base_x, base_y, 360, 28, a(settings.backgroundColor));
+                renderer->drawRect(base_x, base_y, 360, 28, aWithOpacity(settings.backgroundColor));
                 renderer->drawString("Game is not running or it's incompatible.", false, base_x, base_y+20, 18, (0xF00F));
             }
         });

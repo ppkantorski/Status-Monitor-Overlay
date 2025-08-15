@@ -350,6 +350,10 @@ void BatteryChecker(void*) {
     uint64_t tick_TTE = svcGetSystemTick();
     uint64_t nanoseconds = 1000;
     
+    float batCurrent;
+    float batVoltage;
+    float batPowerSum;
+
     do {
         mutexLock(&mutex_BatteryChecker);
         const uint64_t startTick = svcGetSystemTick();
@@ -378,9 +382,9 @@ void BatteryChecker(void*) {
         }
 
         // Calculate averages (single loop, pre-calculated inverse)
-        float batCurrent = 0.0f;
-        float batVoltage = 0.0f;
-        float batPowerSum = 0.0f;
+        batCurrent = 0.0f;
+        batVoltage = 0.0f;
+        batPowerSum = 0.0f;
         for (size_t x = 0; x < ArraySize; x++) {
             batCurrent += readingsAmp[x];
             batVoltage += readingsVolt[x];
@@ -1124,6 +1128,7 @@ struct FullSettings {
     bool showFPS;
     bool showRES;
     bool showRDSD;
+    bool disableScreenshots;
 };
 
 struct MiniSettings {
@@ -1191,6 +1196,7 @@ struct FpsCounterSettings {
     uint16_t backgroundColor;
     uint16_t textColor;
     int setPos;
+    bool disableScreenshots;
 };
 
 struct FpsGraphSettings {
@@ -1206,6 +1212,7 @@ struct FpsGraphSettings {
     uint16_t maxFPSTextColor;
     uint16_t minFPSTextColor;
     int setPos;
+    bool disableScreenshots;
 };
 
 struct ResolutionSettings {
@@ -1214,6 +1221,7 @@ struct ResolutionSettings {
     uint16_t catColor;
     uint16_t textColor;
     int setPos;
+    bool disableScreenshots;
 };
 
 ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
@@ -1715,6 +1723,7 @@ ALWAYS_INLINE void GetConfigSettings(FpsCounterSettings* settings) {
     convertStrToRGBA4444("#FFFF", &(settings->textColor));
     settings->setPos = 0;
     settings->refreshRate = 30;
+    settings->disableScreenshots = false;
 
     // Open and read file efficiently
     FILE* configFile = fopen(configIniPath, "r");
@@ -1735,6 +1744,10 @@ ALWAYS_INLINE void GetConfigSettings(FpsCounterSettings* settings) {
     auto sectionIt = parsedData.find("fps-counter");
     if (sectionIt == parsedData.end()) return;
     
+
+    std::string key;
+    uint16_t temp;
+
     const auto& section = sectionIt->second;
     
     // Process font sizes with shared bounds
@@ -1754,14 +1767,14 @@ ALWAYS_INLINE void GetConfigSettings(FpsCounterSettings* settings) {
     // Process colors
     it = section.find("background_color");
     if (it != section.end()) {
-        uint16_t temp = 0;
+        temp = 0;
         if (convertStrToRGBA4444(it->second, &temp))
             settings->backgroundColor = temp;
     }
     
     it = section.find("text_color");
     if (it != section.end()) {
-        uint16_t temp = 0;
+        temp = 0;
         if (convertStrToRGBA4444(it->second, &temp))
             settings->textColor = temp;
     }
@@ -1769,7 +1782,7 @@ ALWAYS_INLINE void GetConfigSettings(FpsCounterSettings* settings) {
     // Process alignment settings
     it = section.find("layer_width_align");
     if (it != section.end()) {
-        std::string key = it->second;
+        key = it->second;
         convertToUpper(key);
         if (key == "CENTER") {
             settings->setPos = 1;
@@ -1780,13 +1793,21 @@ ALWAYS_INLINE void GetConfigSettings(FpsCounterSettings* settings) {
     
     it = section.find("layer_height_align");
     if (it != section.end()) {
-        std::string key = it->second;
+        key = it->second;
         convertToUpper(key);
         if (key == "CENTER") {
             settings->setPos += 3;
         } else if (key == "BOTTOM") {
             settings->setPos += 6;
         }
+    }
+
+    // Process disable screenshots
+    it = section.find("disable_screenshots");
+    if (it != section.end()) {
+        key = it->second;
+        convertToUpper(key);
+        settings->disableScreenshots = (key != "FALSE");
     }
 }
 
@@ -1804,6 +1825,7 @@ ALWAYS_INLINE void GetConfigSettings(FpsGraphSettings* settings) {
     convertStrToRGBA4444("#F0FF", &(settings->roundedLineColor));
     convertStrToRGBA4444("#0C0F", &(settings->perfectLineColor));
     settings->refreshRate = 30;
+    settings->disableScreenshots = false;
 
     // Open and read file efficiently
     FILE* configFile = fopen(configIniPath, "r");
@@ -1824,12 +1846,15 @@ ALWAYS_INLINE void GetConfigSettings(FpsGraphSettings* settings) {
     auto sectionIt = parsedData.find("fps-graph");
     if (sectionIt == parsedData.end()) return;
     
+    std::string key;
+    uint16_t temp;
+
     const auto& section = sectionIt->second;
     
     // Process alignment settings
     auto it = section.find("layer_width_align");
     if (it != section.end()) {
-        std::string key = it->second;
+        key = it->second;
         convertToUpper(key);
         if (key == "CENTER") {
             settings->setPos = 1;
@@ -1840,7 +1865,7 @@ ALWAYS_INLINE void GetConfigSettings(FpsGraphSettings* settings) {
     
     it = section.find("layer_height_align");
     if (it != section.end()) {
-        std::string key = it->second;
+        key = it->second;
         convertToUpper(key);
         if (key == "CENTER") {
             settings->setPos += 3;
@@ -1870,7 +1895,7 @@ ALWAYS_INLINE void GetConfigSettings(FpsGraphSettings* settings) {
     for (const auto& mapping : colorMappings) {
         it = section.find(mapping.key);
         if (it != section.end()) {
-            uint16_t temp = 0;
+            temp = 0;
             if (convertStrToRGBA4444(it->second, &temp))
                 *(mapping.target) = temp;
         }
@@ -1879,13 +1904,22 @@ ALWAYS_INLINE void GetConfigSettings(FpsGraphSettings* settings) {
     // Process show_info boolean
     it = section.find("show_info");
     if (it != section.end()) {
-        std::string key = it->second;
+        key = it->second;
         convertToUpper(key);
         settings->showInfo = (key == "TRUE");
+    }
+
+    // Process disable screenshots
+    it = section.find("disable_screenshots");
+    if (it != section.end()) {
+        key = it->second;
+        convertToUpper(key);
+        settings->disableScreenshots = (key != "FALSE");
     }
 }
 
 ALWAYS_INLINE void GetConfigSettings(FullSettings* settings) {
+    // Initialize defaults
     settings->setPosRight = false;
     settings->refreshRate = 1;
     settings->showRealFreqs = true;
@@ -1894,148 +1928,185 @@ ALWAYS_INLINE void GetConfigSettings(FullSettings* settings) {
     settings->showFPS = true;
     settings->showRES = true;
     settings->showRDSD = true;
+    settings->disableScreenshots = false;
 
-    FILE* configFileIn = fopen(configIniPath, "r");
-    if (!configFileIn)
-        return;
-    fseek(configFileIn, 0, SEEK_END);
-    const long fileSize = ftell(configFileIn);
-    rewind(configFileIn);
-
-    std::string fileDataString(fileSize, '\0');
-    fread(&fileDataString[0], sizeof(char), fileSize, configFileIn);
-    fclose(configFileIn);
+    // Open and read file efficiently
+    FILE* configFile = fopen(configIniPath, "r");
+    if (!configFile) return;
     
-    auto parsedData = ult::parseIni(fileDataString);
+    fseek(configFile, 0, SEEK_END);
+    const long fileSize = ftell(configFile);
+    fseek(configFile, 0, SEEK_SET);
 
-    static std::string key;
-    const char* mode = "full";
-    if (parsedData.find(mode) == parsedData.end())
-        return;
-    if (parsedData[mode].find("refresh_rate") != parsedData[mode].end()) {
-        static constexpr long maxFPS = 60;
-        static constexpr long minFPS = 1;
-        
-        key = parsedData[mode]["refresh_rate"];
-        const long rate = atol(key.c_str());
-        if (rate < minFPS) {
-            settings->refreshRate = minFPS;
-        }
-        else if (rate > maxFPS)
-            settings->refreshRate = maxFPS;
-        else settings->refreshRate = rate;    
+    std::string fileData;
+    fileData.resize(fileSize);
+    fread(fileData.data(), 1, fileSize, configFile);
+    fclose(configFile);
+    
+    auto parsedData = ult::parseIni(fileData);
+
+    // Cache section lookup
+    auto sectionIt = parsedData.find("full");
+    if (sectionIt == parsedData.end()) return;
+    
+    std::string key;
+    
+    const auto& section = sectionIt->second;
+
+    // Process refresh_rate
+    auto it = section.find("refresh_rate");
+    if (it != section.end()) {
+        settings->refreshRate = std::clamp(atol(it->second.c_str()), 1L, 60L);
     }
-    if (parsedData[mode].find("layer_width_align") != parsedData[mode].end()) {
-        key = parsedData[mode]["layer_width_align"];
+    
+    // Process layer position
+    it = section.find("layer_width_align");
+    if (it != section.end()) {
+        key = it->second;
         convertToUpper(key);
-        settings->setPosRight = !key.compare("RIGHT");
+        settings->setPosRight = (key == "RIGHT");
     }
-    if (parsedData[mode].find("show_real_freqs") != parsedData[mode].end()) {
-        key = parsedData[mode]["show_real_freqs"];
+    
+    // Process boolean flags
+    it = section.find("show_real_freqs");
+    if (it != section.end()) {
+        key = it->second;
         convertToUpper(key);
-        settings->showRealFreqs = key.compare("FALSE");
+        settings->showRealFreqs = !(key == "FALSE");
     }
-    if (parsedData[mode].find("show_deltas") != parsedData[mode].end()) {
-        key = parsedData[mode]["show_deltas"];
+    
+    it = section.find("show_deltas");
+    if (it != section.end()) {
+        key = it->second;
         convertToUpper(key);
-        settings->showDeltas = key.compare("FALSE");
+        settings->showDeltas = !(key == "FALSE");
     }
-    if (parsedData[mode].find("show_target_freqs") != parsedData[mode].end()) {
-        key = parsedData[mode]["show_target_freqs"];
+    
+    it = section.find("show_target_freqs");
+    if (it != section.end()) {
+        key = it->second;
         convertToUpper(key);
-        settings->showTargetFreqs = key.compare("FALSE");
+        settings->showTargetFreqs = !(key == "FALSE");
     }
-    if (parsedData[mode].find("show_fps") != parsedData[mode].end()) {
-        key = parsedData[mode]["show_fps"];
+    
+    it = section.find("show_fps");
+    if (it != section.end()) {
+        key = it->second;
         convertToUpper(key);
-        settings->showFPS = key.compare("FALSE");
+        settings->showFPS = !(key == "FALSE");
     }
-    if (parsedData[mode].find("show_res") != parsedData[mode].end()) {
-        key = parsedData[mode]["show_res"];
+    
+    it = section.find("show_res");
+    if (it != section.end()) {
+        key = it->second;
         convertToUpper(key);
-        settings->showRES = key.compare("FALSE");
+        settings->showRES = !(key == "FALSE");
     }
-    if (parsedData[mode].find("show_read_speed") != parsedData[mode].end()) {
-        key = parsedData[mode]["show_read_speed"];
+    
+    it = section.find("show_read_speed");
+    if (it != section.end()) {
+        key = it->second;
         convertToUpper(key);
-        settings->showRDSD = key.compare("FALSE");
+        settings->showRDSD = !(key == "FALSE");
+    }
+    
+    // Process disable screenshots
+    it = section.find("disable_screenshots");
+    if (it != section.end()) {
+        key = it->second;
+        convertToUpper(key);
+        settings->disableScreenshots = (key != "FALSE");
     }
 }
 
 ALWAYS_INLINE void GetConfigSettings(ResolutionSettings* settings) {
+    // Initialize defaults
     convertStrToRGBA4444("#0009", &(settings->backgroundColor));
     convertStrToRGBA4444("#FFFF", &(settings->catColor));
     convertStrToRGBA4444("#FFFF", &(settings->textColor));
     settings->refreshRate = 10;
     settings->setPos = 0;
+    settings->disableScreenshots = false;
 
-    FILE* configFileIn = fopen(configIniPath, "r");
-    if (!configFileIn)
-        return;
-    fseek(configFileIn, 0, SEEK_END);
-    const long fileSize = ftell(configFileIn);
-    rewind(configFileIn);
-
-    std::string fileDataString(fileSize, '\0');
-    fread(&fileDataString[0], sizeof(char), fileSize, configFileIn);
-    fclose(configFileIn);
+    // Open and read file efficiently
+    FILE* configFile = fopen(configIniPath, "r");
+    if (!configFile) return;
     
-    auto parsedData = ult::parseIni(fileDataString);
+    fseek(configFile, 0, SEEK_END);
+    const long fileSize = ftell(configFile);
+    fseek(configFile, 0, SEEK_SET);
 
-    static std::string key;
-    const char* mode = "game_resolutions";
-    if (parsedData.find("game_resolutions") == parsedData.end())
-        return;
-    if (parsedData[mode].find("refresh_rate") != parsedData[mode].end()) {
-        static constexpr long maxFPS = 60;
-        static constexpr long minFPS = 1;
+    std::string fileData;
+    fileData.resize(fileSize);
+    fread(fileData.data(), 1, fileSize, configFile);
+    fclose(configFile);
+    
+    auto parsedData = ult::parseIni(fileData);
 
-        key = parsedData[mode]["refresh_rate"];
-        const long rate = atol(key.c_str());
-        if (rate < minFPS) {
-            settings->refreshRate = minFPS;
-        }
-        else if (rate > maxFPS)
-            settings->refreshRate = maxFPS;
-        else settings->refreshRate = rate;    
+    // Cache section lookup
+    auto sectionIt = parsedData.find("game_resolutions");
+    if (sectionIt == parsedData.end()) return;
+    
+    std::string key;
+    
+    const auto& section = sectionIt->second;
+
+    // Process refresh_rate
+    auto it = section.find("refresh_rate");
+    if (it != section.end()) {
+        settings->refreshRate = std::clamp(atol(it->second.c_str()), 1L, 60L);
     }
-
-    if (parsedData[mode].find("background_color") != parsedData[mode].end()) {
-        key = parsedData[mode]["background_color"];
+    
+    // Process colors
+    it = section.find("background_color");
+    if (it != section.end()) {
         uint16_t temp = 0;
-        if (convertStrToRGBA4444(key, &temp))
+        if (convertStrToRGBA4444(it->second, &temp))
             settings->backgroundColor = temp;
     }
-    if (parsedData[mode].find("cat_color") != parsedData[mode].end()) {
-        key = parsedData[mode]["cat_color"];
+    
+    it = section.find("cat_color");
+    if (it != section.end()) {
         uint16_t temp = 0;
-        if (convertStrToRGBA4444(key, &temp))
+        if (convertStrToRGBA4444(it->second, &temp))
             settings->catColor = temp;
     }
-    if (parsedData[mode].find("text_color") != parsedData[mode].end()) {
-        key = parsedData[mode]["text_color"];
+    
+    it = section.find("text_color");
+    if (it != section.end()) {
         uint16_t temp = 0;
-        if (convertStrToRGBA4444(key, &temp))
+        if (convertStrToRGBA4444(it->second, &temp))
             settings->textColor = temp;
     }
-    if (parsedData[mode].find("layer_width_align") != parsedData[mode].end()) {
-        key = parsedData[mode]["layer_width_align"];
+    
+    // Process alignment settings
+    it = section.find("layer_width_align");
+    if (it != section.end()) {
+        key = it->second;
         convertToUpper(key);
-        if (!key.compare("CENTER")) {
+        if (key == "CENTER") {
             settings->setPos = 1;
-        }
-        if (!key.compare("RIGHT")) {
+        } else if (key == "RIGHT") {
             settings->setPos = 2;
         }
     }
-    if (parsedData[mode].find("layer_height_align") != parsedData[mode].end()) {
-        key = parsedData[mode]["layer_height_align"];
+    
+    it = section.find("layer_height_align");
+    if (it != section.end()) {
+        key = it->second;
         convertToUpper(key);
-        if (!key.compare("CENTER")) {
+        if (key == "CENTER") {
             settings->setPos += 3;
-        }
-        if (!key.compare("BOTTOM")) {
+        } else if (key == "BOTTOM") {
             settings->setPos += 6;
         }
+    }
+
+    // Process disable screenshots
+    it = section.find("disable_screenshots");
+    if (it != section.end()) {
+        key = it->second;
+        convertToUpper(key);
+        settings->disableScreenshots = (key != "FALSE");
     }
 }
