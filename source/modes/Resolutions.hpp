@@ -76,11 +76,11 @@ public:
             }
             positionOnce = false;
         }
-        
+
         auto* Status = new tsl::elm::CustomDrawer([this](tsl::gfx::Renderer *renderer, u16 x, u16 y, u16 w, u16 h) {
             int base_y = 0;
             int base_x = 0;
-            static constexpr int frameWidth = 448; // Assuming the frame width is 448 pixels
+            //static constexpr int frameWidth = 448; // Assuming the frame width is 448 pixels
         
             // Adjust base_x and base_y based on setPos
             switch(settings.setPos) {

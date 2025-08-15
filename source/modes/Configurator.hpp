@@ -4,10 +4,10 @@
  * Based on actual settings structures, each mode only shows applicable settings:
  * 
  * Mini Mode: Refresh Rate, Colors (background, focus_background, separator, category, text), 
- *           Toggles, Font Sizes, Elements
+ *           Toggles, Font Sizes, Elements, DTC Format
  * 
  * Micro Mode: Refresh Rate, Colors (background, separator, category, text), Toggles, 
- *            Font Sizes, Elements, Text Alignment, Vertical Position (Top/Bottom only)
+ *            Font Sizes, Elements, Text Alignment, Vertical Position (Top/Bottom only), DTC Format
  * 
  * Full Mode: Refresh Rate, Toggles (show_real_freqs, show_deltas, etc.), 
  *           Horizontal Position (Left/Right only) - NO colors, fonts, or elements
@@ -43,6 +43,103 @@ class ColorConfig;
 class ColorSelector;
 class ShowConfig;
 class TogglesConfig;
+class DTCFormatConfig;
+
+// DTC Format Configuration (Mini/Micro only)
+class DTCFormatConfig : public tsl::Gui {
+private:
+    std::string modeName;
+    bool isMiniMode;
+    bool isMicroMode;
+    
+public:
+    DTCFormatConfig(const std::string& mode) : modeName(mode) {
+        isMiniMode = (mode == "Mini");
+        isMicroMode = (mode == "Micro");
+    }
+    
+    virtual tsl::elm::Element* createUI() override {
+        auto* list = new tsl::elm::List();
+        list->addItem(new tsl::elm::CategoryHeader("DTC Format"));
+
+        const std::string section = isMiniMode ? "mini" : "micro";
+        std::string currentValue = ult::parseValueFromIniSection(configIniPath, section, "dtc_format");
+        
+        // Handle default values
+        if (currentValue.empty()) {
+            currentValue = isMiniMode ? "%m-%d-%Y%H:%M:%S" : "%H:%M:%S";
+        }
+        
+        // Define available DTC format options
+        static const std::vector<std::pair<std::string, std::string>> dtcFormats = {
+            // Time only
+            {"Time 24h", "%H:%M"},
+            {"Time AM/PM", "%I:%M %p"},
+            {"TimeS 24h", "%H:%M:%S"},
+            {"TimeS AM/PM", "%I:%M:%S %p"},
+        
+            // Date only
+            {"Date US", "%m-%d-%Y"},
+            {"Date EU", "%d/%m/%Y"},
+            {"Date ISO", "%Y-%m-%d"},
+            {"Date Short", "%m/%d/%y"},
+        
+            // Datetime (default included here)
+            {"Date+Time", "%m-%d-%Y%H:%M:%S"},           // default
+            {"Date+Time AM/PM", "%m-%d-%Y%I:%M %p"},
+            {"Date+Time EU", "%d/%m/%Y%H:%M"},
+            {"Date+Time EU AM/PM", "%d/%m/%Y%I:%M %p"},
+            {"Date+Time ISO", "%Y-%m-%dT%H:%M:%S"},
+        
+            // Special
+            {"Compact", "%Y%m%d%H%M%S"},
+            {"FileSafe", "%Y-%m-%d%H-%M-%S"},
+            {"Pretty", "%a, %b %d%I:%M %p"},
+            {"Day+Time", "%a%H:%M"}
+        };
+        
+        for (const auto& format : dtcFormats) {
+            auto* formatItem = new tsl::elm::ListItem(format.first);
+            //formatItem->setValue(format.second);
+            if (format.second == currentValue) {
+                formatItem->setValue(ult::CHECKMARK_SYMBOL);
+                lastSelectedListItem = formatItem;
+            }
+            formatItem->setClickListener([this, formatItem, format, section](uint64_t keys) {
+                if (keys & KEY_A) {
+                    ult::setIniFileValue(configIniPath, section, "dtc_format", format.second);
+                    formatItem->setValue(ult::CHECKMARK_SYMBOL);
+                    if (lastSelectedListItem && lastSelectedListItem != formatItem) {
+                        lastSelectedListItem->setValue("");
+                    }
+                    lastSelectedListItem = formatItem;
+                    return true;
+                }
+                return false;
+            });
+            list->addItem(formatItem);
+        }
+        
+        // Jump to currently selected item
+        list->jumpToItem("", ult::CHECKMARK_SYMBOL, false);
+        
+        tsl::elm::OverlayFrame* rootFrame = new tsl::elm::OverlayFrame("Status Monitor", "DTC Format");
+        rootFrame->setContent(list);
+        return rootFrame;
+    }
+    
+    virtual bool handleInput(u64 keysDown, u64 keysHeld, const HidTouchState &touchPos, HidAnalogStickState joyStickPosLeft, HidAnalogStickState joyStickPosRight) override {
+        if (keysDown & KEY_B) {
+            jumpItemName = "DTC Format";
+            jumpItemValue = "";
+            jumpItemExactMatch = false;
+            
+            tsl::swapTo<ConfiguratorOverlay>(SwapDepth(2), modeName);
+            return true;
+        }
+        return false;
+    }
+};
 
 // Toggles Configuration
 class TogglesConfig : public tsl::Gui {
@@ -1113,7 +1210,21 @@ public:
             list->addItem(showSettings);
         }
         
-        // 6. Mode-specific positioning settings
+        // 6. DTC Format (Mini/Micro only) - NEW ADDITION
+        if (isMiniMode || isMicroMode) {
+            auto* dtcFormat = new tsl::elm::ListItem("DTC Format");
+            dtcFormat->setValue(getCurrentDTCFormat());
+            dtcFormat->setClickListener([this](uint64_t keys) {
+                if (keys & KEY_A) {
+                    tsl::changeTo<DTCFormatConfig>(modeName);
+                    return true;
+                }
+                return false;
+            });
+            list->addItem(dtcFormat);
+        }
+        
+        // 7. Mode-specific positioning settings
         if (isMicroMode) {
             // Text Alignment for Micro
             auto* textAlign = new tsl::elm::ListItem("Text Alignment");
@@ -1215,6 +1326,62 @@ private:
         std::string value = ult::parseValueFromIniSection(configIniPath, section, "refresh_rate");
         int defaultRate = (isGameResolutionsMode) ? 10 : ((isFPSCounterMode || isFPSGraphMode) ? 30 : 1);
         return value.empty() ? defaultRate : atoi(value.c_str());
+    }
+    
+    // NEW METHOD: Get current DTC format for display
+    std::string getCurrentDTCFormat() {
+        if (isMiniMode || isMicroMode) {
+            const std::string section = isMiniMode ? "mini" : "micro";
+            std::string value = ult::parseValueFromIniSection(configIniPath, section, "dtc_format");
+            
+            // Handle defaults properly
+            if (value.empty()) {
+                value = isMiniMode ? "%m-%d-%Y%H:%M:%S" : "%H:%M:%S";
+            }
+            
+            // Convert format string to display name
+            return getDTCFormatName(value);
+        }
+        return "";
+    }
+    
+    // Helper function to convert format string to display name
+    std::string getDTCFormatName(const std::string& formatStr) {
+        static const std::vector<std::pair<std::string, std::string>> dtcFormats = {
+            // Time only
+            {"Time 24h", "%H:%M"},
+            {"Time AM/PM", "%I:%M %p"},
+            {"TimeS 24h", "%H:%M:%S"},
+            {"TimeS AM/PM", "%I:%M:%S %p"},
+        
+            // Date only
+            {"Date US", "%m-%d-%Y"},
+            {"Date EU", "%d/%m/%Y"},
+            {"Date ISO", "%Y-%m-%d"},
+            {"Date Short", "%m/%d/%y"},
+        
+            // Datetime (default included here)
+            {"Date+Time", "%m-%d-%Y%H:%M:%S"},           // default
+            {"Date+Time AM/PM", "%m-%d-%Y%I:%M %p"},
+            {"Date+Time EU", "%d/%m/%Y%H:%M"},
+            {"Date+Time EU AM/PM", "%d/%m/%Y%I:%M %p"},
+            {"Date+Time ISO", "%Y-%m-%dT%H:%M:%S"},
+        
+            // Special
+            {"Compact", "%Y%m%d%H%M%S"},
+            {"FileSafe", "%Y-%m-%d%H-%M-%S"},
+            {"Pretty", "%a, %b %d%I:%M %p"},
+            {"Day+Time", "%a%H:%M"}
+        };
+        
+        for (const auto& format : dtcFormats) {
+            if (format.second == formatStr) {
+                return format.first;
+            }
+        }
+        
+        // Return the format string itself if no match found
+        return formatStr;
     }
     
     std::string getCurrentTextAlign() {
