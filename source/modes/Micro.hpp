@@ -597,6 +597,14 @@ public:
         if (triggerExitNow)
             return;
 
+        if (!SaltySD) {
+            SaltySD = CheckPort();
+
+            if (SaltySD) {
+                LoadSharedMemory();
+            }
+        }
+
         //static bool triggerExit = false;
         //if (triggerExit) {
         //    ult::setIniFileValue(

@@ -562,6 +562,18 @@ public:
     virtual void update() override {
         if (triggerExitNow)
             return;
+
+        if (!SaltySD) {
+            SaltySD = CheckPort();
+
+            if (SaltySD) {
+                LoadSharedMemory();
+                //Assign NX-FPS to default core
+                threadCreate(&t6, CheckIfGameRunning, NULL, NULL, 0x1000, 0x38, -2);
+                threadStart(&t6);
+            }
+        }
+        
         //static bool triggerExit = false;
         //if (triggerExit) {
         //    ult::setIniFileValue(
