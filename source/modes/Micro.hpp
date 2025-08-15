@@ -602,6 +602,9 @@ public:
 
             if (SaltySD) {
                 LoadSharedMemory();
+                //Assign NX-FPS to default core
+                threadCreate(&t6, CheckIfGameRunning, NULL, NULL, 0x1000, 0x38, -2);
+                threadStart(&t6);
             }
         }
 
