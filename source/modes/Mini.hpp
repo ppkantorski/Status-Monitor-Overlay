@@ -51,6 +51,9 @@ public:
         //        tsl::gfx::Renderer::get().setLayerPos(1248, 0);
         //        break;
         //}
+        if (settings.disableScreenshots) {
+            tsl::gfx::Renderer::get().removeScreenshotStacks();
+        }
         mutexInit(&mutex_BatteryChecker);
         mutexInit(&mutex_Misc);
         //alphabackground = 0x0;

@@ -253,6 +253,12 @@ public:
                 ult::setIniFileValue(configIniPath, section, "use_dynamic_colors", state ? "true" : "false");
             });
             list->addItem(dynamicColors);
+
+            auto* disableScreenshots = new tsl::elm::ToggleListItem("Disable Screenshots", getCurrentDisableScreenshots());
+            disableScreenshots->setStateChangedListener([this, section](bool state) {
+                ult::setIniFileValue(configIniPath, section, "disable_screenshots", state ? "true" : "false");
+            });
+            list->addItem(disableScreenshots);
         }
         
         list->jumpToItem(jumpItemName, jumpItemValue, jumpItemExactMatch);
@@ -338,6 +344,14 @@ private:
         if (value.empty()) return true;
         convertToUpper(value);
         return value == "TRUE";
+    }
+
+    bool getCurrentDisableScreenshots() {
+        const std::string section = isMiniMode ? "mini" : "micro";
+        std::string value = ult::parseValueFromIniSection(configIniPath, section, "disable_screenshots");
+        if (value.empty()) return false;  // Default is false (screenshots enabled)
+        convertToUpper(value);
+        return value != "FALSE";  // True if not explicitly "FALSE"
     }
     
     // Full mode toggle helpers
@@ -943,7 +957,7 @@ public:
     
     virtual tsl::elm::Element* createUI() override {
         auto* list = new tsl::elm::List();
-        list->addItem(new tsl::elm::CategoryHeader("Elements " + ult::DIVIDER_SYMBOL + "\uE0E3 Move Up / \uE0E2 Move Down"));
+        list->addItem(new tsl::elm::CategoryHeader("Elements " + ult::DIVIDER_SYMBOL + " \uE0E3 Move Up " + ult::DIVIDER_SYMBOL + " \uE0E2 Move Down"));
 
         const std::string section = isMiniMode ? "mini" : "micro";
         std::string showValue = ult::parseValueFromIniSection(configIniPath, section, "show");

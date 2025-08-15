@@ -251,28 +251,24 @@ void searchSharedMemoryBlock(uintptr_t base) {
 }
 
 //Check if SaltyNX is working
-bool CheckPort() {
+bool CheckPort () {
     Handle saltysd;
-    
-    // Try immediate connection first (most common case)
-    if (R_SUCCEEDED(svcConnectToNamedPort(&saltysd, "InjectServ"))) {
-        svcCloseHandle(saltysd);
-        return true;
+    for (int i = 0; i < 67; i++) {
+        if (R_SUCCEEDED(svcConnectToNamedPort(&saltysd, "InjectServ"))) {
+            svcCloseHandle(saltysd);
+            break;
+        }
+        else {
+            if (i == 66) return false;
+            svcSleepThread(1'000'000);
+        }
     }
-    
-    // Reduce retry attempts and initial delay
-    static constexpr u64 initial_delay = 10'000;    // 0.05ms (was 0.1ms)
-    static constexpr u64 max_delay = 5'000'000;     // 5ms (was 10ms)
-    static constexpr int max_attempts = 50;         // Reduced from 20
-    
-    u64 delay = initial_delay;
-    for (int i = 0; i < max_attempts; i++) {
-        svcSleepThread(delay);
+    for (int i = 0; i < 67; i++) {
         if (R_SUCCEEDED(svcConnectToNamedPort(&saltysd, "InjectServ"))) {
             svcCloseHandle(saltysd);
             return true;
         }
-        delay = std::min(delay * 2, max_delay);
+        else svcSleepThread(1'000'000);
     }
     return false;
 }
@@ -1155,6 +1151,7 @@ struct MiniSettings {
     uint16_t textColor;
     std::string show;
     bool showRAMLoad;
+    bool disableScreenshots;
     //int setPos;
     int frameOffsetX;
     int frameOffsetY;
@@ -1184,6 +1181,7 @@ struct MicroSettings {
     std::string show;
     bool showRAMLoad;
     bool setPosBottom;
+    bool disableScreenshots;
 };
 
 struct FpsCounterSettings {
@@ -1245,6 +1243,7 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
     settings->show = "DTC+BAT+CPU+GPU+RAM+TMP+FPS+RES";
     settings->showRAMLoad = true;
     settings->refreshRate = 1;
+    settings->disableScreenshots = false;
     //settings->setPos = 0;
     settings->frameOffsetX = 8;
     settings->frameOffsetY = 8;
@@ -1434,6 +1433,14 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
         convertToUpper(key);
         settings->showRAMLoad = (key != "FALSE");
     }
+
+    // Process disable screenshots
+    it = section.find("disable_screenshots");
+    if (it != section.end()) {
+        key = it->second;
+        convertToUpper(key);
+        settings->disableScreenshots = (key != "FALSE");
+    }
     
     // Process alignment settings
     //it = section.find("layer_width_align");
@@ -1493,6 +1500,7 @@ ALWAYS_INLINE void GetConfigSettings(MicroSettings* settings) {
     settings->show = "FPS+CPU+GPU+RAM+SOC+BAT+DTC";
     settings->showRAMLoad = true;
     settings->setPosBottom = false;
+    settings->disableScreenshots = false;
     settings->refreshRate = 1;
 
     // Open and read file efficiently
@@ -1688,6 +1696,14 @@ ALWAYS_INLINE void GetConfigSettings(MicroSettings* settings) {
         key = it->second;
         convertToUpper(key);
         settings->setPosBottom = (key == "BOTTOM");
+    }
+
+    // Process disable screenshots
+    it = section.find("disable_screenshots");
+    if (it != section.end()) {
+        key = it->second;
+        convertToUpper(key);
+        settings->disableScreenshots = (key != "FALSE");
     }
 }
 

@@ -117,6 +117,9 @@ public:
             const auto [horizontalUnderscanPixels, verticalUnderscanPixels] = tsl::gfx::getUnderscanPixels();
             tsl::gfx::Renderer::get().setLayerPos(0, !verticalUnderscanPixels ? 1038 : 1038- (tsl::cfg::ScreenHeight/720. * verticalUnderscanPixels) +0.5);
         }
+        if (settings.disableScreenshots) {
+            tsl::gfx::Renderer::get().removeScreenshotStacks();
+        }
         mutexInit(&mutex_BatteryChecker);
         mutexInit(&mutex_Misc);
         TeslaFPS = settings.refreshRate;
