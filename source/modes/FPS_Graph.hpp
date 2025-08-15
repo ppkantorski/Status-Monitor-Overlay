@@ -101,6 +101,11 @@ public:
 
         auto* Status = new tsl::elm::CustomDrawer([this](tsl::gfx::Renderer *renderer, u16 x, u16 y, u16 w, u16 h) {
 
+            // Calculate total width based on whether we're showing info
+            const s16 refresh_rate_offset = (refreshRate < 100) ? 21 : 28;
+            const s16 info_width = settings.showInfo ? (6 + rectangle_width/2 - 4) : 0;
+            const s16 total_width = rectangle_width + refresh_rate_offset + info_width;
+
             if (refreshRate && refreshRate < 240) {
                 rectangle_height = refreshRate;
                 rectangle_range_max = refreshRate;
@@ -125,21 +130,21 @@ public:
                     base_x = 0;
                     break;
                 case 1:  // Center Top
-                    base_x = 224 - ((rectangle_width + 21) / 2);
+                    base_x = 224 - (total_width / 2);
                     break;
                 case 2:  // Right Top
-                    base_x = 448 - (rectangle_width + 21);
+                    base_x = 448 - total_width;
                     break;
                 case 3:  // Left Center
                     base_x = 0;
                     base_y = 360 - ((rectangle_height + 12) / 2);
                     break;
                 case 4:  // Center Center
-                    base_x = 224 - ((rectangle_width + 21) / 2);
+                    base_x = 224 - (total_width / 2);
                     base_y = 360 - ((rectangle_height + 12) / 2);
                     break;
                 case 5:  // Right Center
-                    base_x = 448 - (rectangle_width + 21);
+                    base_x = 448 - total_width;
                     base_y = 360 - ((rectangle_height + 12) / 2);
                     break;
                 case 6:  // Left Bottom
@@ -147,11 +152,11 @@ public:
                     base_y = 720 - (rectangle_height + 12);
                     break;
                 case 7:  // Center Bottom
-                    base_x = 224 - ((rectangle_width + 21) / 2);
+                    base_x = 224 - (total_width / 2);
                     base_y = 720 - (rectangle_height + 12);
                     break;
                 case 8:  // Right Bottom
-                    base_x = 448 - (rectangle_width + 21);
+                    base_x = 448 - total_width;
                     base_y = 720 - (rectangle_height + 12);
                     break;
             }
@@ -161,21 +166,23 @@ public:
             //    base_x = 448 - (rectangle_width + 21);  // Align to the right
             //} else {
             // Default horizontal alignment based on settings.setPos
-            switch (settings.setPos) {
-                case 1:
-                case 4:
-                case 7:
-                    base_x = 224 - ((rectangle_width + 21) / 2);  // Centered horizontally
-                    break;
-                case 2:
-                case 5:
-                case 8:
-                    base_x = 448 - (rectangle_width + 21);  // Align to the right
-                    break;
-            }
+            //switch (settings.setPos) {
+            //    case 1:
+            //    case 4:
+            //    case 7:
+            //        base_x = 224 - ((rectangle_width + 21) / 2);  // Centered horizontally
+            //        break;
+            //    case 2:
+            //    case 5:
+            //    case 8:
+            //        base_x = 448 - (rectangle_width + 21);  // Align to the right
+            //        break;
             //}
+            //}
+            
+            // Draw the main rectangle (extended to include info area if needed)
+            renderer->drawRect(base_x, base_y, total_width, rectangle_height + 12, a(settings.backgroundColor));
 
-            renderer->drawRect(base_x, base_y, rectangle_width + ((refreshRate < 100) ? 21 : 28), rectangle_height + 12, a(settings.backgroundColor));
             const s16 size = (refreshRate > 60 || !refreshRate) ? 63 : (s32)(63.0/(60.0/refreshRate));
             //std::pair<u32, u32> dimensions = renderer->drawString(FPSavg_c, false, 0, 0, size, renderer->a(0x0000));
             const auto width = renderer->getTextDimensions(FPSavg_c, false, size).first;
@@ -239,8 +246,8 @@ public:
             if (settings.showInfo) {
                 const s16 info_x = base_x+rectangle_width+rectangle_x + 6;
                 const s16 info_y = base_y + 3;
-                renderer->drawRect(info_x, 0, rectangle_width /2 - 4, rectangle_height + 12, a(settings.backgroundColor));
-                renderer->drawString("CPU\nGPU\nRAM\nSOC\nPCB\nSKN", false, info_x, info_y+11, 11, renderer->a(settings.borderColor));
+                //renderer->drawRect(info_x, info_y, rectangle_width /2 - 4, rectangle_height + 12, a(settings.backgroundColor));
+                renderer->drawString("CPU\nGPU\nRAM\nSOC\nPCB\nSKN", false, info_x, info_y+11, 11, (settings.borderColor));
 
                 renderer->drawString(CPU_Load_c, false, info_x + 40, info_y+11, 11, settings.minFPSTextColor);
                 renderer->drawString(GPU_Load_c, false, info_x + 40, info_y+22, 11, settings.minFPSTextColor);
@@ -263,7 +270,7 @@ public:
 
         ///FPS
         stats temp = {0, false};
-        static float last = 0;
+        static uint64_t lastFrame = 0;
         
         snprintf(FPSavg_c, sizeof FPSavg_c, "%2.1f",  FPSavg);
         const uint8_t SaltySharedDisplayRefreshRate = *(uint8_t*)((uintptr_t)shmemGetAddr(&_sharedmemory) + 1);
@@ -273,8 +280,8 @@ public:
         if (FPSavg < 254) {
             snprintf(FPSavg_c, sizeof(FPSavg_c), "%.1f", FPSavg);
 
-            if (FPSavg == last) return;
-            else last = FPSavg;
+            if (lastFrame == lastFrameNumber) return;
+            else lastFrame = lastFrameNumber;
             if ((s16)(readings.size()) >= rectangle_width) {
                 readings.erase(readings.begin());
             }
@@ -289,7 +296,7 @@ public:
             if (readings.size()) {
                 readings.clear();
                 readings.shrink_to_fit();
-                last = 0;
+                lastFrame = 0;
             }
             FPSavg_c[0] = 0;
         }

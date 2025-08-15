@@ -223,6 +223,9 @@ public:
                             width = renderer->getTextDimensions("3840x21603840x2160", false, fontsize).first;
                         else
                             width = renderer->getTextDimensions("2160p2160p", false, fontsize).first;
+                    } else if (key == "READ") {
+                        // Calculate width for read speed display
+                        width = renderer->getTextDimensions("999.99 MiB/s", false, fontsize).first;
                     } else if (key == "DTC" && settings.showDTC) {
                         // Calculate width based on the datetime format
                         // Use a sample datetime string to measure width
@@ -289,6 +292,10 @@ public:
                         labelText = "RES";
                         flags |= 128;
                         resolutionShow = true;
+                    } else if (key == "READ" && !(flags & 512) && GameRunning) {
+                        shouldAdd = true;
+                        labelText = "READ";
+                        flags |= 512;
                     } else if (key == "DTC" && !(flags & 256) && settings.showDTC) {
                         shouldAdd = true;
                         labelText = settings.useDTCSymbol ? "\uE007" : "DTC";
@@ -412,6 +419,21 @@ public:
             if (!delayUpdate)
                 _variableLines = variableLines;
             for (size_t i = 0; i < _variableLines.size() && labelIndex < labelLines.size(); i++) {
+                // Check for RES label without corresponding RES data
+                if (labelIndex < labelLines.size() && labelLines[labelIndex] == "RES") {
+                    //const std::string& currentLine = _variableLines[i];
+                    // Check if this data line looks like resolution data (contains 'x' or 'p')
+                    bool isResolutionData = m_resolutionOutput[0].width;
+                    
+                    if (!isResolutionData) {
+                        // This is RES label but data isn't resolution data - skip the label
+                        ++labelIndex;
+                        // Don't increment i, so the current data line gets paired with the next label
+                        --i;
+                        continue;
+                    }
+                }
+
                 // Draw label (centered in label region)
                 if (!labelLines[labelIndex].empty()) {
                     labelWidth = renderer->getTextDimensions(labelLines[labelIndex], false, fontsize).first;
@@ -994,6 +1016,19 @@ public:
                     }
                     strcat(Temp, Temp_s);
                     flags |= 128;
+                }
+            }},
+            {"READ", [&]() {
+                if (!(flags & 512) && GameRunning && NxFps) {
+                    if (Temp[0]) strcat(Temp, "\n");
+                    char Temp_s[24];
+                    if ((NxFps -> readSpeedPerSecond) != 0.f) {
+                        snprintf(Temp_s, sizeof(Temp_s), "%.2f MiB/s", (NxFps -> readSpeedPerSecond) / 1048576.f);
+                    } else {
+                        strcpy(Temp_s, "n/d");
+                    }
+                    strcat(Temp, Temp_s);
+                    flags |= 512;
                 }
             }},
             {"DTC", [&]() {

@@ -175,6 +175,7 @@ struct NxFpsSharedBlock {
     bool forceSuspend;
     uint8_t currentRefreshRate;
     float readSpeedPerSecond;
+    uint64_t frameNumber;
 } NX_PACKED;
 
 NxFpsSharedBlock* NxFps = 0;
@@ -191,6 +192,7 @@ float FPSmax = 0;
 SharedMemory _sharedmemory = {};
 bool SharedMemoryUsed = false;
 Handle remoteSharedMemory = 1;
+uint64_t lastFrameNumber = 0;
 
 //Read real freqs from sys-clk sysmodule
 uint32_t realCPU_Hz = 0;
@@ -279,14 +281,6 @@ void CheckIfGameRunning(void*) {
     do {
         if (!check && R_FAILED(pmdmntGetApplicationProcessId(&PID))) {
             GameRunning = false;
-            if (SharedMemoryUsed) {
-                (NxFps->MAGIC) = 0;
-                (NxFps->pluginActive) = false;
-                (NxFps->FPS) = 0;
-                (NxFps->FPSavg) = 0.0;
-                FPS = 254;
-                FPSavg = 254.0;
-            }
             check = true;
         }
         else if (!GameRunning && SharedMemoryUsed) {
@@ -548,7 +542,9 @@ void Misc(void*) {
         if (GameRunning) {
             if (SharedMemoryUsed) {
                 FPS = (NxFps->FPS);
-                FPSavg = 19'200'000.f / (std::accumulate<uint32_t*, float>(&(NxFps->FPSticks[0]), &(NxFps->FPSticks[10]), 0) / 10);
+                const size_t element_count = sizeof(NxFps -> FPSticks) / sizeof(NxFps -> FPSticks[0]);
+                FPSavg = (float)systemtickfrequency / (std::accumulate<uint32_t*, float>(&NxFps->FPSticks[0], &NxFps->FPSticks[element_count], 0) / element_count);
+                lastFrameNumber = NxFps -> frameNumber;
                 if (FPSavg > FPSmax)    FPSmax = FPSavg; 
                 if (FPSavg < FPSmin)    FPSmin = FPSavg; 
             }
@@ -722,7 +718,9 @@ void FPSCounter(void*) {
         if (GameRunning) {
             if (SharedMemoryUsed) {
                 FPS = (NxFps->FPS);
-                FPSavg = 19'200'000.f / (std::accumulate<uint32_t*, float>(&(NxFps->FPSticks[0]), &(NxFps->FPSticks[10]), 0) / 10);
+                const size_t element_count = sizeof(NxFps -> FPSticks) / sizeof(NxFps -> FPSticks[0]);
+                FPSavg = (float)systemtickfrequency / (std::accumulate<uint32_t*, float>(&NxFps->FPSticks[0], &NxFps->FPSticks[element_count], 0) / element_count);
+                lastFrameNumber = NxFps -> frameNumber;
             }
         }
         else FPSavg = 254;

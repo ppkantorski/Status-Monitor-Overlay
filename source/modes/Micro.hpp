@@ -17,6 +17,7 @@ private:
     char RAM_volt_c[32];
     char SOC_volt_c[16];
     char RES_var_compressed_c[32];
+    char READ_var_compressed_c[32];
     char DTC_c[32];
 
     static constexpr uint32_t margin = 4;
@@ -210,6 +211,12 @@ public:
                             seen_flags |= 64;
                         }
                         break;
+                    case 0x524541: // "REA" (for READ)
+                        if (len >= 4 && key[3] == 'D' && !(seen_flags & 512)) {
+                            renderItems.push_back({9, "READ", READ_var_compressed_c, nullptr, false});
+                            seen_flags |= 512;
+                        }
+                        break;
                     case 0x445443: // "DTC" 
                         if (!(seen_flags & 256) && settings.showDTC) {
                             renderItems.push_back({8, settings.useDTCSymbol ? "\uE007" : "DTC", DTC_c, nullptr, false});
@@ -263,6 +270,9 @@ public:
                     continue;
                 } else if (item.type == 8 && !settings.showDTC) {
                     // Skip DTC if disabled in settings
+                    continue;
+                } else if (item.type == 9 && (!GameRunning || !NxFps)) {
+                    // Skip READ if no game running or no NxFps available
                     continue;
                 } else {
                     main_items.push_back(item);
@@ -924,6 +934,18 @@ public:
 
         // FPS
         snprintf(FPS_var_compressed_c, sizeof(FPS_var_compressed_c), "%2.1f", FPSavg);
+
+
+        // Read Speed
+        if (GameRunning && NxFps) {
+            if ((NxFps -> readSpeedPerSecond) != 0.f) {
+                snprintf(READ_var_compressed_c, sizeof(READ_var_compressed_c), "%.2f MiB/s", (NxFps -> readSpeedPerSecond) / 1048576.f);
+            } else {
+                strcpy(READ_var_compressed_c, "n/d");
+            }
+        } else {
+            strcpy(READ_var_compressed_c, "n/d");
+        }
 
         mutexUnlock(&mutex_Misc);
 
