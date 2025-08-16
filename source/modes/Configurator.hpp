@@ -175,6 +175,37 @@ public:
     }
 };
 
+
+// Define available DTC format options
+static const std::vector<std::pair<std::string, std::string>> dtcFormats = {
+    // Special
+    {"Pretty", "%a, %b %d"+ult::DIVIDER_SYMBOL+"%I:%M %p"},
+    {"Compact", "%Y%m%d"+ult::DIVIDER_SYMBOL+"%H:%M:%S"},
+    {"FileSafe", "%Y-%m-%d"+ult::DIVIDER_SYMBOL+"%H-%M-%S"},
+    {"Day+Time", "%a"+ult::DIVIDER_SYMBOL+"%H:%M"},
+
+    // Datetime (default included here)
+    {"Date+Time(s)", "%m-%d-%Y"+ult::DIVIDER_SYMBOL+"%H:%M:%S"},           // default
+    {"Date+Time AM/PM", "%m-%d-%Y"+ult::DIVIDER_SYMBOL+"%I:%M %p"},
+    {"Date+Time(s) AM/PM", "%m-%d-%Y"+ult::DIVIDER_SYMBOL+"%I:%M:%S %p"},
+    {"Date+Time EU", "%d/%m/%Y"+ult::DIVIDER_SYMBOL+"%H:%M"},
+    {"Date+Time EU AM/PM", "%d/%m/%Y"+ult::DIVIDER_SYMBOL+"%I:%M %p"},
+    {"Date+Time(s) EU AM/PM", "%d/%m/%Y"+ult::DIVIDER_SYMBOL+"%I:%M:%S %p"},
+    {"Date+Time ISO", "%Y-%m-%dT"+ult::DIVIDER_SYMBOL+"%H:%M:%S"},
+
+    // Time only
+    {"Time 24h", "%H:%M"},
+    {"Time AM/PM", "%I:%M %p"},
+    {"Time(s) 24h", "%H:%M:%S"},
+    {"Time(s) AM/PM", "%I:%M:%S %p"},
+
+    // Date only
+    {"Date US", "%m-%d-%Y"},
+    {"Date EU", "%d/%m/%Y"},
+    {"Date ISO", "%Y-%m-%d"},
+    {"Date Short", "%m/%d/%y"}
+};
+
 // DTC Format Configuration (Mini/Micro only)
 class DTCFormatConfig : public tsl::Gui {
 private:
@@ -203,33 +234,6 @@ public:
             currentValue = isMiniMode ? "%m-%d-%Y%"+ult::DIVIDER_SYMBOL+"H:%M:%S" : "%H:%M:%S";
         }
         
-        // Define available DTC format options
-        static const std::vector<std::pair<std::string, std::string>> dtcFormats = {
-            // Time only
-            {"Time 24h", "%H:%M"},
-            {"Time AM/PM", "%I:%M %p"},
-            {"TimeS 24h", "%H:%M:%S"},
-            {"TimeS AM/PM", "%I:%M:%S %p"},
-        
-            // Date only
-            {"Date US", "%m-%d-%Y"},
-            {"Date EU", "%d/%m/%Y"},
-            {"Date ISO", "%Y-%m-%d"},
-            {"Date Short", "%m/%d/%y"},
-        
-            // Datetime (default included here)
-            {"Date+Time", "%m-%d-%Y"+ult::DIVIDER_SYMBOL+"%H:%M:%S"},           // default
-            {"Date+Time AM/PM", "%m-%d-%Y"+ult::DIVIDER_SYMBOL+"%I:%M %p"},
-            {"Date+Time EU", "%d/%m/%Y"+ult::DIVIDER_SYMBOL+"%H:%M"},
-            {"Date+Time EU AM/PM", "%d/%m/%Y"+ult::DIVIDER_SYMBOL+"%I:%M %p"},
-            {"Date+Time ISO", "%Y-%m-%dT"+ult::DIVIDER_SYMBOL+"%H:%M:%S"},
-        
-            // Special
-            {"Compact", "%Y%m%d"+ult::DIVIDER_SYMBOL+"%H%M%S"},
-            {"FileSafe", "%Y-%m-%d"+ult::DIVIDER_SYMBOL+"%H-%M-%S"},
-            {"Pretty", "%a, %b %d"+ult::DIVIDER_SYMBOL+"%I:%M %p"},
-            {"Day+Time", "%a"+ult::DIVIDER_SYMBOL+"%H:%M"}
-        };
         
         for (const auto& format : dtcFormats) {
             auto* formatItem = new tsl::elm::ListItem(format.first);
@@ -662,7 +666,7 @@ private:
 public:
     FramePaddingConfig(const std::string& mode) : modeName(mode) {
         const std::string value = ult::parseValueFromIniSection(configIniPath, "mini", "frame_padding");
-        currentPadding = value.empty() ? 10 : std::clamp(atoi(value.c_str()), 0, 10);
+        currentPadding = value.empty() ? 10 : std::clamp(atoi(value.c_str()), 0, 14); // max value 14
     }
 
     ~FramePaddingConfig() {
@@ -1865,32 +1869,6 @@ private:
     
     // Helper function to convert format string to display name
     std::string getDTCFormatName(const std::string& formatStr) {
-        static const std::vector<std::pair<std::string, std::string>> dtcFormats = {
-            // Time only
-            {"Time 24h", "%H:%M"},
-            {"Time AM/PM", "%I:%M %p"},
-            {"TimeS 24h", "%H:%M:%S"},
-            {"TimeS AM/PM", "%I:%M:%S %p"},
-        
-            // Date only
-            {"Date US", "%m-%d-%Y"},
-            {"Date EU", "%d/%m/%Y"},
-            {"Date ISO", "%Y-%m-%d"},
-            {"Date Short", "%m/%d/%y"},
-        
-            // Datetime (default included here)
-            {"Date+Time", "%m-%d-%Y"+ult::DIVIDER_SYMBOL+"%H:%M:%S"},           // default
-            {"Date+Time AM/PM", "%m-%d-%Y"+ult::DIVIDER_SYMBOL+"%I:%M %p"},
-            {"Date+Time EU", "%d/%m/%Y"+ult::DIVIDER_SYMBOL+"%H:%M"},
-            {"Date+Time EU AM/PM", "%d/%m/%Y"+ult::DIVIDER_SYMBOL+"%I:%M %p"},
-            {"Date+Time ISO", "%Y-%m-%dT"+ult::DIVIDER_SYMBOL+"%H:%M:%S"},
-        
-            // Special
-            {"Compact", "%Y%m%d"+ult::DIVIDER_SYMBOL+"%H%M%S"},
-            {"FileSafe", "%Y-%m-%d"+ult::DIVIDER_SYMBOL+"%H-%M-%S"},
-            {"Pretty", "%a, %b %d"+ult::DIVIDER_SYMBOL+"%I:%M %p"},
-            {"Day+Time", "%a"+ult::DIVIDER_SYMBOL+"%H:%M"}
-        };
         
         for (const auto& format : dtcFormats) {
             if (format.second == formatStr) {

@@ -237,7 +237,7 @@ public:
                         time_t rawtime = time(NULL);
                         struct tm *timeinfo = localtime(&rawtime);
                         strftime(sampleDateTime, sizeof(sampleDateTime), settings.dtcFormat.c_str(), timeinfo);
-                        width = renderer->getTextDimensions(sampleDateTime, false, fontsize).first;
+                        width = renderer->getTextDimensions(std::string(sampleDateTime)+"  ", false, fontsize).first;
                     } else {
                         continue;
                     }
