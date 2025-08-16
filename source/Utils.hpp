@@ -1168,6 +1168,7 @@ struct MiniSettings {
     //int setPos;
     int frameOffsetX;
     int frameOffsetY;
+    size_t framePadding;
 };
 
 struct MicroSettings {
@@ -1261,8 +1262,9 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
     settings->refreshRate = 1;
     settings->disableScreenshots = false;
     //settings->setPos = 0;
-    settings->frameOffsetX = 8;
-    settings->frameOffsetY = 8;
+    settings->frameOffsetX = 10;
+    settings->frameOffsetY = 10;
+    settings->framePadding = 10;
 
     // Open and read file efficiently
     FILE* configFile = fopen(configIniPath, "r");
@@ -1489,6 +1491,11 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
     it = section.find("frame_offset_y");
     if (it != section.end()) {
         settings->frameOffsetY = atol(it->second.c_str());
+    }
+
+    it = section.find("frame_padding");
+    if (it != section.end()) {
+        settings->framePadding = atol(it->second.c_str());
     }
 }
 

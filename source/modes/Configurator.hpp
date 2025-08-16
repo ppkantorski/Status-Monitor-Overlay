@@ -623,7 +623,7 @@ public:
                     
                     ult::setIniFileValue(configIniPath, section, "refresh_rate", std::to_string(rate));
                     rateItem->setValue(ult::CHECKMARK_SYMBOL);
-                    if (lastSelectedListItem)
+                    if (lastSelectedListItem && rateItem != lastSelectedListItem)
                         lastSelectedListItem->setValue("");
                     lastSelectedListItem = rateItem;
                     return true;
@@ -652,6 +652,68 @@ public:
         return false;
     }
 };
+
+// Frame Padding Configuration (Mini only)
+class FramePaddingConfig : public tsl::Gui {
+private:
+    std::string modeName;
+    int currentPadding;
+    
+public:
+    FramePaddingConfig(const std::string& mode) : modeName(mode) {
+        const std::string value = ult::parseValueFromIniSection(configIniPath, "mini", "frame_padding");
+        currentPadding = value.empty() ? 10 : std::clamp(atoi(value.c_str()), 0, 10);
+    }
+
+    ~FramePaddingConfig() {
+        lastSelectedListItem = nullptr;
+    }
+    
+    virtual tsl::elm::Element* createUI() override {
+        auto* list = new tsl::elm::List();
+        list->addItem(new tsl::elm::CategoryHeader("Frame Padding"));
+
+        static const std::vector<int> paddingValues = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12};
+        for (int padding : paddingValues) {
+            auto* paddingItem = new tsl::elm::ListItem(std::to_string(padding) + " px");
+            if (padding == currentPadding) {
+                paddingItem->setValue(ult::CHECKMARK_SYMBOL);
+                lastSelectedListItem = paddingItem;
+            }
+            paddingItem->setClickListener([this, paddingItem, padding](uint64_t keys) {
+                if (keys & KEY_A) {
+                    ult::setIniFileValue(configIniPath, "mini", "frame_padding", std::to_string(padding));
+                    paddingItem->setValue(ult::CHECKMARK_SYMBOL);
+                    if (lastSelectedListItem && paddingItem != lastSelectedListItem)
+                        lastSelectedListItem->setValue("");
+                    lastSelectedListItem = paddingItem;
+                    return true;
+                }
+                return false;
+            });
+            list->addItem(paddingItem);
+        }
+        
+        list->jumpToItem("", ult::CHECKMARK_SYMBOL, false);
+
+        tsl::elm::OverlayFrame* rootFrame = new tsl::elm::OverlayFrame("Status Monitor", "Configuration");
+        rootFrame->setContent(list);
+        return rootFrame;
+    }
+    
+    virtual bool handleInput(u64 keysDown, u64 keysHeld, const HidTouchState &touchPos, HidAnalogStickState joyStickPosLeft, HidAnalogStickState joyStickPosRight) override {
+        if (keysDown & KEY_B) {
+            jumpItemName = "Frame Padding";
+            jumpItemValue = "";
+            jumpItemExactMatch = false;
+            
+            tsl::swapTo<ConfiguratorOverlay>(SwapDepth(2), modeName);
+            return true;
+        }
+        return false;
+    }
+};
+
 
 // Font Size Selector
 class FontSizeSelector : public tsl::Gui {
@@ -708,7 +770,7 @@ public:
                 if (keys & KEY_A) {
                     ult::setIniFileValue(configIniPath, section, keyName, std::to_string(size));
                     sizeItem->setValue(ult::CHECKMARK_SYMBOL);
-                    if (lastSelectedListItem)
+                    if (lastSelectedListItem && lastSelectedListItem != sizeItem)
                         lastSelectedListItem->setValue("");
                     lastSelectedListItem = sizeItem;
                     return true;
@@ -1665,6 +1727,20 @@ public:
             });
             list->addItem(dtcFormat);
         }
+
+        // 7. Frame Padding (Mini only) - NEW ADDITION
+        if (isMiniMode) {
+            auto* framePadding = new tsl::elm::ListItem("Frame Padding");
+            framePadding->setValue(std::to_string(getCurrentFramePadding()) + " px");
+            framePadding->setClickListener([this](uint64_t keys) {
+                if (keys & KEY_A) {
+                    tsl::changeTo<FramePaddingConfig>(modeName);
+                    return true;
+                }
+                return false;
+            });
+            list->addItem(framePadding);
+        }
         
         // 7. Mode-specific positioning settings
         if (isMicroMode) {
@@ -1826,6 +1902,14 @@ private:
         return formatStr;
     }
     
+    int getCurrentFramePadding() {
+        if (isMiniMode) {
+            std::string value = ult::parseValueFromIniSection(configIniPath, "mini", "frame_padding");
+            return value.empty() ? 10 : atoi(value.c_str());
+        }
+        return 10;
+    }
+
     std::string getCurrentTextAlign() {
         if (isMicroMode) {
             std::string value = ult::parseValueFromIniSection(configIniPath, "micro", "text_align");

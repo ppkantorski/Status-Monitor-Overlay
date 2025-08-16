@@ -21,7 +21,7 @@ private:
     bool skipOnce = true;
     bool runOnce = true;
 
-    static constexpr int framePadding = 10;
+    size_t framePadding = 10;
     static constexpr int screenWidth = 1280;
     static constexpr int screenHeight = 720;
 public:
@@ -59,6 +59,7 @@ public:
         //alphabackground = 0x0;
         frameOffsetX = settings.frameOffsetX;
         frameOffsetY = settings.frameOffsetY;
+        framePadding = settings.framePadding;
         topPadding = 5;
         bottomPadding = 2;
         
@@ -375,14 +376,14 @@ public:
             
             
             // Check X bounds and calculate clipping offset
-            if (cachedBaseX + frameOffsetX < framePadding) {
+            if (cachedBaseX + frameOffsetX < int(framePadding)) {
                 clippingOffsetX = framePadding - (cachedBaseX + frameOffsetX);
             } else if ((cachedBaseX + frameOffsetX + margin + rectangleWidth + (fontsize / 3)) > screenWidth - framePadding) {
                 clippingOffsetX = (screenWidth - framePadding) - (cachedBaseX + frameOffsetX + margin + rectangleWidth + (fontsize / 3));
             }
             
             // Check Y bounds and calculate clipping offset  
-            if (cachedBaseY + frameOffsetY < framePadding) {
+            if (cachedBaseY + frameOffsetY < int(framePadding)) {
                 clippingOffsetY = framePadding - (cachedBaseY + frameOffsetY);
             } else if ((cachedBaseY + frameOffsetY + cachedHeight) > screenHeight - framePadding) {
                 clippingOffsetY = (screenHeight - framePadding) - (cachedBaseY + frameOffsetY + cachedHeight);
@@ -573,7 +574,7 @@ public:
                 threadStart(&t6);
             }
         }
-        
+
         //static bool triggerExit = false;
         //if (triggerExit) {
         //    ult::setIniFileValue(
