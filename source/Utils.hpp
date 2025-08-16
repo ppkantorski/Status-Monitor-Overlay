@@ -167,7 +167,14 @@ struct NxFpsSharedBlock {
     uint8_t SetBuffers;
     uint8_t ActiveBuffers;
     uint8_t SetActiveBuffers;
-    bool displaySync;
+    union {
+        struct {
+            bool handheld: 1;
+            bool docked: 1;
+            unsigned int reserved: 6;
+        } NX_PACKED ds;
+        uint8_t general;
+    } displaySync;
     resolutionCalls renderCalls[8];
     resolutionCalls viewportCalls[8];
     bool forceOriginalRefreshRate;
@@ -175,6 +182,7 @@ struct NxFpsSharedBlock {
     bool forceSuspend;
     uint8_t currentRefreshRate;
     float readSpeedPerSecond;
+    uint8_t FPSlockedDocked;
     uint64_t frameNumber;
 } NX_PACKED;
 

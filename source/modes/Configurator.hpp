@@ -200,7 +200,7 @@ public:
         
         // Handle default values
         if (currentValue.empty()) {
-            currentValue = isMiniMode ? "%m-%d-%Y%H:%M:%S" : "%H:%M:%S";
+            currentValue = isMiniMode ? "%m-%d-%Y%"+ult::DIVIDER_SYMBOL+"H:%M:%S" : "%H:%M:%S";
         }
         
         // Define available DTC format options
@@ -218,17 +218,17 @@ public:
             {"Date Short", "%m/%d/%y"},
         
             // Datetime (default included here)
-            {"Date+Time", "%m-%d-%Y%H:%M:%S"},           // default
-            {"Date+Time AM/PM", "%m-%d-%Y%I:%M %p"},
-            {"Date+Time EU", "%d/%m/%Y%H:%M"},
-            {"Date+Time EU AM/PM", "%d/%m/%Y%I:%M %p"},
-            {"Date+Time ISO", "%Y-%m-%dT%H:%M:%S"},
+            {"Date+Time", "%m-%d-%Y"+ult::DIVIDER_SYMBOL+"%H:%M:%S"},           // default
+            {"Date+Time AM/PM", "%m-%d-%Y"+ult::DIVIDER_SYMBOL+"%I:%M %p"},
+            {"Date+Time EU", "%d/%m/%Y"+ult::DIVIDER_SYMBOL+"%H:%M"},
+            {"Date+Time EU AM/PM", "%d/%m/%Y"+ult::DIVIDER_SYMBOL+"%I:%M %p"},
+            {"Date+Time ISO", "%Y-%m-%dT"+ult::DIVIDER_SYMBOL+"%H:%M:%S"},
         
             // Special
-            {"Compact", "%Y%m%d%H%M%S"},
-            {"FileSafe", "%Y-%m-%d%H-%M-%S"},
-            {"Pretty", "%a, %b %d%I:%M %p"},
-            {"Day+Time", "%a%H:%M"}
+            {"Compact", "%Y%m%d"+ult::DIVIDER_SYMBOL+"%H%M%S"},
+            {"FileSafe", "%Y-%m-%d"+ult::DIVIDER_SYMBOL+"%H-%M-%S"},
+            {"Pretty", "%a, %b %d"+ult::DIVIDER_SYMBOL+"%I:%M %p"},
+            {"Day+Time", "%a"+ult::DIVIDER_SYMBOL+"%H:%M"}
         };
         
         for (const auto& format : dtcFormats) {
@@ -1673,7 +1673,7 @@ private:
             
             // Handle defaults properly
             if (value.empty()) {
-                value = isMiniMode ? "%m-%d-%Y%H:%M:%S" : "%H:%M:%S";
+                value = isMiniMode ? "%m-%d-%Y"+ult::DIVIDER_SYMBOL+"%H:%M:%S" : "%H:%M:%S";
             }
             
             // Convert format string to display name
@@ -1698,17 +1698,17 @@ private:
             {"Date Short", "%m/%d/%y"},
         
             // Datetime (default included here)
-            {"Date+Time", "%m-%d-%Y%H:%M:%S"},           // default
-            {"Date+Time AM/PM", "%m-%d-%Y%I:%M %p"},
-            {"Date+Time EU", "%d/%m/%Y%H:%M"},
-            {"Date+Time EU AM/PM", "%d/%m/%Y%I:%M %p"},
-            {"Date+Time ISO", "%Y-%m-%dT%H:%M:%S"},
+            {"Date+Time", "%m-%d-%Y"+ult::DIVIDER_SYMBOL+"%H:%M:%S"},           // default
+            {"Date+Time AM/PM", "%m-%d-%Y"+ult::DIVIDER_SYMBOL+"%I:%M %p"},
+            {"Date+Time EU", "%d/%m/%Y"+ult::DIVIDER_SYMBOL+"%H:%M"},
+            {"Date+Time EU AM/PM", "%d/%m/%Y"+ult::DIVIDER_SYMBOL+"%I:%M %p"},
+            {"Date+Time ISO", "%Y-%m-%dT"+ult::DIVIDER_SYMBOL+"%H:%M:%S"},
         
             // Special
-            {"Compact", "%Y%m%d%H%M%S"},
-            {"FileSafe", "%Y-%m-%d%H-%M-%S"},
-            {"Pretty", "%a, %b %d%I:%M %p"},
-            {"Day+Time", "%a%H:%M"}
+            {"Compact", "%Y%m%d"+ult::DIVIDER_SYMBOL+"%H%M%S"},
+            {"FileSafe", "%Y-%m-%d"+ult::DIVIDER_SYMBOL+"%H-%M-%S"},
+            {"Pretty", "%a, %b %d"+ult::DIVIDER_SYMBOL+"%I:%M %p"},
+            {"Day+Time", "%a"+ult::DIVIDER_SYMBOL+"%H:%M"}
         };
         
         for (const auto& format : dtcFormats) {
