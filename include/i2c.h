@@ -2,7 +2,7 @@
 
 Result I2cReadRegHandler16(u8 reg, I2cDevice dev, u16 *out)
 {
-	struct readReg {
+    struct readReg {
         u8 send;
         u8 sendLength;
         u8 sendData;
@@ -10,13 +10,13 @@ Result I2cReadRegHandler16(u8 reg, I2cDevice dev, u16 *out)
         u8 receiveLength;
     };
 
-	I2cSession _session;
+    I2cSession _session;
 
-	Result res = i2cOpenSession(&_session, dev);
-	if (res)
-		return res;
+    Result res = i2cOpenSession(&_session, dev);
+    if (res)
+        return res;
 
-	u16 val;
+    u16 val;
 
     struct readReg readRegister = {
         .send = 0 | (I2cTransactionOption_Start << 6),
@@ -26,21 +26,21 @@ Result I2cReadRegHandler16(u8 reg, I2cDevice dev, u16 *out)
         .receiveLength = sizeof(val),
     };
 
-	res = i2csessionExecuteCommandList(&_session, &val, sizeof(val), &readRegister, sizeof(readRegister));
-	if (res)
-	{
-		i2csessionClose(&_session);
-		return res;
-	}
+    res = i2csessionExecuteCommandList(&_session, &val, sizeof(val), &readRegister, sizeof(readRegister));
+    if (res)
+    {
+        i2csessionClose(&_session);
+        return res;
+    }
 
-	*out = val;
-	i2csessionClose(&_session);
-	return 0;
+    *out = val;
+    i2csessionClose(&_session);
+    return 0;
 }
 
 Result I2cReadRegHandler8(u8 reg, I2cDevice dev, u8 *out)
 {
-	struct readReg {
+    struct readReg {
         u8 send;
         u8 sendLength;
         u8 sendData;
@@ -48,13 +48,13 @@ Result I2cReadRegHandler8(u8 reg, I2cDevice dev, u8 *out)
         u8 receiveLength;
     };
 
-	I2cSession _session;
+    I2cSession _session;
 
-	Result res = i2cOpenSession(&_session, dev);
-	if (res)
-		return res;
+    Result res = i2cOpenSession(&_session, dev);
+    if (res)
+        return res;
 
-	u8 val;
+    u8 val;
 
     struct readReg readRegister = {
         .send = 0 | (I2cTransactionOption_Start << 6),
@@ -64,14 +64,14 @@ Result I2cReadRegHandler8(u8 reg, I2cDevice dev, u8 *out)
         .receiveLength = sizeof(val),
     };
 
-	res = i2csessionExecuteCommandList(&_session, &val, sizeof(val), &readRegister, sizeof(readRegister));
-	if (res)
-	{
-		i2csessionClose(&_session);
-		return res;
-	}
+    res = i2csessionExecuteCommandList(&_session, &val, sizeof(val), &readRegister, sizeof(readRegister));
+    if (res)
+    {
+        i2csessionClose(&_session);
+        return res;
+    }
 
-	*out = val;
-	i2csessionClose(&_session);
-	return 0;
+    *out = val;
+    i2csessionClose(&_session);
+    return 0;
 }

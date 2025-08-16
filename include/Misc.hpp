@@ -24,18 +24,18 @@ typedef struct {
 } NifmNetworkProfileData_new;
 
 Result getNvChannelClockRate(NvChannel *channel, u32 module_id, u32 *clock_rate) {
-	struct nvhost_clk_rate_args {
-	    uint32_t rate;
-	    uint32_t moduleid;
-	} args = {
-		.rate     = 0,
-		.moduleid = module_id,
-	};
+    struct nvhost_clk_rate_args {
+        uint32_t rate;
+        uint32_t moduleid;
+    } args = {
+        .rate     = 0,
+        .moduleid = module_id,
+    };
 
-	u32 id = hosversionBefore(8,0,0) ? _NV_IOWR(0, 0x14, args) : _NV_IOWR(0, 0x23, args);
-	Result rc = nvIoctl(channel->fd, id, &args);
-	if (R_SUCCEEDED(rc) && clock_rate)
-		*clock_rate = args.rate;
+    const u32 id = hosversionBefore(8,0,0) ? _NV_IOWR(0, 0x14, args) : _NV_IOWR(0, 0x23, args);
+    Result rc = nvIoctl(channel->fd, id, &args);
+    if (R_SUCCEEDED(rc) && clock_rate)
+        *clock_rate = args.rate;
 
-	return rc;
+    return rc;
 }

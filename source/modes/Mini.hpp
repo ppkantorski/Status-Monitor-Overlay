@@ -1,517 +1,1378 @@
 class MiniOverlay : public tsl::Gui {
 private:
-	uint64_t mappedButtons = MapButtons(keyCombo); // map buttons
-	char GPU_Load_c[32] = "";
-	char Rotation_SpeedLevel_c[64] = "";
-	char RAM_var_compressed_c[128] = "";
-	char SoCPCB_temperature_c[64] = "";
-	char skin_temperature_c[32] = "";
+    char GPU_Load_c[32] = "";
+    char Rotation_SpeedLevel_c[64] = "";
+    char RAM_var_compressed_c[128] = "";
+    char SoCPCB_temperature_c[64] = "";
+    char soc_temperature_c[64] = "";
+    char skin_temperature_c[64] = "";
 
-	uint32_t rectangleWidth = 0;
-	char Variables[512] = "";
-	size_t fontsize = 0;
-	bool Initialized = false;
-	MiniSettings settings;
-	ApmPerformanceMode performanceMode = ApmPerformanceMode_Invalid;
-	uint64_t systemtickfrequency_impl = systemtickfrequency;
+    uint32_t rectangleWidth;
+    char Variables[512];
+    size_t fontsize;
+    MiniSettings settings;
+    bool Initialized = false;
+    ApmPerformanceMode performanceMode = ApmPerformanceMode_Invalid;
+    uint64_t systemtickfrequency_impl = systemtickfrequency;
+    int frameOffsetX, frameOffsetY;
+    int topPadding, bottomPadding;
+    bool isDragging = false;
+
+    bool skipOnce = true;
+    bool runOnce = true;
+
+    static constexpr int framePadding = 10;
+    static constexpr int screenWidth = 1280;
+    static constexpr int screenHeight = 720;
 public:
     MiniOverlay() { 
-		GetConfigSettings(&settings);
-		apmGetPerformanceMode(&performanceMode);
-		mutexInit(&mutex_BatteryChecker);
-		mutexInit(&mutex_Misc);
-		alphabackground = 0x0;
-		tsl::hlp::requestForeground(false);
-		FullMode = false;
-		TeslaFPS = settings.refreshRate;
-		systemtickfrequency_impl /= settings.refreshRate;
-		idletick0 = systemtickfrequency_impl;
-		idletick1 = systemtickfrequency_impl;
-		idletick2 = systemtickfrequency_impl;
-		idletick3 = systemtickfrequency_impl;
-		deactivateOriginalFooter = true;
-        StartThreads(NULL);
-		if (performanceMode == ApmPerformanceMode_Normal) {
-			fontsize = settings.handheldFontSize;
-		}
-		else fontsize = settings.dockedFontSize;
-		switch(settings.setPos) {
-			case 1:
-			case 4:
-			case 7:
-				tsl::gfx::Renderer::getRenderer().setLayerPos(624, 0);
-				break;
-			case 2:
-			case 5:
-			case 8:
-				tsl::gfx::Renderer::getRenderer().setLayerPos(1248, 0);
-				break;
-		}
-	}
-	~MiniOverlay() {
-		CloseThreads();
-		FullMode = true;
-		tsl::hlp::requestForeground(true);
-		alphabackground = 0xD;
-		deactivateOriginalFooter = false;
-	}
+        tsl::hlp::requestForeground(false);
+        disableJumpTo = true;
+        //tsl::initializeUltrahandSettings();
+        PowerConsumption = 0.0f;
+        batTimeEstimate = -1;
+        strcpy(SoCPCB_temperature_c, "-.-- W-.-% [--:--]"); // Default display
 
-	resolutionCalls m_resolutionRenderCalls[8] = {0};
-	resolutionCalls m_resolutionViewportCalls[8] = {0};
-	resolutionCalls m_resolutionOutput[8] = {0};
-	uint8_t resolutionLookup = 0;
-	bool resolutionShow = false;
+        GetConfigSettings(&settings);
+        apmGetPerformanceMode(&performanceMode);
+        if (performanceMode == ApmPerformanceMode_Normal) {
+            fontsize = settings.handheldFontSize;
+        }
+        else fontsize = settings.dockedFontSize;
+        //switch(settings.setPos) {
+        //    case 1:
+        //    case 4:
+        //    case 7:
+        //        tsl::gfx::Renderer::get().setLayerPos(624, 0);
+        //        break;
+        //    case 2:
+        //    case 5:
+        //    case 8:
+        //        tsl::gfx::Renderer::get().setLayerPos(1248, 0);
+        //        break;
+        //}
+        if (settings.disableScreenshots) {
+            tsl::gfx::Renderer::get().removeScreenshotStacks();
+        }
+        mutexInit(&mutex_BatteryChecker);
+        mutexInit(&mutex_Misc);
+        //alphabackground = 0x0;
+        frameOffsetX = settings.frameOffsetX;
+        frameOffsetY = settings.frameOffsetY;
+        topPadding = 5;
+        bottomPadding = 2;
+        
+        FullMode = false;
+        TeslaFPS = settings.refreshRate;
+        systemtickfrequency_impl /= settings.refreshRate;
+        deactivateOriginalFooter = true;
+        StartThreads();
+    }
+    ~MiniOverlay() {
+
+        CloseThreads();
+        FullMode = true;
+        fixForeground = true;
+        //tsl::hlp::requestForeground(true);
+        //alphabackground = 0xD;
+        deactivateOriginalFooter = false;
+    }
+
+    resolutionCalls m_resolutionRenderCalls[8] = {0};
+    resolutionCalls m_resolutionViewportCalls[8] = {0};
+    resolutionCalls m_resolutionOutput[8] = {0};
+    uint8_t resolutionLookup = 0;
+    bool resolutionShow = false;
 
     virtual tsl::elm::Element* createUI() override {
 
-		rootFrame = new tsl::elm::OverlayFrame("", "");
+        auto* Status = new tsl::elm::CustomDrawer([this](tsl::gfx::Renderer *renderer, u16 x, u16 y, u16 w, u16 h) {
+            //static constexpr u16 frameWidth = 448;
+            
+            // Cache parsed settings and calculations
+            static std::vector<std::string> showKeys;
+            static std::string lastShowSetting;
+            static bool needsRecalc = true;
+            static std::vector<std::string> labelLines; // Store individual label lines
+            static std::string lastVariables; // Track changes in Variables content
+            static size_t entryCount = 0;
+            static uint32_t cachedHeight = 0;
+            static int cachedBaseX = 0, cachedBaseY = 0;
+            static bool lastGameRunning = false; // Track game state changes
+            
+            // Check if we need to recalculate due to content changes
+            const bool contentChanged = (std::string(Variables) != lastVariables) || 
+                                (GameRunning != lastGameRunning);
+            
+            // Only recalculate if settings changed or content changed
+            if (settings.show != lastShowSetting || !Initialized || contentChanged) {
+                showKeys.clear();
+                
+                // Parse once and cache
+                size_t start = 0, end = 0;
+                const std::string& show = settings.show;
+                while ((end = show.find('+', start)) != std::string::npos) {
+                    showKeys.emplace_back(show.substr(start, end - start));
+                    start = end + 1;
+                }
+                if (start < show.length()) {
+                    showKeys.emplace_back(show.substr(start));
+                }
+                
+                lastShowSetting = settings.show;
+                lastVariables = Variables;
+                lastGameRunning = GameRunning;
+                needsRecalc = true;
+            }
+            
+            // Initial width calculation (only once)
+            if (!Initialized) {
+                
+                rectangleWidth = 0;
+                //std::pair<u32, u32> dimensions;
+                u32 width;
+                
+                for (const auto& key : showKeys) {
+                    if (key == "CPU") {
+                        //dimensions = renderer->drawString("[100%,100%,100%,100%]@4444.4", false, 0, 0, fontsize, renderer->a(0x0000));
+                        if (!settings.realVolts) {
+                            if (settings.showFullCPU)
+                                width = renderer->getTextDimensions("[100%,100%,100%,100%]@4444.4", false, fontsize).first;
+                            else
+                                width = renderer->getTextDimensions("100%@4444.4", false, fontsize).first;
+                        } else {
+                            if (settings.showFullCPU)
+                                width = renderer->getTextDimensions("[100%,100%,100%,100%]@4444.4444 mV", false, fontsize).first;
+                            else
+                                width = renderer->getTextDimensions("100%@4444.4444 mV", false, fontsize).first;
+                        }
+                    } else if (key == "GPU" || (key == "RAM" && settings.showRAMLoad && R_SUCCEEDED(sysclkCheck))) {
+                        //dimensions = renderer->drawString("100.0%@4444.4", false, 0, 0, fontsize, renderer->a(0x0000));
+                        if (!settings.realVolts) {
+                            width = renderer->getTextDimensions("100%@4444.4", false, fontsize).first;
+                        } else {
+                            width = renderer->getTextDimensions("100%@4444.4444 mV", false, fontsize).first;
+                        }
+                    } else if (key == "RAM" && (!settings.showRAMLoad || R_FAILED(sysclkCheck))) {
+                        //dimensions = renderer->drawString("44444444MB@4444.4", false, 0, 0, fontsize, renderer->a(0x0000));
+                        if (!settings.realVolts) {
+                            width = renderer->getTextDimensions("100%@4444.4", false, fontsize).first;
+                        } else {
+                            if (isMariko) {
+                                if (settings.showVDD2 && settings.decimalVDD2 && settings.showVDDQ)
+                                    width = renderer->getTextDimensions("100%@4444.44444.4444 mV", false, fontsize).first;
+                                else if (settings.showVDD2 && !settings.decimalVDD2 && settings.showVDDQ)
+                                    width = renderer->getTextDimensions("100%@4444.44444444 mV", false, fontsize).first;
+                                else if (settings.showVDD2 && settings.decimalVDD2)
+                                    width = renderer->getTextDimensions("100%@4444.44444.4 mV", false, fontsize).first;
+                                else if (settings.showVDD2 && !settings.decimalVDD2)
+                                    width = renderer->getTextDimensions("100%@4444.44444 mV", false, fontsize).first;
+                                else if (settings.showVDDQ)
+                                    width = renderer->getTextDimensions("100%@4444.4444 mV", false, fontsize).first;
+                            } else {
+                                if (settings.decimalVDD2)
+                                    width = renderer->getTextDimensions("100%@4444.44444.4 mV", false, fontsize).first;
+                                else
+                                    width = renderer->getTextDimensions("100%@4444.44444 mV", false, fontsize).first;
+                            }
+                        }
+                    } else if (key == "SOC") {                // new block
+                        if (!settings.realVolts)
+                            if (settings.showFanPercentage)
+                                width = renderer->getTextDimensions("88°C (100%)", false, fontsize).first;
+                            else
+                                width = renderer->getTextDimensions("88°C", false, fontsize).first;
+                        else
+                            if (settings.showSOCVoltage) {
+                                if (settings.showFanPercentage)
+                                    width = renderer->getTextDimensions("88°C (100%)444 mV", false, fontsize).first;
+                                else
+                                    width = renderer->getTextDimensions("88°C444 mV", false, fontsize).first;
+                            } else {
+                                if (settings.showFanPercentage)
+                                    width = renderer->getTextDimensions("88°C (100%)", false, fontsize).first;
+                                else
+                                    width = renderer->getTextDimensions("88°C", false, fontsize).first;
+                            }
+                    } else if (key == "TMP") {
+                        //dimensions = renderer->drawString("88.8\u00B0C88.8\u00B0C88.8\u00B0C (100%)", false, 0, 0, fontsize, renderer->a(0x0000));
+                        if (!settings.realVolts) {
+                            if (settings.showFanPercentage)
+                                width = renderer->getTextDimensions("88\u00B0C 88\u00B0C 88\u00B0C (100%)", false, fontsize).first;
+                            else
+                                width = renderer->getTextDimensions("88\u00B0C 88\u00B0C 88\u00B0C", false, fontsize).first;
+                        } else {
+                            if (settings.showSOCVoltage) {
+                                if (settings.showFanPercentage)
+                                    width = renderer->getTextDimensions("88\u00B0C 88\u00B0C 88\u00B0C (100%)444 mV", false, fontsize).first;
+                                else
+                                    width = renderer->getTextDimensions("88\u00B0C 88\u00B0C 88\u00B0C444 mV", false, fontsize).first;
+                            } else {
+                                if (settings.showFanPercentage)
+                                    width = renderer->getTextDimensions("88\u00B0C 88\u00B0C 88\u00B0C (100%)", false, fontsize).first;
+                                else
+                                    width = renderer->getTextDimensions("88\u00B0C 88\u00B0C 88\u00B0C", false, fontsize).first;
+                            }
+                        }
+                    } else if (key == "BAT") {
+                        //dimensions = renderer->drawString("-44.44 W100.0% [44:44]", false, 0, 0, fontsize, renderer->a(0x0000));
+                        width = renderer->getTextDimensions("-44.44 W100.0% [44:44]", false, fontsize).first;
+                    } else if (key == "FPS") {
+                        //dimensions = renderer->drawString("444.4", false, 0, 0, fontsize, renderer->a(0x0000));
+                        width = renderer->getTextDimensions("444.4", false, fontsize).first;
+                    } else if (key == "RES") {
+                        //dimensions = renderer->drawString("3840x21603840x2160", false, 0, 0, fontsize, renderer->a(0x0000));
+                        if (settings.showFullResolution)
+                            width = renderer->getTextDimensions("3840x21603840x2160", false, fontsize).first;
+                        else
+                            width = renderer->getTextDimensions("2160p2160p", false, fontsize).first;
+                    } else if (key == "READ") {
+                        // Calculate width for read speed display
+                        width = renderer->getTextDimensions("999.99 MiB/s", false, fontsize).first;
+                    } else if (key == "DTC" && settings.showDTC) {
+                        // Calculate width based on the datetime format
+                        // Use a sample datetime string to measure width
+                        char sampleDateTime[64];
+                        time_t rawtime = time(NULL);
+                        struct tm *timeinfo = localtime(&rawtime);
+                        strftime(sampleDateTime, sizeof(sampleDateTime), settings.dtcFormat.c_str(), timeinfo);
+                        width = renderer->getTextDimensions(sampleDateTime, false, fontsize).first;
+                    } else {
+                        continue;
+                    }
+                    
+                    if (rectangleWidth < width) {
+                        rectangleWidth = width;
+                    }
+                }
+                Initialized = true;
+                needsRecalc = true;
+            }
+            
+            // Recalculate layout when needed (including content changes)
+            if (needsRecalc) {
+                // Build label lines array for individual centering
+                labelLines.clear();
+                entryCount = 0;
+                uint8_t flags = 0;
+                
+                bool shouldAdd;
+                std::string labelText;
+                for (const auto& key : showKeys) {
+                    shouldAdd = false;
+                    labelText = "";
+                    
+                    if (key == "CPU" && !(flags & 1)) {
+                        shouldAdd = true;
+                        labelText = "CPU";
+                        flags |= 1;
+                    } else if (key == "GPU" && !(flags & 2)) {
+                        shouldAdd = true;
+                        labelText = "GPU";
+                        flags |= 2;
+                    } else if (key == "RAM" && !(flags & 4)) {
+                        shouldAdd = true;
+                        labelText = "RAM";
+                        flags |= 4;
+                    } else if (key == "SOC" && !(flags & 8)) {
+                        shouldAdd = true;
+                        labelText = "SOC";
+                        flags |= 8;
+                    } else if (key == "TMP" && !(flags & 16)) {
+                        shouldAdd = true;
+                        labelText = "TMP";
+                        flags |= 16;
+                    } else if ((key == "BAT" || key == "DRAW") && !(flags & 32)) {
+                        shouldAdd = true;
+                        labelText = "BAT";
+                        flags |= 32;
+                    } else if (key == "FPS" && !(flags & 64) && GameRunning) {
+                        shouldAdd = true;
+                        labelText = "FPS";
+                        flags |= 64;
+                    } else if (key == "RES" && !(flags & 128) && GameRunning) {
+                        shouldAdd = true;
+                        labelText = "RES";
+                        flags |= 128;
+                        resolutionShow = true;
+                    } else if (key == "READ" && !(flags & 512) && GameRunning) {
+                        shouldAdd = true;
+                        labelText = "READ";
+                        flags |= 512;
+                    } else if (key == "DTC" && !(flags & 256) && settings.showDTC) {
+                        shouldAdd = true;
+                        labelText = settings.useDTCSymbol ? "\uE007" : "DTC";
+                        flags |= 256;
+                    }
 
-		auto Status = new tsl::elm::CustomDrawer([this](tsl::gfx::Renderer *renderer, u16 x, u16 y, u16 w, u16 h) {
-			
-			if (!Initialized) {
-				rectangleWidth = 0;
-				std::pair<u32, u32> dimensions;
-				for (std::string key : tsl::hlp::split(settings.show, '+')) {
-					if (!key.compare("CPU")) {
-						dimensions = renderer->drawString("[100%,100%,100%,100%]@4444.4", false, 0, 0, fontsize, renderer->a(0x0000));
-						if (rectangleWidth < dimensions.first)
-							rectangleWidth = dimensions.first;
-					}
-					else if (!key.compare("GPU") || (!key.compare("RAM") && settings.showRAMLoad && R_SUCCEEDED(sysclkCheck))) {
-						dimensions = renderer->drawString("100.0%@4444.4", false, 0, fontsize, fontsize, renderer->a(0x0000));
-						if (rectangleWidth < dimensions.first)
-							rectangleWidth = dimensions.first;
-					}
-					else if (!key.compare("RAM") && (!settings.showRAMLoad || R_FAILED(sysclkCheck))) {
-						dimensions = renderer->drawString("4444/4444MB@4444.4", false, 0, 0, fontsize, renderer->a(0x0000));
-						if (rectangleWidth < dimensions.first)
-							rectangleWidth = dimensions.first;
-					}
-					else if (!key.compare("TEMP")) {
-						dimensions = renderer->drawString("88.8\u00B0C/88.8\u00B0C/88.8\u00B0C", false, 0, fontsize, fontsize, renderer->a(0x0000));
-						if (rectangleWidth < dimensions.first)
-							rectangleWidth = dimensions.first;
-					}
-					else if (!key.compare("DRAW")) {
-						dimensions = renderer->drawString("-44.44W[44:44]", false, 0, fontsize, fontsize, renderer->a(0x0000));
-						if (rectangleWidth < dimensions.first)
-							rectangleWidth = dimensions.first;
-					}
-					else if (!key.compare("FAN")) {
-						dimensions = renderer->drawString("100.0%", false, 0, fontsize, fontsize, renderer->a(0x0000));
-						if (rectangleWidth < dimensions.first)
-							rectangleWidth = dimensions.first;
-					}
-					else if (!key.compare("FPS")) {
-						dimensions = renderer->drawString("444.4", false, 0, fontsize, fontsize, renderer->a(0x0000));
-						if (rectangleWidth < dimensions.first)
-							rectangleWidth = dimensions.first;
-					}
-					else if (!key.compare("RES")) {
-						dimensions = renderer->drawString("3840x2160 || 3840x2160", false, 0, fontsize, fontsize, renderer->a(0x0000));
-						if (rectangleWidth < dimensions.first)
-							rectangleWidth = dimensions.first;
-					}
-					else if (!key.compare("READ")) {
-						dimensions = renderer->drawString("4444.4 MiB/s", false, 0, fontsize, fontsize, renderer->a(0x0000));
-						if (rectangleWidth < dimensions.first)
-							rectangleWidth = dimensions.first;
-					}
-				}
-				Initialized = true;
-			}
-			char print_text[36] = "";
-			size_t entry_count = 0;
-			uint32_t flags = 0;
-			for (std::string key : tsl::hlp::split(settings.show, '+')) {
-				if (!key.compare("CPU") && !(flags & 1 << 0)) {
-					if (print_text[0])
-						strcat(print_text, "\n");
-					strcat(print_text, "CPU");
-					entry_count++;
-					flags |= (1 << 0);
-				}
-				else if (!key.compare("GPU") && !(flags & 1 << 1)) {
-					if (print_text[0])
-						strcat(print_text, "\n");
-					strcat(print_text, "GPU");
-					entry_count++;
-					flags |= (1 << 1);
-				}
-				else if (!key.compare("RAM") && !(flags & 1 << 2)) {
-					if (print_text[0])
-						strcat(print_text, "\n");
-					strcat(print_text, "RAM");
-					entry_count++;
-					flags |= (1 << 2);
-				}
-				else if (!key.compare("TEMP") && !(flags & 1 << 3)) {
-					if (print_text[0])
-						strcat(print_text, "\n");
-					strcat(print_text, "TEMP");
-					entry_count++;
-					flags |= (1 << 3);
-				}
-				else if (!key.compare("DRAW") && !(flags & 1 << 4)) {
-					if (print_text[0])
-						strcat(print_text, "\n");
-					if (batTimeEstimate >= 0)
-						strcat(print_text, "DRAW");
-					else strcat(print_text, "CHRG");
-					entry_count++;
-					flags |= (1 << 4);
-				}
-				else if (!key.compare("FAN") && !(flags & 1 << 5)) {
-					if (print_text[0])
-						strcat(print_text, "\n");
-					strcat(print_text, "FAN");
-					entry_count++;
-					flags |= (1 << 5);
-				}
-				else if (!key.compare("FPS") && !(flags & 1 << 6) && GameRunning) {
-					if (print_text[0])
-						strcat(print_text, "\n");
-					strcat(print_text, "FPS");
-					entry_count++;
-					flags |= (1 << 6);
-				}
-				else if (!key.compare("RES") && !(flags & 1 << 7) && GameRunning) {
-					if (print_text[0])
-						strcat(print_text, "\n");
-					strcat(print_text, "RES");
-					entry_count++;
-					resolutionShow = true;
-					flags |= (1 << 7);
-				}
-				else if (!key.compare("READ") && !(flags & 1 << 8) && GameRunning) {
-					if (print_text[0])
-						strcat(print_text, "\n");
-					strcat(print_text, "READ");
-					entry_count++;
-					flags |= (1 << 8);
-				}
-			}
+                    
+                    if (shouldAdd) {
+                        labelLines.push_back(labelText);
+                        entryCount++;
+                        
+                        //if (settings.realVolts && key != "BAT" && key != "DRAW" && key != "FPS" && key != "RES") {
+                        //    labelLines.push_back(""); // Empty line for voltage info
+                        //    entryCount++;
+                        //}
+                    }
+                }
+                
+                // Calculate actual entry count from Variables string
+                size_t actualEntryCount = 1; // Start with 1 for the first line
+                for (size_t i = 0; Variables[i] != '\0'; i++) {
+                    if (Variables[i] == '\n') {
+                        actualEntryCount++;
+                    }
+                }
+                
+                // Use the actual entry count for height calculation
+                cachedHeight = ((fontsize + settings.spacing) * actualEntryCount) + (fontsize / 3) + settings.spacing + topPadding + bottomPadding;
+                //const uint32_t margin = (fontsize * 4);
+                
+                cachedBaseX = 0;
+                cachedBaseY = 0;
+                
+                //if (ult::useRightAlignment) {
+                //    cachedBaseX = frameWidth - (margin + rectangleWidth + (fontsize / 3));
+                //} else {
+                //switch (settings.setPos) {
+                //    case 1:
+                //        cachedBaseX = 224 - ((margin + rectangleWidth + (fontsize / 3)) / 2);
+                //        break;
+                //    case 4:
+                //        cachedBaseX = 224 - ((margin + rectangleWidth + (fontsize / 3)) / 2);
+                //        cachedBaseY = 360 - cachedHeight / 2;
+                //        break;
+                //    case 7:
+                //        cachedBaseX = 224 - ((margin + rectangleWidth + (fontsize / 3)) / 2);
+                //        cachedBaseY = 720 - cachedHeight;
+                //        break;
+                //    case 2:
+                //        cachedBaseX = 448 - (margin + rectangleWidth + (fontsize / 3));
+                //        break;
+                //    case 5:
+                //        cachedBaseX = 448 - (margin + rectangleWidth + (fontsize / 3));
+                //        cachedBaseY = 360 - cachedHeight / 2;
+                //        break;
+                //    case 8:
+                //        cachedBaseX = 448 - (margin + rectangleWidth + (fontsize / 3));
+                //        cachedBaseY = 720 - cachedHeight;
+                //        break;
+                //}
+                ///}
+                needsRecalc = false;
+            }
+            
+            // Fast rendering using cached values
+            const uint32_t margin = (fontsize * 4);
+            
+            // Draw background
+            const tsl::Color bgColor = !isDragging
+                ? settings.backgroundColor // full opacity
+                : settings.focusBackgroundColor;
 
-			uint32_t height = (fontsize * entry_count) + (fontsize / 3);
-			uint32_t margin = (fontsize * 4);
+            int clippingOffsetX = 0, clippingOffsetY = 0;
+            
+            
+            // Check X bounds and calculate clipping offset
+            if (cachedBaseX + frameOffsetX < framePadding) {
+                clippingOffsetX = framePadding - (cachedBaseX + frameOffsetX);
+            } else if ((cachedBaseX + frameOffsetX + margin + rectangleWidth + (fontsize / 3)) > screenWidth - framePadding) {
+                clippingOffsetX = (screenWidth - framePadding) - (cachedBaseX + frameOffsetX + margin + rectangleWidth + (fontsize / 3));
+            }
+            
+            // Check Y bounds and calculate clipping offset  
+            if (cachedBaseY + frameOffsetY < framePadding) {
+                clippingOffsetY = framePadding - (cachedBaseY + frameOffsetY);
+            } else if ((cachedBaseY + frameOffsetY + cachedHeight) > screenHeight - framePadding) {
+                clippingOffsetY = (screenHeight - framePadding) - (cachedBaseY + frameOffsetY + cachedHeight);
+            }
+            
+            // Apply to all drawing calls
+            renderer->drawRoundedRectSingleThreaded(
+                cachedBaseX + frameOffsetX + clippingOffsetX, 
+                cachedBaseY + frameOffsetY + clippingOffsetY, 
+                margin + rectangleWidth + (fontsize / 3), 
+                cachedHeight, 
+                16, 
+                a(bgColor)
+            );
+                        
+            
+            // Split Variables into lines for individual positioning
+            std::vector<std::string> variableLines;
+            const std::string variablesStr(Variables);
+            size_t start = 0;
+            size_t pos = 0;
+            while ((pos = variablesStr.find('\n', start)) != std::string::npos) {
+                variableLines.push_back(variablesStr.substr(start, pos - start));
+                start = pos + 1;
+            }
+            if (start < variablesStr.length()) {
+                variableLines.push_back(variablesStr.substr(start));
+            }
+            
+            // Draw each label and variable line individually
+            uint32_t currentY = cachedBaseY + fontsize + settings.spacing + topPadding;
+            size_t labelIndex = 0;
+            
+            static const std::vector<std::string> specialChars = {""};
+            static uint32_t labelWidth, labelCenterX;
+            static std::vector<std::string> _variableLines;
+            if (!delayUpdate)
+                _variableLines = variableLines;
+            for (size_t i = 0; i < _variableLines.size() && labelIndex < labelLines.size(); i++) {
+                // Check for RES label without corresponding RES data
+                if (labelIndex < labelLines.size() && labelLines[labelIndex] == "RES") {
+                    //const std::string& currentLine = _variableLines[i];
+                    // Check if this data line looks like resolution data (contains 'x' or 'p')
+                    bool isResolutionData = m_resolutionOutput[0].width;
+                    
+                    if (!isResolutionData) {
+                        // This is RES label but data isn't resolution data - skip the label
+                        ++labelIndex;
+                        // Don't increment i, so the current data line gets paired with the next label
+                        --i;
+                        continue;
+                    }
+                }
 
-			int base_x = 0;
-			int base_y = 0;
-			switch(settings.setPos) {
-				case 1:
-					base_x = 224 - ((margin + rectangleWidth + (fontsize / 3)) / 2);
-					break;
-				case 4:
-					base_x = 224 - ((margin + rectangleWidth + (fontsize / 3)) / 2);
-					base_y = 360 - height / 2;
-					break;
-				case 7:
-					base_x = 224 - ((margin + rectangleWidth + (fontsize / 3)) / 2);
-					base_y = 720 - height;
-					break;
-				case 2:
-					base_x = 448 - (margin + rectangleWidth + (fontsize / 3));
-					break;
-				case 5:
-					base_x = 448 - (margin + rectangleWidth + (fontsize / 3));
-					base_y = 360 - height / 2;
-					break;
-				case 8:
-					base_x = 448 - (margin + rectangleWidth + (fontsize / 3));
-					base_y = 720 - height;
-					break;
-			}
-			
-			renderer->drawRect(base_x, base_y, margin + rectangleWidth + (fontsize / 3), height, a(settings.backgroundColor));
-			renderer->drawString(print_text, false, base_x, base_y + fontsize, fontsize, renderer->a(settings.catColor));
-			
-			///GPU
-			renderer->drawString(Variables, false, base_x + margin, base_y + fontsize, fontsize, renderer->a(settings.textColor));
-		});
+                // Draw label (centered in label region)
+                if (!labelLines[labelIndex].empty()) {
+                    labelWidth = renderer->getTextDimensions(labelLines[labelIndex], false, fontsize).first;
+                    labelCenterX = cachedBaseX + (margin / 2) - (labelWidth / 2);
+                    renderer->drawString(labelLines[labelIndex], false, labelCenterX + frameOffsetX + clippingOffsetX, currentY + frameOffsetY + clippingOffsetY, fontsize, settings.catColor);
+                }
+                
+                // Determine rendering method based on label type
+                const std::string& currentLine = _variableLines[i];
+                const int baseX = cachedBaseX + margin + frameOffsetX + clippingOffsetX;
+                const int baseY = currentY + frameOffsetY + clippingOffsetY;
+                
+                if (settings.useDynamicColors) {
+                    if (labelIndex < labelLines.size() && labelLines[labelIndex] == "SOC") {
+                        // SOC temperature rendering with gradient
+                        const size_t degreesPos = currentLine.find("°");
+                        if (degreesPos != std::string::npos) {
+                            // Find the 'C' after the degrees symbol
+                            const size_t cPos = currentLine.find("C", degreesPos);
+                            if (cPos != std::string::npos) {
+                                const size_t tempEnd = cPos + 1; // Include the 'C'
+                                
+                                // Extract temperature value and apply gradient
+                                const int temp = atoi(currentLine.c_str());
+                                const tsl::Color tempColor = tsl::GradientColor((float)temp);
+                                
+                                // Split into temperature part and remaining part
+                                const std::string tempPart = currentLine.substr(0, tempEnd);
+                                const std::string restPart = currentLine.substr(tempEnd);
+                                
+                                // Render temperature with gradient color
+                                int currentX = baseX;
+                                renderer->drawString(tempPart, false, currentX, baseY, fontsize, tempColor);
+                                
+                                // Render remaining text with normal color
+                                if (!restPart.empty()) {
+                                    currentX += renderer->getTextDimensions(tempPart, false, fontsize).first;
+                                    renderer->drawStringWithColoredSections(restPart, false, specialChars, currentX, baseY, fontsize, settings.textColor, a(settings.separatorColor));
+                                }
+                            } else {
+                                // Fallback: no C found after degrees, render normally
+                                renderer->drawStringWithColoredSections(currentLine, false, specialChars, baseX, baseY, fontsize, settings.textColor, a(settings.separatorColor));
+                            }
+                        } else {
+                            // Fallback: no degrees symbol found, render normally
+                            renderer->drawStringWithColoredSections(currentLine, false, specialChars, baseX, baseY, fontsize, settings.textColor, a(settings.separatorColor));
+                        }
+                        
+                    } else if (labelIndex < labelLines.size() && labelLines[labelIndex] == "TMP") {
+                        // TMP multiple temperatures rendering with gradients
+                        int currentX = baseX;
+                        size_t pos = 0;
+                        bool parseSuccess = true;
+                        
+                        // Parse up to 3 temperatures in the format "XX°C XX°C XX°C (XX%)"
+                        for (int tempCount = 0; tempCount < 3 && parseSuccess && pos < currentLine.length(); tempCount++) {
+                            // Find start of current temperature (skip any leading spaces)
+                            while (pos < currentLine.length() && currentLine[pos] == ' ') {
+                                renderer->drawString(" ", false, currentX, baseY, fontsize, settings.textColor);
+                                currentX += renderer->getTextDimensions(" ", false, fontsize).first;
+                                pos++;
+                            }
+                            
+                            if (pos >= currentLine.length()) break;
+                            
+                            // Find degrees symbol
+                            const size_t degreesPos = currentLine.find("°", pos);
+                            if (degreesPos == std::string::npos) {
+                                parseSuccess = false;
+                                break;
+                            }
+                            
+                            // Find 'C' after degrees symbol
+                            const size_t cPos = currentLine.find("C", degreesPos);
+                            if (cPos == std::string::npos) {
+                                parseSuccess = false;
+                                break;
+                            }
+                            
+                            const size_t tempEnd = cPos + 1; // Include the 'C'
+                            
+                            // Extract and render temperature with gradient
+                            const std::string tempPart = currentLine.substr(pos, tempEnd - pos);
+                            const int temp = atoi(tempPart.c_str());
+                            const tsl::Color tempColor = tsl::GradientColor((float)temp);
+                            
+                            renderer->drawString(tempPart, false, currentX, baseY, fontsize, tempColor);
+                            currentX += renderer->getTextDimensions(tempPart, false, fontsize).first;
+                            
+                            pos = tempEnd;
+                        }
+                        
+                        // Render any remaining text (like " (50%)" or voltage info)
+                        if (pos < currentLine.length()) {
+                            std::string restPart = currentLine.substr(pos);
+                            renderer->drawStringWithColoredSections(restPart, false, specialChars, currentX, baseY, fontsize, settings.textColor, a(settings.separatorColor));
+                        }
+                        
+                        // If parsing failed, fall back to normal rendering
+                        if (!parseSuccess) {
+                            renderer->drawStringWithColoredSections(currentLine, false, specialChars, baseX, baseY, fontsize, settings.textColor, a(settings.separatorColor));
+                        }
+                                        
+                    } else {
+                        // Normal rendering for all other line types (CPU, GPU, RAM, BAT, FPS, RES, DTC)
+                        renderer->drawStringWithColoredSections(currentLine, false, specialChars, baseX, baseY, fontsize, settings.textColor, a(settings.separatorColor));
+                    }
+                } else {
+                    // Normal rendering for all other line types (CPU, GPU, RAM, BAT, FPS, RES, DTC)
+                    renderer->drawStringWithColoredSections(currentLine, false, specialChars, baseX, baseY, fontsize, settings.textColor, a(settings.separatorColor));
+                }
+                
+                currentY += fontsize + settings.spacing;
+                ++labelIndex;
+            }
+        });
+        
+        tsl::elm::HeaderOverlayFrame* rootFrame = new tsl::elm::HeaderOverlayFrame("", "");
+        rootFrame->setContent(Status);
+        return rootFrame;
+    }
 
-		rootFrame->setContent(Status);
+    virtual void update() override {
+        if (triggerExitNow)
+            return;
 
-		return rootFrame;
-	}
+        if (!SaltySD) {
+            SaltySD = CheckPort();
 
-	virtual void update() override {
-		apmGetPerformanceMode(&performanceMode);
-		if (performanceMode == ApmPerformanceMode_Normal) {
-			if (fontsize != settings.handheldFontSize) {
-				Initialized = false;
-				fontsize = settings.handheldFontSize;
-			}
-		}
-		else if (performanceMode == ApmPerformanceMode_Boost) {
-			if (fontsize != settings.dockedFontSize) {
-				Initialized = false;
-				fontsize = settings.dockedFontSize;
-			}
-		}
+            if (SaltySD) {
+                LoadSharedMemory();
+                //Assign NX-FPS to default core
+                threadCreate(&t6, CheckIfGameRunning, NULL, NULL, 0x1000, 0x38, -2);
+                threadStart(&t6);
+            }
+        }
+        
+        //static bool triggerExit = false;
+        //if (triggerExit) {
+        //    ult::setIniFileValue(
+        //        ult::ULTRAHAND_CONFIG_INI_PATH,
+        //        ult::ULTRAHAND_PROJECT_NAME,
+        //        ult::IN_OVERLAY_STR,
+        //        ult::FALSE_STR
+        //    );
+        //    tsl::setNextOverlay(
+        //        ult::OVERLAY_PATH + "ovlmenu.ovl"
+        //    );
+        //    tsl::Overlay::get()->close();
+        //    return;
+        //}
 
-		//Make stuff ready to print
-		///CPU
-		char MINI_CPU_Usage0[7] = "";
-		char MINI_CPU_Usage1[7] = "";
-		char MINI_CPU_Usage2[7] = "";
-		char MINI_CPU_Usage3[7] = "";
+        apmGetPerformanceMode(&performanceMode);
+        if (performanceMode == ApmPerformanceMode_Normal) {
+            if (fontsize != settings.handheldFontSize) {
+                Initialized = false;
+                fontsize = settings.handheldFontSize;
+            }
+        }
+        else if (performanceMode == ApmPerformanceMode_Boost) {
+            if (fontsize != settings.dockedFontSize) {
+                Initialized = false;
+                fontsize = settings.dockedFontSize;
+            }
+        }
 
-		if (idletick0 > systemtickfrequency_impl)
-			strcpy(MINI_CPU_Usage0, "0%");
-		else snprintf(MINI_CPU_Usage0, sizeof(MINI_CPU_Usage0), "%.0f%%", (1.d - ((double)idletick0 / systemtickfrequency_impl)) * 100);
-		if (idletick1 > systemtickfrequency_impl)
-			strcpy(MINI_CPU_Usage1, "0%");
-		else snprintf(MINI_CPU_Usage1, sizeof(MINI_CPU_Usage1), "%.0f%%", (1.d - ((double)idletick1 / systemtickfrequency_impl)) * 100);
-		if (idletick2 > systemtickfrequency_impl)
-			strcpy(MINI_CPU_Usage2, "0%");
-		else snprintf(MINI_CPU_Usage2, sizeof(MINI_CPU_Usage2), "%.0f%%", (1.d - ((double)idletick2 / systemtickfrequency_impl)) * 100);
-		if (idletick3 > systemtickfrequency_impl)
-			strcpy(MINI_CPU_Usage3, "0%");
-		else snprintf(MINI_CPU_Usage3, sizeof(MINI_CPU_Usage3), "%.0f%%", (1.d - ((double)idletick3 / systemtickfrequency_impl)) * 100);
+        //Make stuff ready to print
+        ///CPU
 
-		mutexLock(&mutex_Misc);
-		
-		char MINI_CPU_compressed_c[42] = "";
-		if (settings.realFrequencies && realCPU_Hz) {
-			snprintf(MINI_CPU_compressed_c, sizeof(MINI_CPU_compressed_c), 
-				"[%s,%s,%s,%s]@%hu.%hhu", 
-				MINI_CPU_Usage0, MINI_CPU_Usage1, MINI_CPU_Usage2, MINI_CPU_Usage3, 
-				realCPU_Hz / 1000000, (realCPU_Hz / 100000) % 10);
-		}
-		else {
-			snprintf(MINI_CPU_compressed_c, sizeof(MINI_CPU_compressed_c), 
-				"[%s,%s,%s,%s]@%hu.%hhu", 
-				MINI_CPU_Usage0, MINI_CPU_Usage1, MINI_CPU_Usage2, MINI_CPU_Usage3, 
-				CPU_Hz / 1000000, (CPU_Hz / 100000) % 10);
-		}
-		char MINI_GPU_Load_c[14];
-		if (settings.realFrequencies && realGPU_Hz) {
-			snprintf(MINI_GPU_Load_c, sizeof(MINI_GPU_Load_c), 
-				"%hu.%hhu%%@%hu.%hhu", 
-				GPU_Load_u / 10, GPU_Load_u % 10,
-				realGPU_Hz / 1000000, (realGPU_Hz / 100000) % 10);
-		}
-		else {
-			snprintf(MINI_GPU_Load_c, sizeof(MINI_GPU_Load_c), 
-				"%hu.%hhu%%@%hu.%hhu", 
-				GPU_Load_u / 10, GPU_Load_u % 10, 
-				GPU_Hz / 1000000, (GPU_Hz / 100000) % 10);
-		}
-		
-		///RAM
-		char MINI_RAM_var_compressed_c[19] = "";
-		if (R_FAILED(sysclkCheck) || !settings.showRAMLoad) {
-			float RAM_Total_application_f = (float)RAM_Total_application_u / 1024 / 1024;
-			float RAM_Total_applet_f = (float)RAM_Total_applet_u / 1024 / 1024;
-			float RAM_Total_system_f = (float)RAM_Total_system_u / 1024 / 1024;
-			float RAM_Total_systemunsafe_f = (float)RAM_Total_systemunsafe_u / 1024 / 1024;
-			float RAM_Total_all_f = RAM_Total_application_f + RAM_Total_applet_f + RAM_Total_system_f + RAM_Total_systemunsafe_f;
-			float RAM_Used_application_f = (float)RAM_Used_application_u / 1024 / 1024;
-			float RAM_Used_applet_f = (float)RAM_Used_applet_u / 1024 / 1024;
-			float RAM_Used_system_f = (float)RAM_Used_system_u / 1024 / 1024;
-			float RAM_Used_systemunsafe_f = (float)RAM_Used_systemunsafe_u / 1024 / 1024;
-			float RAM_Used_all_f = RAM_Used_application_f + RAM_Used_applet_f + RAM_Used_system_f + RAM_Used_systemunsafe_f;
-			if (settings.realFrequencies && realRAM_Hz) {
-				snprintf(MINI_RAM_var_compressed_c, sizeof(MINI_RAM_var_compressed_c), 
-					"%.0f/%.0fMB@%hu.%hhu", 
-					RAM_Used_all_f, RAM_Total_all_f, 
-					realRAM_Hz / 1000000, (realRAM_Hz / 100000) % 10);
-			}
-			else {
-				snprintf(MINI_RAM_var_compressed_c, sizeof(MINI_RAM_var_compressed_c), 
-					"%.0f/%.0fMB@%hu.%hhu",
-					RAM_Used_all_f, RAM_Total_all_f, 
-					RAM_Hz / 1000000, (RAM_Hz / 100000) % 10);
-			}
-		}
-		else {
-			if (settings.realFrequencies && realRAM_Hz) {
-				snprintf(MINI_RAM_var_compressed_c, sizeof(MINI_RAM_var_compressed_c), 
-					"%hu.%hhu%%@%hu.%hhu", 
-					ramLoad[SysClkRamLoad_All] / 10, ramLoad[SysClkRamLoad_All] % 10, 
-					realRAM_Hz / 1000000, (realRAM_Hz / 100000) % 10);
-			}
-			else {
-				snprintf(MINI_RAM_var_compressed_c, sizeof(MINI_RAM_var_compressed_c), 
-					"%hu.%hhu%%@%hu.%hhu", 
-					ramLoad[SysClkRamLoad_All] / 10, ramLoad[SysClkRamLoad_All] % 10, 
-					RAM_Hz / 1000000, (RAM_Hz / 100000) % 10);
-			}
-		}
-		
-		///Thermal
-		snprintf(skin_temperature_c, sizeof skin_temperature_c, 
-			"%2.1f\u00B0C/%2.1f\u00B0C/%hu.%hhu\u00B0C", 
-			SOC_temperatureF, PCB_temperatureF, 
-			skin_temperaturemiliC / 1000, (skin_temperaturemiliC / 100) % 10);
-		snprintf(Rotation_SpeedLevel_c, sizeof Rotation_SpeedLevel_c, "%2.1f%%", Rotation_Duty);
+        char MINI_CPU_Usage0[7];
+        char MINI_CPU_Usage1[7];
+        char MINI_CPU_Usage2[7];
+        char MINI_CPU_Usage3[7];
 
-		if (GameRunning && NxFps && resolutionShow) {
-			if (!resolutionLookup) {
-				(NxFps -> renderCalls[0].calls) = 0xFFFF;
-				resolutionLookup = 1;
-			}
-			else if (resolutionLookup == 1) {
-				if ((NxFps -> renderCalls[0].calls) != 0xFFFF) resolutionLookup = 2;
-			}
-			else {
-				memcpy(&m_resolutionRenderCalls, &(NxFps -> renderCalls), sizeof(m_resolutionRenderCalls));
-				memcpy(&m_resolutionViewportCalls, &(NxFps -> viewportCalls), sizeof(m_resolutionViewportCalls));
-				qsort(m_resolutionRenderCalls, 8, sizeof(resolutionCalls), compare);
-				qsort(m_resolutionViewportCalls, 8, sizeof(resolutionCalls), compare);
-				memset(&m_resolutionOutput, 0, sizeof(m_resolutionOutput));
-				size_t out_iter = 0;
-				bool found = false;
-				for (size_t i = 0; i < 8; i++) {
-					for (size_t x = 0; x < 8; x++) {
-						if (m_resolutionRenderCalls[i].width == 0) {
-							break;
-						}
-						if ((m_resolutionRenderCalls[i].width == m_resolutionViewportCalls[x].width) && (m_resolutionRenderCalls[i].height == m_resolutionViewportCalls[x].height)) {
-							m_resolutionOutput[out_iter].width = m_resolutionRenderCalls[i].width;
-							m_resolutionOutput[out_iter].height = m_resolutionRenderCalls[i].height;
-							m_resolutionOutput[out_iter].calls = (m_resolutionRenderCalls[i].calls > m_resolutionViewportCalls[x].calls) ? m_resolutionRenderCalls[i].calls : m_resolutionViewportCalls[x].calls;
-							out_iter++;
-							found = true;
-							break;
-						}
-					}
-					if (!found && m_resolutionRenderCalls[i].width != 0) {
-						m_resolutionOutput[out_iter].width = m_resolutionRenderCalls[i].width;
-						m_resolutionOutput[out_iter].height = m_resolutionRenderCalls[i].height;
-						m_resolutionOutput[out_iter].calls = m_resolutionRenderCalls[i].calls;
-						out_iter++;
-					}
-					found = false;
-					if (out_iter == 8) break;
-				}
-				if (out_iter < 8) {
-					size_t out_iter_s = out_iter;
-					for (size_t x = 0; x < 8; x++) {
-						for (size_t y = 0; y < out_iter_s; y++) {
-							if (m_resolutionViewportCalls[x].width == 0) {
-								break;
-							}
-							if ((m_resolutionViewportCalls[x].width == m_resolutionOutput[y].width) && (m_resolutionViewportCalls[x].height == m_resolutionOutput[y].height)) {
-								found = true;
-								break;
-							}
-						}
-						if (!found && m_resolutionViewportCalls[x].width != 0) {
-							m_resolutionOutput[out_iter].width = m_resolutionViewportCalls[x].width;
-							m_resolutionOutput[out_iter].height = m_resolutionViewportCalls[x].height;
-							m_resolutionOutput[out_iter].calls = m_resolutionViewportCalls[x].calls;
-							out_iter++;			
-						}
-						found = false;
-						if (out_iter == 8) break;
-					}
-				}
-				qsort(m_resolutionOutput, 8, sizeof(resolutionCalls), compare);
+        if (idletick0 > systemtickfrequency_impl)
+            strcpy(MINI_CPU_Usage0, "0%");
+        else snprintf(MINI_CPU_Usage0, sizeof(MINI_CPU_Usage0), "%.0f%%", (1.d - ((double)idletick0 / systemtickfrequency_impl)) * 100);
+        if (idletick1 > systemtickfrequency_impl)
+            strcpy(MINI_CPU_Usage1, "0%");
+        else snprintf(MINI_CPU_Usage1, sizeof(MINI_CPU_Usage1), "%.0f%%", (1.d - ((double)idletick1 / systemtickfrequency_impl)) * 100);
+        if (idletick2 > systemtickfrequency_impl)
+            strcpy(MINI_CPU_Usage2, "0%");
+        else snprintf(MINI_CPU_Usage2, sizeof(MINI_CPU_Usage2), "%.0f%%", (1.d - ((double)idletick2 / systemtickfrequency_impl)) * 100);
+        if (idletick3 > systemtickfrequency_impl)
+            strcpy(MINI_CPU_Usage3, "0%");
+        else snprintf(MINI_CPU_Usage3, sizeof(MINI_CPU_Usage3), "%.0f%%", (1.d - ((double)idletick3 / systemtickfrequency_impl)) * 100);
 
-			}
-		}
-		else if (!GameRunning && resolutionLookup != 0) {
-			resolutionLookup = 0;
-		}
-		
-		///FPS
-		char Temp[256] = "";
-		uint32_t flags = 0;
-		for (std::string key : tsl::hlp::split(settings.show, '+')) {
-			if (!key.compare("CPU") && !(flags & 1 << 0)) {
-				if (Temp[0]) {
-					strcat(Temp, "\n");
-				}
-				strcat(Temp, MINI_CPU_compressed_c);
-				flags |= 1 << 0;			
-			}
-			else if (!key.compare("GPU") && !(flags & 1 << 1)) {
-				if (Temp[0]) {
-					strcat(Temp, "\n");
-				}
-				strcat(Temp, MINI_GPU_Load_c);
-				flags |= 1 << 1;			
-			}
-			else if (!key.compare("RAM") && !(flags & 1 << 2)) {
-				if (Temp[0]) {
-					strcat(Temp, "\n");
-				}
-				strcat(Temp, MINI_RAM_var_compressed_c);
-				flags |= 1 << 2;			
-			}
-			else if (!key.compare("TEMP") && !(flags & 1 << 3)) {
-				if (Temp[0]) {
-					strcat(Temp, "\n");
-				}
-				strcat(Temp, skin_temperature_c);
-				flags |= 1 << 3;			
-			}
-			else if (!key.compare("FAN") && !(flags & 1 << 4)) {
-				if (Temp[0]) {
-					strcat(Temp, "\n");
-				}
-				strcat(Temp, Rotation_SpeedLevel_c);
-				flags |= 1 << 4;			
-			}
-			else if (!key.compare("DRAW") && !(flags & 1 << 5)) {
-				if (Temp[0]) {
-					strcat(Temp, "\n");
-				}
-				strcat(Temp, SoCPCB_temperature_c);
-				flags |= 1 << 5;			
-			}
-			else if (!key.compare("FPS") && !(flags & 1 << 6) && GameRunning) {
-				if (Temp[0]) {
-					strcat(Temp, "\n");
-				}
-				char Temp_s[8] = "";
-				snprintf(Temp_s, sizeof(Temp_s), "%2.1f", FPSavg);
-				strcat(Temp, Temp_s);
-				flags |= 1 << 6;			
-			}
-			else if (!key.compare("RES") && !(flags & 1 << 7) && GameRunning) {
-				if (Temp[0]) {
-					strcat(Temp, "\n");
-				}
-				char Temp_s[32] = "";
-				if (!m_resolutionOutput[1].width)
-					snprintf(Temp_s, sizeof(Temp_s), "%dx%d", m_resolutionOutput[0].width, m_resolutionOutput[0].height);
-				else snprintf(Temp_s, sizeof(Temp_s), "%dx%d || %dx%d", m_resolutionOutput[0].width, m_resolutionOutput[0].height, m_resolutionOutput[1].width, m_resolutionOutput[1].height);
-				strcat(Temp, Temp_s);
-				flags |= 1 << 7;			
-			}
-			else if (!key.compare("READ") && !(flags & 1 << 8) && GameRunning && NxFps) {
-				if (Temp[0]) {
-					strcat(Temp, "\n");
-				}
-				char Temp_s[32] = "";
-				if ((NxFps -> readSpeedPerSecond) > 0.f) snprintf(Temp_s, sizeof(Temp_s), "%.2f MiB/s", (NxFps -> readSpeedPerSecond) / 1048576.f);
-				else strcpy(Temp_s, "n/d");
-				strcat(Temp, Temp_s);
-				flags |= 1 << 8;
-			}
-		}
-		mutexUnlock(&mutex_Misc);
-		strcpy(Variables, Temp);
+        mutexLock(&mutex_Misc);
+        
+        char MINI_CPU_compressed_c[42];
+        char MINI_CPU_volt_c[16];
+        if (settings.showFullCPU) {
+            // Show all cores
+            if (settings.realFrequencies && realCPU_Hz) {
+                snprintf(MINI_CPU_compressed_c, sizeof(MINI_CPU_compressed_c), 
+                    "[%s,%s,%s,%s]@%hu.%hhu", 
+                    MINI_CPU_Usage0, MINI_CPU_Usage1, MINI_CPU_Usage2, MINI_CPU_Usage3, 
+                    realCPU_Hz / 1000000, (realCPU_Hz / 100000) % 10);
+            }
+            else {
+                snprintf(MINI_CPU_compressed_c, sizeof(MINI_CPU_compressed_c), 
+                    "[%s,%s,%s,%s]@%hu.%hhu", 
+                    MINI_CPU_Usage0, MINI_CPU_Usage1, MINI_CPU_Usage2, MINI_CPU_Usage3, 
+                    CPU_Hz / 1000000, (CPU_Hz / 100000) % 10);
+            }
+        } else {
+            // Show only max CPU usage
+            // Extract numeric values from percentage strings
+            static double usage0 = 0, usage1 = 0, usage2 = 0, usage3 = 0;
+            sscanf(MINI_CPU_Usage0, "%lf%%", &usage0);
+            sscanf(MINI_CPU_Usage1, "%lf%%", &usage1);
+            sscanf(MINI_CPU_Usage2, "%lf%%", &usage2);
+            sscanf(MINI_CPU_Usage3, "%lf%%", &usage3);
+            
+            // Find max usage
+            double maxUsage = usage0;
+            if (usage1 > maxUsage) maxUsage = usage1;
+            if (usage2 > maxUsage) maxUsage = usage2;
+            if (usage3 > maxUsage) maxUsage = usage3;
+            
+            if (settings.realFrequencies && realCPU_Hz) {
+                snprintf(MINI_CPU_compressed_c, sizeof(MINI_CPU_compressed_c), 
+                    "%.0f%%@%hu.%hhu", 
+                    maxUsage,
+                    realCPU_Hz / 1000000, (realCPU_Hz / 100000) % 10);
+            }
+            else {
+                snprintf(MINI_CPU_compressed_c, sizeof(MINI_CPU_compressed_c), 
+                    "%.0f%%@%hu.%hhu", 
+                    maxUsage,
+                    CPU_Hz / 1000000, (CPU_Hz / 100000) % 10);
+            }
+        }
 
-		char remainingBatteryLife[8];
-		mutexLock(&mutex_BatteryChecker);
-		if (batTimeEstimate >= 0) {
-			snprintf(remainingBatteryLife, sizeof remainingBatteryLife, "%d:%02d", batTimeEstimate / 60, batTimeEstimate % 60);
-		}
-		else snprintf(remainingBatteryLife, sizeof remainingBatteryLife, "-:--");
-		
-		snprintf(SoCPCB_temperature_c, sizeof SoCPCB_temperature_c, "%0.2lfW[%s]", PowerConsumption, remainingBatteryLife);
-		mutexUnlock(&mutex_BatteryChecker);
 
-	}
-	virtual bool handleInput(uint64_t keysDown, uint64_t keysHeld, touchPosition touchInput, JoystickPosition leftJoyStick, JoystickPosition rightJoyStick) override {
-		if (isKeyComboPressed(keysHeld, keysDown, mappedButtons)) {
-			TeslaFPS = 60;
-			tsl::goBack();
-			return true;
-		}
-		return false;
-	}
+        //if (settings.realVolts) { 
+        //    if (isMariko) {
+        //        snprintf(MINI_CPU_volt_c, sizeof(MINI_CPU_volt_c), "%u.%u mV", realCPU_mV/1000, (realCPU_mV/100)%10);
+        //    }
+        //    else {
+        //        snprintf(MINI_CPU_volt_c, sizeof(MINI_CPU_volt_c), "%u.%u mV", realCPU_mV/1000, (realCPU_mV/10)%100);
+        //    }
+        //} 
+        /* ─── CPU ───────────────────────────────────────────── */
+        if (settings.realVolts) {
+            const uint32_t mv = realCPU_mV / 1000;
+            snprintf(MINI_CPU_volt_c, sizeof(MINI_CPU_volt_c), "%u mV", mv);
+        }
+
+
+        char MINI_GPU_Load_c[14];
+        char MINI_GPU_volt_c[16];
+        if (settings.realFrequencies && realGPU_Hz) {
+            snprintf(MINI_GPU_Load_c, sizeof(MINI_GPU_Load_c),
+                     "%hu%%%s%hu.%hhu",
+                     GPU_Load_u / 10,               // integer %
+                     "@",                           // keep diff char as before
+                     realGPU_Hz / 1000000,
+                     (realGPU_Hz / 100000) % 10);
+        } else {
+            snprintf(MINI_GPU_Load_c, sizeof(MINI_GPU_Load_c),
+                     "%hu%%%s%hu.%hhu",
+                     GPU_Load_u / 10,               // integer %
+                     "@",
+                     GPU_Hz / 1000000,
+                     (GPU_Hz / 100000) % 10);
+        }
+
+
+        // For properly handling sleep exit
+        const auto GPU_Hz_int = int(GPU_Hz / 1000000);
+        static auto lastGPU_Hz_int = GPU_Hz_int;
+        if (GPU_Hz_int == 0 && lastGPU_Hz_int != 0) {
+            isRendering = false;
+            leventSignal(&renderingStopEvent);
+            
+            triggerExitNow = true;
+            return;
+        }
+        lastGPU_Hz_int = GPU_Hz_int;
+        
+        
+        //if (settings.realVolts) { 
+        //    if (isMariko) {
+        //        snprintf(MINI_GPU_volt_c, sizeof(MINI_GPU_volt_c), "%u.%u mV", realGPU_mV/1000, (realGPU_mV/100)%10);
+        //    }
+        //    else {
+        //        snprintf(MINI_GPU_volt_c, sizeof(MINI_GPU_volt_c), "%u.%u mV", realGPU_mV/1000, (realGPU_mV/10)%100);
+        //    } 
+        //} 
+        /* ─── GPU ───────────────────────────────────────────── */
+        if (settings.realVolts) {
+            const uint32_t mv = realGPU_mV / 1000;
+            snprintf(MINI_GPU_volt_c, sizeof(MINI_GPU_volt_c), "%u mV", mv);
+        }
+
+        ///RAM
+        char MINI_RAM_var_compressed_c[24];   // 19 → 24 bytes for headroom
+        char MINI_RAM_volt_c[32];
+        
+        if (R_FAILED(sysclkCheck) || !settings.showRAMLoad) {
+            /* ── “used / total MB” branch ────────────────────────────────────────── */
+            const float ramTotalGiB = (RAM_Total_application_u + RAM_Total_applet_u +
+                                 RAM_Total_system_u + RAM_Total_systemunsafe_u) /
+                                (1024.0f * 1024.0f);           // MiB → GiB
+            const float ramUsedGiB  = (RAM_Used_application_u + RAM_Used_applet_u +
+                                 RAM_Used_system_u + RAM_Used_systemunsafe_u) /
+                                (1024.0f * 1024.0f);
+        
+            if (settings.realFrequencies && realRAM_Hz) {
+                snprintf(MINI_RAM_var_compressed_c, sizeof(MINI_RAM_var_compressed_c),
+                         "%.0f/%.0fMB@%hu.%hhu",
+                         ramUsedGiB, ramTotalGiB,
+                         realRAM_Hz / 1000000, (realRAM_Hz / 100000) % 10);
+            } else {
+                snprintf(MINI_RAM_var_compressed_c, sizeof(MINI_RAM_var_compressed_c),
+                         "%.0f/%.0fMB@%hu.%hhu",
+                         ramUsedGiB, ramTotalGiB,
+                         RAM_Hz / 1000000, (RAM_Hz / 100000) % 10);
+            }
+        
+        } else {
+            /* ── “percentage” branch (integer %) ─────────────────────────────────── */
+            const unsigned ramLoadInt = ramLoad[SysClkRamLoad_All] / 10;  // drop decimal
+        
+            if (settings.realFrequencies && realRAM_Hz) {
+                snprintf(MINI_RAM_var_compressed_c, sizeof(MINI_RAM_var_compressed_c),
+                         "%u%%@%hu.%hhu",
+                         ramLoadInt,
+                         realRAM_Hz / 1000000, (realRAM_Hz / 100000) % 10);
+            } else {
+                snprintf(MINI_RAM_var_compressed_c, sizeof(MINI_RAM_var_compressed_c),
+                         "%u%%@%hu.%hhu",
+                         ramLoadInt,
+                         RAM_Hz / 1000000, (RAM_Hz / 100000) % 10);
+            }
+        }
+
+        //if (settings.realVolts) { 
+        //    uint32_t vdd2 = realRAM_mV / 10000;
+        //    uint32_t vddq = realRAM_mV % 10000;
+        //    if (isMariko) {
+        //        snprintf(MINI_RAM_volt_c, sizeof(MINI_RAM_volt_c), "%u.%u%u.%u mV", vdd2/10, vdd2%10, vddq/10, vddq%10);
+        //    }
+        //    else {
+        //        snprintf(MINI_RAM_volt_c, sizeof(MINI_RAM_volt_c), "%u.%u mV", vdd2/10, vdd2%10);
+        //    } 
+        //} 
+        /* ─── RAM ───────────────────────────────────────────── */
+        if (settings.realVolts) {
+            const float mv_vdd2_f = realRAM_mV / 100000.0f;        // µV → VDD2 mV float
+            const uint32_t mv_vdd2_i = realRAM_mV / 100000;        // µV → VDD2 mV int
+            const uint32_t mv_vddq   = (realRAM_mV % 10000) / 10;  // µV → VDDQ mV int
+        
+            if (isMariko) {
+                if (settings.showVDDQ && settings.showVDD2) {
+                    if (settings.decimalVDD2)
+                        snprintf(MINI_RAM_volt_c, sizeof(MINI_RAM_volt_c),
+                                 "%.1f mV%u mV", mv_vdd2_f, mv_vddq);
+                    else
+                        snprintf(MINI_RAM_volt_c, sizeof(MINI_RAM_volt_c),
+                                 "%u mV%u mV", mv_vdd2_i, mv_vddq);
+                }
+                else if (settings.showVDDQ) {
+                    snprintf(MINI_RAM_volt_c, sizeof(MINI_RAM_volt_c),
+                             "%u mV", mv_vddq);
+                }
+                else if (settings.showVDD2) {
+                    if (settings.decimalVDD2)
+                        snprintf(MINI_RAM_volt_c, sizeof(MINI_RAM_volt_c),
+                                 "%.1f mV", mv_vdd2_f);
+                    else
+                        snprintf(MINI_RAM_volt_c, sizeof(MINI_RAM_volt_c),
+                                 "%u mV", mv_vdd2_i);
+                }
+            } else {
+                if (settings.decimalVDD2)
+                    snprintf(MINI_RAM_volt_c, sizeof(MINI_RAM_volt_c),
+                             "%.1f mV", mv_vdd2_f);
+                else
+                    snprintf(MINI_RAM_volt_c, sizeof(MINI_RAM_volt_c),
+                             "%u mV", mv_vdd2_i);
+            }
+        }
+
+        
+        const int duty = safeFanDuty((int)Rotation_Duty);
+
+        ///Thermal
+        // ── SoC temperature line ───────────────────────────────
+        if (settings.showFanPercentage) {
+            snprintf(soc_temperature_c, sizeof soc_temperature_c,
+                     "%d°C (%d%%)",
+                     (int)SOC_temperatureF,
+                     (int)duty);          // or any percentage you prefer
+        } else {
+            snprintf(soc_temperature_c, sizeof soc_temperature_c,
+                     "%d°C",
+                     (int)SOC_temperatureF);
+        }
+
+        if (settings.showFanPercentage) {
+            snprintf(skin_temperature_c, sizeof skin_temperature_c,
+                "%d\u00B0C %d\u00B0C %hu\u00B0C (%d%%)",
+                (int)SOC_temperatureF, (int)PCB_temperatureF,
+                skin_temperaturemiliC / 1000,
+                (int)duty);
+        } else {
+            snprintf(skin_temperature_c, sizeof skin_temperature_c,
+                "%d\u00B0C %d\u00B0C %hu\u00B0C",
+                (int)SOC_temperatureF, (int)PCB_temperatureF,
+                skin_temperaturemiliC / 1000);
+        }
+        //snprintf(Rotation_SpeedLevel_c, sizeof Rotation_SpeedLevel_c, "%2.1f%%", Rotation_Duty);
+
+        char MINI_SOC_volt_c[16] = ""; 
+        //if (settings.realVolts) { 
+        //    snprintf(MINI_SOC_volt_c, sizeof(MINI_SOC_volt_c), "%u.%u mV", realSOC_mV/1000, (realSOC_mV/100)%10);
+        //} 
+        /* ─── SoC ───────────────────────────────────────────── */
+        if (settings.realVolts && settings.showSOCVoltage) {
+            const uint32_t mv = realSOC_mV / 1000;
+            snprintf(MINI_SOC_volt_c, sizeof(MINI_SOC_volt_c), "%u mV", mv);
+        }
+
+        if (GameRunning && NxFps && resolutionShow) {
+            if (!resolutionLookup) {
+                (NxFps -> renderCalls[0].calls) = 0xFFFF;
+                resolutionLookup = 1;
+            }
+            else if (resolutionLookup == 1) {
+                if ((NxFps -> renderCalls[0].calls) != 0xFFFF) resolutionLookup = 2;
+            }
+            else {
+                memcpy(&m_resolutionRenderCalls, &(NxFps -> renderCalls), sizeof(m_resolutionRenderCalls));
+                memcpy(&m_resolutionViewportCalls, &(NxFps -> viewportCalls), sizeof(m_resolutionViewportCalls));
+                qsort(m_resolutionRenderCalls, 8, sizeof(resolutionCalls), compare);
+                qsort(m_resolutionViewportCalls, 8, sizeof(resolutionCalls), compare);
+                memset(&m_resolutionOutput, 0, sizeof(m_resolutionOutput));
+                size_t out_iter = 0;
+                bool found = false;
+                for (size_t i = 0; i < 8; i++) {
+                    for (size_t x = 0; x < 8; x++) {
+                        if (m_resolutionRenderCalls[i].width == 0) {
+                            break;
+                        }
+                        if ((m_resolutionRenderCalls[i].width == m_resolutionViewportCalls[x].width) && (m_resolutionRenderCalls[i].height == m_resolutionViewportCalls[x].height)) {
+                            m_resolutionOutput[out_iter].width = m_resolutionRenderCalls[i].width;
+                            m_resolutionOutput[out_iter].height = m_resolutionRenderCalls[i].height;
+                            m_resolutionOutput[out_iter].calls = (m_resolutionRenderCalls[i].calls > m_resolutionViewportCalls[x].calls) ? m_resolutionRenderCalls[i].calls : m_resolutionViewportCalls[x].calls;
+                            out_iter++;
+                            found = true;
+                            break;
+                        }
+                    }
+                    if (!found && m_resolutionRenderCalls[i].width != 0) {
+                        m_resolutionOutput[out_iter].width = m_resolutionRenderCalls[i].width;
+                        m_resolutionOutput[out_iter].height = m_resolutionRenderCalls[i].height;
+                        m_resolutionOutput[out_iter].calls = m_resolutionRenderCalls[i].calls;
+                        out_iter++;
+                    }
+                    found = false;
+                    if (out_iter == 8) break;
+                }
+                if (out_iter < 8) {
+                    const size_t out_iter_s = out_iter;
+                    for (size_t x = 0; x < 8; x++) {
+                        for (size_t y = 0; y < out_iter_s; y++) {
+                            if (m_resolutionViewportCalls[x].width == 0) {
+                                break;
+                            }
+                            if ((m_resolutionViewportCalls[x].width == m_resolutionOutput[y].width) && (m_resolutionViewportCalls[x].height == m_resolutionOutput[y].height)) {
+                                found = true;
+                                break;
+                            }
+                        }
+                        if (!found && m_resolutionViewportCalls[x].width != 0) {
+                            m_resolutionOutput[out_iter].width = m_resolutionViewportCalls[x].width;
+                            m_resolutionOutput[out_iter].height = m_resolutionViewportCalls[x].height;
+                            m_resolutionOutput[out_iter].calls = m_resolutionViewportCalls[x].calls;
+                            out_iter++;            
+                        }
+                        found = false;
+                        if (out_iter == 8) break;
+                    }
+                }
+                qsort(m_resolutionOutput, 8, sizeof(resolutionCalls), compare);
+
+            }
+        }
+        else if (!GameRunning && resolutionLookup != 0) {
+            resolutionLookup = 0;
+        }
+        
+        ///FPS
+        char Temp[256];
+        uint8_t flags = 0;
+        // Pre-computed hash map (initialize once, reuse many times)
+        static const std::unordered_map<std::string, std::function<void()>> key_handlers = {
+            {"CPU", [&]() {
+                if (!(flags & 1)) {
+                    if (Temp[0]) strcat(Temp, "\n");
+                    strcat(Temp, MINI_CPU_compressed_c);
+                    if (settings.realVolts) {
+                        strcat(Temp, "");
+                        strcat(Temp, MINI_CPU_volt_c);
+                    }
+                    flags |= 1;
+                }
+            }},
+            {"GPU", [&]() {
+                if (!(flags & 2)) {
+                    if (Temp[0]) strcat(Temp, "\n");
+                    strcat(Temp, MINI_GPU_Load_c);
+                    if (settings.realVolts) {
+                        strcat(Temp, "");
+                        strcat(Temp, MINI_GPU_volt_c);
+                    }
+                    flags |= 2;
+                }
+            }},
+            {"RAM", [&]() {
+                if (!(flags & 4)) {
+                    if (Temp[0]) strcat(Temp, "\n");
+                    strcat(Temp, MINI_RAM_var_compressed_c);
+                    if (settings.realVolts) {
+                        strcat(Temp, "");
+                        strcat(Temp, MINI_RAM_volt_c);
+                    }
+                    flags |= 4;
+                }
+            }},
+            {"SOC", [&]() {
+                if (!(flags & 8)) {
+                    if (Temp[0]) strcat(Temp, "\n");
+                    strcat(Temp, soc_temperature_c); // <- use appropriate SOC string here
+                    if (settings.realVolts && settings.showSOCVoltage) {
+                        strcat(Temp, "");
+                        strcat(Temp, MINI_SOC_volt_c);
+                    }
+                    flags |= 8;
+                }
+            }},
+            {"TMP", [&]() {
+                if (!(flags & 16)) {
+                    if (Temp[0]) strcat(Temp, "\n");
+                    strcat(Temp, skin_temperature_c);
+                    if (settings.realVolts && settings.showSOCVoltage) {
+                        strcat(Temp, "");
+                        strcat(Temp, MINI_SOC_volt_c);
+                    }
+                    flags |= 16;
+                }
+            }},
+            {"BAT", [&]() {
+                if (!(flags & 32)) {
+                    if (Temp[0]) strcat(Temp, "\n");
+                    strcat(Temp, SoCPCB_temperature_c);
+                    flags |= 32;
+                }
+            }},
+            {"DRAW", [&]() {
+                if (!(flags & 32)) {
+                    if (Temp[0]) strcat(Temp, "\n");
+                    strcat(Temp, SoCPCB_temperature_c);
+                    flags |= 32;
+                }
+            }},
+            {"FPS", [&]() {
+                if (!(flags & 64) && GameRunning) {
+                    if (Temp[0]) strcat(Temp, "\n");
+                    char Temp_s[24];
+                    snprintf(Temp_s, sizeof(Temp_s), "%2.1f [%2.1f - %2.1f]", FPSavg, FPSmin, FPSmax);
+                    strcat(Temp, Temp_s);
+                    flags |= 64;
+                }
+            }},
+            {"RES", [&]() {
+                if (!(flags & 128) && GameRunning && m_resolutionOutput[0].width) {
+                    if (Temp[0]) strcat(Temp, "\n");
+                    char Temp_s[32];
+                    if (settings.showFullResolution) {
+                        if (!m_resolutionOutput[1].width)
+                            snprintf(Temp_s, sizeof(Temp_s), "%dx%d", m_resolutionOutput[0].width, m_resolutionOutput[0].height);
+                        else 
+                            snprintf(Temp_s, sizeof(Temp_s), "%dx%d%dx%d", m_resolutionOutput[0].width, m_resolutionOutput[0].height, m_resolutionOutput[1].width, m_resolutionOutput[1].height);
+                    } else {
+                        if (!m_resolutionOutput[1].width)
+                            snprintf(Temp_s, sizeof(Temp_s), "%dp", m_resolutionOutput[0].height);
+                        else 
+                            snprintf(Temp_s, sizeof(Temp_s), "%d%d", m_resolutionOutput[0].height, m_resolutionOutput[1].height);
+                    }
+                    strcat(Temp, Temp_s);
+                    flags |= 128;
+                }
+            }},
+            {"READ", [&]() {
+                if (!(flags & 512) && GameRunning && NxFps) {
+                    if (Temp[0]) strcat(Temp, "\n");
+                    char Temp_s[24];
+                    if ((NxFps -> readSpeedPerSecond) != 0.f) {
+                        snprintf(Temp_s, sizeof(Temp_s), "%.2f MiB/s", (NxFps -> readSpeedPerSecond) / 1048576.f);
+                    } else {
+                        strcpy(Temp_s, "n/d");
+                    }
+                    strcat(Temp, Temp_s);
+                    flags |= 512;
+                }
+            }},
+            {"DTC", [&]() {
+                if (!(flags & 256) && settings.showDTC) {
+                    if (Temp[0]) strcat(Temp, "\n");
+                    
+                    // Format current datetime
+                    char dateTimeStr[64];
+                    time_t rawtime = time(NULL);
+                    struct tm *timeinfo = localtime(&rawtime);
+                    strftime(dateTimeStr, sizeof(dateTimeStr), settings.dtcFormat.c_str(), timeinfo);
+                    
+                    strcat(Temp, dateTimeStr);
+                    flags |= 256;
+                }
+
+            }}
+        };
+        
+        // Optimized loop
+        for (const std::string& key : ult::split(settings.show, '+')) {
+            auto it = key_handlers.find(key);
+            if (it != key_handlers.end()) {
+                it->second();
+            }
+        }
+        mutexUnlock(&mutex_Misc);
+        strcpy(Variables, Temp);
+        
+        /* ── Battery / power draw ───────────────────────────────────── */
+        char remainingBatteryLife[8];
+        
+        /* Normalise “-0.00” → “0.00” W */
+        const float drawW = (fabsf(PowerConsumption) < 0.01f) ? 0.0f
+                                                         : PowerConsumption;
+        
+        mutexLock(&mutex_BatteryChecker);
+        
+        /* keep “--:--” whenever estimate is negative */
+        if (batTimeEstimate >= 0 && !(drawW <= 0.01f && drawW >= -0.01f)) {
+            snprintf(remainingBatteryLife, sizeof remainingBatteryLife,
+                     "%d:%02d", batTimeEstimate / 60, batTimeEstimate % 60);
+        } else {
+            strcpy(remainingBatteryLife, "--:--");
+        }
+        
+        snprintf(SoCPCB_temperature_c, sizeof SoCPCB_temperature_c,
+                 "%.2f W%.1f%% [%s]",
+                 drawW,
+                 (float)_batteryChargeInfoFields.RawBatteryCharge / 1000.0f,
+                 remainingBatteryLife);
+        
+        mutexUnlock(&mutex_BatteryChecker);
+
+        //static bool skipOnce = true;
+        
+        if (!skipOnce) {
+            //static bool runOnce = true;
+            if (runOnce) {
+                isRendering = true;
+                leventClear(&renderingStopEvent);
+                runOnce = false;  // Add this to prevent repeated calls
+            }
+        } else {
+            skipOnce = false;
+        }
+
+    }
+                
+    virtual bool handleInput(u64 keysDown, u64 keysHeld, const HidTouchState &touchPos, HidAnalogStickState joyStickPosLeft, HidAnalogStickState joyStickPosRight) override {
+        // Static variables to maintain drag state between function calls
+        static bool oldTouchDetected = false;
+        static bool oldMinusHeld = false;
+        static bool oldPlusHeld = false;
+        static HidTouchState initialTouchPos = {0};
+        static int initialFrameOffsetX = 0;
+        static int initialFrameOffsetY = 0;
+        static constexpr int TOUCH_THRESHOLD = 8;
+        static bool hasMoved = false;
+        //static u64 lastTouchTime = 0;
+        //static constexpr u64 TOUCH_DEBOUNCE_NS = 16000000ULL; // 16ms debounce
+    
+        // Get current time for debouncing
+        //const u64 currentTime = armTicksToNs(armGetSystemTick());
+        
+        // Better touch detection - check if coordinates are within reasonable screen bounds
+        const bool currentTouchDetected = (touchPos.x > 0 && touchPos.y > 0 && 
+                                    touchPos.x < screenWidth && touchPos.y < screenHeight);
+        
+        // Debounce touch detection
+        //if (currentTouchDetected && !oldTouchDetected) {
+        //    if (currentTime - lastTouchTime < TOUCH_DEBOUNCE_NS) {
+        //        currentTouchDetected = false; // Ignore rapid touch changes
+        //    } else {
+        //        lastTouchTime = currentTime;
+        //    }
+        //}
+        
+        // Calculate overlay bounds
+        const uint32_t margin = (fontsize * 4);
+        
+        // Cache bounds calculation
+        static int cachedBaseX = 0;
+        static int cachedBaseY = 0;
+        static uint32_t cachedOverlayHeight = 0;
+        static bool boundsNeedUpdate = true;
+        static std::string lastVariables = "";
+        
+        // Only recalculate bounds when Variables change or first time
+        if (boundsNeedUpdate || std::string(Variables) != lastVariables) {
+            // Calculate actual entry count from Variables string
+            size_t actualEntryCount = 1;
+            for (size_t i = 0; Variables[i] != '\0'; i++) {
+                if (Variables[i] == '\n') {
+                    actualEntryCount++;
+                }
+            }
+            
+            cachedOverlayHeight = ((fontsize + settings.spacing) * actualEntryCount) + 
+                                 (fontsize / 3) + settings.spacing + topPadding + bottomPadding;
+            
+            // Position calculation based on settings
+            cachedBaseX = 0;
+            cachedBaseY = 0;
+            
+            //if (ult::useRightAlignment) {
+            //    cachedBaseX = 448 - (margin + rectangleWidth + (fontsize / 3));
+            //} else {
+            //switch (settings.setPos) {
+            //    case 1:
+            //        cachedBaseX = 224 - ((margin + rectangleWidth + (fontsize / 3)) / 2);
+            //        break;
+            //    case 4:
+            //        cachedBaseX = 224 - ((margin + rectangleWidth + (fontsize / 3)) / 2);
+            //        cachedBaseY = 360 - cachedOverlayHeight / 2;
+            //        break;
+            //    case 7:
+            //        cachedBaseX = 224 - ((margin + rectangleWidth + (fontsize / 3)) / 2);
+            //        cachedBaseY = 720 - cachedOverlayHeight;
+            //        break;
+            //    case 2:
+            //        cachedBaseX = 448 - (margin + rectangleWidth + (fontsize / 3));
+            //        break;
+            //    case 5:
+            //        cachedBaseX = 448 - (margin + rectangleWidth + (fontsize / 3));
+            //        cachedBaseY = 360 - cachedOverlayHeight / 2;
+            //        break;
+            //    case 8:
+            //        cachedBaseX = 448 - (margin + rectangleWidth + (fontsize / 3));
+            //        cachedBaseY = 720 - cachedOverlayHeight;
+            //        break;
+            //}
+            //}
+            
+            boundsNeedUpdate = false;
+            lastVariables = Variables;
+        }
+        
+        const int overlayX = cachedBaseX + frameOffsetX;
+        const int overlayY = cachedBaseY + frameOffsetY;
+        const int overlayWidth = margin + rectangleWidth + (fontsize / 3);
+        const int overlayHeight = cachedOverlayHeight;
+        
+        // Add padding to make touch detection more forgiving
+        static constexpr int touchPadding = 4;
+        const int touchableX = overlayX - touchPadding;
+        const int touchableY = overlayY - touchPadding;
+        const int touchableWidth = overlayWidth + (touchPadding * 2);
+        const int touchableHeight = overlayHeight + (touchPadding * 2);
+        
+        // Screen boundaries for clamping
+        const int minX = -cachedBaseX + framePadding;
+        const int maxX = screenWidth - overlayWidth - cachedBaseX - framePadding;
+        const int minY = -cachedBaseY + framePadding;
+        const int maxY = screenHeight - overlayHeight - cachedBaseY - framePadding;
+    
+        // Check button states
+        const bool currentMinusHeld = (keysHeld & KEY_MINUS) && !(keysHeld & ~KEY_MINUS & ALL_KEYS_MASK);
+        const bool currentPlusHeld = (keysHeld & KEY_PLUS) && !(keysHeld & ~KEY_PLUS & ALL_KEYS_MASK);
+    
+        // Handle touch dragging
+        if (currentTouchDetected && !isDragging) {
+            // Touch detected and not currently dragging - check if we should start
+            const int touchX = touchPos.x;
+            const int touchY = touchPos.y;
+            
+            if (!oldTouchDetected) {
+                // Touch just started - check if within overlay bounds
+                if (touchX >= touchableX && touchX <= touchableX + touchableWidth &&
+                    touchY >= touchableY && touchY <= touchableY + touchableHeight) {
+                    
+                    // Start touch dragging
+                    isDragging = true;
+                    isRendering = false;
+                    leventSignal(&renderingStopEvent);
+                    hasMoved = false;
+                    initialTouchPos = touchPos;
+                    initialFrameOffsetX = frameOffsetX;
+                    initialFrameOffsetY = frameOffsetY;
+                }
+            }
+        } else if (currentTouchDetected && isDragging && !currentMinusHeld && !currentPlusHeld) {
+            // Continue touch dragging (only if neither MINUS nor PLUS is held)
+            const int touchX = touchPos.x;
+            const int touchY = touchPos.y;
+            const int deltaX = touchX - initialTouchPos.x;
+            const int deltaY = touchY - initialTouchPos.y;
+            
+            // Check if we've moved enough to consider this a drag
+            if (!hasMoved) {
+                const int totalMovement = abs(deltaX) + abs(deltaY);
+                if (totalMovement >= TOUCH_THRESHOLD) {
+                    hasMoved = true;
+                }
+            }
+            
+            if (hasMoved) {
+                // Update frame offsets with boundary checking
+                const int newFrameOffsetX = std::max(minX, std::min(maxX, initialFrameOffsetX + deltaX));
+                const int newFrameOffsetY = std::max(minY, std::min(maxY, initialFrameOffsetY + deltaY));
+                
+                frameOffsetX = newFrameOffsetX;
+                frameOffsetY = newFrameOffsetY;
+                boundsNeedUpdate = true;
+            }
+        } else if (!currentTouchDetected && oldTouchDetected && isDragging && !currentMinusHeld && !currentPlusHeld) {
+            // Touch just released and we were touch dragging
+            if (hasMoved) {
+                // Save position when touch drag ends
+                auto iniData = ult::getParsedDataFromIniFile(configIniPath);
+                iniData["mini"]["frame_offset_x"] = std::to_string(frameOffsetX);
+                iniData["mini"]["frame_offset_y"] = std::to_string(frameOffsetY);
+                ult::saveIniFileData(configIniPath, iniData);
+            }
+            
+            // Reset touch drag state
+            isDragging = false;
+            hasMoved = false;
+            isRendering = true;
+            leventClear(&renderingStopEvent);
+        }
+    
+        // Handle joystick dragging (MINUS + right joystick OR PLUS + left joystick)
+        if ((currentMinusHeld || currentPlusHeld) && !isDragging) {
+            // Start joystick dragging
+            isDragging = true;
+            isRendering = false;
+            leventSignal(&renderingStopEvent);
+        } else if ((currentMinusHeld || currentPlusHeld) && isDragging) {
+            // Continue joystick dragging
+            static constexpr int JOYSTICK_DEADZONE = 20;
+            
+            // Choose the appropriate joystick based on which button is held
+            const HidAnalogStickState& activeJoystick = currentMinusHeld ? joyStickPosRight : joyStickPosLeft;
+            
+            // Only move if joystick is outside deadzone
+            if (abs(activeJoystick.x) > JOYSTICK_DEADZONE || abs(activeJoystick.y) > JOYSTICK_DEADZONE) {
+                // Calculate joystick magnitude (distance from center)
+                const float magnitude = sqrt((float)(activeJoystick.x * activeJoystick.x + activeJoystick.y * activeJoystick.y));
+                const float normalizedMagnitude = magnitude / 32767.0f; // Normalize to 0-1 range
+                
+                // Single smooth curve: stays very slow for wide range, then accelerates
+                static constexpr float baseSensitivity = 0.00008f;  // Higher so small movements register
+                static constexpr float maxSensitivity = 0.0005f;
+                
+                // Use x^8 curve - stays very low until ~70% then curves up sharply
+                const float curveValue = pow(normalizedMagnitude, 8.0f);
+                const float currentSensitivity = baseSensitivity + (maxSensitivity - baseSensitivity) * curveValue;
+                
+                // Calculate movement delta with fractional accumulation
+                static float accumulatedX = 0.0f;
+                static float accumulatedY = 0.0f;
+                
+                accumulatedX += (float)activeJoystick.x * currentSensitivity;
+                accumulatedY += -(float)activeJoystick.y * currentSensitivity;
+                
+                // Extract integer movement and keep fractional part
+                const int deltaX = (int)accumulatedX;
+                const int deltaY = (int)accumulatedY;
+                accumulatedX -= deltaX;
+                accumulatedY -= deltaY;
+                
+                // Update frame offsets with boundary checking
+                const int newFrameOffsetX = std::max(minX, std::min(maxX, frameOffsetX + deltaX));
+                const int newFrameOffsetY = std::max(minY, std::min(maxY, frameOffsetY + deltaY));
+                
+                frameOffsetX = newFrameOffsetX;
+                frameOffsetY = newFrameOffsetY;
+                boundsNeedUpdate = true;
+            }
+        } else if (((!currentMinusHeld && oldMinusHeld) || (!currentPlusHeld && oldPlusHeld)) && isDragging) {
+            // Button just released - stop joystick dragging
+            auto iniData = ult::getParsedDataFromIniFile(configIniPath);
+            iniData["mini"]["frame_offset_x"] = std::to_string(frameOffsetX);
+            iniData["mini"]["frame_offset_y"] = std::to_string(frameOffsetY);
+            ult::saveIniFileData(configIniPath, iniData);
+            isDragging = false;
+            isRendering = true;
+            leventClear(&renderingStopEvent);
+        }
+        
+        // Update state for next frame
+        oldTouchDetected = currentTouchDetected;
+        oldMinusHeld = currentMinusHeld;
+        oldPlusHeld = currentPlusHeld;
+        
+        // Handle existing key input logic (but don't interfere with dragging)
+        if (!isDragging) {
+            if (isKeyComboPressed(keysHeld, keysDown)) {
+                isRendering = false;
+                leventSignal(&renderingStopEvent);
+                skipOnce = true;
+                runOnce = true;
+                TeslaFPS = 60;
+                if (skipMain)
+                    tsl::goBack();
+                else {
+                    tsl::setNextOverlay(filepath.c_str(), "--lastSelectedItem Mini");
+                    tsl::Overlay::get()->close();
+                }
+                return true;
+            }
+            else if (((keysDown & KEY_L) && (keysDown & KEY_ZL)) || ((keysDown & KEY_L) && (keysHeld & KEY_ZL)) || ((keysHeld & KEY_L) && (keysDown & KEY_ZL))) { 
+                FPSmin = 254; 
+                FPSmax = 0; 
+            }
+        }
+        
+        // Return true if we handled the input (during dragging)
+        return isDragging;
+    }
 };

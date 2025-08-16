@@ -125,7 +125,7 @@ typedef struct {
  * @param type Buffer type.
  */
 static inline void ipcAddSendBuffer(IpcCommand* cmd, const void* buffer, size_t size, BufferType type) {
-    size_t off = cmd->NumSend;
+    const size_t off = cmd->NumSend;
     cmd->Buffers[off] = buffer;
     cmd->BufferSizes[off] = size;
     cmd->BufferTypes[off] = type;
@@ -140,7 +140,7 @@ static inline void ipcAddSendBuffer(IpcCommand* cmd, const void* buffer, size_t 
  * @param type Buffer type.
  */
 static inline void ipcAddRecvBuffer(IpcCommand* cmd, void* buffer, size_t size, BufferType type) {
-    size_t off = cmd->NumSend + cmd->NumRecv;
+    const size_t off = cmd->NumSend + cmd->NumRecv;
     cmd->Buffers[off] = buffer;
     cmd->BufferSizes[off] = size;
     cmd->BufferTypes[off] = type;
@@ -155,7 +155,7 @@ static inline void ipcAddRecvBuffer(IpcCommand* cmd, void* buffer, size_t size, 
  * @param type Buffer type.
  */
 static inline void ipcAddExchBuffer(IpcCommand* cmd, void* buffer, size_t size, BufferType type) {
-    size_t off = cmd->NumSend + cmd->NumRecv + cmd->NumExch;
+    const size_t off = cmd->NumSend + cmd->NumRecv + cmd->NumExch;
     cmd->Buffers[off] = buffer;
     cmd->BufferSizes[off] = size;
     cmd->BufferTypes[off] = type;
@@ -170,7 +170,7 @@ static inline void ipcAddExchBuffer(IpcCommand* cmd, void* buffer, size_t size, 
  * @param index Index of buffer.
  */
 static inline void ipcAddSendStatic(IpcCommand* cmd, const void* buffer, size_t size, u8 index) {
-    size_t off = cmd->NumStaticIn;
+    const size_t off = cmd->NumStaticIn;
     cmd->Statics[off] = buffer;
     cmd->StaticSizes[off] = size;
     cmd->StaticIndices[off] = index;
@@ -185,7 +185,7 @@ static inline void ipcAddSendStatic(IpcCommand* cmd, const void* buffer, size_t 
  * @param index Index of buffer.
  */
 static inline void ipcAddRecvStatic(IpcCommand* cmd, void* buffer, size_t size, u8 index) {
-    size_t off = cmd->NumStaticIn + cmd->NumStaticOut;
+    const size_t off = cmd->NumStaticIn + cmd->NumStaticOut;
     cmd->Statics[off] = buffer;
     cmd->StaticSizes[off] = size;
     cmd->StaticIndices[off] = index;
@@ -293,7 +293,7 @@ static inline void* ipcPrepareHeader(IpcCommand* cmd, size_t sizeof_raw) {
     for (i=0; i<cmd->NumStaticIn; i++, buf+=2) {
         IpcStaticSendDescriptor* desc = (IpcStaticSendDescriptor*) buf;
 
-        uintptr_t ptr = (uintptr_t) cmd->Statics[i];
+        const uintptr_t ptr = (uintptr_t) cmd->Statics[i];
         desc->Addr = ptr;
         desc->Packed = cmd->StaticIndices[i] | (cmd->StaticSizes[i] << 16) |
             (((ptr >> 32) & 15) << 12) | (((ptr >> 36) & 15) << 6);
@@ -303,13 +303,13 @@ static inline void* ipcPrepareHeader(IpcCommand* cmd, size_t sizeof_raw) {
         IpcBufferDescriptor* desc = (IpcBufferDescriptor*) buf;
         desc->Size = cmd->BufferSizes[i];
 
-        uintptr_t ptr = (uintptr_t) cmd->Buffers[i];
+        const uintptr_t ptr = (uintptr_t) cmd->Buffers[i];
         desc->Addr = ptr;
         desc->Packed = cmd->BufferTypes[i] |
             (((ptr >> 32) & 15) << 28) | ((ptr >> 36) << 2);
     }
 
-    u32 padding = ((16 - (((uintptr_t) buf) & 15)) & 15) / 4;
+    const u32 padding = ((16 - (((uintptr_t) buf) & 15)) & 15) / 4;
     u32* raw = (u32*) (buf + padding);
 
     size_t raw_size = (sizeof_raw/4) + 4;
@@ -318,13 +318,13 @@ static inline void* ipcPrepareHeader(IpcCommand* cmd, size_t sizeof_raw) {
     u16* buf_u16 = (u16*) buf;
 
     for (i=0; i<cmd->NumStaticOut; i++) {
-        size_t off = cmd->NumStaticIn + i;
-        size_t sz = (uintptr_t) cmd->StaticSizes[off];
+        const size_t off = cmd->NumStaticIn + i;
+        const size_t sz = (uintptr_t) cmd->StaticSizes[off];
 
         buf_u16[i] = (sz > 0xFFFF) ? 0 : sz;
     }
 
-    size_t u16s_size = ((2*cmd->NumStaticOut) + 3)/4;
+    const size_t u16s_size = ((2*cmd->NumStaticOut) + 3)/4;
     buf += u16s_size;
     raw_size += u16s_size;
 
@@ -332,9 +332,9 @@ static inline void* ipcPrepareHeader(IpcCommand* cmd, size_t sizeof_raw) {
 
     for (i=0; i<cmd->NumStaticOut; i++, buf+=2) {
         IpcStaticRecvDescriptor* desc = (IpcStaticRecvDescriptor*) buf;
-        size_t off = cmd->NumStaticIn + i;
+        const size_t off = cmd->NumStaticIn + i;
 
-        uintptr_t ptr = (uintptr_t) cmd->Statics[off];
+        const uintptr_t ptr = (uintptr_t) cmd->Statics[off];
         desc->Addr = ptr;
         desc->Packed = (ptr >> 32) | (cmd->StaticSizes[off] << 16);
     }
@@ -428,8 +428,8 @@ static inline Result ipcParse(IpcParsedCommand* r) {
             r->Pid |= ((u64)(*buf++)) << 32;
         }
 
-        size_t num_handles_copy = ((ctrl2 >> 1) & 15);
-        size_t num_handles_move = ((ctrl2 >> 5) & 15);
+        const size_t num_handles_copy = ((ctrl2 >> 1) & 15);
+        const size_t num_handles_move = ((ctrl2 >> 5) & 15);
 
         size_t num_handles = num_handles_copy + num_handles_move;
         u32* buf_after_handles = buf + num_handles;
@@ -455,7 +455,7 @@ static inline Result ipcParse(IpcParsedCommand* r) {
 
     for (i=0; i<num_statics; i++, buf+=2) {
         IpcStaticSendDescriptor* desc = (IpcStaticSendDescriptor*) buf;
-        u64 packed = (u64) desc->Packed;
+        const u64 packed = (u64) desc->Packed;
 
         r->Statics[i] = (void*) (desc->Addr | (((packed >> 12) & 15) << 32) | (((packed >> 6) & 15) << 36));
         r->StaticSizes[i]   = packed >> 16;
@@ -465,9 +465,9 @@ static inline Result ipcParse(IpcParsedCommand* r) {
     r->NumStatics = num_statics;
     buf = buf_after_statics;
 
-    size_t num_bufs_send = (ctrl0 >> 20) & 15;
-    size_t num_bufs_recv = (ctrl0 >> 24) & 15;
-    size_t num_bufs_exch = (ctrl0 >> 28) & 15;
+    const size_t num_bufs_send = (ctrl0 >> 20) & 15;
+    const size_t num_bufs_recv = (ctrl0 >> 24) & 15;
+    const size_t num_bufs_exch = (ctrl0 >> 28) & 15;
 
     size_t num_bufs = num_bufs_send + num_bufs_recv + num_bufs_exch;
     r->Raw = (void*)(((uintptr_t)(buf + num_bufs*3) + 15) &~ 15);
