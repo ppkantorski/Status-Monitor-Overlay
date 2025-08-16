@@ -673,7 +673,7 @@ public:
         auto* list = new tsl::elm::List();
         list->addItem(new tsl::elm::CategoryHeader("Frame Padding"));
 
-        static const std::vector<int> paddingValues = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12};
+        static const std::vector<int> paddingValues = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14};
         for (int padding : paddingValues) {
             auto* paddingItem = new tsl::elm::ListItem(std::to_string(padding) + " px");
             if (padding == currentPadding) {
