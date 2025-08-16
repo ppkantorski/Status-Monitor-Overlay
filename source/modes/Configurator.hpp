@@ -41,9 +41,139 @@ class FontSizeConfig;
 class FontSizeSelector;
 class ColorConfig;
 class ColorSelector;
+class AlphaSelector;
 class ShowConfig;
 class TogglesConfig;
 class DTCFormatConfig;
+
+// Helper functions for color manipulation
+inline std::string extractColorWithoutAlpha(const std::string& rgba) {
+    if (rgba.length() >= 5 && rgba[0] == '#') {
+        return rgba.substr(0, 4); // Return #RGB without alpha
+    }
+    return rgba;
+}
+
+inline std::string extractAlphaFromColor(const std::string& rgba) {
+    if (rgba.length() == 5 && rgba[0] == '#') {
+        return std::string(1, rgba[4]); // Return just the alpha character
+    }
+    return "9"; // Default alpha
+}
+
+inline std::string setAlphaInColor(const std::string& rgba, char alpha) {
+    if (rgba.length() >= 4 && rgba[0] == '#') {
+        std::string result = rgba.substr(0, 4); // Get #RGB
+        result += alpha; // Add new alpha
+        return result;
+    }
+    return rgba;
+}
+
+// Alpha Selector for background colors
+class AlphaSelector : public tsl::Gui {
+private:
+    std::string modeName;
+    std::string colorKey;
+    std::string title;
+    bool isMiniMode;
+    bool isMicroMode;
+    bool isFPSCounterMode;
+    bool isFPSGraphMode;
+    bool isGameResolutionsMode;
+    
+public:
+    AlphaSelector(const std::string& mode, const std::string& key, const std::string& displayTitle) 
+        : modeName(mode), colorKey(key), title(displayTitle) {
+            isMiniMode = (mode == "Mini");
+            isMicroMode = (mode == "Micro");
+            isFPSCounterMode = (mode == "FPS Counter");
+            isFPSGraphMode = (mode == "FPS Graph");
+            isGameResolutionsMode = (mode == "Game Resolutions");
+        }
+    ~AlphaSelector() {
+        lastSelectedListItem = nullptr;
+    }
+    
+    virtual tsl::elm::Element* createUI() override {
+        auto* list = new tsl::elm::List();
+        list->addItem(new tsl::elm::CategoryHeader(title));
+
+        std::string section;
+        if (isMiniMode) section = "mini";
+        else if (isMicroMode) section = "micro";
+        else if (isFPSCounterMode) section = "fps-counter";
+        else if (isFPSGraphMode) section = "fps-graph";
+        else if (isGameResolutionsMode) section = "game_resolutions";
+        
+        // Get current color value and extract alpha
+        std::string currentColor = ult::parseValueFromIniSection(configIniPath, section, colorKey);
+        if (currentColor.empty()) {
+            currentColor = "#0009"; // Default
+        }
+        std::string currentAlpha = extractAlphaFromColor(currentColor);
+        
+        // Alpha options
+        static const std::vector<std::pair<std::string, char>> alphaOptions = {
+            {"Transparent", '0'},
+            {"10%", '1'},
+            {"20%", '3'},
+            {"30%", '4'},
+            {"40%", '6'},
+            {"50%", '8'},
+            {"60%", '9'},
+            {"70%", 'B'},
+            {"80%", 'C'},
+            {"90%", 'E'},
+            {"Opaque", 'F'}
+        };
+        
+        for (const auto& option : alphaOptions) {
+            auto* alphaItem = new tsl::elm::ListItem(option.first);
+            if (currentAlpha[0] == option.second) {
+                alphaItem->setValue(ult::CHECKMARK_SYMBOL);
+                lastSelectedListItem = alphaItem;
+            }
+            alphaItem->setClickListener([this, alphaItem, option, section, currentColor](uint64_t keys) {
+                if (keys & KEY_A) {
+                    // Get current color and update only the alpha
+                    std::string color = ult::parseValueFromIniSection(configIniPath, section, colorKey);
+                    if (color.empty()) color = "#0009";
+                    
+                    std::string newColor = setAlphaInColor(color, option.second);
+                    ult::setIniFileValue(configIniPath, section, colorKey, newColor);
+                    
+                    alphaItem->setValue(ult::CHECKMARK_SYMBOL);
+                    if (lastSelectedListItem && lastSelectedListItem != alphaItem) {
+                        lastSelectedListItem->setValue("");
+                    }
+                    lastSelectedListItem = alphaItem;
+                    return true;
+                }
+                return false;
+            });
+            list->addItem(alphaItem);
+        }
+        
+        list->jumpToItem("", ult::CHECKMARK_SYMBOL, false);
+        
+        tsl::elm::OverlayFrame* rootFrame = new tsl::elm::OverlayFrame("Status Monitor", "Alpha");
+        rootFrame->setContent(list);
+        return rootFrame;
+    }
+    
+    virtual bool handleInput(u64 keysDown, u64 keysHeld, const HidTouchState &touchPos, HidAnalogStickState joyStickPosLeft, HidAnalogStickState joyStickPosRight) override {
+        if (keysDown & KEY_B) {
+            jumpItemName = title;
+            jumpItemValue = "";
+            jumpItemExactMatch = false;
+            
+            tsl::swapTo<ColorConfig>(SwapDepth(2), modeName);
+            return true;
+        }
+        return false;
+    }
+};
 
 // DTC Format Configuration (Mini/Micro only)
 class DTCFormatConfig : public tsl::Gui {
@@ -57,6 +187,9 @@ public:
         isMiniMode = (mode == "Mini");
         isMicroMode = (mode == "Micro");
     }
+    ~DTCFormatConfig() {
+        lastSelectedListItem = nullptr;
+    }
     
     virtual tsl::elm::Element* createUI() override {
         auto* list = new tsl::elm::List();
@@ -67,7 +200,7 @@ public:
         
         // Handle default values
         if (currentValue.empty()) {
-            currentValue = isMiniMode ? "%m-%d-%Y%H:%M:%S" : "%H:%M:%S";
+            currentValue = isMiniMode ? "%m-%d-%Y%H:%M:%S" : "%H:%M:%S";
         }
         
         // Define available DTC format options
@@ -85,17 +218,17 @@ public:
             {"Date Short", "%m/%d/%y"},
         
             // Datetime (default included here)
-            {"Date+Time", "%m-%d-%Y%H:%M:%S"},           // default
-            {"Date+Time AM/PM", "%m-%d-%Y%I:%M %p"},
-            {"Date+Time EU", "%d/%m/%Y%H:%M"},
-            {"Date+Time EU AM/PM", "%d/%m/%Y%I:%M %p"},
-            {"Date+Time ISO", "%Y-%m-%dT%H:%M:%S"},
+            {"Date+Time", "%m-%d-%Y%H:%M:%S"},           // default
+            {"Date+Time AM/PM", "%m-%d-%Y%I:%M %p"},
+            {"Date+Time EU", "%d/%m/%Y%H:%M"},
+            {"Date+Time EU AM/PM", "%d/%m/%Y%I:%M %p"},
+            {"Date+Time ISO", "%Y-%m-%dT%H:%M:%S"},
         
             // Special
-            {"Compact", "%Y%m%d%H%M%S"},
-            {"FileSafe", "%Y-%m-%d%H-%M-%S"},
-            {"Pretty", "%a, %b %d%I:%M %p"},
-            {"Day+Time", "%a%H:%M"}
+            {"Compact", "%Y%m%d%H%M%S"},
+            {"FileSafe", "%Y-%m-%d%H-%M-%S"},
+            {"Pretty", "%a, %b %d%I:%M %p"},
+            {"Day+Time", "%a%H:%M"}
         };
         
         for (const auto& format : dtcFormats) {
@@ -462,6 +595,10 @@ public:
         int defaultRate = (isGameResolutionsMode) ? 10 : ((isFPSCounterMode || isFPSGraphMode) ? 30 : 1);
         currentRate = value.empty() ? defaultRate : std::clamp(atoi(value.c_str()), 1, 60);
     }
+
+    ~RefreshRateConfig() {
+        lastSelectedListItem = nullptr;
+    }
     
     virtual tsl::elm::Element* createUI() override {
         auto* list = new tsl::elm::List();
@@ -536,6 +673,9 @@ public:
             title[0] = std::toupper(title[0]);
             title += " Font Size";
         }
+    ~FontSizeSelector() {
+        lastSelectedListItem = nullptr;
+    }
     
     virtual tsl::elm::Element* createUI() override {
         auto* list = new tsl::elm::List();
@@ -684,6 +824,8 @@ private:
     bool isGameResolutionsMode;
     bool isFPSCounterMode;
     bool isFPSGraphMode;
+    bool isBackgroundColor;
+    bool isTextBasedColor;
     
 public:
     ColorSelector(const std::string& mode, const std::string& title, const std::string& key, const std::string& def) 
@@ -694,12 +836,20 @@ public:
             isGameResolutionsMode = (mode == "Game Resolutions");
             isFPSCounterMode = (mode == "FPS Counter");
             isFPSGraphMode = (mode == "FPS Graph");
+            
+            // Determine if this is a background color or text-based color
+            isBackgroundColor = (key == "background_color" || key == "focus_background_color");
+            isTextBasedColor = (key == "text_color" || key == "separator_color" || key == "cat_color");
         }
+
+    ~ColorSelector() {
+        lastSelectedListItem = nullptr;
+    }
     
     virtual tsl::elm::Element* createUI() override {
         auto* list = new tsl::elm::List();
         list->addItem(new tsl::elm::CategoryHeader(modeTitle));
-
+    
         std::string section;
         if (isMiniMode) section = "mini";
         else if (isMicroMode) section = "micro";
@@ -711,9 +861,10 @@ public:
         std::string currentValue = ult::parseValueFromIniSection(configIniPath, section, colorKey);
         if (currentValue.empty()) currentValue = defaultValue;
         
+        // Extract the color without alpha for comparison (for backgrounds)
+        std::string currentColorWithoutAlpha = extractColorWithoutAlpha(currentValue);
+        
         static const std::vector<std::pair<std::string, std::string>> colors = {
-            {"Transparent", "#0000"},
-            {"Semi-transparent Black", "#0009"},
             {"Black", "#000F"},
             {"White", "#FFFF"},
             {"Red", "#F00F"},
@@ -727,27 +878,76 @@ public:
         };
         
         std::string _jumpItemValue;
-        std::string lastSelectedColor;
         for (const auto& color : colors) {
             auto* colorItem = new tsl::elm::ListItem(color.first);
-            colorItem->setValue(color.second);
-            if (color.second == currentValue) {
-                colorItem->setValue(color.second + " " + ult::CHECKMARK_SYMBOL);
-                lastSelectedListItem = colorItem;
-                _jumpItemValue = color.second + " " + ult::CHECKMARK_SYMBOL;
-                lastSelectedColor = color.second;
+            
+            // For display, show the color code based on type
+            std::string displayValue;
+            if (isTextBasedColor || isBackgroundColor) {
+                // For ALL text-based colors AND background colors, show without the alpha
+                displayValue = extractColorWithoutAlpha(color.second);
+            } else {
+                // For FPS Graph colors (keep original behavior with full RGBA)
+                displayValue = color.second;
             }
-            colorItem->setClickListener([this, lastSelectedColor, colorItem, color, section](uint64_t keys) {
-                static auto _lastSelectedColor = lastSelectedColor;
+            
+            colorItem->setValue(displayValue);
+            
+            // Check if this is the selected color
+            bool isSelected = false;
+            if (isBackgroundColor || isTextBasedColor) {
+                // For background and text colors, compare without alpha
+                isSelected = (extractColorWithoutAlpha(color.second) == currentColorWithoutAlpha);
+            } else {
+                // For FPS Graph colors (keep original behavior)
+                isSelected = (color.second == currentValue);
+            }
+            
+            if (isSelected) {
+                colorItem->setValue(displayValue + " " + ult::CHECKMARK_SYMBOL);
+                lastSelectedListItem = colorItem;
+                _jumpItemValue = displayValue + " " + ult::CHECKMARK_SYMBOL;
+            }
+            
+            colorItem->setClickListener([this, colorItem, color, section, displayValue](uint64_t keys) {
                 if (keys & KEY_A) {
-                    ult::setIniFileValue(configIniPath, section, colorKey, color.second);
+                    std::string valueToSave = color.second;
                     
-                    colorItem->setValue(color.second + " " + ult::CHECKMARK_SYMBOL);
-                    if (lastSelectedListItem)
-                        lastSelectedListItem->setValue(_lastSelectedColor);
-
+                    if (isBackgroundColor) {
+                        // For background colors, preserve existing alpha
+                        std::string existingColor = ult::parseValueFromIniSection(configIniPath, section, colorKey);
+                        if (!existingColor.empty() && existingColor.length() == 5) {
+                            char existingAlpha = existingColor[4];
+                            valueToSave = setAlphaInColor(color.second, existingAlpha);
+                        }
+                    } else if (isTextBasedColor) {
+                        // For text-based colors, ensure alpha is always F
+                        valueToSave = setAlphaInColor(color.second, 'F');
+                    }
+                    // For FPS Graph colors, use as-is
+                    
+                    ult::setIniFileValue(configIniPath, section, colorKey, valueToSave);
+                    
+                    // Update the UI - clear old checkmark and set new one
+                    if (lastSelectedListItem && lastSelectedListItem != colorItem) {
+                        // Get the display value for the old selected item
+                        std::string oldDisplayValue;
+                        for (const auto& c : colors) {
+                            if (lastSelectedListItem->getText() == c.first) {
+                                if (isTextBasedColor || isBackgroundColor) {
+                                    oldDisplayValue = extractColorWithoutAlpha(c.second);
+                                } else {
+                                    oldDisplayValue = c.second;
+                                }
+                                break;
+                            }
+                        }
+                        lastSelectedListItem->setValue(oldDisplayValue);
+                    }
+                    
+                    // Set new checkmark
+                    colorItem->setValue(displayValue + " " + ult::CHECKMARK_SYMBOL);
                     lastSelectedListItem = colorItem;
-                    _lastSelectedColor = color.second;
                     return true;
                 }
                 return false;
@@ -818,10 +1018,67 @@ public:
             return value.empty() ? def : value;
         };
         
+        auto getColorName = [](const std::string& hexColor) -> std::string {
+            // Extract RGB without alpha for comparison
+            std::string rgb = hexColor;
+            if (hexColor.length() == 5 && hexColor[0] == '#') {
+                rgb = hexColor.substr(0, 4);
+            }
+            
+            // Map of hex colors to names (RGB only, no alpha)
+            static const std::map<std::string, std::string> colorNames = {
+                {"#000", "Black"},
+                {"#FFF", "White"},
+                {"#F00", "Red"},
+                {"#0F0", "Green"},
+                {"#00F", "Blue"},
+                {"#FF0", "Yellow"},
+                {"#0FF", "Cyan"},
+                {"#F0F", "Magenta"},
+                {"#2DF", "Light Blue"},
+                {"#003", "Dark Blue"}
+            };
+            
+            auto it = colorNames.find(rgb);
+            if (it != colorNames.end()) {
+                // Special case for black/transparent disambiguation
+                if (rgb == "#000" && hexColor.length() == 5) {
+                    char alpha = hexColor[4];
+                    if (alpha == '0') return "Transparent";
+                    else return "Black";
+                }
+                return it->second;
+            }
+            return rgb; // Return hex if no name found
+        };
+        
+        auto getAlphaPercentage = [](const std::string& color) -> std::string {
+            if (color.length() == 5 && color[0] == '#') {
+                char alpha = color[4];
+                switch(alpha) {
+                    case '0': return "0%";
+                    case '1': return "10%";
+                    case '3': return "20%";
+                    case '4': return "30%";
+                    case '6': return "40%";
+                    case '8': return "50%";
+                    case '9': return "60%";
+                    case 'B': case 'b': return "70%";
+                    case 'C': case 'c': return "80%";
+                    case 'E': case 'e': return "90%";
+                    case 'F': case 'f': return "100%";
+                    default: return "60%";
+                }
+            }
+            return "60%";
+        };
+        
         // Background Color (all modes)
         auto* bgColor = new tsl::elm::ListItem("Background Color");
         std::string bgDefault = "#0009";
-        bgColor->setValue(getCurrentColor("background_color", bgDefault));
+        std::string bgCurrentColor = getCurrentColor("background_color", bgDefault);
+        // Display color name instead of hex
+        bgColor->setValue(getColorName(bgCurrentColor));
         bgColor->setClickListener([this, bgDefault](uint64_t keys) {
             if (keys & KEY_A) {
                 tsl::changeTo<ColorSelector>(modeName, "Background Color", "background_color", bgDefault);
@@ -831,9 +1088,50 @@ public:
         });
         list->addItem(bgColor);
         
+        // Background Alpha (new)
+        auto* bgAlpha = new tsl::elm::ListItem("Background Alpha");
+        bgAlpha->setValue(getAlphaPercentage(bgCurrentColor));
+        bgAlpha->setClickListener([this](uint64_t keys) {
+            if (keys & KEY_A) {
+                tsl::changeTo<AlphaSelector>(modeName, "background_color", "Background Alpha");
+                return true;
+            }
+            return false;
+        });
+        list->addItem(bgAlpha);
+    
+        if (isMiniMode) {
+            // Mini mode: has focus background
+            auto* focusBgColor = new tsl::elm::ListItem("Focus Color");
+            std::string focusCurrentColor = getCurrentColor("focus_background_color", "#000F");
+            focusBgColor->setValue(getColorName(focusCurrentColor));
+            focusBgColor->setClickListener([this](uint64_t keys) {
+                if (keys & KEY_A) {
+                    tsl::changeTo<ColorSelector>(modeName, "Focus Color", "focus_background_color", "#000F");
+                    return true;
+                }
+                return false;
+            });
+            list->addItem(focusBgColor);
+            
+            // Focus Alpha (new)
+            auto* focusAlpha = new tsl::elm::ListItem("Focus Alpha");
+            focusAlpha->setValue(getAlphaPercentage(focusCurrentColor));
+            focusAlpha->setClickListener([this](uint64_t keys) {
+                if (keys & KEY_A) {
+                    tsl::changeTo<AlphaSelector>(modeName, "focus_background_color", "Focus Alpha");
+                    return true;
+                }
+                return false;
+            });
+            list->addItem(focusAlpha);
+        }
+        
         // Text Color (all modes)
         auto* textColor = new tsl::elm::ListItem("Text Color");
-        textColor->setValue(getCurrentColor("text_color", "#FFFF"));
+        std::string textCurrentColor = getCurrentColor("text_color", "#FFFF");
+        // Display color name for text colors
+        textColor->setValue(getColorName(textCurrentColor));
         textColor->setClickListener([this](uint64_t keys) {
             if (keys & KEY_A) {
                 tsl::changeTo<ColorSelector>(modeName, "Text Color", "text_color", "#FFFF");
@@ -864,7 +1162,9 @@ public:
             
             for (const auto& color : fpsGraphColors) {
                 auto* colorItem = new tsl::elm::ListItem(color.name);
-                colorItem->setValue(getCurrentColor(color.key, color.defaultVal));
+                std::string currentVal = getCurrentColor(color.key, color.defaultVal);
+                // For FPS Graph, show full hex since it uses alpha
+                colorItem->setValue(currentVal);
                 colorItem->setClickListener([this, color](uint64_t keys) {
                     if (keys & KEY_A) {
                         tsl::changeTo<ColorSelector>(modeName, color.name, color.key, color.defaultVal);
@@ -876,31 +1176,9 @@ public:
             }
             
         } else if (isMiniMode) {
-            // Mini mode: has all colors including focus background
-            auto* focusBgColor = new tsl::elm::ListItem("Focus Background Color");
-            focusBgColor->setValue(getCurrentColor("focus_background_color", "#000F"));
-            focusBgColor->setClickListener([this](uint64_t keys) {
-                if (keys & KEY_A) {
-                    tsl::changeTo<ColorSelector>(modeName, "Focus Background Color", "focus_background_color", "#000F");
-                    return true;
-                }
-                return false;
-            });
-            list->addItem(focusBgColor);
-            
-            auto* sepColor = new tsl::elm::ListItem("Separator Color");
-            sepColor->setValue(getCurrentColor("separator_color", "#2DFF"));
-            sepColor->setClickListener([this](uint64_t keys) {
-                if (keys & KEY_A) {
-                    tsl::changeTo<ColorSelector>(modeName, "Separator Color", "separator_color", "#2DFF");
-                    return true;
-                }
-                return false;
-            });
-            list->addItem(sepColor);
-            
             auto* catColor = new tsl::elm::ListItem("Category Color");
-            catColor->setValue(getCurrentColor("cat_color", "#2DFF"));
+            // Display color name for category colors
+            catColor->setValue(getColorName(getCurrentColor("cat_color", "#2DFF")));
             catColor->setClickListener([this](uint64_t keys) {
                 if (keys & KEY_A) {
                     tsl::changeTo<ColorSelector>(modeName, "Category Color", "cat_color", "#2DFF");
@@ -909,11 +1187,34 @@ public:
                 return false;
             });
             list->addItem(catColor);
+    
+            auto* sepColor = new tsl::elm::ListItem("Separator Color");
+            // Display color name for separator colors
+            sepColor->setValue(getColorName(getCurrentColor("separator_color", "#2DFF")));
+            sepColor->setClickListener([this](uint64_t keys) {
+                if (keys & KEY_A) {
+                    tsl::changeTo<ColorSelector>(modeName, "Separator Color", "separator_color", "#2DFF");
+                    return true;
+                }
+                return false;
+            });
+            list->addItem(sepColor);
             
         } else if (isMicroMode) {
+            auto* catColor = new tsl::elm::ListItem("Category Color");
+            catColor->setValue(getColorName(getCurrentColor("cat_color", "#2DFF")));
+            catColor->setClickListener([this](uint64_t keys) {
+                if (keys & KEY_A) {
+                    tsl::changeTo<ColorSelector>(modeName, "Category Color", "cat_color", "#2DFF");
+                    return true;
+                }
+                return false;
+            });
+            list->addItem(catColor);
+            
             // Micro mode: separator and category colors (no focus background like Mini)
             auto* sepColor = new tsl::elm::ListItem("Separator Color");
-            sepColor->setValue(getCurrentColor("separator_color", "#2DFF"));
+            sepColor->setValue(getColorName(getCurrentColor("separator_color", "#2DFF")));
             sepColor->setClickListener([this](uint64_t keys) {
                 if (keys & KEY_A) {
                     tsl::changeTo<ColorSelector>(modeName, "Separator Color", "separator_color", "#2DFF");
@@ -923,21 +1224,11 @@ public:
             });
             list->addItem(sepColor);
             
-            auto* catColor = new tsl::elm::ListItem("Category Color");
-            catColor->setValue(getCurrentColor("cat_color", "#2DFF"));
-            catColor->setClickListener([this](uint64_t keys) {
-                if (keys & KEY_A) {
-                    tsl::changeTo<ColorSelector>(modeName, "Category Color", "cat_color", "#2DFF");
-                    return true;
-                }
-                return false;
-            });
-            list->addItem(catColor);
             
         } else if (isGameResolutionsMode) {
             // Game Resolutions: only category color (no separator)
             auto* catColor = new tsl::elm::ListItem("Category Color");
-            catColor->setValue(getCurrentColor("cat_color", "#FFFF"));
+            catColor->setValue(getColorName(getCurrentColor("cat_color", "#FFFF")));
             catColor->setClickListener([this](uint64_t keys) {
                 if (keys & KEY_A) {
                     tsl::changeTo<ColorSelector>(modeName, "Category Color", "cat_color", "#FFFF");
@@ -956,7 +1247,7 @@ public:
             jumpItemValue = "";
             jumpItemExactMatch = false;
         }
-
+    
         tsl::elm::OverlayFrame* rootFrame = new tsl::elm::OverlayFrame("Status Monitor", "Configuration");
         rootFrame->setContent(list);
         return rootFrame;
@@ -1186,19 +1477,35 @@ public:
     virtual tsl::elm::Element* createUI() override {
         auto* list = new tsl::elm::List();
         list->addItem(new tsl::elm::CategoryHeader("Configuration"));
+        
+        // 5. Elements (Mini/Micro only)
+        if (isMiniMode || isMicroMode) {
+            auto* showSettings = new tsl::elm::ListItem("Elements");
+            showSettings->setValue(ult::DROPDOWN_SYMBOL);
+            showSettings->setClickListener([this](uint64_t keys) {
+                if (keys & KEY_A) {
+                    tsl::changeTo<ShowConfig>(modeName);
+                    return true;
+                }
+                return false;
+            });
+            list->addItem(showSettings);
+        }
 
-        // 1. Refresh Rate (all modes)
-        auto* refreshRate = new tsl::elm::ListItem("Refresh Rate");
-        refreshRate->setValue(std::to_string(getCurrentRefreshRate()) + " Hz");
-        refreshRate->setClickListener([this](uint64_t keys) {
+        // 3. Toggles (All modes)
+        //if (isMiniMode || isMicroMode || isFullMode || isFPSGraphMode) {
+        auto* toggles = new tsl::elm::ListItem("Toggles");
+        toggles->setValue(ult::DROPDOWN_SYMBOL);
+        toggles->setClickListener([this](uint64_t keys) {
             if (keys & KEY_A) {
-                tsl::changeTo<RefreshRateConfig>(modeName);
+                tsl::changeTo<TogglesConfig>(modeName);
                 return true;
             }
             return false;
         });
-        list->addItem(refreshRate);
-        
+        list->addItem(toggles);
+        //}
+
         // 2. Colors (not Full mode - it has no color settings)
         if (!isFullMode) {
             auto* colors = new tsl::elm::ListItem("Colors");
@@ -1213,19 +1520,6 @@ public:
             list->addItem(colors);
         }
         
-        // 3. Toggles (All modes)
-        //if (isMiniMode || isMicroMode || isFullMode || isFPSGraphMode) {
-        auto* toggles = new tsl::elm::ListItem("Toggles");
-        toggles->setValue(ult::DROPDOWN_SYMBOL);
-        toggles->setClickListener([this](uint64_t keys) {
-            if (keys & KEY_A) {
-                tsl::changeTo<TogglesConfig>(modeName);
-                return true;
-            }
-            return false;
-        });
-        list->addItem(toggles);
-        //}
         
         // 4. Font Sizes (Mini/Micro/FPS Counter only)
         if (isMiniMode || isMicroMode || isFPSCounterMode) {
@@ -1241,19 +1535,17 @@ public:
             list->addItem(fontSizes);
         }
         
-        // 5. Elements (Mini/Micro only)
-        if (isMiniMode || isMicroMode) {
-            auto* showSettings = new tsl::elm::ListItem("Elements");
-            showSettings->setValue(ult::DROPDOWN_SYMBOL);
-            showSettings->setClickListener([this](uint64_t keys) {
-                if (keys & KEY_A) {
-                    tsl::changeTo<ShowConfig>(modeName);
-                    return true;
-                }
-                return false;
-            });
-            list->addItem(showSettings);
-        }
+        // 1. Refresh Rate (all modes)
+        auto* refreshRate = new tsl::elm::ListItem("Refresh Rate");
+        refreshRate->setValue(std::to_string(getCurrentRefreshRate()) + " Hz");
+        refreshRate->setClickListener([this](uint64_t keys) {
+            if (keys & KEY_A) {
+                tsl::changeTo<RefreshRateConfig>(modeName);
+                return true;
+            }
+            return false;
+        });
+        list->addItem(refreshRate);
         
         // 6. DTC Format (Mini/Micro only) - NEW ADDITION
         if (isMiniMode || isMicroMode) {
@@ -1406,17 +1698,17 @@ private:
             {"Date Short", "%m/%d/%y"},
         
             // Datetime (default included here)
-            {"Date+Time", "%m-%d-%Y%H:%M:%S"},           // default
-            {"Date+Time AM/PM", "%m-%d-%Y%I:%M %p"},
-            {"Date+Time EU", "%d/%m/%Y%H:%M"},
-            {"Date+Time EU AM/PM", "%d/%m/%Y%I:%M %p"},
-            {"Date+Time ISO", "%Y-%m-%dT%H:%M:%S"},
+            {"Date+Time", "%m-%d-%Y%H:%M:%S"},           // default
+            {"Date+Time AM/PM", "%m-%d-%Y%I:%M %p"},
+            {"Date+Time EU", "%d/%m/%Y%H:%M"},
+            {"Date+Time EU AM/PM", "%d/%m/%Y%I:%M %p"},
+            {"Date+Time ISO", "%Y-%m-%dT%H:%M:%S"},
         
             // Special
-            {"Compact", "%Y%m%d%H%M%S"},
-            {"FileSafe", "%Y-%m-%d%H-%M-%S"},
-            {"Pretty", "%a, %b %d%I:%M %p"},
-            {"Day+Time", "%a%H:%M"}
+            {"Compact", "%Y%m%d%H%M%S"},
+            {"FileSafe", "%Y-%m-%d%H-%M-%S"},
+            {"Pretty", "%a, %b %d%I:%M %p"},
+            {"Day+Time", "%a%H:%M"}
         };
         
         for (const auto& format : dtcFormats) {
