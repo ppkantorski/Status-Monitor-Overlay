@@ -29,7 +29,7 @@ If it's not working in dock, you need to first start Status Monitor, then put Ni
 - Network type + Wi-fi password
 
 # Requirements:
-- Tesla Menu at least version 1.2.3
+- Ultrahand Overlay, or Tesla Menu at least version 1.2.3
 
 How to setup everything: [HERE](https://gist.github.com/masagrator/65fcbd5ad09243399268d145aaab899b)
 
