@@ -194,9 +194,11 @@ uintptr_t FPSaddress = 0;
 uintptr_t FPSavgaddress = 0;
 uint64_t PID = 0;
 uint32_t FPS = 0xFE;
-float FPSavg = 254;
 float FPSmin = 254; 
 float FPSmax = 0; 
+float FPSavg = 254;
+float FPSavg_old = 254;
+bool useOldFPSavg = false;
 SharedMemory _sharedmemory = {};
 bool SharedMemoryUsed = false;
 Handle remoteSharedMemory = 1;
@@ -259,25 +261,26 @@ void searchSharedMemoryBlock(uintptr_t base) {
 }
 
 //Check if SaltyNX is working
-bool CheckPort () {
+bool CheckPort() {
     Handle saltysd;
-    for (int i = 0; i < 67; i++) {
-        if (R_SUCCEEDED(svcConnectToNamedPort(&saltysd, "InjectServ"))) {
-            svcCloseHandle(saltysd);
-            break;
-        }
-        else {
-            if (i == 66) return false;
-            svcSleepThread(1'000'000);
-        }
-    }
-    for (int i = 0; i < 67; i++) {
+    
+    // Try up to 67 times with exponential backoff for better responsiveness
+    for (int i = 0; i < 50; i++) {
         if (R_SUCCEEDED(svcConnectToNamedPort(&saltysd, "InjectServ"))) {
             svcCloseHandle(saltysd);
             return true;
         }
-        else svcSleepThread(1'000'000);
+        
+        // Progressive sleep - start fast, then slow down
+        //if (i < 10) {
+        //    svcSleepThread(100'000);    // 0.1ms for first 10 attempts
+        //} else if (i < 30) {
+        //    svcSleepThread(500'000);    // 0.5ms for next 20 attempts  
+        //} else {
+        //    svcSleepThread(1'000'000);  // 1ms for remaining attempts
+        //}
     }
+    
     return false;
 }
 
@@ -549,12 +552,16 @@ void Misc(void*) {
         //FPS
         if (GameRunning) {
             if (SharedMemoryUsed) {
-                FPS = (NxFps->FPS);
+                FPS = (NxFps -> FPS);
                 const size_t element_count = sizeof(NxFps -> FPSticks) / sizeof(NxFps -> FPSticks[0]);
-                FPSavg = (float)systemtickfrequency / (std::accumulate<uint32_t*, float>(&NxFps->FPSticks[0], &NxFps->FPSticks[element_count], 0) / element_count);
+                FPSavg_old = (float)systemtickfrequency / (std::accumulate<uint32_t*, float>(&NxFps->FPSticks[0], &NxFps->FPSticks[element_count], 0) / element_count);
+                const float FPS_in = (float)FPS;
+                if (FPSavg_old >= (FPS_in-0.25) && FPSavg_old <= (FPS_in+0.25)) 
+                    FPSavg = FPS_in;
+                else FPSavg = FPSavg_old;
                 lastFrameNumber = NxFps -> frameNumber;
-                if (FPSavg > FPSmax)    FPSmax = FPSavg; 
-                if (FPSavg < FPSmin)    FPSmin = FPSavg; 
+                if (FPSavg > FPSmax) FPSmax = FPSavg; 
+                if (FPSavg < FPSmin) FPSmin = FPSavg; 
             }
         }
         else {
@@ -725,16 +732,17 @@ void FPSCounter(void*) {
     do {
         if (GameRunning) {
             if (SharedMemoryUsed) {
-                FPS = (NxFps->FPS);
+                FPS = (NxFps -> FPS);
                 const size_t element_count = sizeof(NxFps -> FPSticks) / sizeof(NxFps -> FPSticks[0]);
-                FPSavg = (float)systemtickfrequency / (std::accumulate<uint32_t*, float>(&NxFps->FPSticks[0], &NxFps->FPSticks[element_count], 0) / element_count);
+                FPSavg_old = (float)systemtickfrequency / (std::accumulate<uint32_t*, float>(&NxFps->FPSticks[0], &NxFps->FPSticks[element_count], 0) / element_count);
+                float FPS_in = (float)FPS;
+                if (FPSavg_old >= (FPS_in-0.25) && FPSavg_old <= (FPS_in+0.25)) 
+                    FPSavg = FPS_in;
+                else FPSavg = FPSavg_old;
                 lastFrameNumber = NxFps -> frameNumber;
             }
         }
         else FPSavg = 254;
-        
-        // Wait for interval based on TeslaFPS or thread exit event
-        //sleepNs = 1'000'000'000ULL / TeslaFPS;
     } while (!leventWait(&threadexit, sleepNs));
 }
 
@@ -870,65 +878,65 @@ void formatButtonCombination(std::string& line) {
     }    
 }
 
-uint64_t comboBitmask = 0;
-
-constexpr uint64_t MapButtons(const std::string& buttonCombo) {
-    static std::map<std::string, uint64_t> buttonMap = {
-        {"A", HidNpadButton_A},
-        {"B", HidNpadButton_B},
-        {"X", HidNpadButton_X},
-        {"Y", HidNpadButton_Y},
-        {"L", HidNpadButton_L},
-        {"R", HidNpadButton_R},
-        {"ZL", HidNpadButton_ZL},
-        {"ZR", HidNpadButton_ZR},
-        {"PLUS", HidNpadButton_Plus},
-        {"MINUS", HidNpadButton_Minus},
-        {"DUP", HidNpadButton_Up},
-        {"DDOWN", HidNpadButton_Down},
-        {"DLEFT", HidNpadButton_Left},
-        {"DRIGHT", HidNpadButton_Right},
-        {"SL", HidNpadButton_AnySL},
-        {"SR", HidNpadButton_AnySR},
-        {"LSTICK", HidNpadButton_StickL},
-        {"RSTICK", HidNpadButton_StickR},
-        {"LS", HidNpadButton_StickL},
-        {"RS", HidNpadButton_StickR},
-        {"UP", HidNpadButton_AnyUp},
-        {"DOWN", HidNpadButton_AnyDown},
-        {"LEFT", HidNpadButton_AnyLeft},
-        {"RIGHT", HidNpadButton_AnyRight}
-    };
-
-    
-    std::string comboCopy = buttonCombo;  // Make a copy of buttonCombo
-
-    static const std::string delimiter = "+";
-    size_t pos = 0;
-    static std::string button;
-    size_t max_delimiters = 4;
-    while ((pos = comboCopy.find(delimiter)) != std::string::npos) {
-        button = comboCopy.substr(0, pos);
-        if (buttonMap.find(button) != buttonMap.end()) {
-            comboBitmask |= buttonMap[button];
-        }
-        comboCopy.erase(0, pos + delimiter.length());
-        if (!--max_delimiters) {
-            return comboBitmask;
-        }
-    }
-    if (buttonMap.find(comboCopy) != buttonMap.end()) {
-        comboBitmask |= buttonMap[comboCopy];
-    }
-    return comboBitmask;
-}
+//uint64_t comboBitmask = 0;
+//
+//constexpr uint64_t MapButtons(const std::string& buttonCombo) {
+//    static std::map<std::string, uint64_t> buttonMap = {
+//        {"A", HidNpadButton_A},
+//        {"B", HidNpadButton_B},
+//        {"X", HidNpadButton_X},
+//        {"Y", HidNpadButton_Y},
+//        {"L", HidNpadButton_L},
+//        {"R", HidNpadButton_R},
+//        {"ZL", HidNpadButton_ZL},
+//        {"ZR", HidNpadButton_ZR},
+//        {"PLUS", HidNpadButton_Plus},
+//        {"MINUS", HidNpadButton_Minus},
+//        {"DUP", HidNpadButton_Up},
+//        {"DDOWN", HidNpadButton_Down},
+//        {"DLEFT", HidNpadButton_Left},
+//        {"DRIGHT", HidNpadButton_Right},
+//        {"SL", HidNpadButton_AnySL},
+//        {"SR", HidNpadButton_AnySR},
+//        {"LSTICK", HidNpadButton_StickL},
+//        {"RSTICK", HidNpadButton_StickR},
+//        {"LS", HidNpadButton_StickL},
+//        {"RS", HidNpadButton_StickR},
+//        {"UP", HidNpadButton_AnyUp},
+//        {"DOWN", HidNpadButton_AnyDown},
+//        {"LEFT", HidNpadButton_AnyLeft},
+//        {"RIGHT", HidNpadButton_AnyRight}
+//    };
+//
+//    
+//    std::string comboCopy = buttonCombo;  // Make a copy of buttonCombo
+//
+//    static const std::string delimiter = "+";
+//    size_t pos = 0;
+//    static std::string button;
+//    size_t max_delimiters = 4;
+//    while ((pos = comboCopy.find(delimiter)) != std::string::npos) {
+//        button = comboCopy.substr(0, pos);
+//        if (buttonMap.find(button) != buttonMap.end()) {
+//            comboBitmask |= buttonMap[button];
+//        }
+//        comboCopy.erase(0, pos + delimiter.length());
+//        if (!--max_delimiters) {
+//            return comboBitmask;
+//        }
+//    }
+//    if (buttonMap.find(comboCopy) != buttonMap.end()) {
+//        comboBitmask |= buttonMap[comboCopy];
+//    }
+//    return comboBitmask;
+//}
 
 ALWAYS_INLINE bool isKeyComboPressed(uint64_t keysHeld, uint64_t keysDown) {
     // Check if any of the combo buttons are pressed down this frame
     // while the rest of the combo buttons are being held
     
-    const uint64_t comboButtonsDown = keysDown & comboBitmask;
-    const uint64_t comboButtonsHeld = keysHeld & comboBitmask;
+    const uint64_t comboButtonsDown = keysDown & tsl::cfg::launchCombo;
+    const uint64_t comboButtonsHeld = keysHeld & tsl::cfg::launchCombo;
     
     // If any combo buttons are pressed down this frame
     if (comboButtonsDown != 0) {
@@ -936,7 +944,7 @@ ALWAYS_INLINE bool isKeyComboPressed(uint64_t keysHeld, uint64_t keysDown) {
         // (the full combo should be active when combining held + down)
         const uint64_t totalComboActive = comboButtonsHeld | comboButtonsDown;
         
-        if (totalComboActive == comboBitmask) {
+        if (totalComboActive == tsl::cfg::launchCombo) {
             fixHiding = true; // for fixing hiding when returning
             return true;
         }
@@ -953,7 +961,7 @@ inline int safeFanDuty(int raw) {
 
 // Helper function to check if comboBitmask is satisfied with at least one key in keysDown and the rest in keysHeld
 bool isKeyComboPressed2(uint64_t keysDown, uint64_t keysHeld) {
-    uint64_t requiredKeys = comboBitmask;
+    uint64_t requiredKeys = tsl::cfg::launchCombo;
     bool hasKeyDown = false; // Tracks if at least one key is in keysDown
 
     static uint64_t keyBit;
@@ -979,122 +987,72 @@ bool isKeyComboPressed2(uint64_t keysDown, uint64_t keysHeld) {
 
 // Custom utility function for parsing an ini file
 void ParseIniFile() {
-    
-    tsl::hlp::ini::IniData parsedData;
-    
     // Check and create directory if needed
-    struct stat st;
-    if (stat(directoryPath, &st) != 0) {
-        mkdir(directoryPath, 0777);
-    }
+    //struct stat st;
+    //if (stat(directoryPath, &st) != 0) {
+    //    mkdir(directoryPath, 0777);
+    //}
+    ult::createSingleDirectory(directoryPath);
 
-    //bool readExternalCombo = false;
+    // Load main config INI once
+    auto configData = ult::getParsedDataFromIniFile(configIniPath);
+    auto statusIt = configData.find("status-monitor");
     
-    // Try to open main config file
-    FILE* configFile = fopen(configIniPath, "r");
-    if (configFile) {
-        // Get file size more efficiently
-        fseek(configFile, 0, SEEK_END);
-        const long fileSize = ftell(configFile);
-        fseek(configFile, 0, SEEK_SET); // Use SEEK_SET instead of rewind for consistency
-        
-        // Reserve string capacity and read directly
-        std::string fileData;
-        fileData.resize(fileSize);
-        fread(fileData.data(), 1, fileSize, configFile);
-        fclose(configFile);
+    if (statusIt != configData.end()) {
+        const auto& statusSection = statusIt->second;
+        std::string key;
 
-        parsedData = ult::parseIni(fileData);
-        
-        // Cache the section lookup to avoid repeated map lookups
-        auto statusMonitorIt = parsedData.find("status-monitor");
-        if (statusMonitorIt != parsedData.end()) {
-            const auto& section = statusMonitorIt->second;
-            
-            // Process key_combo
-            //auto keyComboIt = section.find("key_combo");
-            //if (keyComboIt != section.end()) {
-            //    keyCombo = keyComboIt->second;
-            //    removeSpaces(keyCombo);
-            //    convertToUpper(keyCombo);
-            //} else {
-            //    readExternalCombo = true;
-            //}
-            
-            // Process battery_avg_iir_filter
-            auto batteryFilterIt = section.find("battery_avg_iir_filter");
-            if (batteryFilterIt != section.end()) {
-                std::string key = batteryFilterIt->second;
-                convertToUpper(key);
-                batteryFiltered = (key == "TRUE");
-            }
-            
-            // Process font_cache
-            //auto fontCacheIt = section.find("font_cache");
-            //if (fontCacheIt != section.end()) {
-            //    std::string key = fontCacheIt->second;
-            //    convertToUpper(key);
-            //    fontCache = (key == "TRUE");
-            //}
-            //
-            // Process battery_time_left_refreshrate
-            auto refreshRateIt = section.find("battery_time_left_refreshrate");
-            if (refreshRateIt != section.end()) {
-                const long rate = std::clamp(atol(refreshRateIt->second.c_str()), 1L, 60L);
-                batteryTimeLeftRefreshRate = rate;
-            }
-            
-            // Process average_gpu_load
-            auto gpuLoadIt = section.find("average_gpu_load");
-            if (gpuLoadIt != section.end()) {
-                std::string key = gpuLoadIt->second;
-                convertToUpper(key);
-                GPULoadPerFrame = (key != "TRUE");
-            }
+        // Process all settings with direct lookups
+        auto batteryFilterIt = statusSection.find("battery_avg_iir_filter");
+        if (batteryFilterIt != statusSection.end()) {
+            key = batteryFilterIt->second;
+            convertToUpper(key);
+            batteryFiltered = (key == "TRUE");
         }
-    //} else {
-    //    readExternalCombo = true;
-    }
+        
+        auto refreshRateIt = statusSection.find("battery_time_left_refreshrate");
+        if (refreshRateIt != statusSection.end()) {
+            batteryTimeLeftRefreshRate = std::clamp(atol(refreshRateIt->second.c_str()), 1L, 60L);
+        }
+        
+        auto gpuLoadIt = statusSection.find("average_gpu_load");
+        if (gpuLoadIt != statusSection.end()) {
+            key = gpuLoadIt->second;
+            convertToUpper(key);
+            GPULoadPerFrame = (key != "TRUE");
+        }
 
-    // Handle external combo reading
-    //if (readExternalCombo) {
-    // Try ultrahand first, then tesla
-    const char* configPaths[] = {ultrahandConfigIniPath, teslaConfigIniPath};
-    const char* sectionNames[] = {"ultrahand", "tesla"};
-    
-    static std::string fileData;
-    for (int i = 0; i < 2; ++i) {
-        FILE* extConfigFile = fopen(configPaths[i], "r");
-        if (extConfigFile) {
-            // Get file size and read efficiently
-            fseek(extConfigFile, 0, SEEK_END);
-            const long fileSize = ftell(extConfigFile);
-            fseek(extConfigFile, 0, SEEK_SET);
-            
-            fileData = "";
-            fileData.resize(fileSize);
-            fread(fileData.data(), 1, fileSize, extConfigFile);
-            fclose(extConfigFile);
-            
-            parsedData = ult::parseIni(fileData);
-            
-            auto sectionIt = parsedData.find(sectionNames[i]);
-            if (sectionIt != parsedData.end()) {
-                auto keyComboIt = sectionIt->second.find("key_combo");
-                if (keyComboIt != sectionIt->second.end()) {
-                    keyCombo = keyComboIt->second;
-                    removeSpaces(keyCombo);
-                    convertToUpper(keyCombo);
-                    break; // Found combo, exit loop
-                }
-            }
+        auto fpsAvgIt = statusSection.find("use_old_fps_average");
+        if (fpsAvgIt != statusSection.end()) {
+            key = fpsAvgIt->second;
+            convertToUpper(key);
+            useOldFPSavg = (key == "TRUE");
         }
     }
+
+    // Handle external combo - load each file once
+    //const struct { const char* path; const char* section; } externalConfigs[] = {
+    //    {ultrahandConfigIniPath, "ultrahand"},
+    //    {teslaConfigIniPath, "tesla"}
+    //};
+    //
+    //for (const auto& config : externalConfigs) {
+    //    auto extConfigData = ult::getParsedDataFromIniFile(config.path);
+    //    auto sectionIt = extConfigData.find(config.section);
+    //    
+    //    if (sectionIt != extConfigData.end()) {
+    //        auto keyComboIt = sectionIt->second.find("key_combo");
+    //        if (keyComboIt != sectionIt->second.end() && !keyComboIt->second.empty()) {
+    //            keyCombo = keyComboIt->second;
+    //            removeSpaces(keyCombo);
+    //            convertToUpper(keyCombo);
+    //            break;
+    //        }
+    //    }
     //}
     
-    comboBitmask = MapButtons(keyCombo);
+    //comboBitmask = MapButtons(keyCombo);
 }
-
 
 ALWAYS_INLINE bool isValidRGBA4Color(const std::string& hexColor) {
     const char* data = hexColor.data();

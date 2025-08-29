@@ -1358,9 +1358,10 @@ public:
                 leventSignal(&renderingStopEvent);
                 skipOnce = true;
                 runOnce = true;
-                TeslaFPS = 60;
-                if (skipMain)
+                //TeslaFPS = 60;
+                if (skipMain) {
                     tsl::goBack();
+                }
                 else {
                     tsl::setNextOverlay(filepath.c_str(), "--lastSelectedItem Mini");
                     tsl::Overlay::get()->close();

@@ -641,7 +641,8 @@ void setupMiniMode() {
 
 void setupMicroMode() {
     ult::DefaultFramebufferWidth = 1280;
-    ult::DefaultFramebufferHeight = 28;
+    //ult::DefaultFramebufferHeight = 28;
+    ult::DefaultFramebufferHeight = 720;
     
     // Try user-specified filename first, then fallback to default
     const std::string primaryPath = folderpath + filename;
@@ -683,46 +684,48 @@ int main(int argc, char **argv) {
             // Write once with all changes
             ult::saveIniFileData(ult::OVERLAYS_INI_FILEPATH, iniData);
         }
-    }
-
-    //ult::useRightAlignment = (ult::parseValueFromIniSection(ult::ULTRAHAND_CONFIG_INI_PATH, ult::ULTRAHAND_PROJECT_NAME, "right_alignment") == ult::TRUE_STR);
-    // Check command line arguments
-    for (u8 arg = 0; arg < argc; arg++) {
-        if (argv[arg][0] != '-') continue;  // Check first character
-        
-        if (strcasecmp(argv[arg], "--microOverlay") == 0) {
-            FullMode = false;
-            setupMicroMode();
-            return tsl::loop<MicroMode>(argc, argv);
-        } 
-        else if (strcasecmp(argv[arg], "--miniOverlay") == 0) {
-            FullMode = false;
-            setupMiniMode();
-            //ult::useRightAlignment = ult::useRightAlignment || (ult::parseValueFromIniSection(configIniPath, "mini", "right_alignment") == ult::TRUE_STR);
-            return tsl::loop<MiniEntryOverlay>(argc, argv);
-        } 
-        else if (strcasecmp(argv[arg], "-micro") == 0) {
-            FullMode = false;
-            skipMain = true;
-            ult::DefaultFramebufferWidth = 1280;
-            ult::DefaultFramebufferHeight = 28;
-            return tsl::loop<MicroMode>(argc, argv);
-        } 
-        else if (strcasecmp(argv[arg], "-mini") == 0) {
-            FullMode = false;
-            skipMain = true;
-            ult::DefaultFramebufferWidth = 1280;
-            ult::DefaultFramebufferHeight = 720;
-            //ult::useRightAlignment = (ult::parseValueFromIniSection(configIniPath, "mini", "right_alignment") == ult::TRUE_STR);
-            return tsl::loop<MiniEntryOverlay>(argc, argv);
-        }
-        else if (strcasecmp(argv[arg], "--lastSelectedItem") == 0) {
-            // Check if there's a next argument for the item name
-            if (arg + 1 < argc) {
-                lastSelectedItem = argv[arg + 1];
-                arg++; // Skip the next argument since we've consumed it
+    
+    
+        //ult::useRightAlignment = (ult::parseValueFromIniSection(ult::ULTRAHAND_CONFIG_INI_PATH, ult::ULTRAHAND_PROJECT_NAME, "right_alignment") == ult::TRUE_STR);
+        // Check command line arguments
+        for (u8 arg = 0; arg < argc; arg++) {
+            if (argv[arg][0] != '-') continue;  // Check first character
+            
+            if (strcasecmp(argv[arg], "--microOverlay") == 0) {
+                FullMode = false;
+                setupMicroMode();
+                return tsl::loop<MicroMode>(argc, argv);
+            } 
+            else if (strcasecmp(argv[arg], "--miniOverlay") == 0) {
+                FullMode = false;
+                setupMiniMode();
+                //ult::useRightAlignment = ult::useRightAlignment || (ult::parseValueFromIniSection(configIniPath, "mini", "right_alignment") == ult::TRUE_STR);
+                return tsl::loop<MiniEntryOverlay>(argc, argv);
+            } 
+            else if (strcasecmp(argv[arg], "-micro") == 0) {
+                FullMode = false;
+                skipMain = true;
+                ult::DefaultFramebufferWidth = 1280;
+                //ult::DefaultFramebufferHeight = 28;
+                ult::DefaultFramebufferHeight = 720;
+                return tsl::loop<MicroMode>(argc, argv);
+            } 
+            else if (strcasecmp(argv[arg], "-mini") == 0) {
+                FullMode = false;
+                skipMain = true;
+                ult::DefaultFramebufferWidth = 1280;
+                ult::DefaultFramebufferHeight = 720;
+                //ult::useRightAlignment = (ult::parseValueFromIniSection(configIniPath, "mini", "right_alignment") == ult::TRUE_STR);
+                return tsl::loop<MiniEntryOverlay>(argc, argv);
             }
-            // Don't return here, continue processing other arguments
+            else if (strcasecmp(argv[arg], "--lastSelectedItem") == 0) {
+                // Check if there's a next argument for the item name
+                if (arg + 1 < argc) {
+                    lastSelectedItem = argv[arg + 1];
+                    arg++; // Skip the next argument since we've consumed it
+                }
+                // Don't return here, continue processing other arguments
+            }
         }
     }
     

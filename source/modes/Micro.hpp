@@ -113,10 +113,10 @@ public:
             fontsize = settings.handheldFontSize;
         }
         else fontsize = settings.dockedFontSize;
-        if (settings.setPosBottom) {
-            const auto [horizontalUnderscanPixels, verticalUnderscanPixels] = tsl::gfx::getUnderscanPixels();
-            tsl::gfx::Renderer::get().setLayerPos(0, !verticalUnderscanPixels ? 1038 : 1038- (tsl::cfg::ScreenHeight/720. * verticalUnderscanPixels) +0.5);
-        }
+        //if (settings.setPosBottom) {
+        //    const auto [horizontalUnderscanPixels, verticalUnderscanPixels] = tsl::gfx::getUnderscanPixels();
+        //    tsl::gfx::Renderer::get().setLayerPos(0, !verticalUnderscanPixels ? 1038 : 1038- (tsl::cfg::ScreenHeight/720. * verticalUnderscanPixels) +0.5);
+        //}
         if (settings.disableScreenshots) {
             tsl::gfx::Renderer::get().removeScreenshotStacks();
         }
@@ -947,7 +947,7 @@ public:
         }
 
         // FPS
-        snprintf(FPS_var_compressed_c, sizeof(FPS_var_compressed_c), "%2.1f", FPSavg);
+        snprintf(FPS_var_compressed_c, sizeof FPS_var_compressed_c, "%2.1f", useOldFPSavg ? FPSavg_old : FPSavg);
 
 
         // Read Speed
@@ -983,7 +983,7 @@ public:
             leventSignal(&renderingStopEvent);
             skipOnce = true;
             runOnce = true;
-            TeslaFPS = 60;
+            //TeslaFPS = 60;
             if (skipMain)
                 tsl::goBack();
             else {

@@ -151,7 +151,7 @@ public:
         else if (performanceMode == ApmPerformanceMode_Boost) {
             fontsize = settings.dockedFontSize;
         }
-        snprintf(FPSavg_c, sizeof FPSavg_c, "%2.1f", FPSavg);
+        snprintf(FPSavg_c, sizeof FPSavg_c, "%2.1f", useOldFPSavg ? FPSavg_old : FPSavg);
         
         //static bool skipOnce = true;
     
