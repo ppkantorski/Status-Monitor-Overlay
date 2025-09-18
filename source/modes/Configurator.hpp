@@ -412,6 +412,12 @@ public:
                 ult::setIniFileValue(configIniPath, section, "disable_screenshots", state ? "true" : "false");
             });
             list->addItem(disableScreenshots);
+
+            auto* sleepExit = new tsl::elm::ToggleListItem("Sleep Exit", getCurrentSleepExit(section));
+            sleepExit->setStateChangedListener([this, section](bool state) {
+                ult::setIniFileValue(configIniPath, section, "sleep_exit", state ? "true" : "false");
+            });
+            list->addItem(sleepExit);
             
         } else if (isGameResolutionsMode) {
             // Game Resolutions mode: only disable_screenshots
@@ -518,6 +524,13 @@ private:
     bool getCurrentDisableScreenshots(const std::string& section) {
         std::string value = ult::parseValueFromIniSection(configIniPath, section, "disable_screenshots");
         if (value.empty()) return false;  // Default is false (screenshots enabled)
+        convertToUpper(value);
+        return value != "FALSE";  // True if not explicitly "FALSE"
+    }
+
+    bool getCurrentSleepExit(const std::string& section) {
+        std::string value = ult::parseValueFromIniSection(configIniPath, section, "sleep_exit");
+        if (value.empty()) return true;
         convertToUpper(value);
         return value != "FALSE";  // True if not explicitly "FALSE"
     }

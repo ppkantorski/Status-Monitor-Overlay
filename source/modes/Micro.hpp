@@ -718,16 +718,19 @@ public:
         //}
 
         // For properly handling sleep exit
-        const auto GPU_Hz_int = int(GPU_Hz / 1000000);
-        static auto lastGPU_Hz_int = GPU_Hz_int;
-        if (GPU_Hz_int == 0 && lastGPU_Hz_int != 0) {
-            isRendering = false;
-            leventSignal(&renderingStopEvent);
-            
-            triggerExitNow = true;
-            return;
+        if (settings.sleepExit) {
+            const auto GPU_Hz_int = int(GPU_Hz / 1000000);
+            static auto lastGPU_Hz_int = GPU_Hz_int;
+            if (GPU_Hz_int == 0 && lastGPU_Hz_int != 0) {
+                isRendering = false;
+                leventSignal(&renderingStopEvent);
+                
+                triggerExitNow = true;
+                return;
+            }
+            lastGPU_Hz_int = GPU_Hz_int;
         }
-        lastGPU_Hz_int = GPU_Hz_int;
+        
 
         /* ── GPU voltage ───────────────────────────── */
         if (settings.realVolts) {
