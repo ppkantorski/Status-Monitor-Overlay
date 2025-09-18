@@ -530,7 +530,7 @@ private:
 
     bool getCurrentSleepExit(const std::string& section) {
         std::string value = ult::parseValueFromIniSection(configIniPath, section, "sleep_exit");
-        if (value.empty()) return true;
+        if (value.empty()) return false;
         convertToUpper(value);
         return value != "FALSE";  // True if not explicitly "FALSE"
     }
