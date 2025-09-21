@@ -383,6 +383,18 @@ public:
             });
             list->addItem(showFullCPU);
             
+            auto* showVDDQ = new tsl::elm::ToggleListItem("Show VDDQ", getCurrentShowVDDQ());
+            showVDDQ->setStateChangedListener([this, section](bool state) {
+                ult::setIniFileValue(configIniPath, section, "show_vddq", state ? "true" : "false");
+            });
+            list->addItem(showVDDQ);
+
+            auto* showVDD2 = new tsl::elm::ToggleListItem("Show VDD2", getCurrentShowVDD2());
+            showVDD2->setStateChangedListener([this, section](bool state) {
+                ult::setIniFileValue(configIniPath, section, "show_vdd2", state ? "true" : "false");
+            });
+            list->addItem(showVDD2);
+
             auto* showFullRes = new tsl::elm::ToggleListItem("Show Full Resolution", getCurrentShowFullRes());
             showFullRes->setStateChangedListener([this, section](bool state) {
                 ult::setIniFileValue(configIniPath, section, "show_full_res", state ? "true" : "false");
@@ -488,6 +500,23 @@ private:
         convertToUpper(value);
         return value == "TRUE";
     }
+
+    bool getCurrentShowVDDQ() {
+        const std::string section = isMiniMode ? "mini" : "micro";
+        std::string value = ult::parseValueFromIniSection(configIniPath, section, "show_vddq");
+        if (value.empty()) return false;
+        convertToUpper(value);
+        return value == "TRUE";
+    }
+
+    bool getCurrentShowVDD2() {
+        const std::string section = isMiniMode ? "mini" : "micro";
+        std::string value = ult::parseValueFromIniSection(configIniPath, section, "show_vdd2");
+        if (value.empty()) return true;
+        convertToUpper(value);
+        return value == "TRUE";
+    }
+
     
     bool getCurrentShowFullRes() {
         const std::string section = isMiniMode ? "mini" : "micro";
