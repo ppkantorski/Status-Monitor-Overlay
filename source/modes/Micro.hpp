@@ -870,15 +870,24 @@ public:
         //char RES_var_compressed_c[32] = "";
         if (GameRunning && NxFps && resolutionShow) {
             if (!resolutionLookup) {
-                (NxFps -> renderCalls[0].calls) = 0xFFFF;
-                resolutionLookup = 1;
+                if (NxFps && SharedMemoryUsed) {
+                    (NxFps -> renderCalls[0].calls) = 0xFFFF;
+                    resolutionLookup = 1;
+                }
             }
             else if (resolutionLookup == 1) {
-                if ((NxFps -> renderCalls[0].calls) != 0xFFFF) resolutionLookup = 2;
+                if (NxFps && SharedMemoryUsed && (NxFps -> renderCalls[0].calls) != 0xFFFF) {
+                    resolutionLookup = 2;
+                }
             }
             else {
-                memcpy(&m_resolutionRenderCalls, &(NxFps -> renderCalls), sizeof(m_resolutionRenderCalls));
-                memcpy(&m_resolutionViewportCalls, &(NxFps -> viewportCalls), sizeof(m_resolutionViewportCalls));
+                if (NxFps && SharedMemoryUsed) {
+                    memcpy(&m_resolutionRenderCalls, &(NxFps -> renderCalls), sizeof(m_resolutionRenderCalls));
+                    memcpy(&m_resolutionViewportCalls, &(NxFps -> viewportCalls), sizeof(m_resolutionViewportCalls));
+                } else {
+                    memset(&m_resolutionRenderCalls, 0, sizeof(m_resolutionRenderCalls));
+                    memset(&m_resolutionViewportCalls, 0, sizeof(m_resolutionViewportCalls));
+                }
                 qsort(m_resolutionRenderCalls, 8, sizeof(resolutionCalls), compare);
                 qsort(m_resolutionViewportCalls, 8, sizeof(resolutionCalls), compare);
                 memset(&m_resolutionOutput, 0, sizeof(m_resolutionOutput));
@@ -954,9 +963,11 @@ public:
 
 
         // Read Speed
-        if (GameRunning && NxFps) {
-            if ((NxFps -> readSpeedPerSecond) != 0.f) {
-                snprintf(READ_var_compressed_c, sizeof(READ_var_compressed_c), "%.2f MiB/s", (NxFps -> readSpeedPerSecond) / 1048576.f);
+        if (GameRunning && NxFps && SharedMemoryUsed) {
+            float readSpeed = 0.0f;
+            memcpy(&readSpeed, &(NxFps->readSpeedPerSecond), sizeof(float));
+            if (readSpeed != 0.f) {
+                snprintf(READ_var_compressed_c, sizeof(READ_var_compressed_c), "%.2f MiB/s", readSpeed / 1048576.f);
             } else {
                 strcpy(READ_var_compressed_c, "n/d");
             }

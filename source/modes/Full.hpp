@@ -181,9 +181,9 @@ public:
                     }
                 }
                 if (R_SUCCEEDED(Hinted)) {
-                    static auto dimensions = renderer->drawString("Total: \nApplication: \nApplet: \nSystem: \nSystem Unsafe: ", false, 0, height_offset + 40, 15, renderer->a(0x0000));
+                    static auto textWidth = renderer->getTextDimensions("Total: \nApplication: \nApplet: \nSystem: \nSystem Unsafe: ", false, 15).first;
                     renderer->drawString("Total: \nApplication: \nApplet: \nSystem: \nSystem Unsafe: ", false, COMMON_MARGIN, height_offset + 40, 15, renderer->a(0xFFFF));
-                    renderer->drawString(RAM_var_compressed_c, false, COMMON_MARGIN + dimensions.first, height_offset + 40, 15, renderer->a(0xFFFF));
+                    renderer->drawString(RAM_var_compressed_c, false, COMMON_MARGIN + textWidth, height_offset + 40, 15, renderer->a(0xFFFF));
                 }
             }
             
@@ -192,11 +192,11 @@ public:
                 renderer->drawString("Board", false, 20, 550, 20, renderer->a(0xFFFF));
                 if (R_SUCCEEDED(i2cCheck)) renderer->drawString(BatteryDraw_c, false, COMMON_MARGIN, 575, 15, renderer->a(0xFFFF));
                 if (R_SUCCEEDED(i2cCheck) || R_SUCCEEDED(tcCheck)) {
-                    static auto dimensions1 = renderer->drawString("Temperatures: ", false, 0, 590, 15, renderer->a(0x0000));
-                    static auto dimensions2 = renderer->drawString("SoC \nPCB \nSkin ", false, 0, 590, 15, renderer->a(0x0000));
+                    static auto textWidth1 = renderer->getTextDimensions("Temperatures: ", false, 15).first;
+                    static auto textWidth2 = renderer->getTextDimensions("SoC \nPCB \nSkin ", false, 15).first;
                     renderer->drawString("Temperatures:", false, COMMON_MARGIN, 590, 15, renderer->a(0xFFFF));
-                    renderer->drawString("SoC\nPCB\nSkin", false, COMMON_MARGIN + dimensions1.first, 590, 15, renderer->a(0xFFFF));
-                    renderer->drawString(SoCPCB_temperature_c, false, COMMON_MARGIN + dimensions1.first + dimensions2.first, 590, 15, renderer->a(0xFFFF));
+                    renderer->drawString("SoC\nPCB\nSkin", false, COMMON_MARGIN + textWidth1, 590, 15, renderer->a(0xFFFF));
+                    renderer->drawString(SoCPCB_temperature_c, false, COMMON_MARGIN + textWidth1 + textWidth2, 590, 15, renderer->a(0xFFFF));
                 }
                 if (R_SUCCEEDED(pwmCheck)) renderer->drawString(Rotation_SpeedLevel_c, false, COMMON_MARGIN, 635, 15, renderer->a(0xFFFF));
             }
@@ -212,7 +212,7 @@ public:
                     renderer->drawString(FPS_var_compressed_c, false, COMMON_MARGIN + width_offset, height, 15, renderer->a(0xFFFF));
                     height += 15;
                 }
-                if ((settings.showRES == true) && (NxFps -> API >= 1)) {
+                if ((settings.showRES == true) && NxFps && SharedMemoryUsed && (NxFps -> API >= 1)) {
                     renderer->drawString(Resolutions_c, false, COMMON_MARGIN + width_offset, height, 15, renderer->a(0xFFFF));
                     height += 15;
                 }
@@ -221,7 +221,7 @@ public:
                 }
             }
             
-            renderer->drawStringWithColoredSections(message.c_str(), false, KEY_SYMBOLS, 30, 693, 23,  a(tsl::bottomTextColor), a(tsl::buttonColor));
+            renderer->drawStringWithColoredSections(message, false, KEY_SYMBOLS, 30, 693, 23,  a(tsl::bottomTextColor), a(tsl::buttonColor));
             
         });
         
@@ -311,8 +311,13 @@ public:
                 if ((NxFps -> renderCalls[0].calls) != 0xFFFF) resolutionLookup = 2;
             }
             else {
-                memcpy(&m_resolutionRenderCalls, &(NxFps -> renderCalls), sizeof(m_resolutionRenderCalls));
-                memcpy(&m_resolutionViewportCalls, &(NxFps -> viewportCalls), sizeof(m_resolutionViewportCalls));
+                if (NxFps && SharedMemoryUsed) {
+                    memcpy(&m_resolutionRenderCalls, &(NxFps -> renderCalls), sizeof(m_resolutionRenderCalls));
+                    memcpy(&m_resolutionViewportCalls, &(NxFps -> viewportCalls), sizeof(m_resolutionViewportCalls));
+                } else {
+                    memset(&m_resolutionRenderCalls, 0, sizeof(m_resolutionRenderCalls));
+                    memset(&m_resolutionViewportCalls, 0, sizeof(m_resolutionViewportCalls));
+                }
                 qsort(m_resolutionRenderCalls, 8, sizeof(resolutionCalls), compare);
                 qsort(m_resolutionViewportCalls, 8, sizeof(resolutionCalls), compare);
                 memset(&m_resolutionOutput, 0, sizeof(m_resolutionOutput));

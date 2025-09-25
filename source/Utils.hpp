@@ -507,8 +507,38 @@ static constexpr PowerDomainId domains[] = {
 
 //Stuff that doesn't need multithreading
 void Misc(void*) {
-    uint64_t timeout_ns = TeslaFPS < 10 ? (1'000'000'000 / TeslaFPS) : 100'000'000;
+    const uint64_t timeout_ns = TeslaFPS < 10 ? (1'000'000'000 / TeslaFPS) : 100'000'000;
     bool isUsingEOS = usingEOS();
+    
+    // Only declare voltage variables if not using EOS
+    u32* voltages[5];
+    u32 vdd2_raw = 0, vddq_raw = 0;
+    std::function<void(int)> readVoltage;
+    
+    if (!isUsingEOS) {
+        voltages[0] = &realCPU_mV;
+        voltages[1] = &realGPU_mV;
+        voltages[2] = nullptr;
+        voltages[3] = &realSOC_mV;
+        voltages[4] = nullptr;
+        
+        readVoltage = [&](int idx) {
+            RgltrSession session;
+            u32* target = voltages[idx];
+            if (idx == 2) target = &vddq_raw;
+            if (idx == 4) target = &vdd2_raw;
+            
+            if (R_SUCCEEDED(rgltrOpenSession(&session, domains[idx]))) {
+                if (R_FAILED(rgltrGetVoltage(&session, target))) {
+                    *target = 0;
+                }
+                rgltrCloseSession(&session);
+            } else {
+                *target = 0;
+            }
+        };
+    }
+
     do {
         mutexLock(&mutex_Misc);
         // CPU, GPU and RAM Frequency
@@ -550,25 +580,6 @@ void Misc(void*) {
         }
 
         if (!isUsingEOS) {
-            
-            u32* voltages[] = {&realCPU_mV, &realGPU_mV, nullptr, &realSOC_mV, nullptr};
-            u32 vdd2_raw = 0, vddq_raw = 0;  // Temporary storage for RAM voltages
-        
-            auto readVoltage = [&](int idx) {
-                RgltrSession session;
-                u32* target = voltages[idx];
-                if (idx == 2) target = &vddq_raw;     // VDD2 to temp
-                if (idx == 4) target = &vdd2_raw;     // VDDQ to temp
-                
-                if (R_SUCCEEDED(rgltrOpenSession(&session, domains[idx]))) {
-                    if (R_FAILED(rgltrGetVoltage(&session, target))) {
-                        *target = 0;
-                    }
-                    rgltrCloseSession(&session);
-                } else {
-                    *target = 0;
-                }
-            };
             
             if (R_SUCCEEDED(rgltrInitialize())) [[likely]] {
                 for (int i = 0; i < 5; ++i) {  // Read all 5 domains
@@ -621,7 +632,7 @@ void Misc(void*) {
         
         //FPS
         if (GameRunning) {
-            if (SharedMemoryUsed) {
+            if (NxFps && SharedMemoryUsed) {
                 FPS = (NxFps -> FPS);
                 const size_t element_count = sizeof(NxFps -> FPSticks) / sizeof(NxFps -> FPSticks[0]);
                 FPSavg_old = (float)systemtickfrequency / (std::accumulate<uint32_t*, float>(&NxFps->FPSticks[0], &NxFps->FPSticks[element_count], 0) / element_count);
@@ -642,7 +653,7 @@ void Misc(void*) {
         
         // Interval
         mutexUnlock(&mutex_Misc);
-        timeout_ns = (TeslaFPS < 10) ? (1'000'000'000 / TeslaFPS) : 100'000'000;
+        //timeout_ns = (TeslaFPS < 10) ? (1'000'000'000 / TeslaFPS) : 100'000'000;
     } while (!leventWait(&threadexit, timeout_ns));
 }
 
@@ -669,6 +680,36 @@ void Misc2(void*) {
 void Misc3(void*) {
     double temp;
     bool isUsingEOS = usingEOS();
+
+    // Only declare voltage variables if not using EOS
+    u32* voltages[5];
+    u32 vdd2_raw = 0, vddq_raw = 0;
+    std::function<void(int)> readVoltage;
+    
+    if (!isUsingEOS) {
+        voltages[0] = &realCPU_mV;
+        voltages[1] = &realGPU_mV;
+        voltages[2] = nullptr;
+        voltages[3] = &realSOC_mV;
+        voltages[4] = nullptr;
+        
+        readVoltage = [&](int idx) {
+            RgltrSession session;
+            u32* target = voltages[idx];
+            if (idx == 2) target = &vddq_raw;
+            if (idx == 4) target = &vdd2_raw;
+            
+            if (R_SUCCEEDED(rgltrOpenSession(&session, domains[idx]))) {
+                if (R_FAILED(rgltrGetVoltage(&session, target))) {
+                    *target = 0;
+                }
+                rgltrCloseSession(&session);
+            } else {
+                *target = 0;
+            }
+        };
+    }
+
     do {
         mutexLock(&mutex_Misc);
         if (R_SUCCEEDED(sysclkCheck)) {
@@ -686,26 +727,7 @@ void Misc3(void*) {
             }
         }
 
-        if (!isUsingEOS) {            
-            u32* voltages[] = {&realCPU_mV, &realGPU_mV, nullptr, &realSOC_mV, nullptr};
-            u32 vdd2_raw = 0, vddq_raw = 0;  // Temporary storage for RAM voltages
-        
-            auto readVoltage = [&](int idx) {
-                RgltrSession session;
-                u32* target = voltages[idx];
-                if (idx == 2) target = &vddq_raw;     // VDD2 to temp
-                if (idx == 4) target = &vdd2_raw;     // VDDQ to temp
-                
-                if (R_SUCCEEDED(rgltrOpenSession(&session, domains[idx]))) {
-                    if (R_FAILED(rgltrGetVoltage(&session, target))) {
-                        *target = 0;
-                    }
-                    rgltrCloseSession(&session);
-                } else {
-                    *target = 0;
-                }
-            };
-            
+        if (!isUsingEOS) { 
             if (R_SUCCEEDED(rgltrInitialize())) [[likely]] {
                 for (int i = 0; i < 5; ++i) {  // Read all 5 domains
                     readVoltage(i);
@@ -761,16 +783,16 @@ void CheckCore(void* arg) {
     uint64_t prevIdleTick = 0;
     svcGetInfo(&prevIdleTick, InfoType_IdleTickCount, INVALID_HANDLE, coreIndex);
     
-    thread_local u32 lastFPS = 0;
-    thread_local u64 cachedIntervalNs = 0;
-    thread_local u64 cachedTargetTicks = 0;
+    const u32 lastFPS = TeslaFPS;
+    const u64 cachedIntervalNs = 1'000'000'000 / lastFPS;
+    const u64 cachedTargetTicks = armNsToTicks(cachedIntervalNs);
     
     do {
-        if (__builtin_expect(TeslaFPS != lastFPS, 0)) {
-            lastFPS = TeslaFPS;
-            cachedIntervalNs = 1'000'000'000 / lastFPS;
-            cachedTargetTicks = armNsToTicks(cachedIntervalNs);
-        }
+        //if (__builtin_expect(TeslaFPS != lastFPS, 0)) {
+        //    lastFPS = TeslaFPS;
+        //    cachedIntervalNs = 1'000'000'000 / lastFPS;
+        //    cachedTargetTicks = armNsToTicks(cachedIntervalNs);
+        //}
         
         if (leventWait(&threadexit, cachedIntervalNs)) break;
         
