@@ -1,3 +1,5 @@
+class MainMenu;
+
 class MicroOverlay : public tsl::Gui {
 private:
     char GPU_Load_c[32];
@@ -130,7 +132,7 @@ public:
         
         // Pre-allocate render items vector
         //renderItems.reserve(8);
-        
+        realVoltsPolling = settings.realVolts;
         StartThreads();
     }
     
@@ -641,6 +643,8 @@ public:
 
         // CPU usage calculations - optimized with fewer conditionals
         const double inv_freq = 1.0 / systemtickfrequency_impl;
+        
+        // Capture systemtickfrequency_impl and inv_freq safely
         const auto formatUsage = [this](char* buf, size_t size, uint64_t idletick, double inv_freq) {
             if (idletick > systemtickfrequency_impl) {
                 strcpy(buf, "0%");
@@ -649,10 +653,16 @@ public:
             }
         };
         
-        formatUsage(CPU_Usage0, sizeof(CPU_Usage0), idletick0, inv_freq);
-        formatUsage(CPU_Usage1, sizeof(CPU_Usage1), idletick1, inv_freq);
-        formatUsage(CPU_Usage2, sizeof(CPU_Usage2), idletick2, inv_freq);
-        formatUsage(CPU_Usage3, sizeof(CPU_Usage3), idletick3, inv_freq);
+        // Atomically load idle ticks before using them
+        const uint64_t idle0 = idletick0.load(std::memory_order_acquire);
+        const uint64_t idle1 = idletick1.load(std::memory_order_acquire);
+        const uint64_t idle2 = idletick2.load(std::memory_order_acquire);
+        const uint64_t idle3 = idletick3.load(std::memory_order_acquire);
+        
+        formatUsage(CPU_Usage0, sizeof(CPU_Usage0), idle0, inv_freq);
+        formatUsage(CPU_Usage1, sizeof(CPU_Usage1), idle1, inv_freq);
+        formatUsage(CPU_Usage2, sizeof(CPU_Usage2), idle2, inv_freq);
+        formatUsage(CPU_Usage3, sizeof(CPU_Usage3), idle3, inv_freq);
 
         mutexLock(&mutex_Misc);
         
@@ -740,13 +750,24 @@ public:
         
         // RAM usage and frequency
         char MICRO_RAM_all_c[16];
-        if (!settings.showRAMLoad || R_FAILED(sysclkCheck)) {
+        if (!settings.showRAMLoad) {
+            // User wants GB display
             const float RAM_Total_all_f = (RAM_Total_application_u + RAM_Total_applet_u + RAM_Total_system_u + RAM_Total_systemunsafe_u) / (1024.0f * 1024.0f * 1024.0f);
             const float RAM_Used_all_f = (RAM_Used_application_u + RAM_Used_applet_u + RAM_Used_system_u + RAM_Used_systemunsafe_u) / (1024.0f * 1024.0f * 1024.0f);
-            snprintf(MICRO_RAM_all_c, sizeof(MICRO_RAM_all_c), "%.0f%.0fGB", RAM_Used_all_f, RAM_Total_all_f);
+            snprintf(MICRO_RAM_all_c, sizeof(MICRO_RAM_all_c), "%.0f%.0fGB", RAM_Used_all_f, RAM_Total_all_f);
         } else {
-            snprintf(MICRO_RAM_all_c, sizeof(MICRO_RAM_all_c), "%hu%%",
-                     ramLoad[SysClkRamLoad_All] / 10);
+            // User wants percentage display
+            if (R_SUCCEEDED(sysclkCheck)) {
+                // Use sys-clk's RAM load if available
+                snprintf(MICRO_RAM_all_c, sizeof(MICRO_RAM_all_c), "%hu%%",
+                         ramLoad[SysClkRamLoad_All] / 10);
+            } else {
+                // Calculate percentage manually when sys-clk isn't available
+                const uint64_t RAM_Total_all = RAM_Total_application_u + RAM_Total_applet_u + RAM_Total_system_u + RAM_Total_systemunsafe_u;
+                const uint64_t RAM_Used_all = RAM_Used_application_u + RAM_Used_applet_u + RAM_Used_system_u + RAM_Used_systemunsafe_u;
+                const unsigned ramLoadPercent = (RAM_Total_all > 0) ? (unsigned)((RAM_Used_all * 100) / RAM_Total_all) : 0;
+                snprintf(MICRO_RAM_all_c, sizeof(MICRO_RAM_all_c), "%u%%", ramLoadPercent);
+            }
         }
 
         const char* ramDiff = "@";
@@ -998,8 +1019,12 @@ public:
             skipOnce = true;
             runOnce = true;
             //TeslaFPS = 60;
-            if (skipMain)
+            if (skipMain) {
+                //lastSelectedItem = "Micro";
+                //lastMode = "";
+                //tsl::swapTo<MainMenu>();
                 tsl::goBack();
+            }
             else {
                 tsl::setNextOverlay(filepath.c_str(), "--lastSelectedItem Micro");
                 tsl::Overlay::get()->close();

@@ -1,3 +1,5 @@
+class MainMenu;
+
 class ResolutionsOverlay : public tsl::Gui {
 private:
     char Resolutions_c[512];
@@ -235,7 +237,9 @@ public:
             leventSignal(&renderingStopEvent);
             skipOnce = true;
             runOnce = true;
-            tsl::goBack();
+            lastSelectedItem = "Game Resolutions";
+            lastMode = "";
+            tsl::swapTo<MainMenu>();
             return true;
         }
         return false;

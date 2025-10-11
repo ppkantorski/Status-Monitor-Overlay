@@ -1,3 +1,5 @@
+class OtherMenu;
+
 void StartMiscThread() {
     // Wait for existing thread to exit
     threadWaitForExit(&t0);
@@ -154,7 +156,9 @@ public:
         if (keysDown & KEY_B) {
             isRendering = false;
             leventSignal(&renderingStopEvent);
-            tsl::goBack();
+            lastSelectedItem = "Miscellaneous";
+            lastMode = "";
+            tsl::swapTo<OtherMenu>();
             return true;
         }
         return false;

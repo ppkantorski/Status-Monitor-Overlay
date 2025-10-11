@@ -1,3 +1,5 @@
+class MainMenu;
+
 class MiniOverlay : public tsl::Gui {
 private:
     char GPU_Load_c[32] = "";
@@ -67,6 +69,7 @@ public:
         TeslaFPS = settings.refreshRate;
         systemtickfrequency_impl /= settings.refreshRate;
         deactivateOriginalFooter = true;
+        realVoltsPolling = settings.realVolts;
         StartThreads();
     }
     ~MiniOverlay() {
@@ -611,19 +614,28 @@ public:
         char MINI_CPU_Usage1[7];
         char MINI_CPU_Usage2[7];
         char MINI_CPU_Usage3[7];
-
-        if (idletick0 > systemtickfrequency_impl)
-            strcpy(MINI_CPU_Usage0, "0%");
-        else snprintf(MINI_CPU_Usage0, sizeof(MINI_CPU_Usage0), "%.0f%%", (1.d - ((double)idletick0 / systemtickfrequency_impl)) * 100);
-        if (idletick1 > systemtickfrequency_impl)
-            strcpy(MINI_CPU_Usage1, "0%");
-        else snprintf(MINI_CPU_Usage1, sizeof(MINI_CPU_Usage1), "%.0f%%", (1.d - ((double)idletick1 / systemtickfrequency_impl)) * 100);
-        if (idletick2 > systemtickfrequency_impl)
-            strcpy(MINI_CPU_Usage2, "0%");
-        else snprintf(MINI_CPU_Usage2, sizeof(MINI_CPU_Usage2), "%.0f%%", (1.d - ((double)idletick2 / systemtickfrequency_impl)) * 100);
-        if (idletick3 > systemtickfrequency_impl)
-            strcpy(MINI_CPU_Usage3, "0%");
-        else snprintf(MINI_CPU_Usage3, sizeof(MINI_CPU_Usage3), "%.0f%%", (1.d - ((double)idletick3 / systemtickfrequency_impl)) * 100);
+        
+        // Atomically snapshot each idle tick
+        const uint64_t idle0 = idletick0.load(std::memory_order_acquire);
+        const uint64_t idle1 = idletick1.load(std::memory_order_acquire);
+        const uint64_t idle2 = idletick2.load(std::memory_order_acquire);
+        const uint64_t idle3 = idletick3.load(std::memory_order_acquire);
+        
+        // Helper lambda to format CPU usage
+        auto formatMiniUsage = [this](char* buf, size_t size, uint64_t idletick) {
+            if (idletick > systemtickfrequency_impl) {
+                strcpy(buf, "0%");
+            } else {
+                snprintf(buf, size, "%.0f%%",
+                         (1.0 - (static_cast<double>(idletick) / systemtickfrequency_impl)) * 100.0);
+            }
+        };
+        
+        // Format all four cores
+        formatMiniUsage(MINI_CPU_Usage0, sizeof(MINI_CPU_Usage0), idle0);
+        formatMiniUsage(MINI_CPU_Usage1, sizeof(MINI_CPU_Usage1), idle1);
+        formatMiniUsage(MINI_CPU_Usage2, sizeof(MINI_CPU_Usage2), idle2);
+        formatMiniUsage(MINI_CPU_Usage3, sizeof(MINI_CPU_Usage3), idle3);
 
         mutexLock(&mutex_Misc);
         
@@ -735,13 +747,13 @@ public:
             const uint32_t mv = realGPU_mV / 1000;
             snprintf(MINI_GPU_volt_c, sizeof(MINI_GPU_volt_c), "%u mV", mv);
         }
-
+        
         ///RAM
         char MINI_RAM_var_compressed_c[24];   // 19 → 24 bytes for headroom
         char MINI_RAM_volt_c[32];
         
-        if (R_FAILED(sysclkCheck) || !settings.showRAMLoad) {
-            /* ── “used / total MB” branch ────────────────────────────────────────── */
+        if (!settings.showRAMLoad) {
+            /* ── "used / total MB" branch ────────────────────────────────────────── */
             const float ramTotalGiB = (RAM_Total_application_u + RAM_Total_applet_u +
                                  RAM_Total_system_u + RAM_Total_systemunsafe_u) /
                                 (1024.0f * 1024.0f);           // MiB → GiB
@@ -762,8 +774,20 @@ public:
             }
         
         } else {
-            /* ── “percentage” branch (integer %) ─────────────────────────────────── */
-            const unsigned ramLoadInt = ramLoad[SysClkRamLoad_All] / 10;  // drop decimal
+            /* ── "percentage" branch ─────────────────────────────────────────────── */
+            unsigned ramLoadInt;
+            
+            if (R_SUCCEEDED(sysclkCheck)) {
+                // Use sys-clk's RAM load if available
+                ramLoadInt = ramLoad[SysClkRamLoad_All] / 10;  // drop decimal
+            } else {
+                // Calculate percentage manually when sys-clk isn't available
+                const uint64_t RAM_Total_all = RAM_Total_application_u + RAM_Total_applet_u + 
+                                               RAM_Total_system_u + RAM_Total_systemunsafe_u;
+                const uint64_t RAM_Used_all = RAM_Used_application_u + RAM_Used_applet_u + 
+                                              RAM_Used_system_u + RAM_Used_systemunsafe_u;
+                ramLoadInt = (RAM_Total_all > 0) ? (unsigned)((RAM_Used_all * 100) / RAM_Total_all) : 0;
+            }
         
             if (settings.realFrequencies && realRAM_Hz) {
                 snprintf(MINI_RAM_var_compressed_c, sizeof(MINI_RAM_var_compressed_c),
@@ -1362,6 +1386,8 @@ public:
                 runOnce = true;
                 //TeslaFPS = 60;
                 if (skipMain) {
+                    //lastSelectedItem = "Mini";
+                    //lastMode = "";
                     tsl::goBack();
                 }
                 else {

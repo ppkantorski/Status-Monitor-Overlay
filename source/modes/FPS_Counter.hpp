@@ -1,3 +1,5 @@
+class MainMenu;
+
 class com_FPS : public tsl::Gui {
 private:
     char FPSavg_c[8];
@@ -173,7 +175,9 @@ public:
             positionOnce = true;
             runOnce = true;
             skipOnce = true;
-            tsl::goBack();
+            lastSelectedItem = "FPS Counter";
+            lastMode = "";
+            tsl::swapTo<MainMenu>();
             return true;
         }
         return false;

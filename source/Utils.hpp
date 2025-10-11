@@ -49,7 +49,7 @@ Thread t6;
 Thread t7;
 uint64_t systemtickfrequency = 19200000;
 
-LEvent threadexit = {0};
+LEvent threadexit;
 PwmChannelSession g_ICon;
 const std::string folderpath = "sdmc:/switch/.overlays/";
 
@@ -121,10 +121,16 @@ float PCB_temperatureF = 0;
 int32_t skin_temperaturemiliC = 0;
 
 //CPU Usage
-uint64_t idletick0 = systemtickfrequency;
-uint64_t idletick1 = systemtickfrequency;
-uint64_t idletick2 = systemtickfrequency;
-uint64_t idletick3 = systemtickfrequency;
+//uint64_t idletick0 = systemtickfrequency;
+//uint64_t idletick1 = systemtickfrequency;
+//uint64_t idletick2 = systemtickfrequency;
+//uint64_t idletick3 = systemtickfrequency;
+
+std::atomic<uint64_t> idletick0{systemtickfrequency};
+std::atomic<uint64_t> idletick1{systemtickfrequency};
+std::atomic<uint64_t> idletick2{systemtickfrequency};
+std::atomic<uint64_t> idletick3{systemtickfrequency};
+
 
 //Frequency
 uint32_t CPU_Hz = 0;
@@ -194,9 +200,10 @@ struct NxFpsSharedBlock {
 } NX_PACKED;
 
 NxFpsSharedBlock* NxFps = 0;
-bool GameRunning = false;
-bool check = true;
-bool SaltySD = false;
+std::atomic<bool> GameRunning{false};
+std::atomic<bool> check{true};
+std::atomic<bool> SaltySD{false};
+std::atomic<bool> realVoltsPolling{false};
 uintptr_t FPSaddress = 0;
 uintptr_t FPSavgaddress = 0;
 uint64_t PID = 0;
@@ -207,7 +214,7 @@ float FPSavg = 254;
 float FPSavg_old = 254;
 bool useOldFPSavg = false;
 SharedMemory _sharedmemory = {};
-bool SharedMemoryUsed = false;
+std::atomic<bool> SharedMemoryUsed{false};
 Handle remoteSharedMemory = 1;
 uint64_t lastFrameNumber = 0;
 
@@ -255,16 +262,31 @@ void LoadSharedMemory() {
 }
 
 void searchSharedMemoryBlock(uintptr_t base) {
+    if (!base || !SharedMemoryUsed) {
+        NxFps = 0;
+        return;
+    }
+    
     ptrdiff_t search_offset = 0;
-    while(search_offset < 0x1000) {
-        NxFps = (NxFpsSharedBlock*)(base + search_offset);
-        if (NxFps->MAGIC == 0x465053) {
+    const uintptr_t memory_end = base + 0x1000;
+    
+    while (search_offset < 0x1000) {
+        const uintptr_t current_addr = base + search_offset;
+        
+        // Ensure we don't read past the end of shared memory
+        if (current_addr + sizeof(NxFpsSharedBlock) > memory_end) {
+            break;
+        }
+        
+        NxFps = (NxFpsSharedBlock*)current_addr;
+        
+        // Add bounds checking and magic validation
+        if (NxFps && current_addr >= base && NxFps->MAGIC == 0x465053) {
             return;
         }
-        else search_offset += 4;
+        search_offset += 4;
     }
     NxFps = 0;
-    return;
 }
 
 //Check if SaltyNX is working
@@ -291,8 +313,11 @@ bool CheckPort() {
     return false;
 }
 
+Mutex mutex_Misc = {0};
+
 void CheckIfGameRunning(void*) {
     do {
+        mutexLock(&mutex_Misc);
         if (!check && R_FAILED(pmdmntGetApplicationProcessId(&PID))) {
             GameRunning = false;
             check = true;
@@ -302,49 +327,49 @@ void CheckIfGameRunning(void*) {
             searchSharedMemoryBlock(base);
             if (NxFps) {
                 (NxFps->pluginActive) = false;
-                if (leventWait(&threadexit, 100'000'000)) return; // Exit-aware wait
+                mutexUnlock(&mutex_Misc);  // ← Fix: Unlock before return
+                if (leventWait(&threadexit, 100'000'000)) {
+                    return;
+                }
+                mutexLock(&mutex_Misc);
                 if ((NxFps->pluginActive)) {
                     GameRunning = true;
                     check = false;
                 }
             }
         }
+        mutexUnlock(&mutex_Misc);
     } while (!leventWait(&threadexit, 1'000'000'000));
 }
+
+// Utils.hpp or your relevant header
+static constexpr size_t CACHE_ELEMENTS = sizeof(BatteryTimeCache) / sizeof(BatteryTimeCache[0]);
 
 Mutex mutex_BatteryChecker = {0};
 void BatteryChecker(void*) {
     if (R_FAILED(psmCheck) || R_FAILED(i2cCheck)){
         return;
     }
-    
-    // Pre-calculate constants (avoid repeated calculations)
-    static const float CURRENT_SCALE = 1.5625f / (max17050SenseResistor * max17050CGain);
-    static constexpr float VOLTAGE_SCALE = 0.625f;
-    static constexpr float TTE_SCALE = 5.625f / 60.0f;
-    static constexpr float MAX_BATTERY_TIME = 99.0f * 60.0f + 59.0f;
-    static constexpr uint64_t HALF_SECOND_NS = 500'000'000ULL;
-    static const float INV_ARRAY_SIZE = batteryFiltered ? 1.0f : 0.1f; // 1/ArraySize
-    static const int CACHE_ELEMENTS = sizeof(BatteryTimeCache) / sizeof(BatteryTimeCache[0]);
-    
     uint16_t data = 0;
-    float tempV, tempA;
-    const size_t ArraySize = batteryFiltered ? 1 : 10;
-    
+    float tempV = 0.0;
+    float tempA = 0.0;
+    size_t ArraySize = 10;
+    if (batteryFiltered) {
+        ArraySize = 1;
+    }
     float* readingsAmp = new float[ArraySize];
     float* readingsVolt = new float[ArraySize];
 
-    // Initial readings
     Max17050ReadReg(MAX17050_AvgCurrent, &data);
-    tempA = CURRENT_SCALE * (s16)data;
+    tempA = (1.5625 / (max17050SenseResistor * max17050CGain)) * (s16)data;
+    for (size_t i = 0; i < ArraySize; i++) {
+        readingsAmp[i] = tempA;
+    }
     Max17050ReadReg(MAX17050_AvgVCELL, &data);
-    tempV = VOLTAGE_SCALE * (data >> 3);
-    
-    // Initialize arrays (more efficient than individual assignments)
-    std::fill_n(readingsAmp, ArraySize, tempA);
-    std::fill_n(readingsVolt, ArraySize, tempV);
-    
-    // One-time capacity readings (unchanged)
+    tempV = 0.625 * (data >> 3);
+    for (size_t i = 0; i < ArraySize; i++) {
+        readingsVolt[i] = tempV;
+    }
     if (!actualFullBatCapacity) {
         Max17050ReadReg(MAX17050_FullCAP, &data);
         actualFullBatCapacity = data * (BASE_SNS_UOHM / MAX17050_BOARD_SNS_RESISTOR_UOHM) / MAX17050_BOARD_CGAIN;
@@ -353,105 +378,100 @@ void BatteryChecker(void*) {
         Max17050ReadReg(MAX17050_DesignCap, &data);
         designedFullBatCapacity = data * (BASE_SNS_UOHM / MAX17050_BOARD_SNS_RESISTOR_UOHM) / MAX17050_BOARD_CGAIN;
     }
-    
-    // Initial battery time estimate
-    if (tempA >= 0) {
+    if (readingsAmp[0] >= 0) {
         batTimeEstimate = -1;
-    } else {
+    }
+    else {
         Max17050ReadReg(MAX17050_TTE, &data);
-        const float batteryTimeEstimateInMinutes = TTE_SCALE * data;
-        batTimeEstimate = (batteryTimeEstimateInMinutes > MAX_BATTERY_TIME) ? 
-                         (99*60)+59 : (int16_t)batteryTimeEstimateInMinutes;
+        float batteryTimeEstimateInMinutes = (5.625 * data) / 60;
+        if (batteryTimeEstimateInMinutes > (99.0*60.0)+59.0) {
+            batTimeEstimate = (99*60)+59;
+        }
+        else batTimeEstimate = (int16_t)batteryTimeEstimateInMinutes;
     }
 
     size_t counter = 0;
     uint64_t tick_TTE = svcGetSystemTick();
     uint64_t nanoseconds = 1000;
-    
-    float batCurrent;
-    float batVoltage;
-    float batPowerSum;
-
     do {
         mutexLock(&mutex_BatteryChecker);
-        const uint64_t startTick = svcGetSystemTick();
+        uint64_t startTick = svcGetSystemTick();
 
         psmGetBatteryChargeInfoFields(psmService, &_batteryChargeInfoFields);
 
-        // Read current and voltage (choose register set once)
+        // Calculation is based on Hekate's max17050.c
+        // Source: https://github.com/CTCaer/hekate/blob/master/bdk/power/max17050.c
+
         if (!batteryFiltered) {
             Max17050ReadReg(MAX17050_Current, &data);
-            tempA = CURRENT_SCALE * (s16)data;
+            tempA = (1.5625 / (max17050SenseResistor * max17050CGain)) * (s16)data;
             Max17050ReadReg(MAX17050_VCELL, &data);
-            tempV = VOLTAGE_SCALE * (data >> 3);
+            tempV = 0.625 * (data >> 3);
         } else {
             Max17050ReadReg(MAX17050_AvgCurrent, &data);
-            tempA = CURRENT_SCALE * (s16)data;
+            tempA = (1.5625 / (max17050SenseResistor * max17050CGain)) * (s16)data;
             Max17050ReadReg(MAX17050_AvgVCELL, &data);
-            tempV = VOLTAGE_SCALE * (data >> 3);
+            tempV = 0.625 * (data >> 3);
         }
 
-        // Update readings if valid
         if (tempA && tempV) {
-            const size_t index = counter % ArraySize;
-            readingsAmp[index] = tempA;
-            readingsVolt[index] = tempV;
+            readingsAmp[counter % ArraySize] = tempA;
+            readingsVolt[counter % ArraySize] = tempV;
             counter++;
         }
 
-        // Calculate averages (single loop, pre-calculated inverse)
-        batCurrent = 0.0f;
-        batVoltage = 0.0f;
-        batPowerSum = 0.0f;
+        float batCurrent = 0.0;
+        float batVoltage = 0.0;
+        float batPowerAvg = 0.0;
         for (size_t x = 0; x < ArraySize; x++) {
             batCurrent += readingsAmp[x];
             batVoltage += readingsVolt[x];
-            batPowerSum += readingsAmp[x] * readingsVolt[x];
+            batPowerAvg += (readingsAmp[x] * readingsVolt[x]) / 1'000;
         }
-        
-        // Apply scaling once (avoid repeated division)
-        batCurrentAvg = batCurrent * INV_ARRAY_SIZE;
-        batVoltageAvg = batVoltage * INV_ARRAY_SIZE;
-        PowerConsumption = (batPowerSum * INV_ARRAY_SIZE) / 1'000'000.0f; // Combined scaling
+        batCurrent /= ArraySize;
+        batVoltage /= ArraySize;
+        batCurrentAvg = batCurrent;
+        batVoltageAvg = batVoltage;
+        batPowerAvg /= ArraySize * 1000;
+        PowerConsumption = batPowerAvg;
 
-        // Battery time estimation
         if (batCurrentAvg >= 0) {
             batTimeEstimate = -1;
-        } else {
+        } 
+        else {
             static float batteryTimeEstimateInMinutes = 0;
-            static int itr = 0;
-            
             Max17050ReadReg(MAX17050_TTE, &data);
-            batteryTimeEstimateInMinutes = TTE_SCALE * data;
-            if (batteryTimeEstimateInMinutes > MAX_BATTERY_TIME) {
-                batteryTimeEstimateInMinutes = MAX_BATTERY_TIME;
+            batteryTimeEstimateInMinutes = (5.625 * data) / 60;
+            if (batteryTimeEstimateInMinutes > (99.0*60.0)+59.0) {
+                batteryTimeEstimateInMinutes = (99.0*60.0)+59.0;
             }
-            
-            BatteryTimeCache[itr++ % CACHE_ELEMENTS] = (int32_t)batteryTimeEstimateInMinutes;
-            
-            const uint64_t new_tick_TTE = svcGetSystemTick();
-            if (armTicksToNs(new_tick_TTE - tick_TTE) >= (uint64_t)batteryTimeLeftRefreshRate * 1'000'000'000ULL) {
-                const size_t to_divide = (itr < CACHE_ELEMENTS) ? itr : CACHE_ELEMENTS;
+            static int itr = 0;
+            int cacheElements = (sizeof(BatteryTimeCache) / sizeof(BatteryTimeCache[0]));
+            BatteryTimeCache[itr++ % cacheElements] = (int32_t)batteryTimeEstimateInMinutes;
+            uint64_t new_tick_TTE = svcGetSystemTick();
+            if (armTicksToNs(new_tick_TTE - tick_TTE) / 1'000'000'000 >= batteryTimeLeftRefreshRate) {
+                size_t to_divide = itr < cacheElements ? itr : cacheElements;
                 batTimeEstimate = (int16_t)(std::accumulate(&BatteryTimeCache[0], &BatteryTimeCache[to_divide], 0) / to_divide);
                 tick_TTE = new_tick_TTE;
             }
         }
 
         mutexUnlock(&mutex_BatteryChecker);
-        
-        // Calculate sleep time
         nanoseconds = armTicksToNs(svcGetSystemTick() - startTick);
-        nanoseconds = (nanoseconds < HALF_SECOND_NS) ? HALF_SECOND_NS - nanoseconds : 1000;
-        
+        if (nanoseconds < 1'000'000'000 / 2) {
+            nanoseconds = (1'000'000'000 / 2) - nanoseconds;
+        } else {
+            nanoseconds = 1000;
+        }
     } while(!leventWait(&threadexit, nanoseconds));
 
-    // Cleanup
     batTimeEstimate = -1;
     _batteryChargeInfoFields = {0};
     memset(BatteryTimeCache, 0, sizeof(BatteryTimeCache));
     delete[] readingsAmp;
     delete[] readingsVolt;
 }
+
 
 void StartBatteryThread() {
     //if (!skip) {
@@ -470,7 +490,7 @@ void CloseBatteryThread() {
     threadClose(&t7);
 }
 
-Mutex mutex_Misc = {0};
+
 
 void gpuLoadThread(void*) {
     if (!GPULoadPerFrame && R_SUCCEEDED(nvCheck)) do {
@@ -505,42 +525,24 @@ static constexpr PowerDomainId domains[] = {
     PcvPowerDomainId_Max77620_Sd1     // [4] VDDQ
 };
 
-//Stuff that doesn't need multithreading
+
+// Stuff that doesn't need multithreading
 void Misc(void*) {
     const uint64_t timeout_ns = TeslaFPS < 10 ? (1'000'000'000 / TeslaFPS) : 100'000'000;
-    bool isUsingEOS = usingEOS();
+    const bool isUsingEOS = usingEOS();
     
-    // Only declare voltage variables if not using EOS
-    u32* voltages[5];
-    u32 vdd2_raw = 0, vddq_raw = 0;
-    std::function<void(int)> readVoltage;
-    
-    if (!isUsingEOS) {
-        voltages[0] = &realCPU_mV;
-        voltages[1] = &realGPU_mV;
-        voltages[2] = nullptr;
-        voltages[3] = &realSOC_mV;
-        voltages[4] = nullptr;
-        
-        readVoltage = [&](int idx) {
-            RgltrSession session;
-            u32* target = voltages[idx];
-            if (idx == 2) target = &vddq_raw;
-            if (idx == 4) target = &vdd2_raw;
-            
-            if (R_SUCCEEDED(rgltrOpenSession(&session, domains[idx]))) {
-                if (R_FAILED(rgltrGetVoltage(&session, target))) {
-                    *target = 0;
-                }
-                rgltrCloseSession(&session);
-            } else {
-                *target = 0;
-            }
-        };
+    // Initialize voltage reading if needed
+    bool canReadVoltages = false;
+    if (!isUsingEOS && realVoltsPolling) {
+        canReadVoltages = R_SUCCEEDED(rgltrInitialize());
+        if (!canReadVoltages) {
+            realVoltsPolling = false;
+        }
     }
-
+    
     do {
         mutexLock(&mutex_Misc);
+        
         // CPU, GPU and RAM Frequency
         if (R_SUCCEEDED(clkrstCheck)) {
             ClkrstSession clkSession;
@@ -562,6 +564,8 @@ void Misc(void*) {
             pcvGetClockRate(PcvModule_GPU, &GPU_Hz);
             pcvGetClockRate(PcvModule_EMC, &RAM_Hz);
         }
+        
+        // Get sys-clk data
         if (R_SUCCEEDED(sysclkCheck)) {
             SysClkContext sysclkCTX;
             if (R_SUCCEEDED(sysclkIpcGetCurrentContext(&sysclkCTX))) {
@@ -570,7 +574,9 @@ void Misc(void*) {
                 realRAM_Hz = sysclkCTX.realFreqs[SysClkModule_MEM];
                 ramLoad[SysClkRamLoad_All] = sysclkCTX.ramLoad[SysClkRamLoad_All];
                 ramLoad[SysClkRamLoad_Cpu] = sysclkCTX.ramLoad[SysClkRamLoad_Cpu];
-                if (isUsingEOS) {
+                
+                // If using EOS, get voltages from sys-clk
+                if (isUsingEOS && realVoltsPolling) {
                     realCPU_mV = sysclkCTX.realVolts[0]; 
                     realGPU_mV = sysclkCTX.realVolts[1]; 
                     realRAM_mV = sysclkCTX.realVolts[2]; 
@@ -578,32 +584,68 @@ void Misc(void*) {
                 }
             }
         }
-
-        if (!isUsingEOS) {
-            
-            if (R_SUCCEEDED(rgltrInitialize())) [[likely]] {
-                for (int i = 0; i < 5; ++i) {  // Read all 5 domains
-                    readVoltage(i);
-                }
-                
-                rgltrExit();
-                
-                // Pack VDD2 and VDDQ into realRAM_mV in sysclk format
-                const u32 vdd2_mV = vdd2_raw / 1000;  // µV to mV
-                const u32 vddq_mV = vddq_raw / 1000;  // µV to mV  
-                realRAM_mV = vdd2_mV * 100000 + vddq_mV *10;
-            }
-        }
-
         
-        //Temperatures
+        // Read voltages directly if not using EOS
+        if (canReadVoltages) {
+            RgltrSession session;
+            u32 vdd2_raw = 0, vddq_raw = 0;
+            
+            // CPU voltage
+            if (R_SUCCEEDED(rgltrOpenSession(&session, PcvPowerDomainId_Max77621_Cpu))) {
+                if (R_FAILED(rgltrGetVoltage(&session, &realCPU_mV))) {
+                    realCPU_mV = 0;
+                }
+                rgltrCloseSession(&session);
+            }
+            
+            // GPU voltage
+            if (R_SUCCEEDED(rgltrOpenSession(&session, PcvPowerDomainId_Max77621_Gpu))) {
+                if (R_FAILED(rgltrGetVoltage(&session, &realGPU_mV))) {
+                    realGPU_mV = 0;
+                }
+                rgltrCloseSession(&session);
+            }
+            
+            // SOC voltage
+            if (R_SUCCEEDED(rgltrOpenSession(&session, PcvPowerDomainId_Max77620_Sd0))) {
+                if (R_FAILED(rgltrGetVoltage(&session, &realSOC_mV))) {
+                    realSOC_mV = 0;
+                }
+                rgltrCloseSession(&session);
+            }
+            
+            // VDD2 (DRAM)
+            if (R_SUCCEEDED(rgltrOpenSession(&session, PcvPowerDomainId_Max77812_Dram))) {
+                if (R_FAILED(rgltrGetVoltage(&session, &vdd2_raw))) {
+                    vdd2_raw = 0;
+                }
+                rgltrCloseSession(&session);
+            }
+            
+            // VDDQ
+            if (R_SUCCEEDED(rgltrOpenSession(&session, PcvPowerDomainId_Max77620_Sd1))) {
+                if (R_FAILED(rgltrGetVoltage(&session, &vddq_raw))) {
+                    vddq_raw = 0;
+                }
+                rgltrCloseSession(&session);
+            }
+            
+            // Pack VDD2 and VDDQ into realRAM_mV in sys-clk format
+            const u32 vdd2_mV = vdd2_raw / 1000;  // µV to mV
+            const u32 vddq_mV = vddq_raw / 1000;  // µV to mV
+            realRAM_mV = vdd2_mV * 100000 + vddq_mV * 10;
+        }
+        
+        // Temperatures
         if (R_SUCCEEDED(i2cCheck)) {
             Tmp451GetSocTemp(&SOC_temperatureF);
             Tmp451GetPcbTemp(&PCB_temperatureF);
         }
-        if (R_SUCCEEDED(tcCheck)) tcGetSkinTemperatureMilliC(&skin_temperaturemiliC);
+        if (R_SUCCEEDED(tcCheck)) {
+            tcGetSkinTemperatureMilliC(&skin_temperaturemiliC);
+        }
         
-        //RAM Memory Used
+        // RAM Memory Used
         if (R_SUCCEEDED(Hinted)) {
             svcGetSystemInfo(&RAM_Total_application_u, 0, INVALID_HANDLE, 0);
             svcGetSystemInfo(&RAM_Total_applet_u, 0, INVALID_HANDLE, 1);
@@ -615,7 +657,7 @@ void Misc(void*) {
             svcGetSystemInfo(&RAM_Used_systemunsafe_u, 1, INVALID_HANDLE, 3);
         }
         
-        //Fan
+        // Fan
         if (R_SUCCEEDED(pwmCheck)) {
             double temp = 0;
             if (R_SUCCEEDED(pwmChannelSessionGetDutyCycle(&g_ICon, &temp))) {
@@ -623,38 +665,51 @@ void Misc(void*) {
                 temp = trunc(temp);
                 temp /= 10;
                 Rotation_Duty = 100.0 - temp;
-                if (Rotation_Duty <= 0) Rotation_Duty = 0.0000001;
+                if (Rotation_Duty <= 0) {
+                    Rotation_Duty = 0.0000001;
+                }
             }
         }
         
-        //GPU Load
-        if (R_SUCCEEDED(nvCheck) && GPULoadPerFrame) nvIoctl(fd, NVGPU_GPU_IOCTL_PMU_GET_GPU_LOAD, &GPU_Load_u);
+        // GPU Load
+        if (R_SUCCEEDED(nvCheck) && GPULoadPerFrame) {
+            nvIoctl(fd, NVGPU_GPU_IOCTL_PMU_GET_GPU_LOAD, &GPU_Load_u);
+        }
         
-        //FPS
+        // FPS - with proper null checks
         if (GameRunning) {
             if (NxFps && SharedMemoryUsed) {
-                FPS = (NxFps -> FPS);
-                const size_t element_count = sizeof(NxFps -> FPSticks) / sizeof(NxFps -> FPSticks[0]);
-                FPSavg_old = (float)systemtickfrequency / (std::accumulate<uint32_t*, float>(&NxFps->FPSticks[0], &NxFps->FPSticks[element_count], 0) / element_count);
-                const float FPS_in = (float)FPS;
-                if (FPSavg_old >= (FPS_in-0.25) && FPSavg_old <= (FPS_in+0.25)) 
+                FPS = NxFps->FPS;
+                const size_t element_count = sizeof(NxFps->FPSticks) / sizeof(NxFps->FPSticks[0]);
+                FPSavg_old = static_cast<float>(systemtickfrequency) / 
+                            (std::accumulate(&NxFps->FPSticks[0], &NxFps->FPSticks[element_count], 0.0f) / element_count);
+                
+                const float FPS_in = static_cast<float>(FPS);
+                if (FPSavg_old >= (FPS_in - 0.25f) && FPSavg_old <= (FPS_in + 0.25f)) {
                     FPSavg = FPS_in;
-                else FPSavg = FPSavg_old;
-                lastFrameNumber = NxFps -> frameNumber;
-                if (FPSavg > FPSmax) FPSmax = FPSavg; 
-                if (FPSavg < FPSmin) FPSmin = FPSavg; 
+                } else {
+                    FPSavg = FPSavg_old;
+                }
+                
+                lastFrameNumber = NxFps->frameNumber;
+                
+                if (FPSavg > FPSmax) FPSmax = FPSavg;
+                if (FPSavg < FPSmin) FPSmin = FPSavg;
             }
-        }
-        else {
+        } else {
             FPSavg = 254;
-            FPSmin = 254; 
-            FPSmax = 0; 
+            FPSmin = 254;
+            FPSmax = 0;
         }
         
-        // Interval
         mutexUnlock(&mutex_Misc);
-        //timeout_ns = (TeslaFPS < 10) ? (1'000'000'000 / TeslaFPS) : 100'000'000;
+        
     } while (!leventWait(&threadexit, timeout_ns));
+    
+    // Cleanup voltage reading if initialized
+    if (canReadVoltages) {
+        rgltrExit();
+    }
 }
 
 void Misc2(void*) {
@@ -678,47 +733,29 @@ void Misc2(void*) {
 }
 
 void Misc3(void*) {
-    double temp;
-    bool isUsingEOS = usingEOS();
-
-    // Only declare voltage variables if not using EOS
-    u32* voltages[5];
-    u32 vdd2_raw = 0, vddq_raw = 0;
-    std::function<void(int)> readVoltage;
+    const bool isUsingEOS = usingEOS();
     
-    if (!isUsingEOS) {
-        voltages[0] = &realCPU_mV;
-        voltages[1] = &realGPU_mV;
-        voltages[2] = nullptr;
-        voltages[3] = &realSOC_mV;
-        voltages[4] = nullptr;
-        
-        readVoltage = [&](int idx) {
-            RgltrSession session;
-            u32* target = voltages[idx];
-            if (idx == 2) target = &vddq_raw;
-            if (idx == 4) target = &vdd2_raw;
-            
-            if (R_SUCCEEDED(rgltrOpenSession(&session, domains[idx]))) {
-                if (R_FAILED(rgltrGetVoltage(&session, target))) {
-                    *target = 0;
-                }
-                rgltrCloseSession(&session);
-            } else {
-                *target = 0;
-            }
-        };
+    // Initialize voltage reading if needed
+    bool canReadVoltages = false;
+    if (!isUsingEOS && realVoltsPolling) {
+        canReadVoltages = R_SUCCEEDED(rgltrInitialize());
+        if (!canReadVoltages) {
+            realVoltsPolling = false;
+        }
     }
-
+    
     do {
         mutexLock(&mutex_Misc);
+        
+        // Get sys-clk data
         if (R_SUCCEEDED(sysclkCheck)) {
             SysClkContext sysclkCTX;
             if (R_SUCCEEDED(sysclkIpcGetCurrentContext(&sysclkCTX))) {
                 ramLoad[SysClkRamLoad_All] = sysclkCTX.ramLoad[SysClkRamLoad_All];
                 ramLoad[SysClkRamLoad_Cpu] = sysclkCTX.ramLoad[SysClkRamLoad_Cpu];
-                // Add voltage readings to Misc3 as well
-                if (isUsingEOS){
+                
+                // Get voltages from sys-clk if using EOS
+                if (isUsingEOS && realVoltsPolling) {
                     realCPU_mV = sysclkCTX.realVolts[0]; 
                     realGPU_mV = sysclkCTX.realVolts[1]; 
                     realRAM_mV = sysclkCTX.realVolts[2]; 
@@ -726,99 +763,293 @@ void Misc3(void*) {
                 }
             }
         }
-
-        if (!isUsingEOS) { 
-            if (R_SUCCEEDED(rgltrInitialize())) [[likely]] {
-                for (int i = 0; i < 5; ++i) {  // Read all 5 domains
-                    readVoltage(i);
+        
+        // Read voltages directly if not using EOS
+        if (canReadVoltages) {
+            RgltrSession session;
+            u32 vdd2_raw = 0, vddq_raw = 0;
+            
+            // CPU voltage
+            if (R_SUCCEEDED(rgltrOpenSession(&session, domains[0]))) {
+                if (R_FAILED(rgltrGetVoltage(&session, &realCPU_mV))) {
+                    realCPU_mV = 0;
                 }
-                
-                rgltrExit();
-
-                // Pack VDD2 and VDDQ into realRAM_mV in sysclk format
-                const u32 vdd2_mV = vdd2_raw / 1000;  // µV to mV
-                const u32 vddq_mV = vddq_raw / 1000;  // µV to mV  
-                realRAM_mV = vdd2_mV * 100000 + vddq_mV *10;
+                rgltrCloseSession(&session);
             }
+            
+            // GPU voltage
+            if (R_SUCCEEDED(rgltrOpenSession(&session, domains[1]))) {
+                if (R_FAILED(rgltrGetVoltage(&session, &realGPU_mV))) {
+                    realGPU_mV = 0;
+                }
+                rgltrCloseSession(&session);
+            }
+            
+            // VDD2 (DRAM)
+            if (R_SUCCEEDED(rgltrOpenSession(&session, domains[2]))) {
+                if (R_FAILED(rgltrGetVoltage(&session, &vdd2_raw))) {
+                    vdd2_raw = 0;
+                }
+                rgltrCloseSession(&session);
+            }
+            
+            // SOC voltage
+            if (R_SUCCEEDED(rgltrOpenSession(&session, domains[3]))) {
+                if (R_FAILED(rgltrGetVoltage(&session, &realSOC_mV))) {
+                    realSOC_mV = 0;
+                }
+                rgltrCloseSession(&session);
+            }
+            
+            // VDDQ
+            if (R_SUCCEEDED(rgltrOpenSession(&session, domains[4]))) {
+                if (R_FAILED(rgltrGetVoltage(&session, &vddq_raw))) {
+                    vddq_raw = 0;
+                }
+                rgltrCloseSession(&session);
+            }
+            
+            // Pack VDD2 and VDDQ into realRAM_mV in sys-clk format
+            const u32 vdd2_mV = vdd2_raw / 1000;  // µV to mV
+            const u32 vddq_mV = vddq_raw / 1000;  // µV to mV
+            realRAM_mV = vdd2_mV * 100000 + vddq_mV * 10;
         }
-
-        //Temperatures
+        
+        // Temperatures
         if (R_SUCCEEDED(i2cCheck)) {
             Tmp451GetSocTemp(&SOC_temperatureF);
             Tmp451GetPcbTemp(&PCB_temperatureF);
         }
-        if (R_SUCCEEDED(tcCheck)) tcGetSkinTemperatureMilliC(&skin_temperaturemiliC);
-        //Fan
+        if (R_SUCCEEDED(tcCheck)) {
+            tcGetSkinTemperatureMilliC(&skin_temperaturemiliC);
+        }
+        
+        // Fan
         if (R_SUCCEEDED(pwmCheck)) {
-            temp = 0;
+            double temp = 0;
             if (R_SUCCEEDED(pwmChannelSessionGetDutyCycle(&g_ICon, &temp))) {
                 temp *= 10;
                 temp = trunc(temp);
                 temp /= 10;
                 Rotation_Duty = 100.0 - temp;
+                if (Rotation_Duty <= 0) {
+                    Rotation_Duty = 0.0000001;
+                }
             }
         }
-        //GPU Load
-        if (R_SUCCEEDED(nvCheck)) nvIoctl(fd, NVGPU_GPU_IOCTL_PMU_GET_GPU_LOAD, &GPU_Load_u);
-        // Interval
+        
+        // GPU Load
+        if (R_SUCCEEDED(nvCheck)) {
+            nvIoctl(fd, NVGPU_GPU_IOCTL_PMU_GET_GPU_LOAD, &GPU_Load_u);
+        }
+        
         mutexUnlock(&mutex_Misc);
+        
     } while (!leventWait(&threadexit, 1'000'000'000)); // 1 second timeout
+    
+    // Cleanup voltage reading if initialized
+    if (canReadVoltages) {
+        rgltrExit();
+    }
 }
 
 //Check each core for idled ticks in intervals, they cannot read info about other core than they are assigned
 //In case of getting more than systemtickfrequency in idle, make it equal to systemtickfrequency to get 0% as output and nothing less
 //This is because making each loop also takes time, which is not considered because this will take also additional time
 
-void CheckCore(void* arg) {
-    const int coreIndex = *((int*)arg);
-    uint64_t* output = nullptr;
-    switch (coreIndex) {
-        case 0: output = &idletick0; break;
-        case 1: output = &idletick1; break;
-        case 2: output = &idletick2; break;
-        case 3: output = &idletick3; break;
-        default: return;
+//Check each core for idled ticks in intervals, they cannot read info about other core than they are assigned
+//In case of getting more than systemtickfrequency in idle, make it equal to systemtickfrequency to get 0% as output and nothing less
+//This is because making each loop also takes time, which is not considered because this will take also additional time
+//void CheckCore0(void*) {
+//    uint64_t timeout_ns = 1'000'000'000 / TeslaFPS;
+//    while(true) {
+//        uint64_t idletick_a0 = 0;
+//        uint64_t idletick_b0 = 0;
+//        svcGetInfo(&idletick_b0, InfoType_IdleTickCount, INVALID_HANDLE, 0);
+//        if (leventWait(&threadexit, timeout_ns))
+//            return;
+//        svcGetInfo(&idletick_a0, InfoType_IdleTickCount, INVALID_HANDLE, 0);
+//        idletick0 = idletick_a0 - idletick_b0;
+//    }
+//}
+//
+//void CheckCore1(void*) {
+//    uint64_t timeout_ns = 1'000'000'000 / TeslaFPS;
+//    while(true) {
+//        uint64_t idletick_a1 = 0;
+//        uint64_t idletick_b1 = 0;
+//        svcGetInfo(&idletick_b1, InfoType_IdleTickCount, INVALID_HANDLE, 1);
+//        if (leventWait(&threadexit, timeout_ns))
+//            return;
+//        svcGetInfo(&idletick_a1, InfoType_IdleTickCount, INVALID_HANDLE, 1);
+//        idletick1 = idletick_a1 - idletick_b1;
+//    }
+//}
+//
+//void CheckCore2(void*) {
+//    uint64_t timeout_ns = 1'000'000'000 / TeslaFPS;
+//    while(true) {
+//        uint64_t idletick_a2 = 0;
+//        uint64_t idletick_b2 = 0;
+//        svcGetInfo(&idletick_b2, InfoType_IdleTickCount, INVALID_HANDLE, 2);
+//        if (leventWait(&threadexit, timeout_ns))
+//            return;
+//        svcGetInfo(&idletick_a2, InfoType_IdleTickCount, INVALID_HANDLE, 2);
+//        idletick2 = idletick_a2 - idletick_b2;
+//    }
+//}
+//
+//void CheckCore3(void*) {
+//    uint64_t timeout_ns = 1'000'000'000 / TeslaFPS;
+//    while(true) {
+//        uint64_t idletick_a3 = 0;
+//        uint64_t idletick_b3 = 0;
+//        svcGetInfo(&idletick_b3, InfoType_IdleTickCount, INVALID_HANDLE, 3);
+//        if (leventWait(&threadexit, timeout_ns))
+//            return;
+//        svcGetInfo(&idletick_a3, InfoType_IdleTickCount, INVALID_HANDLE, 3);
+//        idletick3 = idletick_a3 - idletick_b3;
+//    }
+//}
+
+void CheckCore0(void*) {
+    const uint64_t timeout_ns = 1'000'000'000ULL / TeslaFPS;
+
+    while (true) {
+        uint64_t idletick_a0 = 0;
+        uint64_t idletick_b0 = 0;
+
+        Result rc = svcGetInfo(&idletick_b0, InfoType_IdleTickCount, INVALID_HANDLE, 0);
+        if (R_FAILED(rc)) {
+            svcSleepThread(5'000'000ULL);
+            continue;
+        }
+
+        if (leventWait(&threadexit, timeout_ns))
+            return;
+
+        rc = svcGetInfo(&idletick_a0, InfoType_IdleTickCount, INVALID_HANDLE, 0);
+        if (R_FAILED(rc)) {
+            svcSleepThread(5'000'000ULL);
+            continue;
+        }
+
+        uint64_t delta = (idletick_a0 >= idletick_b0) ? (idletick_a0 - idletick_b0) : systemtickfrequency;
+        if (delta > systemtickfrequency)
+            delta = systemtickfrequency;
+
+        idletick0.store(delta, std::memory_order_release);
     }
-    
-    uint64_t prevIdleTick = 0;
-    svcGetInfo(&prevIdleTick, InfoType_IdleTickCount, INVALID_HANDLE, coreIndex);
-    
-    const u32 lastFPS = TeslaFPS;
-    const u64 cachedIntervalNs = 1'000'000'000 / lastFPS;
-    const u64 cachedTargetTicks = armNsToTicks(cachedIntervalNs);
-    
-    do {
-        //if (__builtin_expect(TeslaFPS != lastFPS, 0)) {
-        //    lastFPS = TeslaFPS;
-        //    cachedIntervalNs = 1'000'000'000 / lastFPS;
-        //    cachedTargetTicks = armNsToTicks(cachedIntervalNs);
-        //}
-        
-        if (leventWait(&threadexit, cachedIntervalNs)) break;
-        
-        uint64_t currIdleTick;
-        svcGetInfo(&currIdleTick, InfoType_IdleTickCount, INVALID_HANDLE, coreIndex);
-        
-        const uint64_t delta = currIdleTick - prevIdleTick;
-        *output = (delta > cachedTargetTicks) ? cachedTargetTicks : delta;
-        prevIdleTick = currIdleTick;
-    } while (true);
 }
 
-static int coreIds[] = {0, 1, 2, 3};
+void CheckCore1(void*) {
+    const uint64_t timeout_ns = 1'000'000'000ULL / TeslaFPS;
+
+    while (true) {
+        uint64_t idletick_a1 = 0;
+        uint64_t idletick_b1 = 0;
+
+        Result rc = svcGetInfo(&idletick_b1, InfoType_IdleTickCount, INVALID_HANDLE, 1);
+        if (R_FAILED(rc)) {
+            svcSleepThread(5'000'000ULL);
+            continue;
+        }
+
+        if (leventWait(&threadexit, timeout_ns))
+            return;
+
+        rc = svcGetInfo(&idletick_a1, InfoType_IdleTickCount, INVALID_HANDLE, 1);
+        if (R_FAILED(rc)) {
+            svcSleepThread(5'000'000ULL);
+            continue;
+        }
+
+        uint64_t delta = (idletick_a1 >= idletick_b1) ? (idletick_a1 - idletick_b1) : systemtickfrequency;
+        if (delta > systemtickfrequency)
+            delta = systemtickfrequency;
+
+        idletick1.store(delta, std::memory_order_release);
+    }
+}
+
+void CheckCore2(void*) {
+    const uint64_t timeout_ns = 1'000'000'000ULL / TeslaFPS;
+
+    while (true) {
+        uint64_t idletick_a2 = 0;
+        uint64_t idletick_b2 = 0;
+
+        Result rc = svcGetInfo(&idletick_b2, InfoType_IdleTickCount, INVALID_HANDLE, 2);
+        if (R_FAILED(rc)) {
+            svcSleepThread(5'000'000ULL);
+            continue;
+        }
+
+        if (leventWait(&threadexit, timeout_ns))
+            return;
+
+        rc = svcGetInfo(&idletick_a2, InfoType_IdleTickCount, INVALID_HANDLE, 2);
+        if (R_FAILED(rc)) {
+            svcSleepThread(5'000'000ULL);
+            continue;
+        }
+
+        uint64_t delta = (idletick_a2 >= idletick_b2) ? (idletick_a2 - idletick_b2) : systemtickfrequency;
+        if (delta > systemtickfrequency)
+            delta = systemtickfrequency;
+
+        idletick2.store(delta, std::memory_order_release);
+    }
+}
+
+void CheckCore3(void*) {
+    const uint64_t timeout_ns = 1'000'000'000ULL / TeslaFPS;
+
+    while (true) {
+        uint64_t idletick_a3 = 0;
+        uint64_t idletick_b3 = 0;
+
+        Result rc = svcGetInfo(&idletick_b3, InfoType_IdleTickCount, INVALID_HANDLE, 3);
+        if (R_FAILED(rc)) {
+            svcSleepThread(5'000'000ULL);
+            continue;
+        }
+
+        if (leventWait(&threadexit, timeout_ns))
+            return;
+
+        rc = svcGetInfo(&idletick_a3, InfoType_IdleTickCount, INVALID_HANDLE, 3);
+        if (R_FAILED(rc)) {
+            svcSleepThread(5'000'000ULL);
+            continue;
+        }
+
+        uint64_t delta = (idletick_a3 >= idletick_b3) ? (idletick_a3 - idletick_b3) : systemtickfrequency;
+        if (delta > systemtickfrequency)
+            delta = systemtickfrequency;
+
+        idletick3.store(delta, std::memory_order_release);
+    }
+}
+
 
 //Start reading all stats
 void StartThreads() {
     // Clear the thread exit event for new threads
     leventClear(&threadexit);
 
-    threadCreate(&t0, CheckCore, &coreIds[0], NULL, 0x1000, 0x10, 0);
-    threadCreate(&t1, CheckCore, &coreIds[1], NULL, 0x1000, 0x10, 1);
-    threadCreate(&t2, CheckCore, &coreIds[2], NULL, 0x1000, 0x10, 2);
-    threadCreate(&t3, CheckCore, &coreIds[3], NULL, 0x1000, 0x10, 3);
-    threadCreate(&t4, Misc, NULL, NULL, 0x1000, 0x3F, -2);
+    threadCreate(&t0, CheckCore0, NULL, NULL, 0x1000, 0x10, 0);
+    threadCreate(&t1, CheckCore1, NULL, NULL, 0x1000, 0x10, 1);
+    threadCreate(&t2, CheckCore2, NULL, NULL, 0x1000, 0x10, 2);
+    threadCreate(&t3, CheckCore3, NULL, NULL, 0x1000, 0x10, 3);
+
+    //threadCreate(&t0, CheckCore, &coreIds[0], NULL, 0x1000, 0x10, 0);
+    //threadCreate(&t1, CheckCore, &coreIds[1], NULL, 0x1000, 0x10, 1);
+    //threadCreate(&t2, CheckCore, &coreIds[2], NULL, 0x1000, 0x10, 2);
+    //threadCreate(&t3, CheckCore, &coreIds[3], NULL, 0x1000, 0x10, 3);
+    threadCreate(&t4, Misc, NULL, NULL, 0x4000, 0x3F, -2);
     threadCreate(&t5, gpuLoadThread, NULL, NULL, 0x1000, 0x3F, -2);
-    threadCreate(&t7, BatteryChecker, NULL, NULL, 0x4000, 0x3F, 3);
+    threadCreate(&t7, BatteryChecker, NULL, NULL, 0x4000, 0x3F, -2);
 
     threadStart(&t0);
     threadStart(&t1);
@@ -858,14 +1089,14 @@ void CloseThreads() {
 
 //Separate functions dedicated to "FPS Counter" mode
 void FPSCounter(void*) {
-    const u64 sleepNs = 1'000'000'000ULL / TeslaFPS;
+    const uint64_t timeout_ns = 1'000'000'000 / TeslaFPS;
     do {
         if (GameRunning) {
-            if (SharedMemoryUsed) {
+            if (SharedMemoryUsed && NxFps) {
                 FPS = (NxFps -> FPS);
                 const size_t element_count = sizeof(NxFps -> FPSticks) / sizeof(NxFps -> FPSticks[0]);
                 FPSavg_old = (float)systemtickfrequency / (std::accumulate<uint32_t*, float>(&NxFps->FPSticks[0], &NxFps->FPSticks[element_count], 0) / element_count);
-                float FPS_in = (float)FPS;
+                const float FPS_in = (float)FPS;
                 if (FPSavg_old >= (FPS_in-0.25) && FPSavg_old <= (FPS_in+0.25)) 
                     FPSavg = FPS_in;
                 else FPSavg = FPSavg_old;
@@ -873,7 +1104,7 @@ void FPSCounter(void*) {
             }
         }
         else FPSavg = 254;
-    } while (!leventWait(&threadexit, sleepNs));
+    } while (!leventWait(&threadexit, timeout_ns));
 }
 
 void StartFPSCounterThread() {
@@ -882,32 +1113,37 @@ void StartFPSCounterThread() {
     threadCreate(&t6, CheckIfGameRunning, NULL, NULL, 0x1000, 0x38, -2);
     threadStart(&t6);
 
-    threadCreate(&t0, FPSCounter, NULL, NULL, 0x1000, 0x3F, 3);
-    threadStart(&t0);
+    threadCreate(&t4, FPSCounter, NULL, NULL, 0x1000, 0x3F, 3);
+    threadStart(&t4);
 }
 
 void EndFPSCounterThread() {
     leventSignal(&threadexit);
     threadWaitForExit(&t6);
-    threadWaitForExit(&t0);
+    threadWaitForExit(&t4);
     threadClose(&t6);
-    threadClose(&t0);
+    threadClose(&t4);
 }
 
 void StartInfoThread() {    
     // Clear the thread exit event for new threads
     leventClear(&threadexit);
     
-    threadCreate(&t1, CheckCore, &coreIds[0], NULL, 0x1000, 0x10, 0);
-    threadCreate(&t2, CheckCore, &coreIds[1], NULL, 0x1000, 0x10, 1);
-    threadCreate(&t3, CheckCore, &coreIds[2], NULL, 0x1000, 0x10, 2);
-    threadCreate(&t4, CheckCore, &coreIds[3], NULL, 0x1000, 0x10, 3);
+    threadCreate(&t0, CheckCore0, NULL, NULL, 0x1000, 0x10, 0);
+    threadCreate(&t1, CheckCore1, NULL, NULL, 0x1000, 0x10, 1);
+    threadCreate(&t2, CheckCore2, NULL, NULL, 0x1000, 0x10, 2);
+    threadCreate(&t3, CheckCore3, NULL, NULL, 0x1000, 0x10, 3);
+
+    //threadCreate(&t1, CheckCore, &coreIds[0], NULL, 0x1000, 0x10, 0);
+    //threadCreate(&t2, CheckCore, &coreIds[1], NULL, 0x1000, 0x10, 1);
+    //threadCreate(&t3, CheckCore, &coreIds[2], NULL, 0x1000, 0x10, 2);
+    //threadCreate(&t4, CheckCore, &coreIds[3], NULL, 0x1000, 0x10, 3);
     threadCreate(&t7, Misc3, NULL, NULL, 0x1000, 0x3F, -2);
 
+    threadStart(&t0);
     threadStart(&t1);
     threadStart(&t2);
     threadStart(&t3);
-    threadStart(&t4);
     threadStart(&t7);
 }
 
@@ -916,17 +1152,17 @@ void EndInfoThread() {
     leventSignal(&threadexit);
     
     // Wait for all threads to exit
+    threadWaitForExit(&t0);
     threadWaitForExit(&t1);
     threadWaitForExit(&t2);
     threadWaitForExit(&t3);
-    threadWaitForExit(&t4);
     threadWaitForExit(&t7);
     
     // Close thread handles
+    threadClose(&t0);
     threadClose(&t1);
     threadClose(&t2);
     threadClose(&t3);
-    threadClose(&t4);
     threadClose(&t7);
 }
 

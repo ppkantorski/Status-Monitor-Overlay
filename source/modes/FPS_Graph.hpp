@@ -1,3 +1,5 @@
+class MainMenu;
+
 class com_FPSGraph : public tsl::Gui {
 private:
     uint8_t refreshRate = 0;
@@ -41,6 +43,7 @@ public:
     }
 
     ~com_FPSGraph() {
+        EndInfoThread();
         EndFPSCounterThread();
         //if (settings.setPos)
         //    tsl::gfx::Renderer::get().setLayerPos(0, 0);
@@ -53,7 +56,7 @@ public:
             tsl::gfx::Renderer::get().addScreenshotStacks();
         }
         deactivateOriginalFooter = false;
-        EndInfoThread();
+        
     }
 
     struct stats {
@@ -317,23 +320,34 @@ public:
         snprintf(TEMP_c, sizeof TEMP_c, 
             "%2.1f\u00B0C\n%2.1f\u00B0C\n%2d.%d\u00B0C", 
             SOC_temperatureF, PCB_temperatureF, skin_temperaturemiliC / 1000, (skin_temperaturemiliC / 100) % 10);
-
-        if (idletick0 > systemtickfrequency_impl) idletick0 = systemtickfrequency_impl;
-        if (idletick1 > systemtickfrequency_impl) idletick1 = systemtickfrequency_impl;
-        if (idletick2 > systemtickfrequency_impl) idletick2 = systemtickfrequency_impl;
-        if (idletick3 > systemtickfrequency_impl) idletick3 = systemtickfrequency_impl;
-        const double cpu_usage0 = (1.d - ((double)idletick0 / systemtickfrequency_impl)) * 100;
-        const double cpu_usage1 = (1.d - ((double)idletick1 / systemtickfrequency_impl)) * 100;
-        const double cpu_usage2 = (1.d - ((double)idletick2 / systemtickfrequency_impl)) * 100;
-        const double cpu_usage3 = (1.d - ((double)idletick3 / systemtickfrequency_impl)) * 100;
-        double cpu_usageM = 0;
-        if (cpu_usage0 > cpu_usageM)    cpu_usageM = cpu_usage0;
-        if (cpu_usage1 > cpu_usageM)    cpu_usageM = cpu_usage1;
-        if (cpu_usage2 > cpu_usageM)    cpu_usageM = cpu_usage2;
-        if (cpu_usage3 > cpu_usageM)    cpu_usageM = cpu_usage3;
-        snprintf(CPU_Load_c, sizeof CPU_Load_c, "%.1f%%", cpu_usageM);
-        snprintf(GPU_Load_c, sizeof GPU_Load_c, "%d.%d%%", GPU_Load_u / 10, GPU_Load_u % 10);
-        snprintf(RAM_Load_c, sizeof RAM_Load_c, "%hu.%hhu%%", ramLoad[SysClkRamLoad_All] / 10, ramLoad[SysClkRamLoad_All] % 10);
+        
+        // Atomically snapshot each idle tick once
+        const uint64_t idle0 = idletick0.load(std::memory_order_acquire);
+        const uint64_t idle1 = idletick1.load(std::memory_order_acquire);
+        const uint64_t idle2 = idletick2.load(std::memory_order_acquire);
+        const uint64_t idle3 = idletick3.load(std::memory_order_acquire);
+        
+        // Clamp values to systemtickfrequency_impl (avoid div-by-zero / runaway)
+        const uint64_t safe0 = std::min(idle0, systemtickfrequency_impl);
+        const uint64_t safe1 = std::min(idle1, systemtickfrequency_impl);
+        const uint64_t safe2 = std::min(idle2, systemtickfrequency_impl);
+        const uint64_t safe3 = std::min(idle3, systemtickfrequency_impl);
+        
+        // Compute per-core CPU usage
+        const double cpu_usage0 = (1.0 - (static_cast<double>(safe0) / systemtickfrequency_impl)) * 100.0;
+        const double cpu_usage1 = (1.0 - (static_cast<double>(safe1) / systemtickfrequency_impl)) * 100.0;
+        const double cpu_usage2 = (1.0 - (static_cast<double>(safe2) / systemtickfrequency_impl)) * 100.0;
+        const double cpu_usage3 = (1.0 - (static_cast<double>(safe3) / systemtickfrequency_impl)) * 100.0;
+        
+        // Compute max core load (the highest usage)
+        const double cpu_usageM = std::max({cpu_usage0, cpu_usage1, cpu_usage2, cpu_usage3});
+        
+        // Format output strings
+        snprintf(CPU_Load_c, sizeof(CPU_Load_c), "%.1f%%", cpu_usageM);
+        snprintf(GPU_Load_c, sizeof(GPU_Load_c), "%d.%d%%", GPU_Load_u / 10, GPU_Load_u % 10);
+        snprintf(RAM_Load_c, sizeof(RAM_Load_c), "%hu.%hhu%%",
+                 ramLoad[SysClkRamLoad_All] / 10,
+                 ramLoad[SysClkRamLoad_All] % 10);
         
         mutexUnlock(&mutex_Misc);
         
@@ -358,7 +372,9 @@ public:
             runOnce = true;
             skipOnce = true;
             TeslaFPS = 60;
-            tsl::goBack();
+            lastSelectedItem = "FPS Graph";
+            lastMode = "";
+            tsl::swapTo<MainMenu>();
             return true;
         }
         return false;

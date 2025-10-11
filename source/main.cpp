@@ -34,7 +34,7 @@ static std::string lastSelectedItem;
 //        auto* comFPSGraph = new tsl::elm::ListItem("Graph");
 //        comFPSGraph->setClickListener([](uint64_t keys) {
 //            if (keys & KEY_A) {
-//                tsl::changeTo<com_FPSGraph>();
+//                tsl::swapTo<com_FPSGraph>();
 //                return true;
 //            }
 //            return false;
@@ -44,7 +44,7 @@ static std::string lastSelectedItem;
 //        auto* comFPSCounter = new tsl::elm::ListItem("Counter");
 //        comFPSCounter->setClickListener([](uint64_t keys) {
 //            if (keys & KEY_A) {
-//                tsl::changeTo<com_FPS>();
+//                tsl::swapTo<com_FPS>();
 //                return true;
 //            }
 //            return false;
@@ -97,7 +97,7 @@ public:
         auto* Battery = new tsl::elm::ListItem("Battery/Charger");
         Battery->setClickListener([](uint64_t keys) {
             if (keys & KEY_A) {
-                tsl::changeTo<BatteryOverlay>();
+                tsl::swapTo<BatteryOverlay>();
                 return true;
             }
             return false;
@@ -107,7 +107,7 @@ public:
         auto* Misc = new tsl::elm::ListItem("Miscellaneous");
         Misc->setClickListener([](uint64_t keys) {
             if (keys & KEY_A) {
-                tsl::changeTo<MiscOverlay>();
+                tsl::swapTo<MiscOverlay>();
                 return true;
             }
             return false;
@@ -118,7 +118,7 @@ public:
         //    auto* Res = new tsl::elm::ListItem("Game Resolutions");
         //    Res->setClickListener([](uint64_t keys) {
         //        if (keys & KEY_A) {
-        //            tsl::changeTo<ResolutionsOverlay>();
+        //            tsl::swapTo<ResolutionsOverlay>();
         //            return true;
         //        }
         //        return false;
@@ -127,6 +127,9 @@ public:
         //}
 
         tsl::elm::HeaderOverlayFrame* rootFrame = new tsl::elm::HeaderOverlayFrame("Status Monitor", "Modes");
+        if (!lastSelectedItem.empty())
+            list->jumpToItem(lastSelectedItem);
+
         rootFrame->setContent(list);
 
         return rootFrame;
@@ -151,7 +154,8 @@ public:
         }
 
         if (keysDown & KEY_B) {
-            tsl::goBack();
+            lastSelectedItem = "Other";
+            tsl::swapTo<MainMenu>();
             return true;
         }
         return false;
@@ -161,7 +165,9 @@ public:
 //Main Menu
 class MainMenu : public tsl::Gui {
 public:
-    MainMenu() {}
+    MainMenu() {
+        lastMode = "";
+    }
 
     virtual tsl::elm::Element* createUI() override {
         
@@ -173,12 +179,13 @@ public:
         auto* Full = new tsl::elm::ListItem("Full");
         Full->setClickListener([](uint64_t keys) {
             if (keys & KEY_A) {
-                tsl::changeTo<FullOverlay>();
+                lastMode = "full";
+                tsl::swapTo<FullOverlay>();
                 return true;
             }
             if (keys & KEY_Y) {
                 // Launch configurator for Mini mode
-                tsl::changeTo<ConfiguratorOverlay>("Full");
+                tsl::swapTo<ConfiguratorOverlay>("Full");
                 return true;
             }
             return false;
@@ -187,7 +194,7 @@ public:
         //auto* Mini = new tsl::elm::ListItem("Mini");
         //Mini->setClickListener([](uint64_t keys) {
         //    if (keys & KEY_A) {
-        //        tsl::changeTo<MiniOverlay>();
+        //        tsl::swapTo<MiniOverlay>();
         //        return true;
         //    }
         //    return false;
@@ -219,7 +226,7 @@ public:
                 }
                 if (keys & KEY_Y) {
                     // Launch configurator for Mini mode
-                    tsl::changeTo<ConfiguratorOverlay>("Mini");
+                    tsl::swapTo<ConfiguratorOverlay>("Mini");
                     return true;
                 }
                 return false;
@@ -235,7 +242,7 @@ public:
                 }
                 if (keys & KEY_Y) {
                     // Launch configurator for Micro mode
-                    tsl::changeTo<ConfiguratorOverlay>("Micro");
+                    tsl::swapTo<ConfiguratorOverlay>("Micro");
                     return true;
                 }
                 return false;
@@ -247,7 +254,7 @@ public:
             //Graphs->setValue(ult::DROPDOWN_SYMBOL);
             //Graphs->setClickListener([](uint64_t keys) {
             //    if (keys & KEY_A) {
-            //        tsl::changeTo<GraphsMenu>();
+            //        tsl::swapTo<GraphsMenu>();
             //        return true;
             //    }
             //    return false;
@@ -257,12 +264,13 @@ public:
             auto* comFPSGraph = new tsl::elm::ListItem("FPS Graph");
             comFPSGraph->setClickListener([](uint64_t keys) {
                 if (keys & KEY_A) {
-                    tsl::changeTo<com_FPSGraph>();
+                    lastMode = "fps_graph";
+                    tsl::swapTo<com_FPSGraph>();
                     return true;
                 }
                 if (keys & KEY_Y) {
                     // Launch configurator for Micro mode
-                    tsl::changeTo<ConfiguratorOverlay>("FPS Graph");
+                    tsl::swapTo<ConfiguratorOverlay>("FPS Graph");
                     return true;
                 }
                 return false;
@@ -272,12 +280,13 @@ public:
             auto* comFPSCounter = new tsl::elm::ListItem("FPS Counter");
             comFPSCounter->setClickListener([](uint64_t keys) {
                 if (keys & KEY_A) {
-                    tsl::changeTo<com_FPS>();
+                    lastMode = "fps_counter";
+                    tsl::swapTo<com_FPS>();
                     return true;
                 }
                 if (keys & KEY_Y) {
                     // Launch configurator for Micro mode
-                    tsl::changeTo<ConfiguratorOverlay>("FPS Counter");
+                    tsl::swapTo<ConfiguratorOverlay>("FPS Counter");
                     return true;
                 }
                 return false;
@@ -287,12 +296,13 @@ public:
             auto* Res = new tsl::elm::ListItem("Game Resolutions");
             Res->setClickListener([](uint64_t keys) {
                 if (keys & KEY_A) {
-                    tsl::changeTo<ResolutionsOverlay>();
+                    lastMode = "game_resolutions";
+                    tsl::swapTo<ResolutionsOverlay>();
                     return true;
                 }
                 if (keys & KEY_Y) {
                     // Launch configurator for Micro mode
-                    tsl::changeTo<ConfiguratorOverlay>("Game Resolutions");
+                    tsl::swapTo<ConfiguratorOverlay>("Game Resolutions");
                     return true;
                 }
                 return false;
@@ -304,7 +314,7 @@ public:
         Other->setValue(ult::DROPDOWN_SYMBOL);
         Other->setClickListener([](uint64_t keys) {
             if (keys & KEY_A) {
-                tsl::changeTo<OtherMenu>();
+                tsl::swapTo<OtherMenu>();
                 return true;
             }
             return false;
@@ -693,11 +703,13 @@ int main(int argc, char **argv) {
             
             if (strcasecmp(argv[arg], "--microOverlay") == 0) {
                 FullMode = false;
+                lastMode = "micro";
                 setupMicroMode();
                 return tsl::loop<MicroMode>(argc, argv);
             } 
             else if (strcasecmp(argv[arg], "--miniOverlay") == 0) {
                 FullMode = false;
+                lastMode = "mini";
                 setupMiniMode();
                 //ult::useRightAlignment = ult::useRightAlignment || (ult::parseValueFromIniSection(configIniPath, "mini", "right_alignment") == ult::TRUE_STR);
                 return tsl::loop<MiniEntryOverlay>(argc, argv);
@@ -705,6 +717,7 @@ int main(int argc, char **argv) {
             else if (strcasecmp(argv[arg], "-micro") == 0) {
                 FullMode = false;
                 skipMain = true;
+                lastMode = "micro";
                 ult::DefaultFramebufferWidth = 1280;
                 //ult::DefaultFramebufferHeight = 28;
                 ult::DefaultFramebufferHeight = 720;
@@ -713,6 +726,7 @@ int main(int argc, char **argv) {
             else if (strcasecmp(argv[arg], "-mini") == 0) {
                 FullMode = false;
                 skipMain = true;
+                lastMode = "mini";
                 ult::DefaultFramebufferWidth = 1280;
                 ult::DefaultFramebufferHeight = 720;
                 //ult::useRightAlignment = (ult::parseValueFromIniSection(configIniPath, "mini", "right_alignment") == ult::TRUE_STR);

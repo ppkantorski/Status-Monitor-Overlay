@@ -1871,7 +1871,8 @@ public:
     
     virtual bool handleInput(u64 keysDown, u64 keysHeld, const HidTouchState &touchPos, HidAnalogStickState joyStickPosLeft, HidAnalogStickState joyStickPosRight) override {
         if (keysDown & KEY_B) {
-            tsl::goBack();
+            lastSelectedItem = modeName;
+            tsl::swapTo<MainMenu>();
             return true;
         }
         return false;
