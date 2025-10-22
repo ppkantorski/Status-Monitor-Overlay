@@ -961,18 +961,44 @@ public:
                 }
                 qsort(m_resolutionOutput, 8, sizeof(resolutionCalls), compare);
                 
-                // Format resolution string
-                if (settings.showFullResolution) {
-                    if (!m_resolutionOutput[1].width)
-                        snprintf(RES_var_compressed_c, sizeof(RES_var_compressed_c), "%dx%d", m_resolutionOutput[0].width, m_resolutionOutput[0].height);
-                    else 
-                        snprintf(RES_var_compressed_c, sizeof(RES_var_compressed_c), "%dx%d%dx%d", m_resolutionOutput[0].width, m_resolutionOutput[0].height, m_resolutionOutput[1].width, m_resolutionOutput[1].height);
-                } else {
-                    if (!m_resolutionOutput[1].width)
-                        snprintf(RES_var_compressed_c, sizeof(RES_var_compressed_c), "%dp", m_resolutionOutput[0].height);
-                    else 
-                        snprintf(RES_var_compressed_c, sizeof(RES_var_compressed_c), "%dp%dp", m_resolutionOutput[0].height, m_resolutionOutput[1].height);
+                // Anti-flicker swap logic
+                static std::pair<uint16_t, uint16_t> old_res[2];
+                if ((m_resolutionOutput[0].width == old_res[1].first && m_resolutionOutput[0].height == old_res[1].second) || 
+                    (m_resolutionOutput[1].width == old_res[0].first && m_resolutionOutput[1].height == old_res[0].second)) {
+                    const uint16_t swap_width = m_resolutionOutput[0].width;
+                    const uint16_t swap_height = m_resolutionOutput[0].height;
+                    m_resolutionOutput[0].width = m_resolutionOutput[1].width;
+                    m_resolutionOutput[0].height = m_resolutionOutput[1].height;
+                    m_resolutionOutput[1].width = swap_width;
+                    m_resolutionOutput[1].height = swap_height;
                 }
+                
+                // Format resolution string
+                if (m_resolutionOutput[0].width) {
+                    if (settings.showFullResolution) {
+                        if (!m_resolutionOutput[1].width) {
+                            snprintf(RES_var_compressed_c, sizeof(RES_var_compressed_c), "%dx%d", 
+                                m_resolutionOutput[0].width, m_resolutionOutput[0].height);
+                        }
+                        else {
+                            snprintf(RES_var_compressed_c, sizeof(RES_var_compressed_c), "%dx%d%dx%d", 
+                                m_resolutionOutput[0].width, m_resolutionOutput[0].height, 
+                                m_resolutionOutput[1].width, m_resolutionOutput[1].height);
+                        }
+                    } else {
+                        if (!m_resolutionOutput[1].width) {
+                            snprintf(RES_var_compressed_c, sizeof(RES_var_compressed_c), "%dp", 
+                                m_resolutionOutput[0].height);
+                        }
+                        else {
+                            snprintf(RES_var_compressed_c, sizeof(RES_var_compressed_c), "%dp%dp", 
+                                m_resolutionOutput[0].height, m_resolutionOutput[1].height);
+                        }
+                    }
+                }
+                // Store current resolutions for next frame comparison
+                old_res[0] = std::make_pair(m_resolutionOutput[0].width, m_resolutionOutput[0].height);
+                old_res[1] = std::make_pair(m_resolutionOutput[1].width, m_resolutionOutput[1].height);
             }
         }
         else if (!GameRunning && resolutionLookup != 0) {

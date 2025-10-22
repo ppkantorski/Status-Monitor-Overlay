@@ -493,11 +493,11 @@ void CloseBatteryThread() {
 
 
 void gpuLoadThread(void*) {
+    #define gpu_samples_average 10
     if (!GPULoadPerFrame && R_SUCCEEDED(nvCheck)) do {
-        static constexpr u8 average = 5;
-        u32 temp = 0;
-        nvIoctl(fd, NVGPU_GPU_IOCTL_PMU_GET_GPU_LOAD, &temp);
-        GPU_Load_u = ((GPU_Load_u * (average-1)) + temp) / average;
+        u32 temp;
+        if (R_SUCCEEDED(nvIoctl(fd, NVGPU_GPU_IOCTL_PMU_GET_GPU_LOAD, &temp)))
+            GPU_Load_u = ((GPU_Load_u * (gpu_samples_average-1)) + temp) / gpu_samples_average;
     } while(!leventWait(&threadexit, 16'666'000));
 }
 
