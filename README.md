@@ -29,7 +29,7 @@ If it's not working in dock, you need to first start Status Monitor, then put Ni
 - Network type + Wi-fi password
 
 # Requirements:
-- Ultrahand Overlay, or Tesla Menu at least version 1.2.3
+- Tesla Menu at least version 1.2.3
 
 How to setup everything: [HERE](https://gist.github.com/masagrator/65fcbd5ad09243399268d145aaab899b)
 
@@ -57,6 +57,6 @@ A: There are few possible explanations:
 2. You're using some untested custom sysmodule that has no proper thread sleeping implemented. Find out in atmosphere/contents any sysmodule that you don't need, delete it and restart Switch.
 3. Your Switch is using sigpatches, is not a primary device, is using linked account, and is connected to network. Delete sigpatches, change your Switch to primary device, unlink account, or disable Wi-Fi. 
 
-Q: When opening Status Monitor overlays stop responding or something else, that I am trying to open while Status Monitor is opened, is freezing (f.e. Album or HB Menu). How to fix this?
+Q: When opening Status Monitor overlays stop responding, or something that I am trying to open while Status Monitor is opened is freezing (f.e. Album or HB Menu). How to fix this?
 
-A: Issue comes from too much sysmodules accessing files on sdcard at once. You must limit amount of sysmodules that have such access (you can free one session by disabling logs in SaltyNX-Tool).
+A: Issue comes from too much sysmodules accessing sdcard at once. You must limit amount of sysmodules that have such access (you can free one session by disabling logs in SaltyNX-Tool).
