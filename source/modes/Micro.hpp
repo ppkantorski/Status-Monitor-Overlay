@@ -963,14 +963,18 @@ public:
                 
                 // Anti-flicker swap logic
                 static std::pair<uint16_t, uint16_t> old_res[2];
-                if ((m_resolutionOutput[0].width == old_res[1].first && m_resolutionOutput[0].height == old_res[1].second) || 
-                    (m_resolutionOutput[1].width == old_res[0].first && m_resolutionOutput[1].height == old_res[0].second)) {
-                    const uint16_t swap_width = m_resolutionOutput[0].width;
-                    const uint16_t swap_height = m_resolutionOutput[0].height;
-                    m_resolutionOutput[0].width = m_resolutionOutput[1].width;
-                    m_resolutionOutput[0].height = m_resolutionOutput[1].height;
-                    m_resolutionOutput[1].width = swap_width;
-                    m_resolutionOutput[1].height = swap_height;
+                
+                // Only swap if BOTH resolutions exist (prevent swapping with empty slot)
+                if (m_resolutionOutput[0].width && m_resolutionOutput[1].width) {
+                    if ((m_resolutionOutput[0].width == old_res[1].first && m_resolutionOutput[0].height == old_res[1].second) || 
+                        (m_resolutionOutput[1].width == old_res[0].first && m_resolutionOutput[1].height == old_res[0].second)) {
+                        const uint16_t swap_width = m_resolutionOutput[0].width;
+                        const uint16_t swap_height = m_resolutionOutput[0].height;
+                        m_resolutionOutput[0].width = m_resolutionOutput[1].width;
+                        m_resolutionOutput[0].height = m_resolutionOutput[1].height;
+                        m_resolutionOutput[1].width = swap_width;
+                        m_resolutionOutput[1].height = swap_height;
+                    }
                 }
                 
                 // Format resolution string
@@ -996,7 +1000,8 @@ public:
                         }
                     }
                 }
-                // Store current resolutions for next frame comparison
+                
+                // Always store current resolutions for next frame comparison
                 old_res[0] = std::make_pair(m_resolutionOutput[0].width, m_resolutionOutput[0].height);
                 old_res[1] = std::make_pair(m_resolutionOutput[1].width, m_resolutionOutput[1].height);
             }

@@ -1046,32 +1046,41 @@ public:
                     if (Temp[0]) strcat(Temp, "\n");
                     char Temp_s[32];
                     static std::pair<uint16_t, uint16_t> old_res[2];
-                    if ((m_resolutionOutput[0].width == old_res[1].first && m_resolutionOutput[0].height == old_res[1].second) || 
-                        (m_resolutionOutput[1].width == old_res[0].first && m_resolutionOutput[1].height == old_res[0].second)) {
-                        const uint16_t swap_width = m_resolutionOutput[0].width;
-                        const uint16_t swap_height = m_resolutionOutput[0].height;
-                        m_resolutionOutput[0].width = m_resolutionOutput[1].width;
-                        m_resolutionOutput[0].height = m_resolutionOutput[1].height;
-                        m_resolutionOutput[1].width = swap_width;
-                        m_resolutionOutput[1].height = swap_height;
+                    
+                    // Determine display order without modifying the original array
+                    uint16_t display_width0 = m_resolutionOutput[0].width;
+                    uint16_t display_height0 = m_resolutionOutput[0].height;
+                    uint16_t display_width1 = m_resolutionOutput[1].width;
+                    uint16_t display_height1 = m_resolutionOutput[1].height;
+                    
+                    // Only swap if BOTH resolutions exist (prevent swapping with empty slot)
+                    if (display_width1 && display_width0) {  // ← KEY FIX
+                        if ((display_width0 == old_res[1].first && display_height0 == old_res[1].second) || 
+                            (display_width1 == old_res[0].first && display_height1 == old_res[0].second)) {
+                            // Swap display order
+                            std::swap(display_width0, display_width1);
+                            std::swap(display_height0, display_height1);
+                        }
                     }
                     
+                    // Format output using display order
                     if (settings.showFullResolution) {
-                        if (!m_resolutionOutput[1].width) {
-                            snprintf(Temp_s, sizeof(Temp_s), "%dx%d", m_resolutionOutput[0].width, m_resolutionOutput[0].height);
+                        if (!display_width1) {
+                            snprintf(Temp_s, sizeof(Temp_s), "%dx%d", display_width0, display_height0);
                         }
                         else {
-                            snprintf(Temp_s, sizeof(Temp_s), "%dx%d%dx%d", m_resolutionOutput[0].width, m_resolutionOutput[0].height, m_resolutionOutput[1].width, m_resolutionOutput[1].height);
+                            snprintf(Temp_s, sizeof(Temp_s), "%dx%d%dx%d", display_width0, display_height0, display_width1, display_height1);
                         }
                     } else {
-                        if (!m_resolutionOutput[1].width) {
-                            snprintf(Temp_s, sizeof(Temp_s), "%dp", m_resolutionOutput[0].height);
+                        if (!display_width1) {
+                            snprintf(Temp_s, sizeof(Temp_s), "%dp", display_height0);
                         }
                         else {
-                            snprintf(Temp_s, sizeof(Temp_s), "%dp%dp", m_resolutionOutput[0].height, m_resolutionOutput[1].height);
+                            snprintf(Temp_s, sizeof(Temp_s), "%dp%dp", display_height0, display_height1);
                         }
                     }
                     
+                    // Store the ORIGINAL values for next frame comparison
                     old_res[0] = std::make_pair(m_resolutionOutput[0].width, m_resolutionOutput[0].height);
                     old_res[1] = std::make_pair(m_resolutionOutput[1].width, m_resolutionOutput[1].height);
                     strcat(Temp, Temp_s);
