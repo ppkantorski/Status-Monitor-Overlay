@@ -187,12 +187,23 @@ all: $(BUILD)
 $(BUILD):
 	@[ -d $@ ] || mkdir -p $@
 	@$(MAKE) --no-print-directory -C $(BUILD) -f $(CURDIR)/Makefile
+	@rm -rf out/
+	@mkdir -p out/switch/.overlays/
+	@cp -a $(CURDIR)/config out/
+	@cp $(CURDIR)/$(TARGET).ovl out/switch/.overlays/$(TARGET).ovl
 
 #---------------------------------------------------------------------------------
 clean:
+	@echo "Cleanning ... $(TARGET)"
 	@rm -fr $(BUILD) $(TARGET).ovl $(TARGET).nro $(TARGET).nacp $(TARGET).elf
+	@rm -rf out/
+	@rm -f $(TARGET).zip
 
-
+#---------------------------------------------------------------------------------
+dist: all
+	@echo making dist ...
+	@rm -f $(TARGET).zip
+	@cd out; zip -r ../$(TARGET).zip ./*; cd ../
 #---------------------------------------------------------------------------------
 else
 .PHONY:	all
