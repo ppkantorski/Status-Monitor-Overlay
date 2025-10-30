@@ -46,7 +46,7 @@ This mode you can know from older releases of Status Monitor. It contains all in
 
 Contains most of supported informations with lower precision.
 
-| Category | Format                                            | Explanation                                                               |
+| Category | Format                                           | Explanation                                                               |
 |----------|---------------------------------------------------|---------------------------------------------------------------------------|
 | CPU      | [%.0f,%.0f,%.0f,%.0f]@%.1f                        | Core #0 usage, Core #1 usage, Core #2 usage, Core #3 usage@CPU Target/Real frequency`(^1)`  |
 | GPU      | %.1f@%.1f                                         | Load@GPU Target/Real Frequency`(^1)`                                      |

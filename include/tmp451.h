@@ -56,16 +56,16 @@ void tmp451_end();
 
 Result Tmp451ReadReg(u8 reg, u8 *out)
 {
-	u8 data = 0;
-	Result res = I2cReadRegHandler8(reg, I2cDevice_Tmp451, &data);
+    u8 data = 0;
+    Result res = I2cReadRegHandler8(reg, I2cDevice_Tmp451, &data);
 
-	if (R_FAILED(res))
-	{
-		return res;
-	}
+    if (R_FAILED(res))
+    {
+        return res;
+    }
 
-	*out = data;
-	return res;
+    *out = data;
+    return res;
 }
 
 Result Tmp451GetSocTemp(float* temperature) {

@@ -20,7 +20,7 @@ static atomic_size_t g_refCnt;
 bool sysclkIpcRunning()
 {
     Handle handle;
-    bool running = R_FAILED(smRegisterService(&handle, smEncodeName(SYSCLK_IPC_SERVICE_NAME), false, 1));
+    const bool running = R_FAILED(smRegisterService(&handle, smEncodeName(SYSCLK_IPC_SERVICE_NAME), false, 1));
 
     if (!running)
     {
