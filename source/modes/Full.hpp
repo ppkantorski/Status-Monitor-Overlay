@@ -102,13 +102,13 @@ public:
         
 
         auto Status = new tsl::elm::CustomDrawer([this](tsl::gfx::Renderer *renderer, u16 x, u16 y, u16 w, u16 h) {
-            static auto targetFreqWidth = renderer->getTextDimensions("Target Frequency", false, 15).first;
-            static auto realFreqWidth = renderer->getTextDimensions("Real Frequency", false, 15).first;
-            static auto freqWidth = std::max(targetFreqWidth, realFreqWidth);
+            //static auto targetFreqWidth = renderer->getTextDimensions("Target Frequency", false, 15).first;
+            //static auto realFreqWidth = renderer->getTextDimensions("Real Frequency", false, 15).first;
+            //static auto freqWidth = std::max(targetFreqWidth, realFreqWidth);
 
-            static auto batteryLabelWidth = renderer->getTextDimensions("Battery Power Flow", false, 15).first;
-            static auto fanLabelWidth = renderer->getTextDimensions("Fan Rotation Level", false, 15).first;
-            static auto boardWidth = std::max(batteryLabelWidth, fanLabelWidth);
+            //static auto batteryLabelWidth = renderer->getTextDimensions("Battery Power Flow", false, 15).first;
+            //static auto fanLabelWidth = renderer->getTextDimensions("Fan Rotation Level", false, 15).first;
+            //static auto boardWidth = std::max(batteryLabelWidth, fanLabelWidth);
 
             static constexpr size_t valueOffset = 150;
             static constexpr size_t deltaOffset = 246;
