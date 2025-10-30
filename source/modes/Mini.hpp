@@ -152,10 +152,19 @@ public:
                         }
                     } else if (key == "GPU" || (key == "RAM" && settings.showRAMLoad && R_SUCCEEDED(sysclkCheck))) {
                         //dimensions = renderer->drawString("100.0%@4444.4", false, 0, 0, fontsize, renderer->a(0x0000));
-                        if (!settings.realVolts) {
-                            width = renderer->getTextDimensions("100%@4444.4", false, fontsize).first;
+
+                        if (!settings.showRAMLoadCPUGPU) {
+                            if (!settings.realVolts) {
+                                width = renderer->getTextDimensions("100%@4444.4", false, fontsize).first;
+                            } else {
+                                width = renderer->getTextDimensions("100%@4444.4444 mV", false, fontsize).first;
+                            }
                         } else {
-                            width = renderer->getTextDimensions("100%@4444.4444 mV", false, fontsize).first;
+                            if (!settings.realVolts) {
+                                width = renderer->getTextDimensions("100%[100%,100%]@4444.4", false, fontsize).first;
+                            } else {
+                                width = renderer->getTextDimensions("100%[100%,100%]@4444.4444 mV", false, fontsize).first;
+                            }
                         }
                     } else if (key == "RAM" && (!settings.showRAMLoad || R_FAILED(sysclkCheck))) {
                         //dimensions = renderer->drawString("44444444MB@4444.4", false, 0, 0, fontsize, renderer->a(0x0000));
@@ -749,7 +758,7 @@ public:
         }
         
         ///RAM
-        char MINI_RAM_var_compressed_c[24];   // 19 → 24 bytes for headroom
+        char MINI_RAM_var_compressed_c[35];   // 19 → 24 bytes for headroom
         char MINI_RAM_volt_c[32];
         
         if (!settings.showRAMLoad) {
@@ -772,7 +781,7 @@ public:
                          ramUsedGiB, ramTotalGiB,
                          RAM_Hz / 1000000, (RAM_Hz / 100000) % 10);
             }
-        
+                
         } else {
             /* ── "percentage" branch ─────────────────────────────────────────────── */
             unsigned ramLoadInt;
@@ -780,6 +789,42 @@ public:
             if (R_SUCCEEDED(sysclkCheck)) {
                 // Use sys-clk's RAM load if available
                 ramLoadInt = ramLoad[SysClkRamLoad_All] / 10;  // drop decimal
+                
+                if (settings.showRAMLoadCPUGPU) {
+                    // Calculate CPU and GPU loads separately
+                    unsigned ramCpuLoadInt = ramLoad[SysClkRamLoad_Cpu] / 10;
+                    int RAM_GPU_Load = ramLoad[SysClkRamLoad_All] - ramLoad[SysClkRamLoad_Cpu];
+                    unsigned ramGpuLoadInt = RAM_GPU_Load / 10;
+                    
+                    if (settings.realFrequencies && realRAM_Hz) {
+                        snprintf(MINI_RAM_var_compressed_c, sizeof(MINI_RAM_var_compressed_c),
+                                 "%u%%[%u%%,%u%%]@%hu.%hhu",
+                                 ramLoadInt,
+                                 ramCpuLoadInt,
+                                 ramGpuLoadInt,
+                                 realRAM_Hz / 1000000, (realRAM_Hz / 100000) % 10);
+                    } else {
+                        snprintf(MINI_RAM_var_compressed_c, sizeof(MINI_RAM_var_compressed_c),
+                                 "%u%%[%u%%,%u%%]@%hu.%hhu",
+                                 ramLoadInt,
+                                 ramCpuLoadInt,
+                                 ramGpuLoadInt,
+                                 RAM_Hz / 1000000, (RAM_Hz / 100000) % 10);
+                    }
+                } else {
+                    // Original format without CPU/GPU breakdown
+                    if (settings.realFrequencies && realRAM_Hz) {
+                        snprintf(MINI_RAM_var_compressed_c, sizeof(MINI_RAM_var_compressed_c),
+                                 "%u%%@%hu.%hhu",
+                                 ramLoadInt,
+                                 realRAM_Hz / 1000000, (realRAM_Hz / 100000) % 10);
+                    } else {
+                        snprintf(MINI_RAM_var_compressed_c, sizeof(MINI_RAM_var_compressed_c),
+                                 "%u%%@%hu.%hhu",
+                                 ramLoadInt,
+                                 RAM_Hz / 1000000, (RAM_Hz / 100000) % 10);
+                    }
+                }
             } else {
                 // Calculate percentage manually when sys-clk isn't available
                 const uint64_t RAM_Total_all = RAM_Total_application_u + RAM_Total_applet_u + 
@@ -787,18 +832,19 @@ public:
                 const uint64_t RAM_Used_all = RAM_Used_application_u + RAM_Used_applet_u + 
                                               RAM_Used_system_u + RAM_Used_systemunsafe_u;
                 ramLoadInt = (RAM_Total_all > 0) ? (unsigned)((RAM_Used_all * 100) / RAM_Total_all) : 0;
-            }
-        
-            if (settings.realFrequencies && realRAM_Hz) {
-                snprintf(MINI_RAM_var_compressed_c, sizeof(MINI_RAM_var_compressed_c),
-                         "%u%%@%hu.%hhu",
-                         ramLoadInt,
-                         realRAM_Hz / 1000000, (realRAM_Hz / 100000) % 10);
-            } else {
-                snprintf(MINI_RAM_var_compressed_c, sizeof(MINI_RAM_var_compressed_c),
-                         "%u%%@%hu.%hhu",
-                         ramLoadInt,
-                         RAM_Hz / 1000000, (RAM_Hz / 100000) % 10);
+                
+                // When sys-clk is unavailable, we can't show CPU/GPU breakdown
+                if (settings.realFrequencies && realRAM_Hz) {
+                    snprintf(MINI_RAM_var_compressed_c, sizeof(MINI_RAM_var_compressed_c),
+                             "%u%%@%hu.%hhu",
+                             ramLoadInt,
+                             realRAM_Hz / 1000000, (realRAM_Hz / 100000) % 10);
+                } else {
+                    snprintf(MINI_RAM_var_compressed_c, sizeof(MINI_RAM_var_compressed_c),
+                             "%u%%@%hu.%hhu",
+                             ramLoadInt,
+                             RAM_Hz / 1000000, (RAM_Hz / 100000) % 10);
+                }
             }
         }
 
@@ -1293,6 +1339,8 @@ public:
                     isDragging = true;
                     isRendering = false;
                     leventSignal(&renderingStopEvent);
+                    triggerRumbleClick.store(true, std::memory_order_release);
+                    triggerOnSound.store(true, std::memory_order_release);
                     hasMoved = false;
                     initialTouchPos = touchPos;
                     initialFrameOffsetX = frameOffsetX;
@@ -1338,6 +1386,8 @@ public:
             hasMoved = false;
             isRendering = true;
             leventClear(&renderingStopEvent);
+            triggerRumbleDoubleClick.store(true, std::memory_order_release);
+            triggerOffSound.store(true, std::memory_order_release);
         }
     
         // Handle joystick dragging (MINUS + right joystick OR PLUS + left joystick)
@@ -1346,6 +1396,8 @@ public:
             isDragging = true;
             isRendering = false;
             leventSignal(&renderingStopEvent);
+            triggerRumbleClick.store(true, std::memory_order_release);
+            triggerOnSound.store(true, std::memory_order_release);
         } else if ((currentMinusHeld || currentPlusHeld) && isDragging) {
             // Continue joystick dragging
             static constexpr int JOYSTICK_DEADZONE = 20;
@@ -1397,6 +1449,8 @@ public:
             isDragging = false;
             isRendering = true;
             leventClear(&renderingStopEvent);
+            triggerRumbleDoubleClick.store(true, std::memory_order_release);
+            triggerOffSound.store(true, std::memory_order_release);
         }
         
         // Update state for next frame
@@ -1409,12 +1463,13 @@ public:
             if (isKeyComboPressed(keysHeld, keysDown)) {
                 isRendering = false;
                 leventSignal(&renderingStopEvent);
+                //triggerRumbleDoubleClick.store(true, std::memory_order_release);
                 skipOnce = true;
                 runOnce = true;
                 //TeslaFPS = 60;
                 if (skipMain) {
                     //lastSelectedItem = "Mini";
-                    //lastMode = "";
+                    lastMode = "return";
                     tsl::goBack();
                 }
                 else {

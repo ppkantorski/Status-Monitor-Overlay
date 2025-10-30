@@ -1312,6 +1312,8 @@ ALWAYS_INLINE bool isKeyComboPressed(uint64_t keysHeld, uint64_t keysDown) {
         
         if (totalComboActive == tsl::cfg::launchCombo) {
             fixHiding = true; // for fixing hiding when returning
+            triggerRumbleDoubleClick.store(true, std::memory_order_release);
+            triggerExitSound.store(true, std::memory_order_release);
             return true;
         }
     }
@@ -1461,6 +1463,10 @@ struct FullSettings {
     bool showRES;
     bool showRDSD;
     bool disableScreenshots;
+    uint16_t separatorColor;
+    uint16_t catColor1;
+    uint16_t catColor2;
+    uint16_t textColor;
 };
 
 struct MiniSettings {
@@ -1488,6 +1494,7 @@ struct MiniSettings {
     uint16_t textColor;
     std::string show;
     bool showRAMLoad;
+    bool showRAMLoadCPUGPU;
     bool disableScreenshots;
     bool sleepExit;
     //int setPos;
@@ -1585,6 +1592,7 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
     convertStrToRGBA4444("#FFFF", &(settings->textColor));
     settings->show = "DTC+BAT+CPU+GPU+RAM+TMP+FPS+RES";
     settings->showRAMLoad = true;
+    settings->showRAMLoadCPUGPU = false;
     settings->refreshRate = 1;
     settings->disableScreenshots = false;
     settings->sleepExit = false;
@@ -1677,7 +1685,6 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
         if (convertStrToRGBA4444(it->second, &temp))
             settings->separatorColor = temp;
     }
-    
 
     it = section.find("cat_color");
     if (it != section.end()) {
@@ -1777,6 +1784,14 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
         key = it->second;
         convertToUpper(key);
         settings->showRAMLoad = (key != "FALSE");
+    }
+
+    // Process CPU/GPU RAM load flag
+    it = section.find("show_RAM_load_CPU_GPU");
+    if (it != section.end()) {
+        key = it->second;
+        convertToUpper(key);
+        settings->showRAMLoadCPUGPU = (key != "FALSE");
     }
 
     // Process disable screenshots
@@ -2289,6 +2304,10 @@ ALWAYS_INLINE void GetConfigSettings(FullSettings* settings) {
     settings->showRES = true;
     settings->showRDSD = true;
     settings->disableScreenshots = false;
+    convertStrToRGBA4444("#2DFF", &(settings->separatorColor));
+    convertStrToRGBA4444("#8FFF", &(settings->catColor1));
+    convertStrToRGBA4444("#8CFF", &(settings->catColor2));
+    convertStrToRGBA4444("#FFFF", &(settings->textColor));
 
     // Open and read file efficiently
     FILE* configFile = fopen(configIniPath, "r");
@@ -2310,6 +2329,7 @@ ALWAYS_INLINE void GetConfigSettings(FullSettings* settings) {
     if (sectionIt == parsedData.end()) return;
     
     std::string key;
+    uint16_t temp;
     
     const auto& section = sectionIt->second;
 
@@ -2376,6 +2396,34 @@ ALWAYS_INLINE void GetConfigSettings(FullSettings* settings) {
         key = it->second;
         convertToUpper(key);
         settings->disableScreenshots = (key != "FALSE");
+    }
+
+    it = section.find("separator_color");
+    if (it != section.end()) {
+        temp = 0;
+        if (convertStrToRGBA4444(it->second, &temp))
+            settings->separatorColor = temp;
+    }
+
+    it = section.find("cat_color_1");
+    if (it != section.end()) {
+        temp = 0;
+        if (convertStrToRGBA4444(it->second, &temp))
+            settings->catColor1 = temp;
+    }
+    
+    it = section.find("cat_color_2");
+    if (it != section.end()) {
+        temp = 0;
+        if (convertStrToRGBA4444(it->second, &temp))
+            settings->catColor2 = temp;
+    }
+
+    it = section.find("text_color");
+    if (it != section.end()) {
+        temp = 0;
+        if (convertStrToRGBA4444(it->second, &temp))
+            settings->textColor = temp;
     }
 }
 

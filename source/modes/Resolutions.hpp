@@ -151,7 +151,7 @@ public:
                 renderer->drawString("Game is not running or it's incompatible.", false, base_x, base_y+20, 18, (0xF00F));
             }
         });
-
+        
         tsl::elm::HeaderOverlayFrame* rootFrame = new tsl::elm::HeaderOverlayFrame("", "");
         rootFrame->setContent(Status);
 
@@ -235,6 +235,7 @@ public:
         if (isKeyComboPressed(keysHeld, keysDown)) {
             isRendering = false;
             leventSignal(&renderingStopEvent);
+            triggerRumbleDoubleClick.store(true, std::memory_order_release);
             skipOnce = true;
             runOnce = true;
             lastSelectedItem = "Game Resolutions";

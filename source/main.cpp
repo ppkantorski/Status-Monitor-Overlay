@@ -95,6 +95,7 @@ public:
         list->addItem(new tsl::elm::CategoryHeader("Other"));
 
         auto* Battery = new tsl::elm::ListItem("Battery/Charger");
+        Battery->disableClickAnimation();
         Battery->setClickListener([](uint64_t keys) {
             if (keys & KEY_A) {
                 tsl::swapTo<BatteryOverlay>();
@@ -105,6 +106,7 @@ public:
         list->addItem(Battery);
 
         auto* Misc = new tsl::elm::ListItem("Miscellaneous");
+        Misc->disableClickAnimation();
         Misc->setClickListener([](uint64_t keys) {
             if (keys & KEY_A) {
                 tsl::swapTo<MiscOverlay>();
@@ -125,7 +127,7 @@ public:
         //    });
         //    list->addItem(Res);
         //}
-
+        //tsl::elm::g_disableMenuCacheOnReturn.store(true, std::memory_order_release);
         tsl::elm::HeaderOverlayFrame* rootFrame = new tsl::elm::HeaderOverlayFrame("Status Monitor", "Modes");
         if (!lastSelectedItem.empty())
             list->jumpToItem(lastSelectedItem);
@@ -156,6 +158,8 @@ public:
         if (keysDown & KEY_B) {
             lastSelectedItem = "Other";
             tsl::swapTo<MainMenu>();
+            triggerRumbleDoubleClick.store(true, std::memory_order_release);
+            triggerExitSound.store(true, std::memory_order_release);
             return true;
         }
         return false;
@@ -166,7 +170,8 @@ public:
 class MainMenu : public tsl::Gui {
 public:
     MainMenu() {
-        lastMode = "";
+        if (lastMode != "returning")
+            lastMode = "";
     }
 
     virtual tsl::elm::Element* createUI() override {
@@ -177,6 +182,7 @@ public:
         list->addItem(new tsl::elm::CategoryHeader("Modes " + ult::DIVIDER_SYMBOL + " \uE0E3 Configure"));
 
         auto* Full = new tsl::elm::ListItem("Full");
+        Full->disableClickAnimation();
         Full->setClickListener([](uint64_t keys) {
             if (keys & KEY_A) {
                 lastMode = "full";
@@ -184,6 +190,8 @@ public:
                 return true;
             }
             if (keys & KEY_Y) {
+                triggerRumbleClick.store(true, std::memory_order_release);
+                triggerSettingsSound.store(true, std::memory_order_release);
                 // Launch configurator for Mini mode
                 tsl::swapTo<ConfiguratorOverlay>("Full");
                 return true;
@@ -218,6 +226,7 @@ public:
         }
         if (fileExist) {
             auto* Mini = new tsl::elm::ListItem("Mini");
+            Mini->disableClickAnimation();
             Mini->setClickListener([](uint64_t keys) {
                 if (keys & KEY_A) {
                     tsl::setNextOverlay(filepath, "--miniOverlay");
@@ -225,6 +234,8 @@ public:
                     return true;
                 }
                 if (keys & KEY_Y) {
+                    triggerRumbleClick.store(true, std::memory_order_release);
+                    triggerSettingsSound.store(true, std::memory_order_release);
                     // Launch configurator for Mini mode
                     tsl::swapTo<ConfiguratorOverlay>("Mini");
                     return true;
@@ -234,6 +245,7 @@ public:
             list->addItem(Mini);
 
             auto* Micro = new tsl::elm::ListItem("Micro");
+            Micro->disableClickAnimation();
             Micro->setClickListener([](uint64_t keys) {
                 if (keys & KEY_A) {
                     tsl::setNextOverlay(filepath, "--microOverlay");
@@ -241,6 +253,8 @@ public:
                     return true;
                 }
                 if (keys & KEY_Y) {
+                    triggerRumbleClick.store(true, std::memory_order_release);
+                    triggerSettingsSound.store(true, std::memory_order_release);
                     // Launch configurator for Micro mode
                     tsl::swapTo<ConfiguratorOverlay>("Micro");
                     return true;
@@ -262,13 +276,17 @@ public:
             //list->addItem(Graphs);
 
             auto* comFPSGraph = new tsl::elm::ListItem("FPS Graph");
+            comFPSGraph->disableClickAnimation();
             comFPSGraph->setClickListener([](uint64_t keys) {
                 if (keys & KEY_A) {
+                    tsl::elm::g_disableMenuCacheOnReturn.store(true, std::memory_order_release);
                     lastMode = "fps_graph";
                     tsl::swapTo<com_FPSGraph>();
                     return true;
                 }
                 if (keys & KEY_Y) {
+                    triggerRumbleClick.store(true, std::memory_order_release);
+                    triggerSettingsSound.store(true, std::memory_order_release);
                     // Launch configurator for Micro mode
                     tsl::swapTo<ConfiguratorOverlay>("FPS Graph");
                     return true;
@@ -278,13 +296,17 @@ public:
             list->addItem(comFPSGraph);
 
             auto* comFPSCounter = new tsl::elm::ListItem("FPS Counter");
+            comFPSCounter->disableClickAnimation();
             comFPSCounter->setClickListener([](uint64_t keys) {
                 if (keys & KEY_A) {
+                    tsl::elm::g_disableMenuCacheOnReturn.store(true, std::memory_order_release);
                     lastMode = "fps_counter";
                     tsl::swapTo<com_FPS>();
                     return true;
                 }
                 if (keys & KEY_Y) {
+                    triggerRumbleClick.store(true, std::memory_order_release);
+                    triggerSettingsSound.store(true, std::memory_order_release);
                     // Launch configurator for Micro mode
                     tsl::swapTo<ConfiguratorOverlay>("FPS Counter");
                     return true;
@@ -294,13 +316,17 @@ public:
             list->addItem(comFPSCounter);
 
             auto* Res = new tsl::elm::ListItem("Game Resolutions");
+            Res->disableClickAnimation();
             Res->setClickListener([](uint64_t keys) {
                 if (keys & KEY_A) {
+                    tsl::elm::g_disableMenuCacheOnReturn.store(true, std::memory_order_release);
                     lastMode = "game_resolutions";
                     tsl::swapTo<ResolutionsOverlay>();
                     return true;
                 }
                 if (keys & KEY_Y) {
+                    triggerRumbleClick.store(true, std::memory_order_release);
+                    triggerSettingsSound.store(true, std::memory_order_release);
                     // Launch configurator for Micro mode
                     tsl::swapTo<ConfiguratorOverlay>("Game Resolutions");
                     return true;
@@ -311,9 +337,12 @@ public:
 
         }
         auto* Other = new tsl::elm::ListItem("Other");
+        Other->disableClickAnimation();
         Other->setValue(ult::DROPDOWN_SYMBOL);
         Other->setClickListener([](uint64_t keys) {
             if (keys & KEY_A) {
+                triggerRumbleClick.store(true, std::memory_order_release);
+                triggerEnterSound.store(true, std::memory_order_release);
                 tsl::swapTo<OtherMenu>();
                 return true;
             }
@@ -324,6 +353,7 @@ public:
         if (!lastSelectedItem.empty())
             list->jumpToItem(lastSelectedItem);
 
+        //list->disableCaching();
         tsl::elm::HeaderOverlayFrame* rootFrame = new tsl::elm::HeaderOverlayFrame("Status Monitor", APP_VERSION);
         rootFrame->setContent(list);
 

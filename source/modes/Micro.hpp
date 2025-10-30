@@ -1047,12 +1047,13 @@ public:
         if (isKeyComboPressed(keysHeld, keysDown)) {
             isRendering = false;
             leventSignal(&renderingStopEvent);
+            //triggerRumbleDoubleClick.store(true, std::memory_order_release);
             skipOnce = true;
             runOnce = true;
             //TeslaFPS = 60;
             if (skipMain) {
                 //lastSelectedItem = "Micro";
-                //lastMode = "";
+                lastMode = "return";
                 //tsl::swapTo<MainMenu>();
                 tsl::goBack();
             }

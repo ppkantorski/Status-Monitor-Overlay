@@ -27,12 +27,15 @@ void EndMiscThread() {
 class MiscOverlay : public tsl::Gui {
 private:
     char DSP_Load_c[16];
-    char NVDEC_Hz_c[18];
-    char NVENC_Hz_c[18];
-    char NVJPG_Hz_c[18];
+    // Separated value buffers for NV clocks
+    char NVDEC_value_c[16] = "";
+    char NVENC_value_c[16] = "";
+    char NVJPG_value_c[16] = "";
     char Nifm_pass[96];
+    FullSettings settings;
 public:
     MiscOverlay() { 
+        GetConfigSettings(&settings);
         disableJumpTo = true;
         smInitialize();
         nifmCheck = nifmInitialize(NifmServiceType_Admin);
@@ -47,6 +50,7 @@ public:
 
         smExit();
         StartMiscThread();
+        tsl::elm::g_disableMenuCacheOnReturn.store(true, std::memory_order_release);
     }
 
     ~MiscOverlay() {
@@ -65,45 +69,59 @@ public:
     virtual tsl::elm::Element* createUI() override {
 
         auto* Status = new tsl::elm::CustomDrawer([this](tsl::gfx::Renderer *renderer, u16 x, u16 y, u16 w, u16 h) {
-            
+            static constexpr u16 X_OFFSET = 30;
+            static constexpr u16 NV_VALUE_X = 120;  // Aligned X position for NV values
+
             ///DSP
             if (R_SUCCEEDED(audsnoopCheck)) {
-                renderer->drawString(DSP_Load_c, false, 20, 120, 20, renderer->a(0xFFFF));
+                renderer->drawString(DSP_Load_c, false, X_OFFSET, 120, 20, (settings.textColor));
             }
 
             //Multimedia engines
             if (R_SUCCEEDED(nvdecCheck | nvencCheck | nvjpgCheck)) {
-                renderer->drawString("Multimedia clock rates:", false, 20, 165, 20, renderer->a(0xFFFF));
-                if (R_SUCCEEDED(nvdecCheck))
-                    renderer->drawString(NVDEC_Hz_c, false, 35, 185, 15, renderer->a(0xFFFF));
-                if (R_SUCCEEDED(nvencCheck))
-                    renderer->drawString(NVENC_Hz_c, false, 35, 200, 15, renderer->a(0xFFFF));
-                if (R_SUCCEEDED(nvjpgCheck))
-                    renderer->drawString(NVJPG_Hz_c, false, 35, 215, 15, renderer->a(0xFFFF));
+                renderer->drawString("Multimedia Clock Rates", false, X_OFFSET, 165, 20, (settings.catColor1));
+                
+                u16 currentY = 185;
+                
+                if (R_SUCCEEDED(nvdecCheck)) {
+                    renderer->drawString("NVDEC", false, X_OFFSET+15, currentY, 15, (settings.catColor2));
+                    renderer->drawString(NVDEC_value_c, false, NV_VALUE_X, currentY, 15, (settings.textColor));
+                    currentY += 15;
+                }
+                if (R_SUCCEEDED(nvencCheck)) {
+                    renderer->drawString("NVENC", false, X_OFFSET+15, currentY, 15, (settings.catColor2));
+                    renderer->drawString(NVENC_value_c, false, NV_VALUE_X, currentY, 15, (settings.textColor));
+                    currentY += 15;
+                }
+                if (R_SUCCEEDED(nvjpgCheck)) {
+                    renderer->drawString("NVJPG", false, X_OFFSET+15, currentY, 15, (settings.catColor2));
+                    renderer->drawString(NVJPG_value_c, false, NV_VALUE_X, currentY, 15, (settings.textColor));
+                }
             }
 
             if (R_SUCCEEDED(nifmCheck)) {
-                renderer->drawString("Network", false, 20, 255, 20, renderer->a(0xFFFF));
+                renderer->drawString("Network", false, X_OFFSET, 255, 20, (settings.catColor1));
                 if (!Nifm_internet_rc) {
                     if (NifmConnectionType == NifmInternetConnectionType_WiFi) {
-                        renderer->drawString("Type: Wi-Fi", false, 20, 280, 18, renderer->a(0xFFFF));
+                        renderer->drawString("Type: Wi-Fi", false, X_OFFSET, 280, 18, (settings.catColor2));
                         if (!Nifm_profile_rc) {
                             if (Nifm_showpass)
-                                renderer->drawString(Nifm_pass, false, 20, 305, 15, renderer->a(0xFFFF));
+                                renderer->drawString(Nifm_pass, false, X_OFFSET, 305, 15, (settings.textColor));
                             else
-                                renderer->drawString("Press Y to show password", false, 20, 305, 15, renderer->a(0xFFFF));
+                                renderer->drawString("Press Y to show password", false, X_OFFSET, 305, 15, (settings.textColor));
                         }
                     }
                     else if (NifmConnectionType == NifmInternetConnectionType_Ethernet)
-                        renderer->drawString("Type: Ethernet", false, 20, 280, 18, renderer->a(0xFFFF));
+                        renderer->drawString("Type: Ethernet", false, X_OFFSET, 280, 18, (settings.textColor));
                 }
                 else
-                    renderer->drawString("Type: Not connected", false, 20, 280, 18, renderer->a(0xFFFF));
+                    renderer->drawString("Type: Not connected", false, X_OFFSET, 280, 18, (settings.textColor));
             }
 
             
         });
         
+        tsl::elm::g_disableMenuCacheOnReturn.store(true, std::memory_order_release);
         tsl::elm::HeaderOverlayFrame* rootFrame = new tsl::elm::HeaderOverlayFrame("Status Monitor", APP_VERSION, true);
         rootFrame->setContent(Status);
         
@@ -113,9 +131,12 @@ public:
     virtual void update() override {
 
         snprintf(DSP_Load_c, sizeof DSP_Load_c, "DSP usage: %u%%", DSP_Load_u);
-        snprintf(NVDEC_Hz_c, sizeof NVDEC_Hz_c, "NVDEC: %.1f MHz", (float)NVDEC_Hz / 1000000);
-        snprintf(NVENC_Hz_c, sizeof NVENC_Hz_c, "NVENC: %.1f MHz", (float)NVENC_Hz / 1000000);
-        snprintf(NVJPG_Hz_c, sizeof NVJPG_Hz_c, "NVJPG: %.1f MHz", (float)NVJPG_Hz / 1000000);
+        
+        // Format just the values for NV clocks
+        snprintf(NVDEC_value_c, sizeof(NVDEC_value_c), "%.1f MHz", (float)NVDEC_Hz / 1000000);
+        snprintf(NVENC_value_c, sizeof(NVENC_value_c), "%.1f MHz", (float)NVENC_Hz / 1000000);
+        snprintf(NVJPG_value_c, sizeof(NVJPG_value_c), "%.1f MHz", (float)NVJPG_Hz / 1000000);
+        
         char pass_temp1[25] = "";
         char pass_temp2[25] = "";
         char pass_temp3[17] = "";
@@ -140,7 +161,7 @@ public:
             if (runOnce) {
                 isRendering = true;
                 leventClear(&renderingStopEvent);
-                runOnce = false;  // Add this to prevent repeated calls
+                runOnce = false;
             }
         } else {
             skipOnce = false;
@@ -156,6 +177,8 @@ public:
         if (keysDown & KEY_B) {
             isRendering = false;
             leventSignal(&renderingStopEvent);
+            triggerRumbleDoubleClick.store(true, std::memory_order_release);
+            triggerExitSound.store(true, std::memory_order_release);
             lastSelectedItem = "Miscellaneous";
             lastMode = "";
             tsl::swapTo<OtherMenu>();

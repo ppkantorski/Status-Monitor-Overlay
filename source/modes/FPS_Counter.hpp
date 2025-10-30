@@ -172,6 +172,7 @@ public:
         if (isKeyComboPressed(keysHeld, keysDown)) {
             isRendering = false;
             leventSignal(&renderingStopEvent);
+            triggerRumbleDoubleClick.store(true, std::memory_order_release);
             positionOnce = true;
             runOnce = true;
             skipOnce = true;

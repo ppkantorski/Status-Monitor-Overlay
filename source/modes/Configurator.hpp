@@ -164,6 +164,8 @@ public:
     
     virtual bool handleInput(u64 keysDown, u64 keysHeld, const HidTouchState &touchPos, HidAnalogStickState joyStickPosLeft, HidAnalogStickState joyStickPosRight) override {
         if (keysDown & KEY_B) {
+            triggerRumbleDoubleClick.store(true, std::memory_order_release);
+            triggerExitSound.store(true, std::memory_order_release);
             jumpItemName = title;
             jumpItemValue = "";
             jumpItemExactMatch = false;
@@ -267,6 +269,8 @@ public:
     
     virtual bool handleInput(u64 keysDown, u64 keysHeld, const HidTouchState &touchPos, HidAnalogStickState joyStickPosLeft, HidAnalogStickState joyStickPosRight) override {
         if (keysDown & KEY_B) {
+            triggerRumbleDoubleClick.store(true, std::memory_order_release);
+            triggerExitSound.store(true, std::memory_order_release);
             jumpItemName = "DTC Format";
             jumpItemValue = "";
             jumpItemExactMatch = false;
@@ -305,7 +309,7 @@ public:
         
         if (isFPSGraphMode) {
             // FPS Graph: show_info and disable_screenshots
-            auto* showInfo = new tsl::elm::ToggleListItem("Show Info", getCurrentShowInfo());
+            auto* showInfo = new tsl::elm::ToggleListItem("Info", getCurrentShowInfo());
             showInfo->setStateChangedListener([this](bool state) {
                 ult::setIniFileValue(configIniPath, "fps-graph", "show_info", state ? "true" : "false");
             });
@@ -319,37 +323,37 @@ public:
             
         } else if (isFullMode) {
             // Full mode: specific full toggles
-            auto* realFreqs = new tsl::elm::ToggleListItem("Show Real Freqs", getCurrentShowRealFreqs());
+            auto* realFreqs = new tsl::elm::ToggleListItem("Real Freqs", getCurrentShowRealFreqs());
             realFreqs->setStateChangedListener([this](bool state) {
                 ult::setIniFileValue(configIniPath, "full", "show_real_freqs", state ? "true" : "false");
             });
             list->addItem(realFreqs);
             
-            auto* showDeltas = new tsl::elm::ToggleListItem("Show Deltas", getCurrentShowDeltas());
+            auto* showDeltas = new tsl::elm::ToggleListItem("Deltas", getCurrentShowDeltas());
             showDeltas->setStateChangedListener([this](bool state) {
                 ult::setIniFileValue(configIniPath, "full", "show_deltas", state ? "true" : "false");
             });
             list->addItem(showDeltas);
             
-            auto* targetFreqs = new tsl::elm::ToggleListItem("Show Target Freqs", getCurrentShowTargetFreqs());
+            auto* targetFreqs = new tsl::elm::ToggleListItem("Target Freqs", getCurrentShowTargetFreqs());
             targetFreqs->setStateChangedListener([this](bool state) {
                 ult::setIniFileValue(configIniPath, "full", "show_target_freqs", state ? "true" : "false");
             });
             list->addItem(targetFreqs);
             
-            auto* showFPS = new tsl::elm::ToggleListItem("Show FPS", getCurrentShowFPS());
+            auto* showFPS = new tsl::elm::ToggleListItem("FPS", getCurrentShowFPS());
             showFPS->setStateChangedListener([this](bool state) {
                 ult::setIniFileValue(configIniPath, "full", "show_fps", state ? "true" : "false");
             });
             list->addItem(showFPS);
             
-            auto* showRES = new tsl::elm::ToggleListItem("Show RES", getCurrentShowRES());
+            auto* showRES = new tsl::elm::ToggleListItem("RES", getCurrentShowRES());
             showRES->setStateChangedListener([this](bool state) {
                 ult::setIniFileValue(configIniPath, "full", "show_res", state ? "true" : "false");
             });
             list->addItem(showRES);
             
-            auto* showRDSD = new tsl::elm::ToggleListItem("Show Read Speed", getCurrentShowRDSD());
+            auto* showRDSD = new tsl::elm::ToggleListItem("Read Speed", getCurrentShowRDSD());
             showRDSD->setStateChangedListener([this](bool state) {
                 ult::setIniFileValue(configIniPath, "full", "show_read_speed", state ? "true" : "false");
             });
@@ -377,35 +381,43 @@ public:
             });
             list->addItem(realVolts);
             
-            auto* showFullCPU = new tsl::elm::ToggleListItem("Show Full CPU", getCurrentShowFullCPU());
+            auto* showFullCPU = new tsl::elm::ToggleListItem("Full CPU", getCurrentShowFullCPU());
             showFullCPU->setStateChangedListener([this, section](bool state) {
                 ult::setIniFileValue(configIniPath, section, "show_full_cpu", state ? "true" : "false");
             });
             list->addItem(showFullCPU);
             
-            auto* showVDDQ = new tsl::elm::ToggleListItem("Show VDDQ", getCurrentShowVDDQ());
+            auto* showVDDQ = new tsl::elm::ToggleListItem("VDDQ", getCurrentShowVDDQ());
             showVDDQ->setStateChangedListener([this, section](bool state) {
                 ult::setIniFileValue(configIniPath, section, "show_vddq", state ? "true" : "false");
             });
             list->addItem(showVDDQ);
 
-            auto* showVDD2 = new tsl::elm::ToggleListItem("Show VDD2", getCurrentShowVDD2());
+            auto* showVDD2 = new tsl::elm::ToggleListItem("VDD2", getCurrentShowVDD2());
             showVDD2->setStateChangedListener([this, section](bool state) {
                 ult::setIniFileValue(configIniPath, section, "show_vdd2", state ? "true" : "false");
             });
             list->addItem(showVDD2);
 
-            auto* showFullRes = new tsl::elm::ToggleListItem("Show Full Resolution", getCurrentShowFullRes());
+            auto* showFullRes = new tsl::elm::ToggleListItem("Full Resolution", getCurrentShowFullRes());
             showFullRes->setStateChangedListener([this, section](bool state) {
                 ult::setIniFileValue(configIniPath, section, "show_full_res", state ? "true" : "false");
             });
             list->addItem(showFullRes);
             
-            auto* socVoltage = new tsl::elm::ToggleListItem("Show SOC Voltage", getCurrentShowSOCVoltage());
+            auto* socVoltage = new tsl::elm::ToggleListItem("SOC Voltage", getCurrentShowSOCVoltage());
             socVoltage->setStateChangedListener([this, section](bool state) {
                 ult::setIniFileValue(configIniPath, section, "show_soc_voltage", state ? "true" : "false");
             });
             list->addItem(socVoltage);
+
+            if (isMiniMode) {
+                auto* ramLoadCPUGPU = new tsl::elm::ToggleListItem("RAM Load CPU/GPU", getCurrentShowRAMLoadCPUGPU());
+                ramLoadCPUGPU->setStateChangedListener([this, section](bool state) {
+                    ult::setIniFileValue(configIniPath, section, "show_RAM_load_CPU_GPU", state ? "true" : "false");
+                });
+                list->addItem(ramLoadCPUGPU);
+            }
             
             auto* dtcSymbol = new tsl::elm::ToggleListItem("Use DTC Symbol", getCurrentUseDTCSymbol());
             dtcSymbol->setStateChangedListener([this, section](bool state) {
@@ -462,6 +474,8 @@ public:
     
     virtual bool handleInput(u64 keysDown, u64 keysHeld, const HidTouchState &touchPos, HidAnalogStickState joyStickPosLeft, HidAnalogStickState joyStickPosRight) override {
         if (keysDown & KEY_B) {
+            triggerRumbleDoubleClick.store(true, std::memory_order_release);
+            triggerExitSound.store(true, std::memory_order_release);
             tsl::goBack();
             return true;
         }
@@ -529,6 +543,14 @@ private:
     bool getCurrentShowSOCVoltage() {
         const std::string section = isMiniMode ? "mini" : "micro";
         std::string value = ult::parseValueFromIniSection(configIniPath, section, "show_soc_voltage");
+        if (value.empty()) return !isMiniMode; // Default: false for mini, true for micro
+        convertToUpper(value);
+        return value != "FALSE";
+    }
+
+    bool getCurrentShowRAMLoadCPUGPU() {
+        const std::string section = isMiniMode ? "mini" : "micro";
+        std::string value = ult::parseValueFromIniSection(configIniPath, section, "show_RAM_load_CPU_GPU");
         if (value.empty()) return !isMiniMode; // Default: false for mini, true for micro
         convertToUpper(value);
         return value != "FALSE";
@@ -688,6 +710,8 @@ public:
     
     virtual bool handleInput(u64 keysDown, u64 keysHeld, const HidTouchState &touchPos, HidAnalogStickState joyStickPosLeft, HidAnalogStickState joyStickPosRight) override {
         if (keysDown & KEY_B) {
+            triggerRumbleDoubleClick.store(true, std::memory_order_release);
+            triggerExitSound.store(true, std::memory_order_release);
             jumpItemName = "Refresh Rate";
             jumpItemValue = "";
             jumpItemExactMatch = false;
@@ -749,6 +773,8 @@ public:
     
     virtual bool handleInput(u64 keysDown, u64 keysHeld, const HidTouchState &touchPos, HidAnalogStickState joyStickPosLeft, HidAnalogStickState joyStickPosRight) override {
         if (keysDown & KEY_B) {
+            triggerRumbleDoubleClick.store(true, std::memory_order_release);
+            triggerExitSound.store(true, std::memory_order_release);
             jumpItemName = "Frame Padding";
             jumpItemValue = "";
             jumpItemExactMatch = false;
@@ -835,6 +861,8 @@ public:
     
     virtual bool handleInput(u64 keysDown, u64 keysHeld, const HidTouchState &touchPos, HidAnalogStickState joyStickPosLeft, HidAnalogStickState joyStickPosRight) override {
         if (keysDown & KEY_B) {
+            triggerRumbleDoubleClick.store(true, std::memory_order_release);
+            triggerExitSound.store(true, std::memory_order_release);
             jumpItemName = title;
             jumpItemValue = "";
             jumpItemExactMatch = false;
@@ -912,6 +940,8 @@ public:
     
     virtual bool handleInput(u64 keysDown, u64 keysHeld, const HidTouchState &touchPos, HidAnalogStickState joyStickPosLeft, HidAnalogStickState joyStickPosRight) override {
         if (keysDown & KEY_B) {
+            triggerRumbleDoubleClick.store(true, std::memory_order_release);
+            triggerExitSound.store(true, std::memory_order_release);
             tsl::goBack();
             return true;
         }
@@ -1116,6 +1146,8 @@ public:
     
     virtual bool handleInput(u64 keysDown, u64 keysHeld, const HidTouchState &touchPos, HidAnalogStickState joyStickPosLeft, HidAnalogStickState joyStickPosRight) override {
         if (keysDown & KEY_B) {
+            triggerRumbleDoubleClick.store(true, std::memory_order_release);
+            triggerExitSound.store(true, std::memory_order_release);
             jumpItemName = modeTitle;
             jumpItemValue = "";
             jumpItemExactMatch = false;
@@ -1148,10 +1180,10 @@ public:
         isFPSGraphMode = (mode == "FPS Graph");
         
         // Full mode should never access color configuration
-        if (isFullMode) {
-            // This should not happen, but if it does, go back
-            tsl::goBack();
-        }
+        //if (isFullMode) {
+        //    // This should not happen, but if it does, go back
+        //    tsl::goBack();
+        //}
     }
     
     virtual tsl::elm::Element* createUI() override {
@@ -1265,60 +1297,62 @@ public:
             return "60%";
         };
         
-        // Background Color (all modes)
-        auto* bgColor = new tsl::elm::ListItem("Background Color");
-        std::string bgDefault = "#0009";
-        std::string bgCurrentColor = getCurrentColor("background_color", bgDefault);
-        // Display color name instead of hex
-        bgColor->setValue(getColorName(bgCurrentColor));
-        bgColor->setClickListener([this, bgDefault](uint64_t keys) {
-            if (keys & KEY_A) {
-                tsl::changeTo<ColorSelector>(modeName, "Background Color", "background_color", bgDefault);
-                return true;
-            }
-            return false;
-        });
-        list->addItem(bgColor);
-        
-        // Background Alpha (new)
-        auto* bgAlpha = new tsl::elm::ListItem("Background Alpha");
-        bgAlpha->setValue(getAlphaPercentage(bgCurrentColor));
-        bgAlpha->setClickListener([this](uint64_t keys) {
-            if (keys & KEY_A) {
-                tsl::changeTo<AlphaSelector>(modeName, "background_color", "Background Alpha");
-                return true;
-            }
-            return false;
-        });
-        list->addItem(bgAlpha);
-    
-        if (isMiniMode) {
-            // Mini mode: has focus background
-            auto* focusBgColor = new tsl::elm::ListItem("Focus Color");
-            std::string focusCurrentColor = getCurrentColor("focus_background_color", "#000F");
-            focusBgColor->setValue(getColorName(focusCurrentColor));
-            focusBgColor->setClickListener([this](uint64_t keys) {
+        if (!isFullMode) {
+            // Background Color (all modes)
+            auto* bgColor = new tsl::elm::ListItem("Background Color");
+            std::string bgDefault = "#0009";
+            std::string bgCurrentColor = getCurrentColor("background_color", bgDefault);
+            // Display color name instead of hex
+            bgColor->setValue(getColorName(bgCurrentColor));
+            bgColor->setClickListener([this, bgDefault](uint64_t keys) {
                 if (keys & KEY_A) {
-                    tsl::changeTo<ColorSelector>(modeName, "Focus Color", "focus_background_color", "#000F");
+                    tsl::changeTo<ColorSelector>(modeName, "Background Color", "background_color", bgDefault);
                     return true;
                 }
                 return false;
             });
-            list->addItem(focusBgColor);
+            list->addItem(bgColor);
             
-            // Focus Alpha (new)
-            auto* focusAlpha = new tsl::elm::ListItem("Focus Alpha");
-            focusAlpha->setValue(getAlphaPercentage(focusCurrentColor));
-            focusAlpha->setClickListener([this](uint64_t keys) {
+            // Background Alpha (new)
+            auto* bgAlpha = new tsl::elm::ListItem("Background Alpha");
+            bgAlpha->setValue(getAlphaPercentage(bgCurrentColor));
+            bgAlpha->setClickListener([this](uint64_t keys) {
                 if (keys & KEY_A) {
-                    tsl::changeTo<AlphaSelector>(modeName, "focus_background_color", "Focus Alpha");
+                    tsl::changeTo<AlphaSelector>(modeName, "background_color", "Background Alpha");
                     return true;
                 }
                 return false;
             });
-            list->addItem(focusAlpha);
-        }
+            list->addItem(bgAlpha);
         
+            if (isMiniMode) {
+                // Mini mode: has focus background
+                auto* focusBgColor = new tsl::elm::ListItem("Focus Color");
+                std::string focusCurrentColor = getCurrentColor("focus_background_color", "#000F");
+                focusBgColor->setValue(getColorName(focusCurrentColor));
+                focusBgColor->setClickListener([this](uint64_t keys) {
+                    if (keys & KEY_A) {
+                        tsl::changeTo<ColorSelector>(modeName, "Focus Color", "focus_background_color", "#000F");
+                        return true;
+                    }
+                    return false;
+                });
+                list->addItem(focusBgColor);
+                
+                // Focus Alpha (new)
+                auto* focusAlpha = new tsl::elm::ListItem("Focus Alpha");
+                focusAlpha->setValue(getAlphaPercentage(focusCurrentColor));
+                focusAlpha->setClickListener([this](uint64_t keys) {
+                    if (keys & KEY_A) {
+                        tsl::changeTo<AlphaSelector>(modeName, "focus_background_color", "Focus Alpha");
+                        return true;
+                    }
+                    return false;
+                });
+                list->addItem(focusAlpha);
+            }
+        }
+
         // Text Color (all modes)
         auto* textColor = new tsl::elm::ListItem("Text Color");
         std::string textCurrentColor = getCurrentColor("text_color", "#FFFF");
@@ -1388,6 +1422,42 @@ public:
                     list->addItem(alphaItem);
                 }
             }
+        } else if (isFullMode) {
+            auto* catColor1 = new tsl::elm::ListItem("Category Color 1");
+            // Display color name for category colors
+            catColor1->setValue(getColorName(getCurrentColor("cat_color_1", "#2DFF")));
+            catColor1->setClickListener([this](uint64_t keys) {
+                if (keys & KEY_A) {
+                    tsl::changeTo<ColorSelector>(modeName, "Category Color 1", "cat_color_1", "#2DFF");
+                    return true;
+                }
+                return false;
+            });
+            list->addItem(catColor1);
+
+            auto* catColor2 = new tsl::elm::ListItem("Category Color 2");
+            // Display color name for category colors
+            catColor2->setValue(getColorName(getCurrentColor("cat_color_2", "#2DFF")));
+            catColor2->setClickListener([this](uint64_t keys) {
+                if (keys & KEY_A) {
+                    tsl::changeTo<ColorSelector>(modeName, "Category Color 2", "cat_color_2", "#2DFF");
+                    return true;
+                }
+                return false;
+            });
+            list->addItem(catColor2);
+    
+            auto* sepColor = new tsl::elm::ListItem("Separator Color");
+            // Display color name for separator colors
+            sepColor->setValue(getColorName(getCurrentColor("separator_color", "#2DFF")));
+            sepColor->setClickListener([this](uint64_t keys) {
+                if (keys & KEY_A) {
+                    tsl::changeTo<ColorSelector>(modeName, "Separator Color", "separator_color", "#2DFF");
+                    return true;
+                }
+                return false;
+            });
+            list->addItem(sepColor);
         } else if (isMiniMode) {
             auto* catColor = new tsl::elm::ListItem("Category Color");
             // Display color name for category colors
@@ -1460,7 +1530,8 @@ public:
             jumpItemValue = "";
             jumpItemExactMatch = false;
         }
-    
+        
+        //list->disableCaching();
         tsl::elm::OverlayFrame* rootFrame = new tsl::elm::OverlayFrame("Status Monitor", "Configuration");
         rootFrame->setContent(list);
         return rootFrame;
@@ -1468,6 +1539,8 @@ public:
     
     virtual bool handleInput(u64 keysDown, u64 keysHeld, const HidTouchState &touchPos, HidAnalogStickState joyStickPosLeft, HidAnalogStickState joyStickPosRight) override {
         if (keysDown & KEY_B) {
+            triggerRumbleDoubleClick.store(true, std::memory_order_release);
+            triggerExitSound.store(true, std::memory_order_release);
             tsl::goBack();
             return true;
         }
@@ -1582,6 +1655,8 @@ public:
                     }
                     
                     if (keys & KEY_Y) {
+                        triggerRumbleClick.store(true, std::memory_order_release);
+                        triggerMoveSound.store(true, std::memory_order_release);
                         if (currentPos > 0) {
                             std::swap(elementOrder[currentPos], elementOrder[currentPos - 1]);
                         } else {
@@ -1592,6 +1667,8 @@ public:
                             elementOrder[elementOrder.size() - 1] = temp;
                         }
                     } else if (keys & KEY_X) {
+                        triggerRumbleClick.store(true, std::memory_order_release);
+                        triggerMoveSound.store(true, std::memory_order_release);
                         if (currentPos < elementOrder.size() - 1) {
                             std::swap(elementOrder[currentPos], elementOrder[currentPos + 1]);
                         } else {
@@ -1631,6 +1708,8 @@ public:
     
     virtual bool handleInput(u64 keysDown, u64 keysHeld, const HidTouchState &touchPos, HidAnalogStickState joyStickPosLeft, HidAnalogStickState joyStickPosRight) override {
         if (keysDown & KEY_B) {
+            triggerRumbleDoubleClick.store(true, std::memory_order_release);
+            triggerExitSound.store(true, std::memory_order_release);
             tsl::goBack();
             return true;
         }
@@ -1720,18 +1799,18 @@ public:
         //}
 
         // 2. Colors (not Full mode - it has no color settings)
-        if (!isFullMode) {
-            auto* colors = new tsl::elm::ListItem("Colors");
-            colors->setValue(ult::DROPDOWN_SYMBOL);
-            colors->setClickListener([this](uint64_t keys) {
-                if (keys & KEY_A) {
-                    tsl::changeTo<ColorConfig>(modeName);
-                    return true;
-                }
-                return false;
-            });
-            list->addItem(colors);
-        }
+        //if (!isFullMode) {
+        auto* colors = new tsl::elm::ListItem("Colors");
+        colors->setValue(ult::DROPDOWN_SYMBOL);
+        colors->setClickListener([this](uint64_t keys) {
+            if (keys & KEY_A) {
+                tsl::changeTo<ColorConfig>(modeName);
+                return true;
+            }
+            return false;
+        });
+        list->addItem(colors);
+        //}
         
         
         // 4. Font Sizes (Mini/Micro/FPS Counter only)
@@ -1871,6 +1950,8 @@ public:
     
     virtual bool handleInput(u64 keysDown, u64 keysHeld, const HidTouchState &touchPos, HidAnalogStickState joyStickPosLeft, HidAnalogStickState joyStickPosRight) override {
         if (keysDown & KEY_B) {
+            triggerRumbleDoubleClick.store(true, std::memory_order_release);
+            triggerExitSound.store(true, std::memory_order_release);
             lastSelectedItem = modeName;
             tsl::swapTo<MainMenu>();
             return true;
