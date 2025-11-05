@@ -579,6 +579,7 @@ public:
             isRendering = false;
             leventSignal(&renderingStopEvent);
             triggerRumbleDoubleClick.store(true, std::memory_order_release);
+            triggerExitSound.store(true, std::memory_order_release);
             skipOnce = true;
             runOnce = true;
             TeslaFPS = 60;
