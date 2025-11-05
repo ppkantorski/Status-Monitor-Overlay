@@ -26,6 +26,14 @@ private:
     size_t framePadding = 10;
     static constexpr int screenWidth = 1280;
     static constexpr int screenHeight = 720;
+
+    struct ButtonState {
+        std::atomic<bool> minusDragActive{false};
+        std::atomic<bool> plusDragActive{false};
+    } buttonState;
+
+    Thread touchPollThread;
+    std::atomic<bool> touchPollRunning{false};
 public:
     MiniOverlay() { 
         tsl::hlp::requestForeground(false);
@@ -71,8 +79,138 @@ public:
         deactivateOriginalFooter = true;
         realVoltsPolling = settings.realVolts;
         StartThreads();
+
+        // Start touch polling thread for instant response at low FPS
+        touchPollRunning.store(true, std::memory_order_release);
+        threadCreate(&touchPollThread, [](void* arg) -> void {
+            MiniOverlay* overlay = static_cast<MiniOverlay*>(arg);
+            
+            // Allow only Player 1 and handheld mode
+            HidNpadIdType id_list[2] = { HidNpadIdType_No1, HidNpadIdType_Handheld };
+            
+            // Configure HID system to only listen to these IDs
+            hidSetSupportedNpadIdType(id_list, 2);
+            
+            // Configure input for up to 2 supported controllers (P1 + Handheld)
+            padConfigureInput(2, HidNpadStyleSet_NpadStandard | HidNpadStyleTag_NpadSystemExt);
+            
+            // Initialize separate pad states for both controllers
+            PadState pad_p1;
+            PadState pad_handheld;
+            padInitialize(&pad_p1, HidNpadIdType_No1);
+            padInitialize(&pad_handheld, HidNpadIdType_Handheld);
+        
+            u64 minusHoldStart = 0;
+            u64 plusHoldStart = 0;
+            static constexpr u64 HOLD_THRESHOLD_NS = 500'000'000ULL;
+        
+            HidTouchScreenState state = {0};
+            bool inputDetected;
+            size_t actualEntryCount;
+        
+            while (overlay->touchPollRunning.load(std::memory_order_acquire)) {
+                // Only poll when rendering and not dragging
+                if (!overlay->isDragging && isRendering) {
+                    inputDetected = false;
+                    
+                    // Check touch in bounds
+                    if (hidGetTouchScreenStates(&state, 1) && state.count > 0) {
+                        const int touchX = state.touches[0].x;
+                        const int touchY = state.touches[0].y;
+                        
+                        // Calculate bounds (same logic as handleInput)
+                        const uint32_t margin = (overlay->fontsize * 4);
+                        const int overlayX = overlay->frameOffsetX;
+                        const int overlayY = overlay->frameOffsetY;
+                        const int overlayWidth = margin + overlay->rectangleWidth + (overlay->fontsize / 3);
+                        
+                        // Calculate height from Variables string
+                        actualEntryCount = 1;
+                        for (size_t i = 0; overlay->Variables[i] != '\0'; i++) {
+                            if (overlay->Variables[i] == '\n') {
+                                actualEntryCount++;
+                            }
+                        }
+                        const int overlayHeight = ((overlay->fontsize + overlay->settings.spacing) * actualEntryCount) + 
+                                                 (overlay->fontsize / 3) + overlay->settings.spacing + 
+                                                 overlay->topPadding + overlay->bottomPadding;
+                        
+                        // Add touch padding
+                        const int touchPadding = 4;
+                        const int touchableX = overlayX - touchPadding;
+                        const int touchableY = overlayY - touchPadding;
+                        const int touchableWidth = overlayWidth + (touchPadding * 2);
+                        const int touchableHeight = overlayHeight + (touchPadding * 2);
+                        
+                        // Check if touch is within bounds
+                        if (touchX >= touchableX && touchX <= touchableX + touchableWidth &&
+                            touchY >= touchableY && touchY <= touchableY + touchableHeight) {
+                            inputDetected = true;
+                        }
+                    }
+                    
+                    // Poll buttons from both controllers
+                    padUpdate(&pad_p1);
+                    padUpdate(&pad_handheld);
+                    //const u64 keysHeld_p1 = padGetButtons(&pad_p1);
+                    //const u64 keysHeld_handheld = padGetButtons(&pad_handheld);
+                    
+                    // Combine input from both controllers
+                    const u64 keysHeld = padGetButtons(&pad_p1) | padGetButtons(&pad_handheld);
+                    const u64 now = armTicksToNs(armGetSystemTick());
+                    
+                    // Track MINUS hold duration
+                    if ((keysHeld & KEY_MINUS) && !(keysHeld & ~KEY_MINUS & ALL_KEYS_MASK)) {
+                        if (minusHoldStart == 0) {
+                            minusHoldStart = now;
+                        }
+                        if (now - minusHoldStart >= HOLD_THRESHOLD_NS) {
+                            // Long enough to start drag
+                            inputDetected = true;
+                            overlay->buttonState.minusDragActive.exchange(true, std::memory_order_acq_rel);
+                        }
+                    }
+                    
+                    // Track PLUS hold duration
+                    else if ((keysHeld & KEY_PLUS) && !(keysHeld & ~KEY_PLUS & ALL_KEYS_MASK)) {
+                        if (plusHoldStart == 0) {
+                            plusHoldStart = now;
+                        }
+                        if (now - plusHoldStart >= HOLD_THRESHOLD_NS) {
+                            // Long enough to start drag
+                            inputDetected = true;
+                            overlay->buttonState.plusDragActive.exchange(true, std::memory_order_acq_rel);
+                        }
+                    }
+
+                    else {
+                        minusHoldStart = plusHoldStart = 0;
+                        overlay->buttonState.plusDragActive.exchange(false, std::memory_order_acq_rel);
+                    }
+                    
+                    // Disable rendering on any input, re-enable when no input
+                    static bool resetOnce = true;
+                    if (inputDetected) {
+                        if (resetOnce) {
+                            isRendering = false;
+                            leventSignal(&renderingStopEvent);
+                            resetOnce = false;
+                        }
+                    } else {
+                        resetOnce = true;
+                    }
+                }
+                
+                svcSleepThread(16000000ULL*2); // 16ms polling
+            }
+        }, this, NULL, 0x1000, 0x2B, -2);
+        threadStart(&touchPollThread);
     }
     ~MiniOverlay() {
+        // Stop touch polling thread
+        touchPollRunning.store(false, std::memory_order_release);
+        threadWaitForExit(&touchPollThread);
+        threadClose(&touchPollThread);
 
         CloseThreads();
         FullMode = true;
@@ -244,12 +382,38 @@ public:
                         width = renderer->getTextDimensions("999.99 MiB/s", false, fontsize).first;
                     } else if (key == "DTC" && settings.showDTC) {
                         // Calculate width based on the datetime format
-                        // Use a sample datetime string to measure width
+                        // Use multiple sample dates to ensure longest possible textual output
+                    
                         char sampleDateTime[64];
-                        time_t rawtime = time(NULL);
-                        struct tm *timeinfo = localtime(&rawtime);
-                        strftime(sampleDateTime, sizeof(sampleDateTime), settings.dtcFormat.c_str(), timeinfo);
-                        width = renderer->getTextDimensions(std::string(sampleDateTime)+"  ", false, fontsize).first;
+                        size_t maxWidth = 0;
+                    
+                        // Representative dates that produce long names in most locales
+                        constexpr int testDays[][3] = {
+                            {2025, 11, 26}, // Wednesday – longest weekday
+                            {2025, 9, 30},  // September – long month
+                            {2025, 12, 31}, // December – another long month
+                            {2025, 2, 28},  // February – to cover locales where it's long
+                        };
+                    
+                        struct tm t = {};
+                        for (auto &d : testDays) {
+                            
+                            t.tm_year = d[0] - 1900;
+                            t.tm_mon  = d[1] - 1;
+                            t.tm_mday = d[2];
+                            t.tm_hour = 23;
+                            t.tm_min  = 59;
+                            t.tm_sec  = 59;
+                            mktime(&t); // normalize (sets weekday, etc.)
+                    
+                            strftime(sampleDateTime, sizeof(sampleDateTime), settings.dtcFormat.c_str(), &t);
+                            const size_t w = renderer->getTextDimensions(std::string(sampleDateTime) + "  ", false, fontsize).first;
+                            if (w > maxWidth)
+                                maxWidth = w;
+                        }
+                    
+                        width = maxWidth;
+                    
                     } else {
                         continue;
                     }
@@ -345,34 +509,6 @@ public:
                 cachedBaseX = 0;
                 cachedBaseY = 0;
                 
-                //if (ult::useRightAlignment) {
-                //    cachedBaseX = frameWidth - (margin + rectangleWidth + (fontsize / 3));
-                //} else {
-                //switch (settings.setPos) {
-                //    case 1:
-                //        cachedBaseX = 224 - ((margin + rectangleWidth + (fontsize / 3)) / 2);
-                //        break;
-                //    case 4:
-                //        cachedBaseX = 224 - ((margin + rectangleWidth + (fontsize / 3)) / 2);
-                //        cachedBaseY = 360 - cachedHeight / 2;
-                //        break;
-                //    case 7:
-                //        cachedBaseX = 224 - ((margin + rectangleWidth + (fontsize / 3)) / 2);
-                //        cachedBaseY = 720 - cachedHeight;
-                //        break;
-                //    case 2:
-                //        cachedBaseX = 448 - (margin + rectangleWidth + (fontsize / 3));
-                //        break;
-                //    case 5:
-                //        cachedBaseX = 448 - (margin + rectangleWidth + (fontsize / 3));
-                //        cachedBaseY = 360 - cachedHeight / 2;
-                //        break;
-                //    case 8:
-                //        cachedBaseX = 448 - (margin + rectangleWidth + (fontsize / 3));
-                //        cachedBaseY = 720 - cachedHeight;
-                //        break;
-                //}
-                ///}
                 needsRecalc = false;
             }
             
@@ -1090,47 +1226,45 @@ public:
             {"RES", [&]() {
                 if (!(flags & 128) && GameRunning && m_resolutionOutput[0].width) {
                     if (Temp[0]) strcat(Temp, "\n");
-                    char Temp_s[32];
+                    char Temp_s[32] = "";
                     static std::pair<uint16_t, uint16_t> old_res[2];
-                    
-                    // Determine display order without modifying the original array
-                    uint16_t display_width0 = m_resolutionOutput[0].width;
-                    uint16_t display_height0 = m_resolutionOutput[0].height;
-                    uint16_t display_width1 = m_resolutionOutput[1].width;
-                    uint16_t display_height1 = m_resolutionOutput[1].height;
-                    
-                    // Only swap if BOTH resolutions exist (prevent swapping with empty slot)
-                    if (display_width1 && display_width0) {  // ← KEY FIX
-                        if ((display_width0 == old_res[1].first && display_height0 == old_res[1].second) || 
-                            (display_width1 == old_res[0].first && display_height1 == old_res[0].second)) {
-                            // Swap display order
-                            std::swap(display_width0, display_width1);
-                            std::swap(display_height0, display_height1);
+            
+                    uint16_t w0 = m_resolutionOutput[0].width;
+                    uint16_t h0 = m_resolutionOutput[0].height;
+                    uint16_t w1 = m_resolutionOutput[1].width;
+                    uint16_t h1 = m_resolutionOutput[1].height;
+            
+                    // Only run if at least one valid resolution is present
+                    if (w0 || w1) {
+                        // Swap order if resolutions are reversed relative to last frame
+                        if (w0 && w1) {
+                            if ((w0 == old_res[1].first && h0 == old_res[1].second) ||
+                                (w1 == old_res[0].first && h1 == old_res[0].second)) {
+                                std::swap(w0, w1);
+                                std::swap(h0, h1);
+                            }
                         }
+            
+                        // Format based on whether we show full resolution or just height (p)
+                        if (settings.showFullResolution) {
+                            if (!w1 || !h1)
+                                snprintf(Temp_s, sizeof(Temp_s), "%dx%d", w0 ? w0 : w1, h0 ? h0 : h1);
+                            else
+                                snprintf(Temp_s, sizeof(Temp_s), "%dx%d%dx%d", w0, h0, w1, h1);
+                        } else {
+                            if (!w1 || !h1)
+                                snprintf(Temp_s, sizeof(Temp_s), "%dp", h0 ? h0 : h1);
+                            else
+                                snprintf(Temp_s, sizeof(Temp_s), "%dp%dp", h0, h1);
+                        }
+            
+                        // Update last-frame cache
+                        old_res[0] = {m_resolutionOutput[0].width, m_resolutionOutput[0].height};
+                        old_res[1] = {m_resolutionOutput[1].width, m_resolutionOutput[1].height};
+            
+                        strcat(Temp, Temp_s);
+                        flags |= 128;
                     }
-                    
-                    // Format output using display order
-                    if (settings.showFullResolution) {
-                        if (!display_width1) {
-                            snprintf(Temp_s, sizeof(Temp_s), "%dx%d", display_width0, display_height0);
-                        }
-                        else {
-                            snprintf(Temp_s, sizeof(Temp_s), "%dx%d%dx%d", display_width0, display_height0, display_width1, display_height1);
-                        }
-                    } else {
-                        if (!display_width1) {
-                            snprintf(Temp_s, sizeof(Temp_s), "%dp", display_height0);
-                        }
-                        else {
-                            snprintf(Temp_s, sizeof(Temp_s), "%dp%dp", display_height0, display_height1);
-                        }
-                    }
-                    
-                    // Store the ORIGINAL values for next frame comparison
-                    old_res[0] = std::make_pair(m_resolutionOutput[0].width, m_resolutionOutput[0].height);
-                    old_res[1] = std::make_pair(m_resolutionOutput[1].width, m_resolutionOutput[1].height);
-                    strcat(Temp, Temp_s);
-                    flags |= 128;
                 }
             }},
             {"READ", [&]() {
@@ -1218,6 +1352,7 @@ public:
         static bool oldTouchDetected = false;
         static bool oldMinusHeld = false;
         static bool oldPlusHeld = false;
+
         static HidTouchState initialTouchPos = {0};
         static int initialFrameOffsetX = 0;
         static int initialFrameOffsetY = 0;
@@ -1241,6 +1376,14 @@ public:
         //        lastTouchTime = currentTime;
         //    }
         //}
+
+        static bool clearOnRelease = false;
+
+        if (clearOnRelease) {
+            clearOnRelease = false;
+            isRendering = true;
+            leventClear(&renderingStopEvent);
+        }
         
         // Calculate overlay bounds
         const uint32_t margin = (fontsize * 4);
@@ -1269,35 +1412,6 @@ public:
             cachedBaseX = 0;
             cachedBaseY = 0;
             
-            //if (ult::useRightAlignment) {
-            //    cachedBaseX = 448 - (margin + rectangleWidth + (fontsize / 3));
-            //} else {
-            //switch (settings.setPos) {
-            //    case 1:
-            //        cachedBaseX = 224 - ((margin + rectangleWidth + (fontsize / 3)) / 2);
-            //        break;
-            //    case 4:
-            //        cachedBaseX = 224 - ((margin + rectangleWidth + (fontsize / 3)) / 2);
-            //        cachedBaseY = 360 - cachedOverlayHeight / 2;
-            //        break;
-            //    case 7:
-            //        cachedBaseX = 224 - ((margin + rectangleWidth + (fontsize / 3)) / 2);
-            //        cachedBaseY = 720 - cachedOverlayHeight;
-            //        break;
-            //    case 2:
-            //        cachedBaseX = 448 - (margin + rectangleWidth + (fontsize / 3));
-            //        break;
-            //    case 5:
-            //        cachedBaseX = 448 - (margin + rectangleWidth + (fontsize / 3));
-            //        cachedBaseY = 360 - cachedOverlayHeight / 2;
-            //        break;
-            //    case 8:
-            //        cachedBaseX = 448 - (margin + rectangleWidth + (fontsize / 3));
-            //        cachedBaseY = 720 - cachedOverlayHeight;
-            //        break;
-            //}
-            //}
-            
             boundsNeedUpdate = false;
             lastVariables = Variables;
         }
@@ -1320,10 +1434,13 @@ public:
         const int minY = -cachedBaseY + framePadding;
         const int maxY = screenHeight - overlayHeight - cachedBaseY - framePadding;
     
+        const bool minusDragReady = buttonState.minusDragActive.load(std::memory_order_acquire);
+        const bool plusDragReady = buttonState.plusDragActive.load(std::memory_order_acquire);
+
         // Check button states
-        const bool currentMinusHeld = (keysHeld & KEY_MINUS) && !(keysHeld & ~KEY_MINUS & ALL_KEYS_MASK);
-        const bool currentPlusHeld = (keysHeld & KEY_PLUS) && !(keysHeld & ~KEY_PLUS & ALL_KEYS_MASK);
-    
+        const bool currentMinusHeld = (keysHeld & KEY_MINUS) && !(keysHeld & ~KEY_MINUS & ALL_KEYS_MASK) && minusDragReady;
+        const bool currentPlusHeld = (keysHeld & KEY_PLUS) && !(keysHeld & ~KEY_PLUS & ALL_KEYS_MASK) && plusDragReady;
+            
         // Handle touch dragging
         if (currentTouchDetected && !isDragging) {
             // Touch detected and not currently dragging - check if we should start
@@ -1337,8 +1454,8 @@ public:
                     
                     // Start touch dragging
                     isDragging = true;
-                    isRendering = false;
-                    leventSignal(&renderingStopEvent);
+                    //isRendering = false;
+                    //leventSignal(&renderingStopEvent);
                     triggerRumbleClick.store(true, std::memory_order_release);
                     triggerOnSound.store(true, std::memory_order_release);
                     hasMoved = false;
@@ -1384,18 +1501,20 @@ public:
             // Reset touch drag state
             isDragging = false;
             hasMoved = false;
-            isRendering = true;
-            leventClear(&renderingStopEvent);
+            //isRendering = true;
+            //leventClear(&renderingStopEvent);
+            clearOnRelease = true;
             triggerRumbleDoubleClick.store(true, std::memory_order_release);
             triggerOffSound.store(true, std::memory_order_release);
         }
-    
+        
+
         // Handle joystick dragging (MINUS + right joystick OR PLUS + left joystick)
         if ((currentMinusHeld || currentPlusHeld) && !isDragging) {
             // Start joystick dragging
             isDragging = true;
-            isRendering = false;
-            leventSignal(&renderingStopEvent);
+            //isRendering = false;
+            //leventSignal(&renderingStopEvent);
             triggerRumbleClick.store(true, std::memory_order_release);
             triggerOnSound.store(true, std::memory_order_release);
         } else if ((currentMinusHeld || currentPlusHeld) && isDragging) {
@@ -1447,8 +1566,9 @@ public:
             iniData["mini"]["frame_offset_y"] = std::to_string(frameOffsetY);
             ult::saveIniFileData(configIniPath, iniData);
             isDragging = false;
-            isRendering = true;
-            leventClear(&renderingStopEvent);
+            //isRendering = true;
+            //leventClear(&renderingStopEvent);
+            clearOnRelease = true;
             triggerRumbleDoubleClick.store(true, std::memory_order_release);
             triggerOffSound.store(true, std::memory_order_release);
         }
@@ -1469,7 +1589,7 @@ public:
                 //TeslaFPS = 60;
                 if (skipMain) {
                     //lastSelectedItem = "Mini";
-                    lastMode = "return";
+                    lastMode = "returning";
                     tsl::goBack();
                 }
                 else {

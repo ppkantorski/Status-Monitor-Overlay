@@ -102,13 +102,13 @@ public:
         
 
         auto Status = new tsl::elm::CustomDrawer([this](tsl::gfx::Renderer *renderer, u16 x, u16 y, u16 w, u16 h) {
-            static auto targetFreqWidth = renderer->getTextDimensions("Target Frequency", false, 15).first;
-            static auto realFreqWidth = renderer->getTextDimensions("Real Frequency", false, 15).first;
-            static auto freqWidth = std::max(targetFreqWidth, realFreqWidth);
+            //static auto targetFreqWidth = renderer->getTextDimensions("Target Frequency", false, 15).first;
+            //static auto realFreqWidth = renderer->getTextDimensions("Real Frequency", false, 15).first;
+            //static auto freqWidth = std::max(targetFreqWidth, realFreqWidth);
 
-            static auto batteryLabelWidth = renderer->getTextDimensions("Battery Power Flow", false, 15).first;
-            static auto fanLabelWidth = renderer->getTextDimensions("Fan Rotation Level", false, 15).first;
-            static auto boardWidth = std::max(batteryLabelWidth, fanLabelWidth);
+            //static auto batteryLabelWidth = renderer->getTextDimensions("Battery Power Flow", false, 15).first;
+            //static auto fanLabelWidth = renderer->getTextDimensions("Fan Rotation Level", false, 15).first;
+            //static auto boardWidth = std::max(batteryLabelWidth, fanLabelWidth);
 
             static constexpr size_t valueOffset = 150;
             static constexpr size_t deltaOffset = 246;
@@ -444,11 +444,11 @@ public:
         //Resolutions
         if ((settings.showRES == true) && GameRunning && NxFps) {
             if (!resolutionLookup) {
-                (NxFps -> renderCalls[0].calls) = settings.catColor1;
+                (NxFps -> renderCalls[0].calls) = 0xFFFF;
                 resolutionLookup = 1;
             }
             else if (resolutionLookup == 1) {
-                if ((NxFps -> renderCalls[0].calls) != settings.catColor1) resolutionLookup = 2;
+                if ((NxFps -> renderCalls[0].calls) != 0xFFFF) resolutionLookup = 2;
             }
             else {
                 if (NxFps && SharedMemoryUsed) {
@@ -524,12 +524,19 @@ public:
                     }
                 }
                 
-                if (!m_resolutionOutput[1].width) {
-                    snprintf(Resolutions_c, sizeof(Resolutions_c), "%dx%d", m_resolutionOutput[0].width, m_resolutionOutput[0].height);
+                //if (!m_resolutionOutput[1].width) {
+                //    snprintf(Resolutions_c, sizeof(Resolutions_c), "%dx%d", m_resolutionOutput[0].width, m_resolutionOutput[0].height);
+                //}
+                //else {
+                //    snprintf(Resolutions_c, sizeof(Resolutions_c), "%dx%d%dx%d", m_resolutionOutput[0].width, m_resolutionOutput[0].height, m_resolutionOutput[1].width, m_resolutionOutput[1].height);
+                //}
+
+                if (!m_resolutionOutput[1].width || !m_resolutionOutput[0].width) {
+                    if (!m_resolutionOutput[1].width)
+                        snprintf(Resolutions_c, sizeof(Resolutions_c), "%dx%d", m_resolutionOutput[0].width, m_resolutionOutput[0].height);
+                    else snprintf(Resolutions_c, sizeof(Resolutions_c), "%dx%d", m_resolutionOutput[1].width, m_resolutionOutput[1].height);
                 }
-                else {
-                    snprintf(Resolutions_c, sizeof(Resolutions_c), "%dx%d%dx%d", m_resolutionOutput[0].width, m_resolutionOutput[0].height, m_resolutionOutput[1].width, m_resolutionOutput[1].height);
-                }
+                else snprintf(Resolutions_c, sizeof(Resolutions_c),"%dx%d%dx%d", m_resolutionOutput[0].width, m_resolutionOutput[0].height, m_resolutionOutput[1].width, m_resolutionOutput[1].height);
                 
                 old_res[0] = std::make_pair(m_resolutionOutput[0].width, m_resolutionOutput[0].height);
                 old_res[1] = std::make_pair(m_resolutionOutput[1].width, m_resolutionOutput[1].height);

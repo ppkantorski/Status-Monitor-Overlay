@@ -1325,7 +1325,7 @@ public:
             });
             list->addItem(bgAlpha);
         
-            if (isMiniMode) {
+            if (isMiniMode || isFPSCounterMode || isFPSGraphMode || isGameResolutionsMode) {
                 // Mini mode: has focus background
                 auto* focusBgColor = new tsl::elm::ListItem("Focus Color");
                 std::string focusCurrentColor = getCurrentColor("focus_background_color", "#000F");
@@ -1377,7 +1377,7 @@ public:
             };
             
             static const std::vector<ColorSetting> fpsGraphColors = {
-                {"FPS Counter", "fps_counter_color", "#4444", true},      // background type
+                {"FPS Counter", "fps_counter_color", "#888C", true},      // background type
                 {"Border", "border_color", "#F00F", false},               // text type
                 {"Dashed Line", "dashed_line_color", "#8888", true},      // background type
                 {"Max FPS Text", "max_fps_text_color", "#FFFF", false},   // text type
@@ -1511,10 +1511,10 @@ public:
         } else if (isGameResolutionsMode) {
             // Game Resolutions: only category color (no separator)
             auto* catColor = new tsl::elm::ListItem("Category Color");
-            catColor->setValue(getColorName(getCurrentColor("cat_color", "#FFFF")));
+            catColor->setValue(getColorName(getCurrentColor("cat_color", "#2DFF")));
             catColor->setClickListener([this](uint64_t keys) {
                 if (keys & KEY_A) {
-                    tsl::changeTo<ColorSelector>(modeName, "Category Color", "cat_color", "#FFFF");
+                    tsl::changeTo<ColorSelector>(modeName, "Category Color", "cat_color", "#2DFF");
                     return true;
                 }
                 return false;
@@ -1565,7 +1565,7 @@ public:
     
     virtual tsl::elm::Element* createUI() override {
         auto* list = new tsl::elm::List();
-        list->addItem(new tsl::elm::CategoryHeader("Elements " + ult::DIVIDER_SYMBOL + " \uE0E3 Move Up " + ult::DIVIDER_SYMBOL + " \uE0E2 Move Down"));
+        list->addItem(new tsl::elm::CategoryHeader("Elements " + ult::DIVIDER_SYMBOL + " \uE0E3 Move Down " + ult::DIVIDER_SYMBOL + " \uE0E2 Move Up"));
 
         const std::string section = isMiniMode ? "mini" : "micro";
         std::string showValue = ult::parseValueFromIniSection(configIniPath, section, "show");
@@ -1654,9 +1654,7 @@ public:
                         }
                     }
                     
-                    if (keys & KEY_Y) {
-                        triggerRumbleClick.store(true, std::memory_order_release);
-                        triggerMoveSound.store(true, std::memory_order_release);
+                    if (keys & KEY_X) {
                         if (currentPos > 0) {
                             std::swap(elementOrder[currentPos], elementOrder[currentPos - 1]);
                         } else {
@@ -1666,9 +1664,9 @@ public:
                             }
                             elementOrder[elementOrder.size() - 1] = temp;
                         }
-                    } else if (keys & KEY_X) {
                         triggerRumbleClick.store(true, std::memory_order_release);
                         triggerMoveSound.store(true, std::memory_order_release);
+                    } else if (keys & KEY_Y) {
                         if (currentPos < elementOrder.size() - 1) {
                             std::swap(elementOrder[currentPos], elementOrder[currentPos + 1]);
                         } else {
@@ -1678,6 +1676,8 @@ public:
                             }
                             elementOrder[0] = temp;
                         }
+                        triggerRumbleClick.store(true, std::memory_order_release);
+                        triggerMoveSound.store(true, std::memory_order_release);
                     }
                     
                     updateShowAndOrder();
@@ -1854,7 +1854,7 @@ public:
         }
 
         // 7. Frame Padding (Mini only) - NEW ADDITION
-        if (isMiniMode) {
+        if (isMiniMode || isGameResolutionsMode || isFPSCounterMode || isFPSGraphMode) {
             auto* framePadding = new tsl::elm::ListItem("Frame Padding");
             framePadding->setValue(std::to_string(getCurrentFramePadding()) + " px");
             framePadding->setClickListener([this](uint64_t keys) {
@@ -1909,31 +1909,31 @@ public:
             });
             list->addItem(layerPos);
             
-        } else if (isGameResolutionsMode || isFPSCounterMode || isFPSGraphMode) {
-            // Both horizontal and vertical positioning
-            auto* layerPosH = new tsl::elm::ListItem("Horizontal Position");
-            layerPosH->setValue(getCurrentLayerPosRight());
-            layerPosH->setClickListener([this, layerPosH](uint64_t keys) {
-                if (keys & KEY_A) {
-                    const std::string next = cycleLayerPosRight();
-                    layerPosH->setValue(next);
-                    return true;
-                }
-                return false;
-            });
-            list->addItem(layerPosH);
-            
-            auto* layerPosV = new tsl::elm::ListItem("Vertical Position");
-            layerPosV->setValue(getCurrentLayerPosBottom());
-            layerPosV->setClickListener([this, layerPosV](uint64_t keys) {
-                if (keys & KEY_A) {
-                    const std::string next = cycleLayerPosBottom();
-                    layerPosV->setValue(next);
-                    return true;
-                }
-                return false;
-            });
-            list->addItem(layerPosV);
+        //} else if (isGameResolutionsMode || isFPSCounterMode || isFPSGraphMode) {
+        //    // Both horizontal and vertical positioning
+        //    auto* layerPosH = new tsl::elm::ListItem("Horizontal Position");
+        //    layerPosH->setValue(getCurrentLayerPosRight());
+        //    layerPosH->setClickListener([this, layerPosH](uint64_t keys) {
+        //        if (keys & KEY_A) {
+        //            const std::string next = cycleLayerPosRight();
+        //            layerPosH->setValue(next);
+        //            return true;
+        //        }
+        //        return false;
+        //    });
+        //    list->addItem(layerPosH);
+        //    
+        //    auto* layerPosV = new tsl::elm::ListItem("Vertical Position");
+        //    layerPosV->setValue(getCurrentLayerPosBottom());
+        //    layerPosV->setClickListener([this, layerPosV](uint64_t keys) {
+        //        if (keys & KEY_A) {
+        //            const std::string next = cycleLayerPosBottom();
+        //            layerPosV->setValue(next);
+        //            return true;
+        //        }
+        //        return false;
+        //    });
+        //    list->addItem(layerPosV);
         }
         
         list->jumpToItem(jumpItemName, jumpItemValue, jumpItemExactMatch.load(std::memory_order_acquire));

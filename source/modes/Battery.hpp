@@ -42,9 +42,9 @@ public:
         auto* Status = new tsl::elm::CustomDrawer([this](tsl::gfx::Renderer *renderer, u16 x, u16 y, u16 w, u16 h) {
             static constexpr u16 Y_OFFSET = 40;
             static constexpr u16 X_OFFSET = 20;
-            static u16 LABEL_X = 20 + X_OFFSET;
-            static u16 VALUE_X = 250+ X_OFFSET;
-            static u16 START_Y = 155 + Y_OFFSET;
+            static const u16 LABEL_X = 20 + X_OFFSET;
+            static const u16 VALUE_X = 240+ X_OFFSET;
+            static const u16 START_Y = 155 + Y_OFFSET;
             static constexpr u16 LINE_HEIGHT = 18;
             static constexpr u8 FONT_SIZE = 18;
             static const tsl::Color LABEL_COLOR_1= settings.catColor1;

@@ -1053,7 +1053,7 @@ public:
             //TeslaFPS = 60;
             if (skipMain) {
                 //lastSelectedItem = "Micro";
-                lastMode = "return";
+                lastMode = "returning";
                 //tsl::swapTo<MainMenu>();
                 tsl::goBack();
             }
