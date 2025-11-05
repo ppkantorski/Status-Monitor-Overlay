@@ -44,9 +44,9 @@ This mode you can know from older releases of Status Monitor. It contains all in
 
 # Mini
 
-Contains most of supported informations with lower precision.
+Contains most of supported informations with lower precision. You can use touch screen to change its position temporarily.
 
-| Category | Format                                           | Explanation                                                               |
+| Category | Format                                            | Explanation                                                               |
 |----------|---------------------------------------------------|---------------------------------------------------------------------------|
 | CPU      | [%.0f,%.0f,%.0f,%.0f]@%.1f                        | Core #0 usage, Core #1 usage, Core #2 usage, Core #3 usage@CPU Target/Real frequency`(^1)`  |
 | GPU      | %.1f@%.1f                                         | Load@GPU Target/Real Frequency`(^1)`                                      |
@@ -102,14 +102,14 @@ Contains most of supported informations with lower precision in one line.
 > Counter
 
 It shows only FPS value in 31Hz + vsync signal. <br>
-If game is not launched, it will show always 254.0 value.<br>
+If game is not launched, it will show always `n/d` aka `no data`.<br>
 
-Mode available only with SaltyNX installed.
+Mode available only with SaltyNX installed. You can use touch screen to change its position temporarily.
 
 > Graph
 
 It shows average FPS graph in 31Hz + vsync signal. In background of graph you can see rendered actual average FPS.<br>
-If game is not launched, it will show always 254.0 value and graph will be empty.<br>
+If game is not launched, graph will be empty.<br>
 If game is not rendering any new frame, graph is not updated.
 
 If line is within rounding error of graph line, it's colored. Average FPS must be between -0.05 and +0.04 of graph line target FPS. So for 30 FPS it's between 29.95 - 30.04 FPS. For 43 FPS it's 42.95 - 43.04 FPS.
@@ -117,7 +117,7 @@ If it's in display refresh rate or half of it rounding error range, it's green. 
 
 Colors can be changed in config file.
 
-Mode available only with SaltyNX installed.
+Mode available only with SaltyNX installed. You can use touch screen to change its position temporarily.
 
 # Other
 
@@ -154,19 +154,22 @@ If Network Type is "Wi-Fi", you can press Y to show password. Since max password
 
 > Game Resolutions
 
-For this mode to show and work properly you must have SaltyNX 0.9.0+ installed.
+For this mode to show and work properly you must have SaltyNX 0.9.0+ installed. You can use touch screen to change its position temporarily.
 
 When game runs, this menu shows what resolutions and how many times they were passed to GPU via two functions:
 - __Depth__ shows info from depth texture passed to `nvnCommandBufferSetRenderTargets`
-- __Viewport__ shows info from arguments passed to `nvnCommandBufferSetViewport` and `nvnCommandBufferSetViewports`
+- __Viewport__ shows info from arguments passed to:
+  - for NVN: `nvnCommandBufferSetViewport`, `nvnCommandBufferSetViewports`, `nvnCommandBufferSetScissor` and `nvnCommandBufferSetScissors`
+  - for EGL: `glViewport`, `glViewportArrayv`, `glViewportIndexedf`, `glViewportIndexedfv` and all their variations
+  - for Vulkan: `vkCmdSetViewport` and `vkCmdSetViewportWithCount`
 
 This menu shows first 8 resolutions passed to those functions in last frame rendering loop, sorted in descending order of calls number.<br>
 Its main purpose is to catch game rendering resolution, but user must deduce which ones are correct.<br>
-I have limited catched resolutions only to ones that have ratio higher than 1.70 and lower than 1.90.<br>
+I have limited catched resolutions only to ones that have ratio higher than 0.6 and lower than 1.8. Such low value comes from the fact that some games are rendering at width lower than height (f.e. 480x720). There is also a limit where it won't accept resolutions which height is lower than 160 px or higher than 1440 px.<br>
 
 Remember that resolutions you can see in this mode may be used in different ways - for example Tokyo Xanadu Ex+ max dynamic resolution in handheld will show 1280x736, but it's not that game will squeeze this into 720p screen, it's just removing those additional 16 pixels from showing on screen.
 
-Those commands are used by all 3D games using NVN API (that's why it won't work with other APIs and may not work with games using 2D engines).<br>
+Those commands are used by all 3D games using NVN, EGL and Vulkan APIs (that's why it may not work with games using 2D engines).<br>
 This mode is not 100% fullproof, so it can show that nothing is catched or it won't catch what is used for 3D rendering (if this happens for some 3D game, please report an issue).
 
 By default refresh rate of this menu is 10 FPS. You can change that in config.ini, more in config.md<br>
