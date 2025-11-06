@@ -234,9 +234,10 @@ public:
                         renderer->drawString(DeltaRAM_c, false, COMMON_MARGIN +  deltaOffset, height_offset, 15, (settings.textColor));
                     }
                     if (R_SUCCEEDED(sysclkCheck)) {
+                        static std::vector<std::string> ramLoadColoredChars = {"CPU", "GPU"};
                         //static auto loadLabelWidth = renderer->getTextDimensions("Load: ", false, 15).first;
                         renderer->drawString("Load", false, COMMON_MARGIN, height_offset+15, 15, (settings.catColor2));
-                        renderer->drawStringWithColoredSections(RAM_load_c, false, specialChars, COMMON_MARGIN + valueOffset, height_offset+15, 15, (settings.textColor), settings.separatorColor);
+                        renderer->drawStringWithColoredSections(RAM_load_c, false, ramLoadColoredChars, COMMON_MARGIN + valueOffset, height_offset+15, 15, (settings.textColor), settings.catColor2);
                     }
                 }
                 if (R_SUCCEEDED(Hinted)) {
@@ -442,7 +443,7 @@ public:
         if (R_SUCCEEDED(sysclkCheck)) {
             const int RAM_GPU_Load = ramLoad[SysClkRamLoad_All] - ramLoad[SysClkRamLoad_Cpu];
             snprintf(RAM_load_c, sizeof RAM_load_c, 
-                "%u.%u%% (CPU %u.%u%%GPU %u.%u%%)",
+                "%u.%u%%    CPU  %u.%u%%   GPU  %u.%u%%",
                 ramLoad[SysClkRamLoad_All] / 10, ramLoad[SysClkRamLoad_All] % 10,
                 ramLoad[SysClkRamLoad_Cpu] / 10, ramLoad[SysClkRamLoad_Cpu] % 10,
                 RAM_GPU_Load / 10, RAM_GPU_Load % 10);
