@@ -577,7 +577,7 @@ private:
     bool getCurrentInvertBatteryDisplay() {
         const std::string section = isMiniMode ? "mini" : "micro";
         std::string value = ult::parseValueFromIniSection(configIniPath, section, "invert_battery_display");
-        if (value.empty()) return false; // Default: false for mini, true for micro
+        if (value.empty()) return true; // Default: false for mini, true for micro
         convertToUpper(value);
         return value != "FALSE";
     }
