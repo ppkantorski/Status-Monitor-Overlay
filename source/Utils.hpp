@@ -1462,6 +1462,7 @@ struct FullSettings {
     bool showFPS;
     bool showRES;
     bool showRDSD;
+    bool useDynamicColors;
     bool disableScreenshots;
     uint16_t separatorColor;
     uint16_t catColor1;
@@ -1604,7 +1605,7 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
     settings->spacing = 8;
     convertStrToRGBA4444("#0009", &(settings->backgroundColor));
     convertStrToRGBA4444("#000F", &(settings->focusBackgroundColor));
-    convertStrToRGBA4444("#2DFF", &(settings->separatorColor));
+    convertStrToRGBA4444("#888F", &(settings->separatorColor));
     convertStrToRGBA4444("#2DFF", &(settings->catColor));
     convertStrToRGBA4444("#FFFF", &(settings->textColor));
     settings->show = "DTC+BAT+CPU+GPU+RAM+TMP+FPS+RES";
@@ -1884,7 +1885,7 @@ ALWAYS_INLINE void GetConfigSettings(MicroSettings* settings) {
     settings->dockedFontSize = 15;
     settings->alignTo = 1; // CENTER
     convertStrToRGBA4444("#0009", &(settings->backgroundColor));
-    convertStrToRGBA4444("#2DFF", &(settings->separatorColor));
+    convertStrToRGBA4444("#888F", &(settings->separatorColor));
     convertStrToRGBA4444("#2DFF", &(settings->catColor));
     convertStrToRGBA4444("#FFFF", &(settings->textColor));
     settings->show = "FPS+CPU+GPU+RAM+SOC+BAT+DTC";
@@ -2385,8 +2386,9 @@ ALWAYS_INLINE void GetConfigSettings(FullSettings* settings) {
     settings->showFPS = true;
     settings->showRES = true;
     settings->showRDSD = true;
+    settings->useDynamicColors = true;
     settings->disableScreenshots = false;
-    convertStrToRGBA4444("#2DFF", &(settings->separatorColor));
+    convertStrToRGBA4444("#888F", &(settings->separatorColor));
     convertStrToRGBA4444("#8FFF", &(settings->catColor1));
     convertStrToRGBA4444("#8CFF", &(settings->catColor2));
     convertStrToRGBA4444("#FFFF", &(settings->textColor));
@@ -2472,6 +2474,13 @@ ALWAYS_INLINE void GetConfigSettings(FullSettings* settings) {
         settings->showRDSD = !(key == "FALSE");
     }
     
+    it = section.find("use_dynamic_colors");
+    if (it != section.end()) {
+        key = it->second;
+        convertToUpper(key);
+        settings->useDynamicColors = (key == "TRUE");
+    }
+
     // Process disable screenshots
     it = section.find("disable_screenshots");
     if (it != section.end()) {

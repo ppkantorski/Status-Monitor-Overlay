@@ -39,23 +39,6 @@ private:
     size_t actualTotalWidth = 0;
     size_t actualTotalHeight = 0;
 
-    // Ultra-fast gradient color computation
-    inline constexpr tsl::Color GradientColor(float temperature) const {
-        if (temperature <= 35.0f) return tsl::Color(7, 7, 15, 0xFF);
-        if (temperature >= 65.0f) return tsl::Color(15, 0, 0, 0xFF);
-        
-        if (temperature < 45.0f) {
-            const float factor = (temperature - 35.0f) * 0.1f;
-            return tsl::Color(7 - 7 * factor, 7 + 8 * factor, 15 - 15 * factor, 0xFF);
-        }
-        
-        if (temperature < 55.0f) {
-            return tsl::Color(15 * (temperature - 45.0f) * 0.1f, 15, 0, 0xFF);
-        }
-        
-        return tsl::Color(15, 15 - 15 * (temperature - 55.0f) * 0.1f, 0, 0xFF);
-    }
-
 public:
     bool isStarted = false;
     com_FPSGraph() { 
@@ -383,9 +366,9 @@ public:
                 static constexpr s16 SPACING = 1;
                 
                 // Compute gradient colors for temperatures
-                const tsl::Color socColor = settings.useDynamicColors ? GradientColor(SOC_temperatureF) : settings.textColor;
-                const tsl::Color pcbColor = settings.useDynamicColors ? GradientColor(PCB_temperatureF) : settings.textColor;
-                const tsl::Color skinColor = settings.useDynamicColors ? GradientColor(static_cast<float>(skin_temperaturemiliC) / 1000.0f) : settings.textColor;
+                const tsl::Color socColor = settings.useDynamicColors ? tsl::GradientColor(SOC_temperatureF) : settings.textColor;
+                const tsl::Color pcbColor = settings.useDynamicColors ? tsl::GradientColor(PCB_temperatureF) : settings.textColor;
+                const tsl::Color skinColor = settings.useDynamicColors ? tsl::GradientColor(static_cast<float>(skin_temperaturemiliC) / 1000.0f) : settings.textColor;
                 
                 // Draw each label and value pair on the same baseline
                 // Line 0: CPU

@@ -233,7 +233,7 @@ public:
         
         // Handle default values
         if (currentValue.empty()) {
-            currentValue = isMiniMode ? "%m-%d-%Y%"+ult::DIVIDER_SYMBOL+"H:%M:%S" : "%H:%M:%S";
+            currentValue = isMiniMode ? "%m-%d-%Y"+ult::DIVIDER_SYMBOL+"%H:%M:%S" : "%H:%M:%S";
         }
         
         
@@ -364,6 +364,12 @@ public:
                 ult::setIniFileValue(configIniPath, "full", "show_read_speed", state ? "true" : "false");
             });
             list->addItem(showRDSD);
+
+            auto* dynamicColors = new tsl::elm::ToggleListItem("Use Dynamic Colors", getCurrentUseDynamicColors());
+            dynamicColors->setStateChangedListener([this](bool state) {
+                ult::setIniFileValue(configIniPath, "fps-graph", "use_dynamic_colors", state ? "true" : "false");
+            });
+            list->addItem(dynamicColors);
 
             auto* disableScreenshots = new tsl::elm::ToggleListItem("Disable Screenshots", getCurrentDisableScreenshots("full"));
             disableScreenshots->setStateChangedListener([this](bool state) {
@@ -541,7 +547,7 @@ private:
     bool getCurrentShowFullRes() {
         const std::string section = isMiniMode ? "mini" : "micro";
         std::string value = ult::parseValueFromIniSection(configIniPath, section, "show_full_res");
-        if (value.empty()) return isMiniMode; // Default: true for mini, false for micro
+        if (value.empty()) return true; // Default: true for mini, false for micro
         convertToUpper(value);
         return value != "FALSE";
     }
@@ -549,7 +555,7 @@ private:
     bool getCurrentShowSOCVoltage() {
         const std::string section = isMiniMode ? "mini" : "micro";
         std::string value = ult::parseValueFromIniSection(configIniPath, section, "show_soc_voltage");
-        if (value.empty()) return !isMiniMode; // Default: false for mini, true for micro
+        if (value.empty()) return false; // Default: false for mini, true for micro
         convertToUpper(value);
         return value != "FALSE";
     }
@@ -1468,10 +1474,10 @@ public:
     
             auto* sepColor = new tsl::elm::ListItem("Separator Color");
             // Display color name for separator colors
-            sepColor->setValue(getColorName(getCurrentColor("separator_color", "#2DFF")));
+            sepColor->setValue(getColorName(getCurrentColor("separator_color", "#888F")));
             sepColor->setClickListener([this](uint64_t keys) {
                 if (keys & KEY_A) {
-                    tsl::changeTo<ColorSelector>(modeName, "Separator Color", "separator_color", "#2DFF");
+                    tsl::changeTo<ColorSelector>(modeName, "Separator Color", "separator_color", "#888F");
                     return true;
                 }
                 return false;
@@ -1492,10 +1498,10 @@ public:
     
             auto* sepColor = new tsl::elm::ListItem("Separator Color");
             // Display color name for separator colors
-            sepColor->setValue(getColorName(getCurrentColor("separator_color", "#2DFF")));
+            sepColor->setValue(getColorName(getCurrentColor("separator_color", "#888F")));
             sepColor->setClickListener([this](uint64_t keys) {
                 if (keys & KEY_A) {
-                    tsl::changeTo<ColorSelector>(modeName, "Separator Color", "separator_color", "#2DFF");
+                    tsl::changeTo<ColorSelector>(modeName, "Separator Color", "separator_color", "#888F");
                     return true;
                 }
                 return false;
@@ -1516,10 +1522,10 @@ public:
             
             // Micro mode: separator and category colors (no focus background like Mini)
             auto* sepColor = new tsl::elm::ListItem("Separator Color");
-            sepColor->setValue(getColorName(getCurrentColor("separator_color", "#2DFF")));
+            sepColor->setValue(getColorName(getCurrentColor("separator_color", "#888F")));
             sepColor->setClickListener([this](uint64_t keys) {
                 if (keys & KEY_A) {
-                    tsl::changeTo<ColorSelector>(modeName, "Separator Color", "separator_color", "#2DFF");
+                    tsl::changeTo<ColorSelector>(modeName, "Separator Color", "separator_color", "#888F");
                     return true;
                 }
                 return false;

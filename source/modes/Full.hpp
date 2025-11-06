@@ -265,25 +265,30 @@ public:
                     static auto maxLabelWidth = std::max(socLabelWidth, pcbLabelWidth);
                     static auto skinLabelWidth = renderer->getTextDimensions("SKIN  ", false, 15).first;
                     
+                    // Compute gradient colors for temperatures
+                    const tsl::Color socColor = settings.useDynamicColors ? tsl::GradientColor(SOC_temperatureF) : settings.textColor;
+                    const tsl::Color pcbColor = settings.useDynamicColors ? tsl::GradientColor(PCB_temperatureF) : settings.textColor;
+                    const tsl::Color skinColor = settings.useDynamicColors ? tsl::GradientColor(static_cast<float>(skin_temperaturemiliC) / 1000.0f) : settings.textColor;
+                    
                     renderer->drawString("Temperatures", false, COMMON_MARGIN, 605+2, 15, (settings.catColor2));
                     
                     // SOC - starts at valueOffset next to "Temperatures"
                     uint32_t current_x = COMMON_MARGIN + valueOffset;
                     renderer->drawString("SOC  ", false, current_x, 605+2, 15, (settings.catColor2));
                     current_x += maxLabelWidth;
-                    renderer->drawString(SOC_temperature_c, false, current_x, 605+2, 15, (settings.textColor));
+                    renderer->drawString(SOC_temperature_c, false, current_x, 605+2, 15, socColor);
                     
                     // SKIN - same spacing to the right
                     current_x += renderer->getTextDimensions(SOC_temperature_c, false, 15).first + 15;
                     renderer->drawString("SKIN  ", false, current_x, 605+2, 15, (settings.catColor2));
                     current_x += skinLabelWidth;
-                    renderer->drawString(skin_temperature_c, false, current_x, 605+2, 15, (settings.textColor));
+                    renderer->drawString(skin_temperature_c, false, current_x, 605+2, 15, skinColor);
                     
                     // PCB - below SOC on next line
                     current_x = COMMON_MARGIN + valueOffset;
                     renderer->drawString("PCB  ", false, current_x, 620+2, 15, (settings.catColor2));
                     current_x += maxLabelWidth;
-                    renderer->drawString(PCB_temperature_c, false, current_x, 620+2, 15, (settings.textColor));
+                    renderer->drawString(PCB_temperature_c, false, current_x, 620+2, 15, pcbColor);
                 }
             }
             
