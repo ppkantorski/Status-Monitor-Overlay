@@ -13,16 +13,15 @@ show_target_freqs=true
 show_fps=true
 show_res=true
 show_read_speed=true
+use_dynamic_colors=true
 disable_screenshots=false
-separator_color=#2DFF
+separator_color=#888F
 cat_color_1=#8FFF
 cat_color_2=#8CFF
 text_color=#FFFF
 
 [mini]
 refresh_rate=1
-layer_width_align=left
-layer_height_align=top
 handheld_font_size=15
 docked_font_size=15
 spacing=8
@@ -42,6 +41,7 @@ dtc_format=%m-%d-%Y%H:%M:%S
 show=DTC+BAT+CPU+GPU+RAM+TMP+FPS+RES
 replace_MB_with_RAM_load=true
 show_RAM_load_CPU_GPU=false
+invert_battery_display=true
 disable_screenshots=false
 sleep_exit=false
 frame_offset_x=10
@@ -49,7 +49,7 @@ frame_offset_y=10
 frame_padding=10
 background_color=#0009
 focus_background_color=#000F
-separator_color=#2DFF
+separator_color=#888F
 cat_color=#2DFF
 text_color=#FFFF
 
@@ -73,14 +73,16 @@ use_dtc_symbol=true
 dtc_format=%H:%M:%S
 show=FPS+CPU+GPU+RAM+SOC+BAT+DTC
 replace_GB_with_RAM_load=true
+invert_battery_display=false
 disable_screenshots=false
 sleep_exit=false
 background_color=#0009
-separator_color=#2DFF
+separator_color=#888F
 cat_color=#2DFF
 text_color=#FFFF
 
 [fps-counter]
+refresh_rate=30
 handheld_font_size=40
 docked_font_size=40
 disable_screenshots=false
@@ -89,11 +91,12 @@ frame_offset_y=10
 frame_padding=10
 background_color=#0009
 focus_background_color=#000F
-text_color=#FFFF
+text_color=#8CFF
 
 [fps-graph]
 refresh_rate=30
 show_info=false
+use_dynamic_colors=true
 disable_screenshots=false
 frame_offset_x=10
 frame_offset_y=10
@@ -101,7 +104,7 @@ frame_padding=10
 background_color=#0009
 focus_background_color=#000F
 fps_counter_color=#888C
-border_color=#F00F
+border_color=#2DFF
 dashed_line_color=#8888
 main_line_color=#FFFF
 rounded_line_color=#F0FF
@@ -109,6 +112,7 @@ perfect_line_color=#0C0F
 max_fps_text_color=#FFFF
 min_fps_text_color=#FFFF
 text_color=#FFFF
+cat_color=#0F0F
 
 [game_resolutions]
 refresh_rate=10
