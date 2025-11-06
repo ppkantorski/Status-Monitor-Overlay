@@ -139,6 +139,7 @@ public:
 
                     else {
                         minusHoldStart = plusHoldStart = 0;
+                        overlay->buttonState.minusDragActive.exchange(false, std::memory_order_acq_rel);
                         overlay->buttonState.plusDragActive.exchange(false, std::memory_order_acq_rel);
                     }
                     
