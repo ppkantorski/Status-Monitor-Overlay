@@ -1496,6 +1496,7 @@ struct MiniSettings {
     std::string show;
     bool showRAMLoad;
     bool showRAMLoadCPUGPU;
+    bool invertBatteryDisplay;
     bool disableScreenshots;
     bool sleepExit;
     //int setPos;
@@ -1611,6 +1612,7 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
     settings->show = "DTC+BAT+CPU+GPU+RAM+TMP+FPS+RES";
     settings->showRAMLoad = true;
     settings->showRAMLoadCPUGPU = false;
+    settings->invertBatteryDisplay = true;
     settings->refreshRate = 1;
     settings->disableScreenshots = false;
     settings->sleepExit = false;
@@ -1810,6 +1812,14 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
         key = it->second;
         convertToUpper(key);
         settings->showRAMLoadCPUGPU = (key != "FALSE");
+    }
+
+    // Invert the battery display value
+    it = section.find("invert_battery_display");
+    if (it != section.end()) {
+        key = it->second;
+        convertToUpper(key);
+        settings->invertBatteryDisplay = (key != "FALSE");
     }
 
     // Process disable screenshots

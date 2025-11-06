@@ -429,6 +429,12 @@ public:
                     ult::setIniFileValue(configIniPath, section, "show_RAM_load_CPU_GPU", state ? "true" : "false");
                 });
                 list->addItem(ramLoadCPUGPU);
+
+                auto* invertBatteryDisplay = new tsl::elm::ToggleListItem("Invert Battery Display", getCurrentInvertBatteryDisplay());
+                invertBatteryDisplay->setStateChangedListener([this, section](bool state) {
+                    ult::setIniFileValue(configIniPath, section, "invert_battery_display", state ? "true" : "false");
+                });
+                list->addItem(invertBatteryDisplay);
             }
             
             auto* dtcSymbol = new tsl::elm::ToggleListItem("Use DTC Symbol", getCurrentUseDTCSymbol());
@@ -563,7 +569,15 @@ private:
     bool getCurrentShowRAMLoadCPUGPU() {
         const std::string section = isMiniMode ? "mini" : "micro";
         std::string value = ult::parseValueFromIniSection(configIniPath, section, "show_RAM_load_CPU_GPU");
-        if (value.empty()) return !isMiniMode; // Default: false for mini, true for micro
+        if (value.empty()) return false; // Default: false for mini, true for micro
+        convertToUpper(value);
+        return value != "FALSE";
+    }
+
+    bool getCurrentInvertBatteryDisplay() {
+        const std::string section = isMiniMode ? "mini" : "micro";
+        std::string value = ult::parseValueFromIniSection(configIniPath, section, "invert_battery_display");
+        if (value.empty()) return false; // Default: false for mini, true for micro
         convertToUpper(value);
         return value != "FALSE";
     }

@@ -1314,12 +1314,20 @@ public:
             strcpy(remainingBatteryLife, "--:--");
         }
         
-        snprintf(SoCPCB_temperature_c, sizeof SoCPCB_temperature_c,
-                 "%.2f W%.1f%% [%s]",
-                 drawW,
-                 (float)_batteryChargeInfoFields.RawBatteryCharge / 1000.0f,
-                 remainingBatteryLife);
-        
+        if (!settings.invertBatteryDisplay) {
+            snprintf(SoCPCB_temperature_c, sizeof SoCPCB_temperature_c,
+                     "%.2f W%.1f%% [%s]",
+                     drawW,
+                     (float)_batteryChargeInfoFields.RawBatteryCharge / 1000.0f,
+                     remainingBatteryLife);
+        } else {
+            snprintf(SoCPCB_temperature_c, sizeof SoCPCB_temperature_c,
+                     "%.1f%% [%s]%.2f W",
+                     (float)_batteryChargeInfoFields.RawBatteryCharge / 1000.0f,
+                     remainingBatteryLife,
+                     drawW);
+        }
+
         mutexUnlock(&mutex_BatteryChecker);
 
         //static bool skipOnce = true;
