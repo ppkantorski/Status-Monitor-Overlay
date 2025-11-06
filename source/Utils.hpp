@@ -1519,6 +1519,7 @@ struct MicroSettings {
     bool showDTC;
     bool useDTCSymbol;
     std::string dtcFormat;
+    bool invertBatteryDisplay;
     size_t handheldFontSize;
     size_t dockedFontSize;
     uint8_t alignTo;
@@ -1891,6 +1892,7 @@ ALWAYS_INLINE void GetConfigSettings(MicroSettings* settings) {
     settings->showDTC = true;
     settings->useDTCSymbol = true;
     settings->dtcFormat = "%H:%M:%S";//"%Y-%m-%d %I:%M:%S %p";
+    settings->invertBatteryDisplay = false;
     settings->handheldFontSize = 15;
     settings->dockedFontSize = 15;
     settings->alignTo = 1; // CENTER
@@ -2017,6 +2019,14 @@ ALWAYS_INLINE void GetConfigSettings(MicroSettings* settings) {
     if (it != section.end()) {
         key = it->second;
         settings->dtcFormat = std::move(key);
+    }
+
+    // Invert the battery display value
+    it = section.find("invert_battery_display");
+    if (it != section.end()) {
+        key = it->second;
+        convertToUpper(key);
+        settings->invertBatteryDisplay = (key != "FALSE");
     }
     
     // Process font sizes with shared bounds

@@ -429,7 +429,9 @@ public:
                     ult::setIniFileValue(configIniPath, section, "show_RAM_load_CPU_GPU", state ? "true" : "false");
                 });
                 list->addItem(ramLoadCPUGPU);
+            }
 
+            if (isMiniMode || isMicroMode) {
                 auto* invertBatteryDisplay = new tsl::elm::ToggleListItem("Invert Battery Display", getCurrentInvertBatteryDisplay());
                 invertBatteryDisplay->setStateChangedListener([this, section](bool state) {
                     ult::setIniFileValue(configIniPath, section, "invert_battery_display", state ? "true" : "false");
@@ -577,7 +579,7 @@ private:
     bool getCurrentInvertBatteryDisplay() {
         const std::string section = isMiniMode ? "mini" : "micro";
         std::string value = ult::parseValueFromIniSection(configIniPath, section, "invert_battery_display");
-        if (value.empty()) return true; // Default: false for mini, true for micro
+        if (value.empty()) return isMiniMode ? true : false; // Default: false for mini, true for micro
         convertToUpper(value);
         return value != "FALSE";
     }

@@ -5,7 +5,7 @@ private:
     char GPU_Load_c[32] = "";
     char Rotation_SpeedLevel_c[64] = "";
     char RAM_var_compressed_c[128] = "";
-    char SoCPCB_temperature_c[64] = "";
+    char Battery_c[64] = "";
     char soc_temperature_c[64] = "";
     char skin_temperature_c[64] = "";
 
@@ -41,7 +41,7 @@ public:
         //tsl::initializeUltrahandSettings();
         PowerConsumption = 0.0f;
         batTimeEstimate = -1;
-        strcpy(SoCPCB_temperature_c, "-.-- W-.-% [--:--]"); // Default display
+        strcpy(Battery_c, "-.-- W-.-% [--:--]"); // Default display
 
         GetConfigSettings(&settings);
         apmGetPerformanceMode(&performanceMode);
@@ -1193,14 +1193,14 @@ public:
             {"BAT", [&]() {
                 if (!(flags & 32)) {
                     if (Temp[0]) strcat(Temp, "\n");
-                    strcat(Temp, SoCPCB_temperature_c);
+                    strcat(Temp, Battery_c);
                     flags |= 32;
                 }
             }},
             {"DRAW", [&]() {
                 if (!(flags & 32)) {
                     if (Temp[0]) strcat(Temp, "\n");
-                    strcat(Temp, SoCPCB_temperature_c);
+                    strcat(Temp, Battery_c);
                     flags |= 32;
                 }
             }},
@@ -1315,13 +1315,13 @@ public:
         }
         
         if (!settings.invertBatteryDisplay) {
-            snprintf(SoCPCB_temperature_c, sizeof SoCPCB_temperature_c,
+            snprintf(Battery_c, sizeof Battery_c,
                      "%.2f W%.1f%% [%s]",
                      drawW,
                      (float)_batteryChargeInfoFields.RawBatteryCharge / 1000.0f,
                      remainingBatteryLife);
         } else {
-            snprintf(SoCPCB_temperature_c, sizeof SoCPCB_temperature_c,
+            snprintf(Battery_c, sizeof Battery_c,
                      "%.1f%% [%s]%.2f W",
                      (float)_batteryChargeInfoFields.RawBatteryCharge / 1000.0f,
                      remainingBatteryLife,

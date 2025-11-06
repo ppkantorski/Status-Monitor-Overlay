@@ -840,12 +840,20 @@ public:
             strcpy(remainingBatteryLife, "--:--");
         }
 
-        snprintf(Battery_c, sizeof(Battery_c),
-                 "%.2f W%.1f%% [%s]",
-                 drawW,
-                 (float)_batteryChargeInfoFields.RawBatteryCharge / 1000.0f,
-                 remainingBatteryLife);
-
+        if (!settings.invertBatteryDisplay) {
+            snprintf(Battery_c, sizeof Battery_c,
+                     "%.2f W%.1f%% [%s]",
+                     drawW,
+                     (float)_batteryChargeInfoFields.RawBatteryCharge / 1000.0f,
+                     remainingBatteryLife);
+        } else {
+            snprintf(Battery_c, sizeof Battery_c,
+                     "%.1f%% [%s]%.2f W",
+                     (float)_batteryChargeInfoFields.RawBatteryCharge / 1000.0f,
+                     remainingBatteryLife,
+                     drawW);
+        }
+        
         mutexUnlock(&mutex_BatteryChecker);
 
 
