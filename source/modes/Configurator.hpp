@@ -1376,9 +1376,21 @@ public:
                 bool isBackgroundType;  // true for colors that allow alpha adjustment
             };
             
+            // Game Resolutions: only category color (no separator)
+            auto* catColor = new tsl::elm::ListItem("Category Color");
+            catColor->setValue(getColorName(getCurrentColor("cat_color", "#0F0F")));
+            catColor->setClickListener([this](uint64_t keys) {
+                if (keys & KEY_A) {
+                    tsl::changeTo<ColorSelector>(modeName, "Category Color", "cat_color", "#0F0F");
+                    return true;
+                }
+                return false;
+            });
+            list->addItem(catColor);
+            
             static const std::vector<ColorSetting> fpsGraphColors = {
                 {"FPS Counter", "fps_counter_color", "#888C", true},      // background type
-                {"Border", "border_color", "#F00F", false},               // text type
+                {"Border", "border_color", "#2DFF", false},               // text type
                 {"Dashed Line", "dashed_line_color", "#8888", true},      // background type
                 {"Max FPS Text", "max_fps_text_color", "#FFFF", false},   // text type
                 {"Min FPS Text", "min_fps_text_color", "#FFFF", false},   // text type
@@ -1389,7 +1401,7 @@ public:
             
             for (const auto& color : fpsGraphColors) {
                 auto* colorItem = new tsl::elm::ListItem(color.name + " Color");
-                std::string currentVal = getCurrentColor(color.key, color.defaultVal);
+                const std::string currentVal = getCurrentColor(color.key, color.defaultVal);
                 
                 if (color.isBackgroundType) {
                     // For background-type colors, show color name
@@ -1422,13 +1434,14 @@ public:
                     list->addItem(alphaItem);
                 }
             }
+
         } else if (isFullMode) {
             auto* catColor1 = new tsl::elm::ListItem("Category Color 1");
             // Display color name for category colors
-            catColor1->setValue(getColorName(getCurrentColor("cat_color_1", "#2DFF")));
+            catColor1->setValue(getColorName(getCurrentColor("cat_color_1", "#8FFF")));
             catColor1->setClickListener([this](uint64_t keys) {
                 if (keys & KEY_A) {
-                    tsl::changeTo<ColorSelector>(modeName, "Category Color 1", "cat_color_1", "#2DFF");
+                    tsl::changeTo<ColorSelector>(modeName, "Category Color 1", "cat_color_1", "#8FFF");
                     return true;
                 }
                 return false;

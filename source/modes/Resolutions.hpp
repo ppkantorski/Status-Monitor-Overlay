@@ -26,6 +26,8 @@ private:
     Thread touchPollThread;
     std::atomic<bool> touchPollRunning{false};
 
+    std::atomic<bool> inputDetected{false};
+
 public:
     ResolutionsOverlay() {
         tsl::hlp::requestForeground(false);
@@ -51,7 +53,7 @@ public:
             ResolutionsOverlay* overlay = static_cast<ResolutionsOverlay*>(arg);
             
             // Allow only Player 1 and handheld mode
-            HidNpadIdType id_list[2] = { HidNpadIdType_No1, HidNpadIdType_Handheld };
+            const HidNpadIdType id_list[2] = { HidNpadIdType_No1, HidNpadIdType_Handheld };
             
             // Configure HID system to only listen to these IDs
             hidSetSupportedNpadIdType(id_list, 2);
@@ -70,12 +72,12 @@ public:
             static constexpr u64 HOLD_THRESHOLD_NS = 500'000'000ULL;
         
             HidTouchScreenState state = {0};
-            bool inputDetected;
+            
         
             while (overlay->touchPollRunning.load(std::memory_order_acquire)) {
                 // Only poll when rendering and not dragging
-                if (!overlay->isDragging && isRendering) {
-                    inputDetected = false;
+                {
+                    overlay->inputDetected.store(false, std::memory_order_release);
                     
                     // Check touch in bounds
                     if (hidGetTouchScreenStates(&state, 1) && state.count > 0) {
@@ -101,7 +103,7 @@ public:
                         // Check if touch is within bounds
                         if (touchX >= touchableX && touchX <= touchableX + touchableWidth &&
                             touchY >= touchableY && touchY <= touchableY + touchableHeight) {
-                            inputDetected = true;
+                            overlay->inputDetected.store(true, std::memory_order_release);
                         }
                     }
                     
@@ -120,7 +122,7 @@ public:
                         }
                         if (now - minusHoldStart >= HOLD_THRESHOLD_NS) {
                             // Long enough to start drag
-                            inputDetected = true;
+                            overlay->inputDetected.store(true, std::memory_order_release);
                             overlay->buttonState.minusDragActive.exchange(true, std::memory_order_acq_rel);
                         }
                     }
@@ -132,7 +134,7 @@ public:
                         }
                         if (now - plusHoldStart >= HOLD_THRESHOLD_NS) {
                             // Long enough to start drag
-                            inputDetected = true;
+                            overlay->inputDetected.store(true, std::memory_order_release);
                             overlay->buttonState.plusDragActive.exchange(true, std::memory_order_acq_rel);
                         }
                     }
@@ -145,8 +147,8 @@ public:
                     
                     // Disable rendering on any input, re-enable when no input
                     static bool resetOnce = true;
-                    if (inputDetected) {
-                        if (resetOnce) {
+                    if (overlay->inputDetected.load(std::memory_order_acquire)) {
+                        if (resetOnce && isRendering) {
                             isRendering = false;
                             leventSignal(&renderingStopEvent);
                             resetOnce = false;
@@ -183,67 +185,77 @@ public:
     resolutionCalls m_resolutionViewportCalls[8] = {0};
     bool gameStart = false;
     uint8_t resolutionLookup = 0;
+    u64 lastGameSeenTick = 0;
+    bool waitingForGame = true;
 
     virtual tsl::elm::Element* createUI() override {
 
         auto* Status = new tsl::elm::CustomDrawer([this](tsl::gfx::Renderer *renderer, u16 x, u16 y, u16 w, u16 h) {
             int base_y = 0;
             int base_x = 0;
-        
-            // Apply frame offsets for repositioning
             int clippingOffsetX = 0, clippingOffsetY = 0;
-            
-            // Determine overlay dimensions based on game state
-            int total_width, total_height;
-            total_width = 360-20;
-            total_height = 200;
-            
-            // Check X bounds and calculate clipping offset
-            if (base_x + frameOffsetX < int(framePadding)) {
+        
+            int total_width = 360 - 20;
+            int total_height = 200;
+        
+            // Check clipping bounds (same as before)
+            if (base_x + frameOffsetX < int(framePadding))
                 clippingOffsetX = framePadding - (base_x + frameOffsetX);
-            } else if ((base_x + frameOffsetX + total_width) > static_cast<int>(screenWidth - framePadding)) {
+            else if ((base_x + frameOffsetX + total_width) > static_cast<int>(screenWidth - framePadding))
                 clippingOffsetX = (screenWidth - framePadding) - (base_x + frameOffsetX + total_width);
-            }
-            
-            // Check Y bounds and calculate clipping offset  
-            if (base_y + frameOffsetY < int(framePadding)) {
+        
+            if (base_y + frameOffsetY < int(framePadding))
                 clippingOffsetY = framePadding - (base_y + frameOffsetY);
-            } else if ((base_y + frameOffsetY + total_height) > static_cast<int>(screenHeight - framePadding)) {
+            else if ((base_y + frameOffsetY + total_height) > static_cast<int>(screenHeight - framePadding))
                 clippingOffsetY = (screenHeight - framePadding) - (base_y + frameOffsetY + total_height);
-            }
-            
-            // Apply offsets to all drawing
+        
             const int final_base_x = base_x + frameOffsetX + clippingOffsetX;
             const int final_base_y = base_y + frameOffsetY + clippingOffsetY;
-            
-            // Draw the background with appropriate color
-            const tsl::Color bgColor = !isDragging
-                ? settings.backgroundColor
-                : settings.focusBackgroundColor;
         
-            // Drawing when game is running and NVN is used
+            const tsl::Color bgColor = !isDragging ? settings.backgroundColor : settings.focusBackgroundColor;
+        
+            const u64 curTick = armGetSystemTick();
+
+            // guard: ensure lastGameSeenTick is initialized to something reasonable
+            if (lastGameSeenTick == 0) lastGameSeenTick = curTick;
+
+            // threshold in ns (100 ms)
+            static constexpr u64 CHECK_NS = 2000000000ULL;
+        
+            // Game detected
             if (gameStart && NxFps && NxFps->API >= 1 && (Resolutions_c[0] != '\0' && Resolutions2_c[0] != '\0')) {
+                lastGameSeenTick = curTick;
+                waitingForGame = true; // reset waiting state so next missing cycle shows "Checking..."
                 renderer->drawRoundedRectSingleThreaded(final_base_x, final_base_y, total_width, total_height, 16, aWithOpacity(bgColor));
-                
+        
                 int xOffset = 10;
                 int yOffset = 10;
-                renderer->drawString("Depth", false, xOffset+final_base_x + 20, yOffset+final_base_y + 20, 20, (settings.catColor));
-                renderer->drawString(Resolutions_c, false, xOffset+final_base_x + 20, yOffset+final_base_y + 55, 18, (settings.textColor));
-                renderer->drawString("Viewport", false, xOffset+final_base_x + 180, yOffset+final_base_y + 20, 20, (settings.catColor));
-                renderer->drawString(Resolutions2_c, false, xOffset+final_base_x + 180, yOffset+final_base_y + 55, 18, (settings.textColor));
+                renderer->drawString("Depth", false, xOffset + final_base_x + 20, yOffset + final_base_y + 20, 20, settings.catColor);
+                renderer->drawString(Resolutions_c, false, xOffset + final_base_x + 20, yOffset + final_base_y + 55, 18, settings.textColor);
+                renderer->drawString("Viewport", false, xOffset + final_base_x + 180, yOffset + final_base_y + 20, 20, settings.catColor);
+                renderer->drawString(Resolutions2_c, false, xOffset + final_base_x + 180, yOffset + final_base_y + 55, 18, settings.textColor);
             }
-            // When game is not using NVN or is incompatible
+            // Game not detected
             else {
                 renderer->drawRoundedRectSingleThreaded(final_base_x, final_base_y, total_width, total_height, 16, aWithOpacity(bgColor));
-            
-                const std::string msg = "Game is not running\nor it's incompatible.";
+        
+                // Check elapsed time since last game detection
+                u64 elapsed_ns = armTicksToNs(curTick - lastGameSeenTick);
+                const bool under100ms = (elapsed_ns < CHECK_NS); // 100ms
+        
+                std::string msg;
+                if (under100ms && waitingForGame)
+                    msg = "Checking for game...";
+                else {
+                    msg = "Game is not running\nor it's incompatible.";
+                    waitingForGame = false;
+                }
+        
                 const auto [textWidth, textHeight] = renderer->getTextDimensions(msg, false, 20);
-            
-                // Center coordinates relative to the rectangle
-                const int text_x = final_base_x + (total_width  - textWidth) / 2;
-                const int text_y = final_base_y + (total_height ) / 2;
-            
-                renderer->drawString(msg, false, text_x, text_y, 20, 0xF00F);
+                const int text_x = final_base_x + (total_width - textWidth) / 2;
+                const int text_y = final_base_y + (total_height) / 2;
+                
+                renderer->drawString(msg, false, text_x, (under100ms && waitingForGame) ? text_y+textHeight/2 : text_y, 20, (under100ms && waitingForGame) ? 0xFFFF : 0xF00F);
             }
         });
         
@@ -340,7 +352,8 @@ public:
                                     touchPos.x < screenWidth && touchPos.y < screenHeight);
         
         static bool clearOnRelease = false;
-        if (clearOnRelease) {
+
+        if (clearOnRelease && !isRendering) {
             clearOnRelease = false;
             isRendering = true;
             leventClear(&renderingStopEvent);
@@ -364,7 +377,7 @@ public:
         
         // Overlay dimensions based on game state
         int overlayWidth, overlayHeight;
-        overlayWidth = 360;
+        overlayWidth = 360-20;
         overlayHeight = 200;
         
         // Add padding to make touch detection more forgiving

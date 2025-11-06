@@ -16,7 +16,7 @@ private:
     size_t framePadding = 10;
     static constexpr int screenWidth = 1280;
     static constexpr int screenHeight = 720;
-    static constexpr int border = 6;
+    static constexpr int border = 8;
 
     bool originalUseRightAlignment = ult::useRightAlignment;
 
@@ -88,7 +88,7 @@ public:
         
             while (overlay->touchPollRunning.load(std::memory_order_acquire)) {
                 // Only poll when rendering and not dragging
-                if (!overlay->isDragging && isRendering) {
+                {
                     inputDetected = false;
                     
                     // Check touch in bounds
@@ -169,7 +169,7 @@ public:
                     // Disable rendering on any input, re-enable when no input
                     static bool resetOnce = true;
                     if (inputDetected) {
-                        if (resetOnce) {
+                        if (resetOnce && isRendering) {
                             isRendering = false;
                             leventSignal(&renderingStopEvent);
                             resetOnce = false;
@@ -305,7 +305,8 @@ public:
                                     touchPos.x < screenWidth && touchPos.y < screenHeight);
         
         static bool clearOnRelease = false;
-        if (clearOnRelease) {
+        
+        if (clearOnRelease && !isRendering) {
             clearOnRelease = false;
             isRendering = true;
             leventClear(&renderingStopEvent);

@@ -10,7 +10,9 @@ private:
     char CPU_Load_c[12] = "    -";
     char GPU_Load_c[12] = "    -";
     char RAM_Load_c[12] = "    -";
-    char TEMP_c[32] = "    -\n    -\n    -\n";
+    char SOC_TEMP_c[12] = "    -";
+    char PCB_TEMP_c[12] = "    -";
+    char SKIN_TEMP_c[12] = "    -";
     bool skipOnce = true;
     bool runOnce = true;
     
@@ -21,6 +23,7 @@ private:
     size_t framePadding = 10;
     static constexpr int screenWidth = 1280;
     static constexpr int screenHeight = 720;
+    static constexpr int border = 8;
 
     bool originalUseRightAlignment = ult::useRightAlignment;
 
@@ -31,6 +34,10 @@ private:
 
     Thread touchPollThread;
     std::atomic<bool> touchPollRunning{false};
+
+    // Store actual rendered dimensions (including border)
+    size_t actualTotalWidth = 0;
+    size_t actualTotalHeight = 0;
 
 public:
     bool isStarted = false;
@@ -91,7 +98,7 @@ public:
         
             while (overlay->touchPollRunning.load(std::memory_order_acquire)) {
                 // Only poll when rendering and not dragging
-                if (!overlay->isDragging && isRendering) {
+                {
                     inputDetected = false;
                     
                     // Check touch in bounds
@@ -99,23 +106,30 @@ public:
                         const int touchX = state.touches[0].x;
                         const int touchY = state.touches[0].y;
                         
-                        // Calculate bounds (same logic as handleInput)
-                        const s16 refresh_rate_offset = (overlay->refreshRate < 100) ? 21 : 28;
-                        const s16 info_width = overlay->settings.showInfo ? (6 + overlay->rectangle_width/2 - 4) : 0;
-                        const s16 total_width = overlay->rectangle_width + refresh_rate_offset + info_width;
-                        const s16 total_height = overlay->rectangle_height + 12;
+                        // Use actual dimensions, fallback to estimate if not yet rendered
+                        size_t totalWidth = overlay->actualTotalWidth;
+                        size_t totalHeight = overlay->actualTotalHeight;
                         
-                        const int overlayX = overlay->base_x + overlay->frameOffsetX;
-                        const int overlayY = overlay->base_y + overlay->frameOffsetY;
-                        const int overlayWidth = total_width;
-                        const int overlayHeight = total_height;
+                        if (totalWidth == 0) {
+                            // Fallback calculation
+                            const s16 refresh_rate_offset = (overlay->refreshRate < 100) ? 21 : 28;
+                            const s16 info_width = overlay->settings.showInfo ? (6 + overlay->rectangle_width/2 - 4) : 0;
+                            const s16 content_width = overlay->rectangle_width + refresh_rate_offset + info_width;
+                            const s16 content_height = overlay->rectangle_height + 12;
+                            totalWidth = content_width + (2 * border);
+                            totalHeight = content_height + (2 * border);
+                        }
                         
-                        // Add touch padding
+                        // Apply frame offsets (base position already includes border offset)
+                        const int overlayX = overlay->base_x + overlay->frameOffsetX - border;
+                        const int overlayY = overlay->base_y + overlay->frameOffsetY - border;
+                        
+                        // Touch padding
                         const int touchPadding = 4;
                         const int touchableX = overlayX - touchPadding;
                         const int touchableY = overlayY - touchPadding;
-                        const int touchableWidth = overlayWidth + (touchPadding * 2);
-                        const int touchableHeight = overlayHeight + (touchPadding * 2);
+                        const int touchableWidth = totalWidth + (touchPadding * 2);
+                        const int touchableHeight = totalHeight + (touchPadding * 2);
                         
                         // Check if touch is within bounds
                         if (touchX >= touchableX && touchX <= touchableX + touchableWidth &&
@@ -138,7 +152,6 @@ public:
                             minusHoldStart = now;
                         }
                         if (now - minusHoldStart >= HOLD_THRESHOLD_NS) {
-                            // Long enough to start drag
                             inputDetected = true;
                             overlay->buttonState.minusDragActive.exchange(true, std::memory_order_acq_rel);
                         }
@@ -150,7 +163,6 @@ public:
                             plusHoldStart = now;
                         }
                         if (now - plusHoldStart >= HOLD_THRESHOLD_NS) {
-                            // Long enough to start drag
                             inputDetected = true;
                             overlay->buttonState.plusDragActive.exchange(true, std::memory_order_acq_rel);
                         }
@@ -165,7 +177,7 @@ public:
                     // Disable rendering on any input, re-enable when no input
                     static bool resetOnce = true;
                     if (inputDetected) {
-                        if (resetOnce) {
+                        if (resetOnce && isRendering) {
                             isRendering = false;
                             leventSignal(&renderingStopEvent);
                             resetOnce = false;
@@ -226,10 +238,19 @@ public:
 
         auto* Status = new tsl::elm::CustomDrawer([this](tsl::gfx::Renderer *renderer, u16 x, u16 y, u16 w, u16 h) {
 
-            // Calculate total width based on whether we're showing info
+            // Calculate content dimensions (what goes inside the border)
             const s16 refresh_rate_offset = (refreshRate < 100) ? 21 : 28;
-            const s16 info_width = settings.showInfo ? (6 + rectangle_width/2 - 4) : 0;
-            const s16 total_width = rectangle_width + refresh_rate_offset + info_width;
+            const s16 info_width = settings.showInfo ? (6 + rectangle_width/2 - 4) : 6;
+            const s16 content_width = rectangle_width + refresh_rate_offset + info_width;
+            const s16 content_height = rectangle_height + 12;
+            
+            // Total dimensions including border
+            const size_t totalWidth = content_width + (2 * border);
+            const size_t totalHeight = content_height + (2 * border);
+            
+            // Store actual dimensions for input handling
+            actualTotalWidth = totalWidth;
+            actualTotalHeight = totalHeight;
 
             if (refreshRate && refreshRate < 240) {
                 rectangle_height = refreshRate;
@@ -250,36 +271,33 @@ public:
                 range = std::abs(rectangle_range_max - rectangle_range_min) + 1;
             };
 
-            // Apply frame offsets for repositioning
-            int clippingOffsetX = 0, clippingOffsetY = 0;
-            const int total_height = rectangle_height + 12;
+            // Calculate position with frame offsets (for the rounded rect, which includes border)
+            int posX = base_x + frameOffsetX - border;
+            int posY = base_y + frameOffsetY - border;
             
-            // Check X bounds and calculate clipping offset
-            if (base_x + frameOffsetX < int(framePadding)) {
-                clippingOffsetX = framePadding - (base_x + frameOffsetX);
-            } else if ((base_x + frameOffsetX + total_width) > static_cast<int>(screenWidth - framePadding)) {
-                clippingOffsetX = (screenWidth - framePadding) - (base_x + frameOffsetX + total_width);
-            }
+            // Clamp to screen bounds (accounting for total size including border)
+            posX = std::max(int(framePadding), std::min(posX, static_cast<int>(screenWidth - totalWidth - framePadding)));
+            posY = std::max(int(framePadding), std::min(posY, static_cast<int>(screenHeight - totalHeight - framePadding)));
             
-            // Check Y bounds and calculate clipping offset  
-            if (base_y + frameOffsetY < int(framePadding)) {
-                clippingOffsetY = framePadding - (base_y + frameOffsetY);
-            } else if ((base_y + frameOffsetY + total_height) > static_cast<int>(screenHeight - framePadding)) {
-                clippingOffsetY = (screenHeight - framePadding) - (base_y + frameOffsetY + total_height);
-            }
-            
-            // Apply offsets to all drawing
-            const int final_base_x = base_x + frameOffsetX + clippingOffsetX;
-            const int final_base_y = base_y + frameOffsetY + clippingOffsetY;
-            
-            // Draw the main rectangle with appropriate background color
+            // Draw the rounded rectangle (background)
             const tsl::Color bgColor = !isDragging
                 ? settings.backgroundColor
                 : settings.focusBackgroundColor;
             
-            const int border = 6;
+            renderer->drawRoundedRectSingleThreaded(
+                posX, 
+                posY, 
+                totalWidth, 
+                totalHeight,
+                16, 
+                aWithOpacity(bgColor)
+            );
+            
+            posX += 4;
 
-            renderer->drawRoundedRectSingleThreaded(final_base_x -border, final_base_y-border, total_width+2*border, rectangle_height + 12+2*border, 16, aWithOpacity(bgColor));
+            // Content drawing position (inside the border)
+            const int final_base_x = posX + border;
+            const int final_base_y = posY + border;
 
             const s16 size = (refreshRate > 60 || !refreshRate) ? 63 : (s32)(63.0/(60.0/refreshRate));
             const auto width = renderer->getTextDimensions(FPSavg_c, false, size).first;
@@ -289,8 +307,8 @@ public:
 
             if (FPSavg != 254.0)
                 renderer->drawString(FPSavg_c, false, pos_x, pos_y-5, size, settings.fpsColor);
-            renderer->drawEmptyRect(final_base_x+(rectangle_x - 1), final_base_y+(rectangle_y - 1), rectangle_width + 2, rectangle_height + 4, aWithOpacity(settings.borderColor));
-            renderer->drawDashedLine(final_base_x+rectangle_x, final_base_y+y_30FPS, final_base_x+rectangle_x+rectangle_width, final_base_y+y_30FPS, 6, a(settings.dashedLineColor));
+            renderer->drawEmptyRect(final_base_x+(rectangle_x - 1)+2, final_base_y+(rectangle_y - 1), rectangle_width + 2, rectangle_height + 4, aWithOpacity(settings.borderColor));
+            renderer->drawDashedLine(final_base_x+rectangle_x+2, final_base_y+y_30FPS, final_base_x+rectangle_x+rectangle_width, final_base_y+y_30FPS, 6, aWithOpacity(settings.dashedLineColor));
             renderer->drawString(&legend_max[0], false, final_base_x+(rectangle_x-((refreshRate < 100) ? 15 : 22)), final_base_y+(rectangle_y+7), 10, (settings.maxFPSTextColor));
             renderer->drawString(&legend_min[0], false, final_base_x+(rectangle_x-10), final_base_y+(rectangle_y+rectangle_height+3), 10, settings.minFPSTextColor);
 
@@ -333,12 +351,44 @@ public:
             if (settings.showInfo) {
                 const s16 info_x = final_base_x+rectangle_width+rectangle_x + 6 +8;
                 const s16 info_y = final_base_y + 3;
-                renderer->drawString("CPU\nGPU\nRAM\nSOC\nPCB\nSKN", false, info_x, info_y+11, 11, (settings.borderColor));
+                const s16 fontSize = 11;
+                
+                // Get line height from font size (we'll use the actual rendered height)
+                const auto testDimensions = renderer->getTextDimensions("A", false, fontSize);
+                const s16 lineHeight = testDimensions.second;
+                
+                // Starting Y position for first line
+                const s16 startY = info_y + lineHeight;
+                
+                // Value X position (offset from labels)
+                const s16 value_x = info_x + 40;
 
-                renderer->drawString(CPU_Load_c, false, info_x + 40, info_y+11, 11, settings.textColor);
-                renderer->drawString(GPU_Load_c, false, info_x + 40, info_y+22, 11, settings.textColor);
-                renderer->drawString(RAM_Load_c, false, info_x + 40, info_y+33, 11, settings.textColor);
-                renderer->drawString(TEMP_c, false, info_x + 40, info_y+44, 11, settings.textColor);
+                static constexpr s16 SPACING = 1;
+                
+                // Draw each label and value pair on the same baseline
+                // Line 0: CPU
+                renderer->drawString("CPU", false, info_x, startY, fontSize, settings.catColor);
+                renderer->drawString(CPU_Load_c, false, value_x, startY, fontSize, settings.textColor);
+                
+                // Line 1: GPU
+                renderer->drawString("GPU", false, info_x, startY + lineHeight+SPACING, fontSize, settings.catColor);
+                renderer->drawString(GPU_Load_c, false, value_x, startY + lineHeight+SPACING, fontSize, settings.textColor);
+                
+                // Line 2: RAM
+                renderer->drawString("RAM", false, info_x, startY + lineHeight * 2+2*SPACING, fontSize, settings.catColor);
+                renderer->drawString(RAM_Load_c, false, value_x, startY + lineHeight * 2+2*SPACING, fontSize, settings.textColor);
+                
+                // Line 3: SOC
+                renderer->drawString("SOC", false, info_x, startY + lineHeight * 3+3*SPACING, fontSize, settings.catColor);
+                renderer->drawString(SOC_TEMP_c, false, value_x, startY + lineHeight * 3+3*SPACING, fontSize, settings.textColor);
+                
+                // Line 4: PCB
+                renderer->drawString("PCB", false, info_x, startY + lineHeight * 4+4*SPACING, fontSize, settings.catColor);
+                renderer->drawString(PCB_TEMP_c, false, value_x, startY + lineHeight * 4+4*SPACING, fontSize, settings.textColor);
+                
+                // Line 5: SKIN
+                renderer->drawString("SKIN", false, info_x, startY + lineHeight * 5+5*SPACING, fontSize, settings.catColor);
+                renderer->drawString(SKIN_TEMP_c, false, value_x, startY + lineHeight * 5+5*SPACING, fontSize, settings.textColor);
             }
         });
 
@@ -391,9 +441,11 @@ public:
 
         mutexLock(&mutex_Misc);
         
-        snprintf(TEMP_c, sizeof TEMP_c, 
-            "%2.1f\u00B0C\n%2.1f\u00B0C\n%2d.%d\u00B0C", 
-            SOC_temperatureF, PCB_temperatureF, skin_temperaturemiliC / 1000, (skin_temperaturemiliC / 100) % 10);
+        // Format temperature strings separately for proper alignment
+        snprintf(SOC_TEMP_c, sizeof SOC_TEMP_c, "%2.1f\u00B0C", SOC_temperatureF);
+        snprintf(PCB_TEMP_c, sizeof PCB_TEMP_c, "%2.1f\u00B0C", PCB_temperatureF);
+        snprintf(SKIN_TEMP_c, sizeof SKIN_TEMP_c, "%2d.%d\u00B0C", 
+                 skin_temperaturemiliC / 1000, (skin_temperaturemiliC / 100) % 10);
         
         // Atomically snapshot each idle tick once
         const uint64_t idle0 = idletick0.load(std::memory_order_acquire);
@@ -447,52 +499,48 @@ public:
         static constexpr int TOUCH_THRESHOLD = 8;
         static bool hasMoved = false;
     
-        // Better touch detection - check if coordinates are within reasonable screen bounds
+        // Touch detection
         const bool currentTouchDetected = (touchPos.x > 0 && touchPos.y > 0 && 
                                     touchPos.x < screenWidth && touchPos.y < screenHeight);
         
         static bool clearOnRelease = false;
-        if (clearOnRelease) {
+        
+        if (clearOnRelease && !isRendering) {
             clearOnRelease = false;
             isRendering = true;
             leventClear(&renderingStopEvent);
         }
         
-        // Calculate overlay bounds
-        const s16 refresh_rate_offset = (refreshRate < 100) ? 21 : 28;
-        const s16 info_width = settings.showInfo ? (6 + rectangle_width/2 - 4) : 0;
-        const s16 total_width = rectangle_width + refresh_rate_offset + info_width;
-        const s16 total_height = rectangle_height + 12;
+        // Use actual dimensions from last render, fallback to estimate if not available
+        size_t totalWidth = actualTotalWidth;
+        size_t totalHeight = actualTotalHeight;
         
-        // Cache bounds calculation
-        static int cachedBaseX = 0;
-        static int cachedBaseY = 0;
-        static bool boundsNeedUpdate = true;
-        
-        // Only recalculate bounds when needed
-        if (boundsNeedUpdate) {
-            cachedBaseX = base_x;
-            cachedBaseY = base_y;
-            boundsNeedUpdate = false;
+        if (totalWidth == 0) {
+            // Fallback calculation if not yet rendered
+            const s16 refresh_rate_offset = (refreshRate < 100) ? 21 : 28;
+            const s16 info_width = settings.showInfo ? (6 + rectangle_width/2 - 4) : 0;
+            const s16 content_width = rectangle_width + refresh_rate_offset + info_width;
+            const s16 content_height = rectangle_height + 12;
+            totalWidth = content_width + (2 * border);
+            totalHeight = content_height + (2 * border);
         }
         
-        const int overlayX = cachedBaseX + frameOffsetX;
-        const int overlayY = cachedBaseY + frameOffsetY;
-        const int overlayWidth = total_width;
-        const int overlayHeight = total_height;
+        // Current overlay position (top-left of rounded rect)
+        const int overlayX = base_x + frameOffsetX - border;
+        const int overlayY = base_y + frameOffsetY - border;
         
-        // Add padding to make touch detection more forgiving
+        // Touch detection area (with padding for easier interaction)
         static constexpr int touchPadding = 4;
         const int touchableX = overlayX - touchPadding;
         const int touchableY = overlayY - touchPadding;
-        const int touchableWidth = overlayWidth + (touchPadding * 2);
-        const int touchableHeight = overlayHeight + (touchPadding * 2);
+        const int touchableWidth = totalWidth + (touchPadding * 2);
+        const int touchableHeight = totalHeight + (touchPadding * 2);
         
-        // Screen boundaries for clamping
-        const int minX = -cachedBaseX + framePadding;
-        const int maxX = screenWidth - overlayWidth - cachedBaseX - framePadding;
-        const int minY = -cachedBaseY + framePadding;
-        const int maxY = screenHeight - overlayHeight - cachedBaseY - framePadding;
+        // Screen boundaries for clamping (accounting for total size)
+        const int minX = -(base_x - border) + framePadding;
+        const int maxX = screenWidth - totalWidth - (base_x - border) - framePadding;
+        const int minY = -(base_y - border) + framePadding;
+        const int maxY = screenHeight - totalHeight - (base_y - border) - framePadding;
     
         const bool minusDragReady = buttonState.minusDragActive.load(std::memory_order_acquire);
         const bool plusDragReady = buttonState.plusDragActive.load(std::memory_order_acquire);
@@ -538,12 +586,8 @@ public:
             
             if (hasMoved) {
                 // Update frame offsets with boundary checking
-                const int newFrameOffsetX = std::max(minX, std::min(maxX, initialFrameOffsetX + deltaX));
-                const int newFrameOffsetY = std::max(minY, std::min(maxY, initialFrameOffsetY + deltaY));
-                
-                frameOffsetX = newFrameOffsetX;
-                frameOffsetY = newFrameOffsetY;
-                boundsNeedUpdate = true;
+                frameOffsetX = std::max(minX, std::min(maxX, initialFrameOffsetX + deltaX));
+                frameOffsetY = std::max(minY, std::min(maxY, initialFrameOffsetY + deltaY));
             }
         } else if (!currentTouchDetected && oldTouchDetected && isDragging && !currentMinusHeld && !currentPlusHeld) {
             // Touch just released
@@ -602,12 +646,8 @@ public:
                 accumulatedY -= deltaY;
                 
                 // Update frame offsets with boundary checking
-                const int newFrameOffsetX = std::max(minX, std::min(maxX, frameOffsetX + deltaX));
-                const int newFrameOffsetY = std::max(minY, std::min(maxY, frameOffsetY + deltaY));
-                
-                frameOffsetX = newFrameOffsetX;
-                frameOffsetY = newFrameOffsetY;
-                boundsNeedUpdate = true;
+                frameOffsetX = std::max(minX, std::min(maxX, frameOffsetX + deltaX));
+                frameOffsetY = std::max(minY, std::min(maxY, frameOffsetY + deltaY));
             }
         } else if (((!currentMinusHeld && oldMinusHeld) || (!currentPlusHeld && oldPlusHeld)) && isDragging) {
             // Button just released - stop joystick dragging

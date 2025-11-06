@@ -49,18 +49,7 @@ public:
             fontsize = settings.handheldFontSize;
         }
         else fontsize = settings.dockedFontSize;
-        //switch(settings.setPos) {
-        //    case 1:
-        //    case 4:
-        //    case 7:
-        //        tsl::gfx::Renderer::get().setLayerPos(624, 0);
-        //        break;
-        //    case 2:
-        //    case 5:
-        //    case 8:
-        //        tsl::gfx::Renderer::get().setLayerPos(1248, 0);
-        //        break;
-        //}
+
         if (settings.disableScreenshots) {
             tsl::gfx::Renderer::get().removeScreenshotStacks();
         }
@@ -110,7 +99,7 @@ public:
         
             while (overlay->touchPollRunning.load(std::memory_order_acquire)) {
                 // Only poll when rendering and not dragging
-                if (!overlay->isDragging && isRendering) {
+                {
                     inputDetected = false;
                     
                     // Check touch in bounds
@@ -192,7 +181,7 @@ public:
                     // Disable rendering on any input, re-enable when no input
                     static bool resetOnce = true;
                     if (inputDetected) {
-                        if (resetOnce) {
+                        if (resetOnce && isRendering) {
                             isRendering = false;
                             leventSignal(&renderingStopEvent);
                             resetOnce = false;
@@ -1380,7 +1369,7 @@ public:
 
         static bool clearOnRelease = false;
 
-        if (clearOnRelease) {
+        if (clearOnRelease && !isRendering) {
             clearOnRelease = false;
             isRendering = true;
             leventClear(&renderingStopEvent);
