@@ -17,7 +17,8 @@ private:
     char GPU_Hz_c[64] = "";
     char RAM_Hz_c[64] = "";
     char CPU_compressed_c[160] = "";
-    char SoCPCB_temperature_c[64] = "";
+    char SOC_temperature_c[32] = "";
+    char PCB_temperature_c[32] = "";
     char skin_temperature_c[32] = "";
     char BatteryDraw_c[64] = "";
     char FPS_var_compressed_c[64] = "";
@@ -110,9 +111,9 @@ public:
             //static auto fanLabelWidth = renderer->getTextDimensions("Fan Rotation Level", false, 15).first;
             //static auto boardWidth = std::max(batteryLabelWidth, fanLabelWidth);
 
-            static constexpr size_t valueOffset = 150;
-            static constexpr size_t deltaOffset = 246;
-            static constexpr size_t ramPercentageOffset = 350;
+            static constexpr size_t valueOffset = 150+10;
+            static constexpr size_t deltaOffset = 246+10;
+            static constexpr size_t ramPercentageOffset = 350+10;
 
             //Print strings
             ///CPU
@@ -248,29 +249,46 @@ public:
             
             ///Thermal
             if (R_SUCCEEDED(i2cCheck) || R_SUCCEEDED(tcCheck) || R_SUCCEEDED(pwmCheck)) {
-                renderer->drawString("Board", false, 20, 550, 20, (settings.catColor1));
+                renderer->drawString("Board", false, 20, 550+2, 20, (settings.catColor1));
                 if (R_SUCCEEDED(i2cCheck)) {
-                    //static auto batteryLabelWidth = renderer->getTextDimensions("Battery Power Flow: ", false, 15).first;
-                    renderer->drawString("Battery Power Flow", false, COMMON_MARGIN, 575, 15, (settings.catColor2));
-                    renderer->drawString(BatteryDraw_c, false, COMMON_MARGIN + valueOffset, 575, 15, (settings.textColor));
-                }
-                if (R_SUCCEEDED(i2cCheck) || R_SUCCEEDED(tcCheck)) {
-                    //static auto textWidth1 = renderer->getTextDimensions("Temperatures ", false, 15).first;
-                    static auto textWidth2 = renderer->getTextDimensions("SoC\nPCB\nSkin", false, 15).first;
-                    renderer->drawString("\nTemperatures", false, COMMON_MARGIN, 590, 15, (settings.catColor2));
-                    renderer->drawString("SoC\nPCB\nSkin", false, COMMON_MARGIN + valueOffset-textWidth2 - 10, 590, 15, (settings.catColor2));
-                    renderer->drawString(SoCPCB_temperature_c, false, COMMON_MARGIN + valueOffset, 590, 15, (settings.textColor));
+                    renderer->drawString("Battery Power Flow", false, COMMON_MARGIN, 575+2, 15, (settings.catColor2));
+                    renderer->drawStringWithColoredSections(BatteryDraw_c, false, specialChars, COMMON_MARGIN + valueOffset, 575+2, 15, (settings.textColor), settings.separatorColor);
                 }
                 if (R_SUCCEEDED(pwmCheck)) {
-                    //static auto fanLabelWidth = renderer->getTextDimensions("Fan Rotation Level ", false, 15).first;
-                    renderer->drawString("Fan Rotation Level", false, COMMON_MARGIN, 635, 15, (settings.catColor2));
-                    renderer->drawString(Rotation_SpeedLevel_c, false, COMMON_MARGIN + valueOffset, 635, 15, (settings.textColor));
+                    renderer->drawString("Fan Rotation Level", false, COMMON_MARGIN, 590+2, 15, (settings.catColor2));
+                    renderer->drawString(Rotation_SpeedLevel_c, false, COMMON_MARGIN + valueOffset, 590+2, 15, (settings.textColor));
+                }
+                if (R_SUCCEEDED(i2cCheck) || R_SUCCEEDED(tcCheck)) {
+                    static auto socLabelWidth = renderer->getTextDimensions("SOC  ", false, 15).first;
+                    static auto pcbLabelWidth = renderer->getTextDimensions("PCB  ", false, 15).first;
+                    static auto maxLabelWidth = std::max(socLabelWidth, pcbLabelWidth);
+                    static auto skinLabelWidth = renderer->getTextDimensions("SKIN  ", false, 15).first;
+                    
+                    renderer->drawString("Temperatures", false, COMMON_MARGIN, 605+2, 15, (settings.catColor2));
+                    
+                    // SOC - starts at valueOffset next to "Temperatures"
+                    uint32_t current_x = COMMON_MARGIN + valueOffset;
+                    renderer->drawString("SOC  ", false, current_x, 605+2, 15, (settings.catColor2));
+                    current_x += maxLabelWidth;
+                    renderer->drawString(SOC_temperature_c, false, current_x, 605+2, 15, (settings.textColor));
+                    
+                    // SKIN - same spacing to the right
+                    current_x += renderer->getTextDimensions(SOC_temperature_c, false, 15).first + 15;
+                    renderer->drawString("SKIN  ", false, current_x, 605+2, 15, (settings.catColor2));
+                    current_x += skinLabelWidth;
+                    renderer->drawString(skin_temperature_c, false, current_x, 605+2, 15, (settings.textColor));
+                    
+                    // PCB - below SOC on next line
+                    current_x = COMMON_MARGIN + valueOffset;
+                    renderer->drawString("PCB  ", false, current_x, 620+2, 15, (settings.catColor2));
+                    current_x += maxLabelWidth;
+                    renderer->drawString(PCB_temperature_c, false, current_x, 620+2, 15, (settings.textColor));
                 }
             }
             
             ///FPS
             if (GameRunning) {
-                const uint32_t width_offset = 150;
+                const uint32_t width_offset = valueOffset;
                 if (settings.showFPS || settings.showRES || settings.showRDSD) {
                     renderer->drawString("Game", false, COMMON_MARGIN + width_offset, 185+12, 20, (settings.catColor1));
                 }
@@ -430,9 +448,10 @@ public:
                 RAM_GPU_Load / 10, RAM_GPU_Load % 10);
         }
         ///Thermal
-        snprintf(SoCPCB_temperature_c, sizeof SoCPCB_temperature_c, 
-            "%.1f\u00B0C\n%.1f\u00B0C\n%d.%d\u00B0C", 
-            SOC_temperatureF, PCB_temperatureF, skin_temperaturemiliC / 1000, (skin_temperaturemiliC / 100) % 10);
+        snprintf(SOC_temperature_c, sizeof SOC_temperature_c, "%.1f\u00B0C", SOC_temperatureF);
+        snprintf(PCB_temperature_c, sizeof PCB_temperature_c, "%.1f\u00B0C", PCB_temperatureF);
+        snprintf(skin_temperature_c, sizeof skin_temperature_c, "%d.%d\u00B0C", skin_temperaturemiliC / 1000, (skin_temperaturemiliC / 100) % 10);
+
         snprintf(Rotation_SpeedLevel_c, sizeof Rotation_SpeedLevel_c, "%.1f%%", Rotation_Duty);
         
         ///FPS
@@ -552,14 +571,31 @@ public:
 
         mutexUnlock(&mutex_Misc);
 
-        //Battery Power Flow
+        /* ── Battery / power draw ───────────────────────────────────── */
         char remainingBatteryLife[8];
+        
+        /* Normalise "-0.00" → "0.00" W */
+        const float drawW = (fabsf(PowerConsumption) < 0.01f) ? 0.0f
+                                                         : PowerConsumption;
+        
         mutexLock(&mutex_BatteryChecker);
-        if (batTimeEstimate >= 0) {
-            snprintf(remainingBatteryLife, sizeof remainingBatteryLife, "%d:%02d", batTimeEstimate / 60, batTimeEstimate % 60);
+        
+        /* keep "--:--" whenever estimate is negative */
+        if (batTimeEstimate >= 0 && !(drawW <= 0.01f && drawW >= -0.01f)) {
+            snprintf(remainingBatteryLife, sizeof(remainingBatteryLife),
+                     "%d:%02d", batTimeEstimate / 60, batTimeEstimate % 60);
+        } else {
+            strcpy(remainingBatteryLife, "--:--");
         }
-        else snprintf(remainingBatteryLife, sizeof remainingBatteryLife, "-:--");
-        snprintf(BatteryDraw_c, sizeof BatteryDraw_c, "%+.2f W [%s]", PowerConsumption, remainingBatteryLife);
+        
+        const float batteryPercent = (float)_batteryChargeInfoFields.RawBatteryCharge / 1000.0f;
+        
+        snprintf(BatteryDraw_c, sizeof(BatteryDraw_c),
+                 "%.2f W%.0f%% [%s]",
+                 drawW,
+                 batteryPercent,
+                 remainingBatteryLife);
+        
         mutexUnlock(&mutex_BatteryChecker);
         
         if (!skipOnce) {

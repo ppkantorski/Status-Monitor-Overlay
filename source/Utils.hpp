@@ -1561,6 +1561,7 @@ struct FpsGraphSettings {
     uint16_t textColor;
     uint16_t catColor;
     //int setPos;
+    bool useDynamicColors;
     bool disableScreenshots;
     int frameOffsetX;
     int frameOffsetY;
@@ -2249,6 +2250,7 @@ ALWAYS_INLINE void GetConfigSettings(FpsGraphSettings* settings) {
     convertStrToRGBA4444("#0F0F", &(settings->catColor));
 
     settings->refreshRate = 30;
+    settings->useDynamicColors = true;
     settings->disableScreenshots = false;
 
     settings->frameOffsetX = 10;
@@ -2309,6 +2311,13 @@ ALWAYS_INLINE void GetConfigSettings(FpsGraphSettings* settings) {
         key = it->second;
         convertToUpper(key);
         settings->showInfo = (key == "TRUE");
+    }
+
+    it = section.find("use_dynamic_colors");
+    if (it != section.end()) {
+        key = it->second;
+        convertToUpper(key);
+        settings->useDynamicColors = (key == "TRUE");
     }
 
     // Process disable screenshots

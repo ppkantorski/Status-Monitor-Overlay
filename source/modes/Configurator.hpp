@@ -315,6 +315,12 @@ public:
             });
             list->addItem(showInfo);
 
+            auto* dynamicColors = new tsl::elm::ToggleListItem("Use Dynamic Colors", getCurrentUseDynamicColors());
+            dynamicColors->setStateChangedListener([this](bool state) {
+                ult::setIniFileValue(configIniPath, "fps-graph", "use_dynamic_colors", state ? "true" : "false");
+            });
+            list->addItem(dynamicColors);
+
             auto* disableScreenshots = new tsl::elm::ToggleListItem("Disable Screenshots", getCurrentDisableScreenshots("fps-graph"));
             disableScreenshots->setStateChangedListener([this](bool state) {
                 ult::setIniFileValue(configIniPath, "fps-graph", "disable_screenshots", state ? "true" : "false");
@@ -565,7 +571,7 @@ private:
     }
 
     bool getCurrentUseDynamicColors() {
-        const std::string section = isMiniMode ? "mini" : "micro";
+        const std::string section = isFPSGraphMode? "fps-graph" : (isMiniMode ? "mini" : "micro");
         std::string value = ult::parseValueFromIniSection(configIniPath, section, "use_dynamic_colors");
         if (value.empty()) return true;
         convertToUpper(value);
@@ -1387,7 +1393,7 @@ public:
                 return false;
             });
             list->addItem(catColor);
-            
+
             static const std::vector<ColorSetting> fpsGraphColors = {
                 {"FPS Counter", "fps_counter_color", "#888C", true},      // background type
                 {"Border", "border_color", "#2DFF", false},               // text type

@@ -39,6 +39,23 @@ private:
     size_t actualTotalWidth = 0;
     size_t actualTotalHeight = 0;
 
+    // Ultra-fast gradient color computation
+    inline constexpr tsl::Color GradientColor(float temperature) const {
+        if (temperature <= 35.0f) return tsl::Color(7, 7, 15, 0xFF);
+        if (temperature >= 65.0f) return tsl::Color(15, 0, 0, 0xFF);
+        
+        if (temperature < 45.0f) {
+            const float factor = (temperature - 35.0f) * 0.1f;
+            return tsl::Color(7 - 7 * factor, 7 + 8 * factor, 15 - 15 * factor, 0xFF);
+        }
+        
+        if (temperature < 55.0f) {
+            return tsl::Color(15 * (temperature - 45.0f) * 0.1f, 15, 0, 0xFF);
+        }
+        
+        return tsl::Color(15, 15 - 15 * (temperature - 55.0f) * 0.1f, 0, 0xFF);
+    }
+
 public:
     bool isStarted = false;
     com_FPSGraph() { 
@@ -365,6 +382,11 @@ public:
 
                 static constexpr s16 SPACING = 1;
                 
+                // Compute gradient colors for temperatures
+                const tsl::Color socColor = settings.useDynamicColors ? GradientColor(SOC_temperatureF) : settings.textColor;
+                const tsl::Color pcbColor = settings.useDynamicColors ? GradientColor(PCB_temperatureF) : settings.textColor;
+                const tsl::Color skinColor = settings.useDynamicColors ? GradientColor(static_cast<float>(skin_temperaturemiliC) / 1000.0f) : settings.textColor;
+                
                 // Draw each label and value pair on the same baseline
                 // Line 0: CPU
                 renderer->drawString("CPU", false, info_x, startY, fontSize, settings.catColor);
@@ -378,17 +400,17 @@ public:
                 renderer->drawString("RAM", false, info_x, startY + lineHeight * 2+2*SPACING, fontSize, settings.catColor);
                 renderer->drawString(RAM_Load_c, false, value_x, startY + lineHeight * 2+2*SPACING, fontSize, settings.textColor);
                 
-                // Line 3: SOC
+                // Line 3: SOC (with gradient color)
                 renderer->drawString("SOC", false, info_x, startY + lineHeight * 3+3*SPACING, fontSize, settings.catColor);
-                renderer->drawString(SOC_TEMP_c, false, value_x, startY + lineHeight * 3+3*SPACING, fontSize, settings.textColor);
+                renderer->drawString(SOC_TEMP_c, false, value_x, startY + lineHeight * 3+3*SPACING, fontSize, socColor);
                 
-                // Line 4: PCB
+                // Line 4: PCB (with gradient color)
                 renderer->drawString("PCB", false, info_x, startY + lineHeight * 4+4*SPACING, fontSize, settings.catColor);
-                renderer->drawString(PCB_TEMP_c, false, value_x, startY + lineHeight * 4+4*SPACING, fontSize, settings.textColor);
+                renderer->drawString(PCB_TEMP_c, false, value_x, startY + lineHeight * 4+4*SPACING, fontSize, pcbColor);
                 
-                // Line 5: SKIN
+                // Line 5: SKIN (with gradient color)
                 renderer->drawString("SKIN", false, info_x, startY + lineHeight * 5+5*SPACING, fontSize, settings.catColor);
-                renderer->drawString(SKIN_TEMP_c, false, value_x, startY + lineHeight * 5+5*SPACING, fontSize, settings.textColor);
+                renderer->drawString(SKIN_TEMP_c, false, value_x, startY + lineHeight * 5+5*SPACING, fontSize, skinColor);
             }
         });
 
