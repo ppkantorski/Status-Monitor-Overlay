@@ -247,7 +247,7 @@ public:
                 if (under100ms && waitingForGame)
                     msg = "Checking for game...";
                 else {
-                    msg = "Game is not running\nor it's incompatible.";
+                    msg = "Game is not running\nor is incompatible.";
                     waitingForGame = false;
                 }
         

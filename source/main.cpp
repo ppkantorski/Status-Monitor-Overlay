@@ -964,6 +964,7 @@ void setupMode() {
 //    }
 //}
 
+
 // This function gets called on startup to create a new Overlay object
 int main(int argc, char **argv) {
     systemtickfrequency = armGetSystemTickFreq();
@@ -972,152 +973,150 @@ int main(int argc, char **argv) {
     if (argc > 0) {
         filename = argv[0]; // set global
         
-        // Read the entire INI file once
-        auto iniData = ult::getParsedDataFromIniFile(ult::OVERLAYS_INI_FILEPATH);
-        
-        // Check if mode_args exists in memory
-        //bool usingModeArgs = false;
-
-        auto sectionIt = iniData.find(filename);
-        if (sectionIt != iniData.end()) {
-            auto& section = sectionIt->second;
-        
-            //auto keyIt = section.find("mode_args");
-            //usingModeArgs = (keyIt != section.end() && !keyIt->second.empty());
-        
-            // Compare and update if values differ
-            const std::string expectedArgs   = "(-mini, -micro, -fps_graph, -fps_counter, -game_resolutions)";
+        {
+            // Read the entire INI file once
+            auto iniData = ult::getParsedDataFromIniFile(ult::OVERLAYS_INI_FILEPATH);
             
-            if (section["mode_args"] != expectedArgs) {
-                section["mode_args"] = expectedArgs;
-                section["mode_labels"] = "(Mini, Micro, FPS Graph, FPS Counter, Game Resolutions)";
-                // Write once with all changes
+            auto sectionIt = iniData.find(filename);
+            if (sectionIt != iniData.end()) {
+                auto& section = sectionIt->second;
+                
+                // Compare and update if values differ
+                const std::string expectedArgs = "(-mini, -micro, -fps_graph, -fps_counter, -game_resolutions)";
+                
+                if (section["mode_args"] != expectedArgs) {
+                    section["mode_args"] = expectedArgs;
+                    section["mode_labels"] = "(Mini, Micro, FPS Graph, FPS Counter, Game Resolutions)";
+                    ult::saveIniFileData(ult::OVERLAYS_INI_FILEPATH, iniData);
+                }
+            } else {
+                // If section doesn't exist, create it with expected values
+                iniData[filename]["mode_args"] = "(-mini, -micro, -fps_graph, -fps_counter, -game_resolutions)";
+                iniData[filename]["mode_labels"] = "(Mini, Micro, FPS Graph, FPS Counter, Game Resolutions)";
                 ult::saveIniFileData(ult::OVERLAYS_INI_FILEPATH, iniData);
             }
-        
-        } else {
-            // If section doesn't exist, create it with expected values
-            iniData[filename]["mode_args"]   = "(-mini, -micro, -fps_graph, -fps_counter, -game_resolutions)";
-            iniData[filename]["mode_labels"] = "(Mini, Micro, FPS Graph, FPS Counter, Game Resolutions)";
-            // Write once with all changes
-            ult::saveIniFileData(ult::OVERLAYS_INI_FILEPATH, iniData);
         }
     
-    
-        //ult::useRightAlignment = (ult::parseValueFromIniSection(ult::ULTRAHAND_CONFIG_INI_PATH, ult::ULTRAHAND_PROJECT_NAME, "right_alignment") == ult::TRUE_STR);
-        // Check command line arguments
+        // Process command line arguments
         for (u8 arg = 0; arg < argc; arg++) {
-            if (argv[arg][0] != '-') continue;  // Check first character
+            const char* argStr = argv[arg];
+            if (argStr[0] != '-') continue;
             
-            if (strcasecmp(argv[arg], "-micro_") == 0) {
+            // Check if ends with underscore and create comparison string without it
+            const size_t len = strlen(argStr);
+            const bool hasUnderscore = (len > 1 && argStr[len-1] == '_');
+            
+            // For underscore variants, compare without the trailing underscore
+            char modeStr[32];
+            const char* compareStr;
+            if (hasUnderscore) {
+                strncpy(modeStr, argStr, len - 1);
+                modeStr[len - 1] = '\0';
+                compareStr = modeStr;
+            } else {
+                compareStr = argStr;
+            }
+            
+            // Micro mode
+            if (strcasecmp(compareStr, "-micro") == 0) {
                 FullMode = false;
                 lastMode = "micro";
-                setupMode();
+                if (hasUnderscore) {
+                    setupMode();
+                } else {
+                    skipMain = true;
+                    ult::DefaultFramebufferWidth = 1280;
+                    ult::DefaultFramebufferHeight = 720;
+                }
                 return tsl::loop<MicroMode>(argc, argv);
-            } 
-            else if (strcasecmp(argv[arg], "-mini_") == 0) {
+            }
+            // Mini mode
+            else if (strcasecmp(compareStr, "-mini") == 0) {
                 FullMode = false;
                 lastMode = "mini";
-                setupMode();
-                //ult::useRightAlignment = ult::useRightAlignment || (ult::parseValueFromIniSection(configIniPath, "mini", "right_alignment") == ult::TRUE_STR);
-                return tsl::loop<MiniEntryOverlay>(argc, argv);
-            } 
-            else if (strcasecmp(argv[arg], "-fps_graph_") == 0) {
-                FullMode = false;
-                lastMode = "fps_graph";
-                setupMode();
-                return tsl::loop<FPSGraphEntryOverlay>(argc, argv);
-            }
-            else if (strcasecmp(argv[arg], "-fps_counter_") == 0) {
-                FullMode = false;
-                lastMode = "fps_counter";
-                setupMode();
-                return tsl::loop<FPSCounterEntryOverlay>(argc, argv);
-            }
-            else if (strcasecmp(argv[arg], "-game_resolutions_") == 0) {
-                FullMode = false;
-                lastMode = "game_resolutions";
-                setupMode();
-                return tsl::loop<GameResolutionsEntryOverlay>(argc, argv);
-            }
-            else if (strcasecmp(argv[arg], "-micro") == 0) {
-                FullMode = false;
-                skipMain = true;
-                lastMode = "micro";
-                ult::DefaultFramebufferWidth = 1280;
-                //ult::DefaultFramebufferHeight = 28;
-                ult::DefaultFramebufferHeight = 720;
-                return tsl::loop<MicroMode>(argc, argv);
-            } 
-            else if (strcasecmp(argv[arg], "-mini") == 0) {
-                FullMode = false;
-                skipMain = true;
-                lastMode = "mini";
-                ult::DefaultFramebufferWidth = 1280;
-                ult::DefaultFramebufferHeight = 720;
-                //ult::useRightAlignment = (ult::parseValueFromIniSection(configIniPath, "mini", "right_alignment") == ult::TRUE_STR);
+                if (hasUnderscore) {
+                    setupMode();
+                } else {
+                    skipMain = true;
+                    ult::DefaultFramebufferWidth = 1280;
+                    ult::DefaultFramebufferHeight = 720;
+                }
                 return tsl::loop<MiniEntryOverlay>(argc, argv);
             }
-            else if (strcasecmp(argv[arg], "-fps_graph") == 0) {
+            // FPS Graph mode
+            else if (strcasecmp(compareStr, "-fps_graph") == 0) {
                 FullMode = false;
-                skipMain = true;
                 lastMode = "fps_graph";
-                ult::DefaultFramebufferWidth = 1280;
-                ult::DefaultFramebufferHeight = 720;
+                if (hasUnderscore) {
+                    setupMode();
+                } else {
+                    skipMain = true;
+                    ult::DefaultFramebufferWidth = 1280;
+                    ult::DefaultFramebufferHeight = 720;
+                }
                 return tsl::loop<FPSGraphEntryOverlay>(argc, argv);
             }
-            else if (strcasecmp(argv[arg], "-fps_counter") == 0) {
+            // FPS Counter mode
+            else if (strcasecmp(compareStr, "-fps_counter") == 0) {
                 FullMode = false;
-                skipMain = true;
                 lastMode = "fps_counter";
-                ult::DefaultFramebufferWidth = 1280;
-                ult::DefaultFramebufferHeight = 720;
+                if (hasUnderscore) {
+                    setupMode();
+                } else {
+                    skipMain = true;
+                    ult::DefaultFramebufferWidth = 1280;
+                    ult::DefaultFramebufferHeight = 720;
+                }
                 return tsl::loop<FPSCounterEntryOverlay>(argc, argv);
             }
-            else if (strcasecmp(argv[arg], "-game_resolutions") == 0) {
+            // Game Resolutions mode
+            else if (strcasecmp(compareStr, "-game_resolutions") == 0) {
                 FullMode = false;
-                skipMain = true;
                 lastMode = "game_resolutions";
-                ult::DefaultFramebufferWidth = 1280;
-                ult::DefaultFramebufferHeight = 720;
+                if (hasUnderscore) {
+                    setupMode();
+                } else {
+                    skipMain = true;
+                    ult::DefaultFramebufferWidth = 1280;
+                    ult::DefaultFramebufferHeight = 720;
+                }
                 return tsl::loop<GameResolutionsEntryOverlay>(argc, argv);
             }
-            else if (strcasecmp(argv[arg], "--lastSelectedItem") == 0) {
-                if (arg + 1 < argc) {
-                    lastSelectedItem.clear();
-                    ++arg; // move to first token after flag
-            
-                    for (; arg < argc; ++arg) {
-                        std::string token = argv[arg];
-            
-                        // Stop if we hit another flag (starts with - and not part of the item)
-                        if (!token.empty() && token[0] == '-' && lastSelectedItem.size() > 0)
-                            break;
-            
-                        // Add space if needed
-                        if (!lastSelectedItem.empty())
-                            lastSelectedItem += " ";
-            
-                        lastSelectedItem += token;
-            
-                        // Heuristic: if we saw a token ending with a quote, stop collecting
-                        if (!token.empty() && 
-                            (token.back() == '"' || token.back() == '\'')) {
-                            ++arg; // move past the quote token
-                            break;
-                        }
+            // Handle --lastSelectedItem (multi-token argument)
+            else if (strcmp(argStr, "--lastSelectedItem") == 0 && arg + 1 < argc) {
+                lastSelectedItem.clear();
+                
+                for (++arg; arg < argc; ++arg) {
+                    const char* token = argv[arg];
+                    
+                    // Stop if we hit another flag
+                    if (token[0] == '-' && !lastSelectedItem.empty())
+                        break;
+                    
+                    // Add space separator
+                    if (!lastSelectedItem.empty())
+                        lastSelectedItem += ' ';
+                    
+                    lastSelectedItem += token;
+                    
+                    // Stop if token ends with quote
+                    char lastChar = token[strlen(token) - 1];
+                    if (lastChar == '"' || lastChar == '\'') {
+                        ++arg;
+                        break;
                     }
-            
-                    // Remove any stray quotes (works for both single/double)
-                    ult::removeQuotes(lastSelectedItem);
-            
-                    // Trim extra whitespace if any
-                    while (!lastSelectedItem.empty() && 
-                          (lastSelectedItem.front() == ' ' || lastSelectedItem.front() == '\t'))
-                        lastSelectedItem.erase(0, 1);
-                    while (!lastSelectedItem.empty() && 
-                          (lastSelectedItem.back() == ' ' || lastSelectedItem.back() == '\t'))
-                        lastSelectedItem.pop_back();
+                }
+                
+                // Clean up quotes and whitespace
+                ult::removeQuotes(lastSelectedItem);
+                
+                // Trim whitespace
+                const size_t start = lastSelectedItem.find_first_not_of(" \t");
+                if (start != std::string::npos) {
+                    const size_t end = lastSelectedItem.find_last_not_of(" \t");
+                    lastSelectedItem = lastSelectedItem.substr(start, end - start + 1);
+                } else {
+                    lastSelectedItem.clear();
                 }
             }
         }

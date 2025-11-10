@@ -263,7 +263,7 @@ public:
                     static auto socLabelWidth = renderer->getTextDimensions("SOC  ", false, 15).first;
                     static auto pcbLabelWidth = renderer->getTextDimensions("PCB  ", false, 15).first;
                     static auto maxLabelWidth = std::max(socLabelWidth, pcbLabelWidth);
-                    static auto skinLabelWidth = renderer->getTextDimensions("SKIN  ", false, 15).first;
+                    static auto skinLabelWidth = renderer->getTextDimensions("Skin  ", false, 15).first;
                     
                     // Compute gradient colors for temperatures
                     const tsl::Color socColor = settings.useDynamicColors ? tsl::GradientColor(SOC_temperatureF) : settings.textColor;
@@ -280,7 +280,7 @@ public:
                     
                     // SKIN - same spacing to the right
                     current_x += renderer->getTextDimensions(SOC_temperature_c, false, 15).first + 15;
-                    renderer->drawString("SKIN  ", false, current_x, 605+2, 15, (settings.catColor2));
+                    renderer->drawString("Skin  ", false, current_x, 605+2, 15, (settings.catColor2));
                     current_x += skinLabelWidth;
                     renderer->drawString(skin_temperature_c, false, current_x, 605+2, 15, skinColor);
                     

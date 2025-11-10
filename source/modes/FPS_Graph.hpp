@@ -75,7 +75,7 @@ public:
             com_FPSGraph* overlay = static_cast<com_FPSGraph*>(arg);
             
             // Allow only Player 1 and handheld mode
-            HidNpadIdType id_list[2] = { HidNpadIdType_No1, HidNpadIdType_Handheld };
+            const HidNpadIdType id_list[2] = { HidNpadIdType_No1, HidNpadIdType_Handheld };
             
             // Configure HID system to only listen to these IDs
             hidSetSupportedNpadIdType(id_list, 2);
@@ -392,7 +392,7 @@ public:
                 renderer->drawString(PCB_TEMP_c, false, value_x, startY + lineHeight * 4+4*SPACING, fontSize, pcbColor);
                 
                 // Line 5: SKIN (with gradient color)
-                renderer->drawString("SKIN", false, info_x, startY + lineHeight * 5+5*SPACING, fontSize, settings.catColor);
+                renderer->drawString("Skin", false, info_x, startY + lineHeight * 5+5*SPACING, fontSize, settings.catColor);
                 renderer->drawString(SKIN_TEMP_c, false, value_x, startY + lineHeight * 5+5*SPACING, fontSize, skinColor);
             }
         });

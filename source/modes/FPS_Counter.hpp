@@ -65,7 +65,7 @@ public:
             com_FPS* overlay = static_cast<com_FPS*>(arg);
             
             // Allow only Player 1 and handheld mode
-            HidNpadIdType id_list[2] = { HidNpadIdType_No1, HidNpadIdType_Handheld };
+            const HidNpadIdType id_list[2] = { HidNpadIdType_No1, HidNpadIdType_Handheld };
             
             // Configure HID system to only listen to these IDs
             hidSetSupportedNpadIdType(id_list, 2);
@@ -207,7 +207,7 @@ public:
         auto* Status = new tsl::elm::CustomDrawer([this](tsl::gfx::Renderer *renderer, u16 x, u16 y, u16 w, u16 h) {
             // Calculate text dimensions
             const auto [textWidth, textHeight] = renderer->getTextDimensions(
-                (FPSavg != 254.0) ? FPSavg_c : "0.0", false, fontsize
+                (FPSavg != 254.0) ? FPSavg_c : "--", false, fontsize
             );
 
             const size_t margin = (fontsize / 8);
@@ -226,12 +226,12 @@ public:
             actualTotalHeight = totalHeight;
             
             // Calculate position with frame offsets
-            int posX = frameOffsetX;
-            int posY = frameOffsetY;
+            //int posX = frameOffsetX;
+            //int posY = frameOffsetY;
             
             // Clamp to screen bounds (accounting for total size including border)
-            posX = std::max(int(framePadding), std::min(posX, static_cast<int>(screenWidth - totalWidth - framePadding)));
-            posY = std::max(int(framePadding), std::min(posY, static_cast<int>(screenHeight - totalHeight - framePadding)));
+            const int posX = std::max(int(framePadding), std::min(frameOffsetX, static_cast<int>(screenWidth - totalWidth - framePadding)));
+            const int posY = std::max(int(framePadding), std::min(frameOffsetY, static_cast<int>(screenHeight - totalHeight - framePadding)));
             
             // Draw the rounded rectangle (background)
             const tsl::Color bgColor = !isDragging
@@ -253,7 +253,7 @@ public:
             
             // Draw the text
             renderer->drawString(
-                (FPSavg != 254.0) ? FPSavg_c : "0.0", 
+                (FPSavg != 254.0) ? FPSavg_c : "--",
                 false, 
                 textX, 
                 textY, 
@@ -276,7 +276,11 @@ public:
         else if (performanceMode == ApmPerformanceMode_Boost) {
             fontsize = settings.dockedFontSize;
         }
-        snprintf(FPSavg_c, sizeof FPSavg_c, "%2.1f", useOldFPSavg ? FPSavg_old : FPSavg);
+        if (settings.useIntegerCounter) {
+            snprintf(FPSavg_c, sizeof FPSavg_c, "%d", (int)round(useOldFPSavg ? FPSavg_old : FPSavg));
+        } else {
+            snprintf(FPSavg_c, sizeof FPSavg_c, "%2.1f", useOldFPSavg ? FPSavg_old : FPSavg);
+        }
     
         if (!skipOnce) {
             if (runOnce) {

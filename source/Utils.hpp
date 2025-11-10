@@ -1542,6 +1542,7 @@ struct FpsCounterSettings {
     uint16_t focusBackgroundColor;
     uint16_t textColor;
     //int setPos;
+    bool useIntegerCounter;
     bool disableScreenshots;
     int frameOffsetX;
     int frameOffsetY;
@@ -2137,6 +2138,7 @@ ALWAYS_INLINE void GetConfigSettings(FpsCounterSettings* settings) {
     convertStrToRGBA4444("#8CFF", &(settings->textColor));
     //settings->setPos = 0;
     settings->refreshRate = 30;
+    settings->useIntegerCounter = false;
     settings->disableScreenshots = false;
 
     settings->frameOffsetX = 10;
@@ -2227,6 +2229,13 @@ ALWAYS_INLINE void GetConfigSettings(FpsCounterSettings* settings) {
     //        settings->setPos += 6;
     //    }
     //}
+
+    it = section.find("use_integer_counter");
+    if (it != section.end()) {
+        key = it->second;
+        convertToUpper(key);
+        settings->useIntegerCounter = (key != "FALSE");
+    }
 
     // Process disable screenshots
     it = section.find("disable_screenshots");

@@ -75,7 +75,7 @@ public:
             MiniOverlay* overlay = static_cast<MiniOverlay*>(arg);
             
             // Allow only Player 1 and handheld mode
-            HidNpadIdType id_list[2] = { HidNpadIdType_No1, HidNpadIdType_Handheld };
+            const HidNpadIdType id_list[2] = { HidNpadIdType_No1, HidNpadIdType_Handheld };
             
             // Configure HID system to only listen to these IDs
             hidSetSupportedNpadIdType(id_list, 2);
@@ -326,12 +326,12 @@ public:
                         else
                             if (settings.showSOCVoltage) {
                                 if (settings.showFanPercentage)
-                                    width = renderer->getTextDimensions("88°C (100%)444 mV", false, fontsize).first;
+                                    width = renderer->getTextDimensions("88°C 100%444 mV", false, fontsize).first;
                                 else
                                     width = renderer->getTextDimensions("88°C444 mV", false, fontsize).first;
                             } else {
                                 if (settings.showFanPercentage)
-                                    width = renderer->getTextDimensions("88°C (100%)", false, fontsize).first;
+                                    width = renderer->getTextDimensions("88°C 100%", false, fontsize).first;
                                 else
                                     width = renderer->getTextDimensions("88°C", false, fontsize).first;
                             }
@@ -339,18 +339,18 @@ public:
                         //dimensions = renderer->drawString("88.8\u00B0C88.8\u00B0C88.8\u00B0C (100%)", false, 0, 0, fontsize, renderer->a(0x0000));
                         if (!settings.realVolts) {
                             if (settings.showFanPercentage)
-                                width = renderer->getTextDimensions("88\u00B0C 88\u00B0C 88\u00B0C (100%)", false, fontsize).first;
+                                width = renderer->getTextDimensions("88\u00B0C 88\u00B0C 88\u00B0C 100%", false, fontsize).first;
                             else
                                 width = renderer->getTextDimensions("88\u00B0C 88\u00B0C 88\u00B0C", false, fontsize).first;
                         } else {
                             if (settings.showSOCVoltage) {
                                 if (settings.showFanPercentage)
-                                    width = renderer->getTextDimensions("88\u00B0C 88\u00B0C 88\u00B0C (100%)444 mV", false, fontsize).first;
+                                    width = renderer->getTextDimensions("88\u00B0C 88\u00B0C 88\u00B0C 100%444 mV", false, fontsize).first;
                                 else
                                     width = renderer->getTextDimensions("88\u00B0C 88\u00B0C 88\u00B0C444 mV", false, fontsize).first;
                             } else {
                                 if (settings.showFanPercentage)
-                                    width = renderer->getTextDimensions("88\u00B0C 88\u00B0C 88\u00B0C (100%)", false, fontsize).first;
+                                    width = renderer->getTextDimensions("88\u00B0C 88\u00B0C 88\u00B0C 100%", false, fontsize).first;
                                 else
                                     width = renderer->getTextDimensions("88\u00B0C 88\u00B0C 88\u00B0C", false, fontsize).first;
                             }
@@ -835,8 +835,8 @@ public:
         }
 
 
-        char MINI_GPU_Load_c[14];
-        char MINI_GPU_volt_c[16];
+        char MINI_GPU_Load_c[20];
+        char MINI_GPU_volt_c[20];
         if (settings.realFrequencies && realGPU_Hz) {
             snprintf(MINI_GPU_Load_c, sizeof(MINI_GPU_Load_c),
                      "%hu%%%s%hu.%hhu",
@@ -1028,7 +1028,7 @@ public:
         // ── SoC temperature line ───────────────────────────────
         if (settings.showFanPercentage) {
             snprintf(soc_temperature_c, sizeof soc_temperature_c,
-                     "%d°C (%d%%)",
+                     "%d°C %d%%",
                      (int)SOC_temperatureF,
                      (int)duty);          // or any percentage you prefer
         } else {
@@ -1039,7 +1039,7 @@ public:
 
         if (settings.showFanPercentage) {
             snprintf(skin_temperature_c, sizeof skin_temperature_c,
-                "%d\u00B0C %d\u00B0C %hu\u00B0C (%d%%)",
+                "%d\u00B0C %d\u00B0C %hu\u00B0C %d%%",
                 (int)SOC_temperatureF, (int)PCB_temperatureF,
                 skin_temperaturemiliC / 1000,
                 (int)duty);
