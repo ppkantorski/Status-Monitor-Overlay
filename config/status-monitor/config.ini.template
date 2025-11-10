@@ -85,6 +85,7 @@ text_color=#FFFF
 refresh_rate=30
 handheld_font_size=40
 docked_font_size=40
+use_integer_counter=false
 disable_screenshots=false
 frame_offset_x=10
 frame_offset_y=10
