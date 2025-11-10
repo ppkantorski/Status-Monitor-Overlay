@@ -395,7 +395,7 @@ void BatteryChecker(void*) {
     uint64_t nanoseconds = 1000;
     do {
         mutexLock(&mutex_BatteryChecker);
-        uint64_t startTick = svcGetSystemTick();
+        const uint64_t startTick = svcGetSystemTick();
 
         psmGetBatteryChargeInfoFields(psmService, &_batteryChargeInfoFields);
 
@@ -446,11 +446,11 @@ void BatteryChecker(void*) {
                 batteryTimeEstimateInMinutes = (99.0*60.0)+59.0;
             }
             static int itr = 0;
-            int cacheElements = (sizeof(BatteryTimeCache) / sizeof(BatteryTimeCache[0]));
+            const int cacheElements = (sizeof(BatteryTimeCache) / sizeof(BatteryTimeCache[0]));
             BatteryTimeCache[itr++ % cacheElements] = (int32_t)batteryTimeEstimateInMinutes;
-            uint64_t new_tick_TTE = svcGetSystemTick();
+            const uint64_t new_tick_TTE = svcGetSystemTick();
             if (armTicksToNs(new_tick_TTE - tick_TTE) / 1'000'000'000 >= batteryTimeLeftRefreshRate) {
-                size_t to_divide = itr < cacheElements ? itr : cacheElements;
+                const size_t to_divide = itr < cacheElements ? itr : cacheElements;
                 batTimeEstimate = (int16_t)(std::accumulate(&BatteryTimeCache[0], &BatteryTimeCache[to_divide], 0) / to_divide);
                 tick_TTE = new_tick_TTE;
             }
@@ -912,123 +912,17 @@ void Misc3(void*) {
 //    }
 //}
 
-void CheckCore0(void*) {
+void CheckCore(void* idletick_ptr) {
     const uint64_t timeout_ns = 1'000'000'000ULL / TeslaFPS;
-
+    std::atomic<uint64_t>* idletick = (std::atomic<uint64_t>*)idletick_ptr;
     while (true) {
-        uint64_t idletick_a0 = 0;
-        uint64_t idletick_b0 = 0;
-
-        Result rc = svcGetInfo(&idletick_b0, InfoType_IdleTickCount, INVALID_HANDLE, 0);
-        if (R_FAILED(rc)) {
-            svcSleepThread(5'000'000ULL);
-            continue;
-        }
-
-        if (leventWait(&threadexit, timeout_ns))
-            return;
-
-        rc = svcGetInfo(&idletick_a0, InfoType_IdleTickCount, INVALID_HANDLE, 0);
-        if (R_FAILED(rc)) {
-            svcSleepThread(5'000'000ULL);
-            continue;
-        }
-
-        uint64_t delta = (idletick_a0 >= idletick_b0) ? (idletick_a0 - idletick_b0) : systemtickfrequency;
-        if (delta > systemtickfrequency)
-            delta = systemtickfrequency;
-
-        idletick0.store(delta, std::memory_order_release);
-    }
-}
-
-void CheckCore1(void*) {
-    const uint64_t timeout_ns = 1'000'000'000ULL / TeslaFPS;
-
-    while (true) {
-        uint64_t idletick_a1 = 0;
-        uint64_t idletick_b1 = 0;
-
-        Result rc = svcGetInfo(&idletick_b1, InfoType_IdleTickCount, INVALID_HANDLE, 1);
-        if (R_FAILED(rc)) {
-            svcSleepThread(5'000'000ULL);
-            continue;
-        }
-
-        if (leventWait(&threadexit, timeout_ns))
-            return;
-
-        rc = svcGetInfo(&idletick_a1, InfoType_IdleTickCount, INVALID_HANDLE, 1);
-        if (R_FAILED(rc)) {
-            svcSleepThread(5'000'000ULL);
-            continue;
-        }
-
-        uint64_t delta = (idletick_a1 >= idletick_b1) ? (idletick_a1 - idletick_b1) : systemtickfrequency;
-        if (delta > systemtickfrequency)
-            delta = systemtickfrequency;
-
-        idletick1.store(delta, std::memory_order_release);
-    }
-}
-
-void CheckCore2(void*) {
-    const uint64_t timeout_ns = 1'000'000'000ULL / TeslaFPS;
-
-    while (true) {
-        uint64_t idletick_a2 = 0;
-        uint64_t idletick_b2 = 0;
-
-        Result rc = svcGetInfo(&idletick_b2, InfoType_IdleTickCount, INVALID_HANDLE, 2);
-        if (R_FAILED(rc)) {
-            svcSleepThread(5'000'000ULL);
-            continue;
-        }
-
-        if (leventWait(&threadexit, timeout_ns))
-            return;
-
-        rc = svcGetInfo(&idletick_a2, InfoType_IdleTickCount, INVALID_HANDLE, 2);
-        if (R_FAILED(rc)) {
-            svcSleepThread(5'000'000ULL);
-            continue;
-        }
-
-        uint64_t delta = (idletick_a2 >= idletick_b2) ? (idletick_a2 - idletick_b2) : systemtickfrequency;
-        if (delta > systemtickfrequency)
-            delta = systemtickfrequency;
-
-        idletick2.store(delta, std::memory_order_release);
-    }
-}
-
-void CheckCore3(void*) {
-    const uint64_t timeout_ns = 1'000'000'000ULL / TeslaFPS;
-
-    while (true) {
-        uint64_t idletick_a3 = 0;
-        uint64_t idletick_b3 = 0;
-
-        Result rc = svcGetInfo(&idletick_b3, InfoType_IdleTickCount, INVALID_HANDLE, 3);
-        if (R_FAILED(rc)) {
-            svcSleepThread(5'000'000ULL);
-            continue;
-        }
-
-        if (leventWait(&threadexit, timeout_ns))
-            return;
-
-        rc = svcGetInfo(&idletick_a3, InfoType_IdleTickCount, INVALID_HANDLE, 3);
-        if (R_FAILED(rc)) {
-            svcSleepThread(5'000'000ULL);
-            continue;
-        }
-
-        uint64_t delta = (idletick_a3 >= idletick_b3) ? (idletick_a3 - idletick_b3) : systemtickfrequency;
-        if (delta > systemtickfrequency)
-            delta = systemtickfrequency;
-
-        idletick3.store(delta, std::memory_order_release);
+        uint64_t idletick_a;
+        uint64_t idletick_b;
+        svcGetInfo(&idletick_b, InfoType_IdleTickCount, INVALID_HANDLE, -1);
+        Result rc_break = leventWait(&threadexit, timeout_ns);
+        svcGetInfo(&idletick_a, InfoType_IdleTickCount, INVALID_HANDLE, -1);
+        if (rc_break) return;
+        idletick->store(idletick_a - idletick_b, std::memory_order_release);
     }
 }
 
@@ -1038,10 +932,10 @@ void StartThreads() {
     // Clear the thread exit event for new threads
     leventClear(&threadexit);
 
-    threadCreate(&t0, CheckCore0, NULL, NULL, 0x1000, 0x10, 0);
-    threadCreate(&t1, CheckCore1, NULL, NULL, 0x1000, 0x10, 1);
-    threadCreate(&t2, CheckCore2, NULL, NULL, 0x1000, 0x10, 2);
-    threadCreate(&t3, CheckCore3, NULL, NULL, 0x1000, 0x10, 3);
+    threadCreate(&t0, CheckCore, &idletick0, NULL, 0x1000, 0x10, 0);
+    threadCreate(&t1, CheckCore, &idletick1, NULL, 0x1000, 0x10, 1);
+    threadCreate(&t2, CheckCore, &idletick2, NULL, 0x1000, 0x10, 2);
+    threadCreate(&t3, CheckCore, &idletick3, NULL, 0x1000, 0x10, 3);
 
     //threadCreate(&t0, CheckCore, &coreIds[0], NULL, 0x1000, 0x10, 0);
     //threadCreate(&t1, CheckCore, &coreIds[1], NULL, 0x1000, 0x10, 1);
@@ -1129,10 +1023,10 @@ void StartInfoThread() {
     // Clear the thread exit event for new threads
     leventClear(&threadexit);
     
-    threadCreate(&t0, CheckCore0, NULL, NULL, 0x1000, 0x10, 0);
-    threadCreate(&t1, CheckCore1, NULL, NULL, 0x1000, 0x10, 1);
-    threadCreate(&t2, CheckCore2, NULL, NULL, 0x1000, 0x10, 2);
-    threadCreate(&t3, CheckCore3, NULL, NULL, 0x1000, 0x10, 3);
+    threadCreate(&t0, CheckCore, &idletick0, NULL, 0x1000, 0x10, 0);
+    threadCreate(&t1, CheckCore, &idletick1, NULL, 0x1000, 0x10, 1);
+    threadCreate(&t2, CheckCore, &idletick2, NULL, 0x1000, 0x10, 2);
+    threadCreate(&t3, CheckCore, &idletick3, NULL, 0x1000, 0x10, 3);
 
     //threadCreate(&t1, CheckCore, &coreIds[0], NULL, 0x1000, 0x10, 0);
     //threadCreate(&t2, CheckCore, &coreIds[1], NULL, 0x1000, 0x10, 1);

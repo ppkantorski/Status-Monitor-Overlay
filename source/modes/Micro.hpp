@@ -133,6 +133,64 @@ public:
         // Pre-allocate render items vector
         //renderItems.reserve(8);
         realVoltsPolling = settings.realVolts;
+
+        // Get initial battery readings BEFORE starting threads
+        if (R_SUCCEEDED(psmCheck) && R_SUCCEEDED(i2cCheck)) {
+            uint16_t data = 0;
+            float tempA = 0.0;
+            
+            // Get initial power consumption
+            Max17050ReadReg(MAX17050_AvgCurrent, &data);
+            tempA = (1.5625 / (max17050SenseResistor * max17050CGain)) * (s16)data;
+            PowerConsumption = tempA * batVoltageAvg / 1000000.0; // Rough initial estimate
+            
+            // Get initial battery info
+            psmGetBatteryChargeInfoFields(psmService, &_batteryChargeInfoFields);
+            
+            // Get initial time estimate
+            if (tempA >= 0) {
+                batTimeEstimate = -1;
+            } else {
+                Max17050ReadReg(MAX17050_TTE, &data);
+                const float batteryTimeEstimateInMinutes = (5.625 * data) / 60;
+                if (batteryTimeEstimateInMinutes > (99.0*60.0)+59.0) {
+                    batTimeEstimate = (99*60)+59;
+                } else {
+                    batTimeEstimate = (int16_t)batteryTimeEstimateInMinutes;
+                }
+            }
+        } else {
+            // Fallback if checks failed
+            PowerConsumption = 0.0f;
+            batTimeEstimate = -1;
+            _batteryChargeInfoFields = {0};
+        }
+        
+        // Now format the initial Battery_c string
+        char remainingBatteryLife[8];
+        const float drawW = (fabsf(PowerConsumption) < 0.01f) ? 0.0f : PowerConsumption;
+        
+        if (batTimeEstimate >= 0 && !(drawW <= 0.01f && drawW >= -0.01f)) {
+            snprintf(remainingBatteryLife, sizeof(remainingBatteryLife),
+                     "%d:%02d", batTimeEstimate / 60, batTimeEstimate % 60);
+        } else {
+            strcpy(remainingBatteryLife, "--:--");
+        }
+        
+        if (!settings.invertBatteryDisplay) {
+            snprintf(Battery_c, sizeof(Battery_c),
+                     "%.2f W%.1f%% [%s]",
+                     drawW,
+                     (float)_batteryChargeInfoFields.RawBatteryCharge / 1000.0f,
+                     remainingBatteryLife);
+        } else {
+            snprintf(Battery_c, sizeof(Battery_c),
+                     "%.1f%% [%s]%.2f W",
+                     (float)_batteryChargeInfoFields.RawBatteryCharge / 1000.0f,
+                     remainingBatteryLife,
+                     drawW);
+        }
+
         StartThreads();
     }
     
