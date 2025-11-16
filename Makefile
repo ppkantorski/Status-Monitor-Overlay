@@ -55,7 +55,7 @@ include ${TOPDIR}/lib/libultrahand/ultrahand.mk
 #---------------------------------------------------------------------------------
 ARCH	:=	-march=armv8-a+simd+crc+crypto -mtune=cortex-a57 -mtp=soft -fPIE
 
-CFLAGS	:=	-g -Wall -Wno-address-of-packed-member -Os -ffunction-sections -ffast-math -flto -fomit-frame-pointer \
+CFLAGS	:=	-g -Wall -Wno-address-of-packed-member -O3 -ffunction-sections -ffast-math -flto -fomit-frame-pointer \
             -fuse-linker-plugin -finline-small-functions \
             -fno-strict-aliasing -frename-registers -falign-functions=16 \
 			$(ARCH) $(DEFINES)
