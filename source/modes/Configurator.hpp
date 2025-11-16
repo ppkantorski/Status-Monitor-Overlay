@@ -473,7 +473,7 @@ public:
             
         } else if (isFPSCounterMode) {
             // FPS Counter mode: only disable_screenshots
-            auto* integerCounter = new tsl::elm::ToggleListItem("Use Integer Counter", getCurrentUseIntegerCounter("use_integer_counter"));
+            auto* integerCounter = new tsl::elm::ToggleListItem("Use Integer Counter", getCurrentUseIntegerCounter("fps-counter"));
             integerCounter->setStateChangedListener([this](bool state) {
                 ult::setIniFileValue(configIniPath, "fps-counter", "use_integer_counter", state ? "true" : "false");
             });
