@@ -39,6 +39,10 @@ public:
         frameOffsetY = settings.frameOffsetY;
         framePadding = settings.framePadding;
         
+        if (ult::limitedMemory) {
+            tsl::gfx::Renderer::get().setLayerPos(std::max(std::min((int)(frameOffsetX*1.5 + 0.5) - tsl::impl::currentUnderscanPixels.first, 1280-32 - tsl::impl::currentUnderscanPixels.first), 0), 0);
+        }
+
         if (settings.disableScreenshots) {
             tsl::gfx::Renderer::get().removeScreenshotStacks();
         }
@@ -157,6 +161,18 @@ public:
                         resetOnce = true;
                     }
                 }
+
+                if (ult::limitedMemory) {
+                    static auto lastUnderscanPixels = std::make_pair(0, 0);
+
+                    if (lastUnderscanPixels != tsl::impl::currentUnderscanPixels) {
+                        for (int i = 0; i < 2; i++) {
+                            tsl::gfx::Renderer::get().updateLayerSize();
+                            tsl::gfx::Renderer::get().setLayerPos(std::max(std::min((int)(overlay->frameOffsetX*1.5 + 0.5) - tsl::impl::currentUnderscanPixels.first, 1280-32 - tsl::impl::currentUnderscanPixels.first), 0), 0);
+                        }
+                    }
+                    lastUnderscanPixels = tsl::impl::currentUnderscanPixels;
+                }
                 
                 svcSleepThread(16000000ULL*2); // 16ms polling
             }
@@ -208,8 +224,10 @@ public:
                 clippingOffsetY = framePadding - (base_y + frameOffsetY);
             else if ((base_y + frameOffsetY + total_height) > static_cast<int>(screenHeight - framePadding))
                 clippingOffsetY = (screenHeight - framePadding) - (base_y + frameOffsetY + total_height);
-        
-            const int final_base_x = base_x + frameOffsetX + clippingOffsetX;
+            
+            int _frameOffsetX = ult::limitedMemory ? std::max(0, frameOffsetX - (1280-448)) : frameOffsetX;
+
+            const int final_base_x = base_x + _frameOffsetX + clippingOffsetX;
             const int final_base_y = base_y + frameOffsetY + clippingOffsetY;
         
             const tsl::Color bgColor = !isDragging ? settings.backgroundColor : settings.focusBackgroundColor;
@@ -442,6 +460,11 @@ public:
                 
                 frameOffsetX = newFrameOffsetX;
                 frameOffsetY = newFrameOffsetY;
+
+                if (ult::limitedMemory) {
+                    tsl::gfx::Renderer::get().setLayerPos(std::max(std::min((int)(frameOffsetX*1.5 + 0.5) - tsl::impl::currentUnderscanPixels.first, 1280-32 - tsl::impl::currentUnderscanPixels.first), 0), 0);
+                }
+
                 boundsNeedUpdate = true;
             }
         } else if (!currentTouchDetected && oldTouchDetected && isDragging && !currentMinusHeld && !currentPlusHeld) {
@@ -506,6 +529,11 @@ public:
                 
                 frameOffsetX = newFrameOffsetX;
                 frameOffsetY = newFrameOffsetY;
+
+                if (ult::limitedMemory) {
+                    tsl::gfx::Renderer::get().setLayerPos(std::max(std::min((int)(frameOffsetX*1.5 + 0.5) - tsl::impl::currentUnderscanPixels.first, 1280-32 - tsl::impl::currentUnderscanPixels.first), 0), 0);
+                }
+
                 boundsNeedUpdate = true;
             }
         } else if (((!currentMinusHeld && oldMinusHeld) || (!currentPlusHeld && oldPlusHeld)) && isDragging) {

@@ -63,7 +63,7 @@ public:
         bottomPadding = 2;
 
         if (ult::limitedMemory) {
-            tsl::gfx::Renderer::get().setLayerPos(std::min((int)(frameOffsetX*1.5 + 0.5), 1280-32), 0);
+            tsl::gfx::Renderer::get().setLayerPos(std::max(std::min((int)(frameOffsetX*1.5 + 0.5) - tsl::impl::currentUnderscanPixels.first, 1280-32 - tsl::impl::currentUnderscanPixels.first), 0), 0);
         }
         
         FullMode = false;
@@ -254,6 +254,18 @@ public:
                         resetOnce = true;
                     }
                 }
+
+                if (ult::limitedMemory) {
+                    static auto lastUnderscanPixels = std::make_pair(0, 0);
+
+                    if (lastUnderscanPixels != tsl::impl::currentUnderscanPixels) {
+                        for (int i = 0; i < 2; i++) {
+                            tsl::gfx::Renderer::get().updateLayerSize();
+                            tsl::gfx::Renderer::get().setLayerPos(std::max(std::min((int)(overlay->frameOffsetX*1.5 + 0.5) - tsl::impl::currentUnderscanPixels.first, 1280-32 - tsl::impl::currentUnderscanPixels.first), 0), 0);
+                        }
+                    }
+                    lastUnderscanPixels = tsl::impl::currentUnderscanPixels;
+                }
                 
                 svcSleepThread(16000000ULL*2); // 16ms polling
             }
@@ -284,7 +296,7 @@ public:
 
         auto* Status = new tsl::elm::CustomDrawer([this](tsl::gfx::Renderer *renderer, u16 x, u16 y, u16 w, u16 h) {
             //static constexpr u16 frameWidth = 448;
-            
+
             // Cache parsed settings and calculations
             static std::vector<std::string> showKeys;
             static std::string lastShowSetting;
@@ -1395,6 +1407,7 @@ public:
 
         mutexUnlock(&mutex_BatteryChecker);
 
+
         //static bool skipOnce = true;
         
         if (!skipOnce) {
@@ -1407,7 +1420,6 @@ public:
         } else {
             skipOnce = false;
         }
-
     }
                 
     virtual bool handleInput(u64 keysDown, u64 keysHeld, const HidTouchState &touchPos, HidAnalogStickState joyStickPosLeft, HidAnalogStickState joyStickPosRight) override {
@@ -1551,7 +1563,7 @@ public:
                 frameOffsetY = newFrameOffsetY;
 
                 if (ult::limitedMemory) {
-                    tsl::gfx::Renderer::get().setLayerPos(std::min((int)(frameOffsetX*1.5 + 0.5), 1280-32), 0);
+                    tsl::gfx::Renderer::get().setLayerPos(std::max(std::min((int)(frameOffsetX*1.5 + 0.5) - tsl::impl::currentUnderscanPixels.first, 1280-32 - tsl::impl::currentUnderscanPixels.first), 0), 0);
                 }
                 boundsNeedUpdate = true;
             }
@@ -1626,7 +1638,7 @@ public:
                 frameOffsetY = newFrameOffsetY;
 
                 if (ult::limitedMemory) {
-                    tsl::gfx::Renderer::get().setLayerPos(std::min((int)(frameOffsetX*1.5 + 0.5), 1280-32), 0);
+                    tsl::gfx::Renderer::get().setLayerPos(std::max(std::min((int)(frameOffsetX*1.5 + 0.5) - tsl::impl::currentUnderscanPixels.first, 1280-32 - tsl::impl::currentUnderscanPixels.first), 0), 0);
                 }
                 boundsNeedUpdate = true;
             }

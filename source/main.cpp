@@ -1094,8 +1094,10 @@ int main(int argc, char **argv) {
                     setupMode();
                 } else {
                     skipMain = true;
-                    ult::DefaultFramebufferWidth = 1280;
-                    ult::DefaultFramebufferHeight = 720;
+                    if (!ult::limitedMemory) {
+                        ult::DefaultFramebufferWidth = 1280;
+                        ult::DefaultFramebufferHeight = 720;
+                    }
                 }
                 return tsl::loop<FPSGraphEntryOverlay>(argc, argv);
             }
@@ -1107,8 +1109,10 @@ int main(int argc, char **argv) {
                     setupMode();
                 } else {
                     skipMain = true;
-                    ult::DefaultFramebufferWidth = 1280;
-                    ult::DefaultFramebufferHeight = 720;
+                    if (!ult::limitedMemory) {
+                        ult::DefaultFramebufferWidth = 1280;
+                        ult::DefaultFramebufferHeight = 720;
+                    }
                 }
                 return tsl::loop<FPSCounterEntryOverlay>(argc, argv);
             }
@@ -1120,8 +1124,10 @@ int main(int argc, char **argv) {
                     setupMode();
                 } else {
                     skipMain = true;
-                    ult::DefaultFramebufferWidth = 1280;
-                    ult::DefaultFramebufferHeight = 720;
+                    if (!ult::limitedMemory) {
+                        ult::DefaultFramebufferWidth = 1280;
+                        ult::DefaultFramebufferHeight = 720;
+                    }
                 }
                 return tsl::loop<GameResolutionsEntryOverlay>(argc, argv);
             }

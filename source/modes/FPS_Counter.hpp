@@ -35,6 +35,7 @@ private:
 
 public:
     com_FPS() { 
+        tsl::hlp::requestForeground(false);
         disableJumpTo = true;
         GetConfigSettings(&settings);
         apmGetPerformanceMode(&performanceMode);
@@ -50,7 +51,10 @@ public:
         frameOffsetY = settings.frameOffsetY;
         framePadding = settings.framePadding;
         
-        tsl::hlp::requestForeground(false);
+        if (ult::limitedMemory) {
+            tsl::gfx::Renderer::get().setLayerPos(std::max(std::min((int)(frameOffsetX*1.5 + 0.5) - tsl::impl::currentUnderscanPixels.first, 1280-32 - tsl::impl::currentUnderscanPixels.first), 0), 0);
+        }
+        
         FullMode = false;
         TeslaFPS = settings.refreshRate;
         if (settings.disableScreenshots) {
@@ -179,6 +183,18 @@ public:
                     }
                 }
                 
+                if (ult::limitedMemory) {
+                    static auto lastUnderscanPixels = std::make_pair(0, 0);
+
+                    if (lastUnderscanPixels != tsl::impl::currentUnderscanPixels) {
+                        for (int i = 0; i < 2; i++) {
+                            tsl::gfx::Renderer::get().updateLayerSize();
+                            tsl::gfx::Renderer::get().setLayerPos(std::max(std::min((int)(overlay->frameOffsetX*1.5 + 0.5) - tsl::impl::currentUnderscanPixels.first, 1280-32 - tsl::impl::currentUnderscanPixels.first), 0), 0);
+                        }
+                    }
+                    lastUnderscanPixels = tsl::impl::currentUnderscanPixels;
+                }
+                
                 svcSleepThread(16000000ULL*2); // 16ms polling
             }
         }, this, NULL, 0x1000, 0x2B, -2);
@@ -228,9 +244,11 @@ public:
             // Calculate position with frame offsets
             //int posX = frameOffsetX;
             //int posY = frameOffsetY;
+
+            int _frameOffsetX = ult::limitedMemory ? std::max(0, frameOffsetX - (1280-448)) : frameOffsetX;
             
             // Clamp to screen bounds (accounting for total size including border)
-            const int posX = std::max(int(framePadding), std::min(frameOffsetX, static_cast<int>(screenWidth - totalWidth - framePadding)));
+            const int posX = std::max(int(framePadding), std::min(_frameOffsetX, static_cast<int>(screenWidth - totalWidth - framePadding)));
             const int posY = std::max(int(framePadding), std::min(frameOffsetY, static_cast<int>(screenHeight - totalHeight - framePadding)));
             
             // Draw the rounded rectangle (background)
@@ -393,6 +411,10 @@ public:
                 // Update frame offsets with boundary checking
                 frameOffsetX = std::max(minX, std::min(maxX, initialFrameOffsetX + deltaX));
                 frameOffsetY = std::max(minY, std::min(maxY, initialFrameOffsetY + deltaY));
+
+                if (ult::limitedMemory) {
+                    tsl::gfx::Renderer::get().setLayerPos(std::max(std::min((int)(frameOffsetX*1.5 + 0.5) - tsl::impl::currentUnderscanPixels.first, 1280-32 - tsl::impl::currentUnderscanPixels.first), 0), 0);
+                }
             }
         } else if (!currentTouchDetected && oldTouchDetected && isDragging && !currentMinusHeld && !currentPlusHeld) {
             // Touch just released
@@ -453,6 +475,10 @@ public:
                 // Update frame offsets with boundary checking
                 frameOffsetX = std::max(minX, std::min(maxX, frameOffsetX + deltaX));
                 frameOffsetY = std::max(minY, std::min(maxY, frameOffsetY + deltaY));
+
+                if (ult::limitedMemory) {
+                    tsl::gfx::Renderer::get().setLayerPos(std::max(std::min((int)(frameOffsetX*1.5 + 0.5) - tsl::impl::currentUnderscanPixels.first, 1280-32 - tsl::impl::currentUnderscanPixels.first), 0), 0);
+                }
             }
         } else if (((!currentMinusHeld && oldMinusHeld) || (!currentPlusHeld && oldPlusHeld)) && isDragging) {
             // Button just released - stop joystick dragging
