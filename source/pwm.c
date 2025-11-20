@@ -1,6 +1,6 @@
 #define NX_SERVICE_ASSUME_NON_DOMAIN
 #include <switch.h>
-#include "service_guard.h"
+#include <service_guard.h>
 #include "pwm.h"
 
 static Service g_pwmSrv;

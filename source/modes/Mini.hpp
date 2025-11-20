@@ -61,6 +61,10 @@ public:
         framePadding = settings.framePadding;
         topPadding = 5;
         bottomPadding = 2;
+
+        if (ult::limitedMemory) {
+            tsl::gfx::Renderer::get().setLayerPos(std::min((int)(frameOffsetX*1.5 + 0.5), 1280-32), 0);
+        }
         
         FullMode = false;
         TeslaFPS = settings.refreshRate;
@@ -572,12 +576,13 @@ public:
 
             int clippingOffsetX = 0, clippingOffsetY = 0;
             
+            int _frameOffsetX = ult::limitedMemory ? std::max(0, frameOffsetX - (1280-448)) : frameOffsetX;
             
             // Check X bounds and calculate clipping offset
-            if (cachedBaseX + frameOffsetX < int(framePadding)) {
-                clippingOffsetX = framePadding - (cachedBaseX + frameOffsetX);
-            } else if ((cachedBaseX + frameOffsetX + margin + rectangleWidth + (fontsize / 3)) > screenWidth - framePadding) {
-                clippingOffsetX = (screenWidth - framePadding) - (cachedBaseX + frameOffsetX + margin + rectangleWidth + (fontsize / 3));
+            if (cachedBaseX + _frameOffsetX < int(framePadding)) {
+                clippingOffsetX = framePadding - (cachedBaseX + _frameOffsetX);
+            } else if ((cachedBaseX + _frameOffsetX + margin + rectangleWidth + (fontsize / 3)) > screenWidth - framePadding) {
+                clippingOffsetX = (screenWidth - framePadding) - (cachedBaseX + _frameOffsetX + margin + rectangleWidth + (fontsize / 3));
             }
             
             // Check Y bounds and calculate clipping offset  
@@ -589,7 +594,7 @@ public:
             
             // Apply to all drawing calls
             renderer->drawRoundedRectSingleThreaded(
-                cachedBaseX + frameOffsetX + clippingOffsetX, 
+                cachedBaseX + _frameOffsetX + clippingOffsetX, 
                 cachedBaseY + frameOffsetY + clippingOffsetY, 
                 margin + rectangleWidth + (fontsize / 3), 
                 cachedHeight, 
@@ -640,12 +645,12 @@ public:
                 if (!labelLines[labelIndex].empty()) {
                     labelWidth = renderer->getTextDimensions(labelLines[labelIndex], false, fontsize).first;
                     labelCenterX = cachedBaseX + (margin / 2) - (labelWidth / 2);
-                    renderer->drawString(labelLines[labelIndex], false, labelCenterX + frameOffsetX + clippingOffsetX, currentY + frameOffsetY + clippingOffsetY, fontsize, settings.catColor);
+                    renderer->drawString(labelLines[labelIndex], false, labelCenterX + _frameOffsetX + clippingOffsetX, currentY + frameOffsetY + clippingOffsetY, fontsize, settings.catColor);
                 }
                 
                 // Determine rendering method based on label type
                 const std::string& currentLine = _variableLines[i];
-                const int baseX = cachedBaseX + margin + frameOffsetX + clippingOffsetX;
+                const int baseX = cachedBaseX + margin + _frameOffsetX + clippingOffsetX;
                 const int baseY = currentY + frameOffsetY + clippingOffsetY;
                 
                 if (settings.useDynamicColors) {
@@ -1474,7 +1479,7 @@ public:
             lastVariables = Variables;
         }
         
-        const int overlayX = cachedBaseX + frameOffsetX;
+        const int overlayX = frameOffsetX;//ult::limitedMemory ? cachedBaseX + std::max(0, frameOffsetX - (1280-448)) : cachedBaseX + frameOffsetX;
         const int overlayY = cachedBaseY + frameOffsetY;
         const int overlayWidth = margin + rectangleWidth + (fontsize / 3);
         const int overlayHeight = cachedOverlayHeight;
@@ -1544,6 +1549,10 @@ public:
                 
                 frameOffsetX = newFrameOffsetX;
                 frameOffsetY = newFrameOffsetY;
+
+                if (ult::limitedMemory) {
+                    tsl::gfx::Renderer::get().setLayerPos(std::min((int)(frameOffsetX*1.5 + 0.5), 1280-32), 0);
+                }
                 boundsNeedUpdate = true;
             }
         } else if (!currentTouchDetected && oldTouchDetected && isDragging && !currentMinusHeld && !currentPlusHeld) {
@@ -1615,6 +1624,10 @@ public:
                 
                 frameOffsetX = newFrameOffsetX;
                 frameOffsetY = newFrameOffsetY;
+
+                if (ult::limitedMemory) {
+                    tsl::gfx::Renderer::get().setLayerPos(std::min((int)(frameOffsetX*1.5 + 0.5), 1280-32), 0);
+                }
                 boundsNeedUpdate = true;
             }
         } else if (((!currentMinusHeld && oldMinusHeld) || (!currentPlusHeld && oldPlusHeld)) && isDragging) {
