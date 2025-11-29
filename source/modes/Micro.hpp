@@ -131,6 +131,7 @@ public:
         FullMode = false;
         //alphabackground = 0x0;
         deactivateOriginalFooter = true;
+        StartThreads();
         
         // Pre-allocate render items vector
         //renderItems.reserve(8);
@@ -193,7 +194,7 @@ public:
                      drawW);
         }
 
-        StartThreads();
+        
     }
     
     ~MicroOverlay() {

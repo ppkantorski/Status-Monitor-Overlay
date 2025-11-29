@@ -513,7 +513,7 @@ private:
     // Helper methods for getting current toggle states
     bool getCurrentShowInfo() {
         std::string value = ult::parseValueFromIniSection(configIniPath, "fps-graph", "show_info");
-        if (value.empty()) return false;
+        if (value.empty()) return true;
         convertToUpper(value);
         return value == "TRUE";
     }

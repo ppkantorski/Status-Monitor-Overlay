@@ -2157,7 +2157,7 @@ ALWAYS_INLINE void GetConfigSettings(FpsCounterSettings* settings) {
 
 ALWAYS_INLINE void GetConfigSettings(FpsGraphSettings* settings) {
     // Initialize defaults
-    settings->showInfo = false;
+    settings->showInfo = true;
     //settings->setPos = 0;
     convertStrToRGBA4444("#0009", &(settings->backgroundColor));
     convertStrToRGBA4444("#000F", &(settings->focusBackgroundColor));

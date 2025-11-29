@@ -71,7 +71,7 @@ public:
         systemtickfrequency_impl /= settings.refreshRate;
         deactivateOriginalFooter = true;
         realVoltsPolling = settings.realVolts;
-
+        StartThreads();
 
         // Get initial battery readings BEFORE starting threads
         if (R_SUCCEEDED(psmCheck) && R_SUCCEEDED(i2cCheck)) {
@@ -131,7 +131,7 @@ public:
         }
 
 
-        StartThreads();
+        
 
         // Start touch polling thread for instant response at low FPS
         touchPollRunning.store(true, std::memory_order_release);
