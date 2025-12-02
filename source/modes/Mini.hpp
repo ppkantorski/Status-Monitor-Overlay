@@ -131,7 +131,7 @@ public:
         }
 
 
-        
+
 
         // Start touch polling thread for instant response at low FPS
         touchPollRunning.store(true, std::memory_order_release);
@@ -503,7 +503,7 @@ public:
                 // Build label lines array for individual centering
                 labelLines.clear();
                 entryCount = 0;
-                uint8_t flags = 0;
+                uint16_t flags = 0;
                 
                 bool shouldAdd;
                 std::string labelText;
@@ -1235,8 +1235,8 @@ public:
         }
     
         // Build Variables string
-        char Temp[256] = "";
-        uint8_t flags = 0;
+        char Temp[512] = "";
+        uint16_t flags = 0;
         
         for (const auto& key : showKeys) {
             if (key == "CPU" && !(flags & 1)) {
