@@ -1658,10 +1658,18 @@ public:
                 }
             }
         }
-        
-        static constexpr std::string_view allElements[] = {
+                
+        static constexpr std::string_view miniElements[] = {
             "DTC","BAT","CPU","GPU","RAM","MEM","READ","SOC","TMP","FPS","RES"
         };
+        
+        static constexpr std::string_view microElements[] = {
+            "FPS","CPU","GPU","RAM","READ","SOC","TMP","RES","BAT","DTC"
+        };
+        
+        // Use span or array reference instead of pointer
+        const auto* allElements = isMiniMode ? miniElements : microElements;
+        const size_t allElementsSize = isMiniMode ? std::size(miniElements) : std::size(microElements);
         
         elementOrder.clear();
         if (!orderValue.empty()) {
@@ -1675,7 +1683,8 @@ public:
             }
         } else {
             // Initialize with allElements order instead
-            for (auto elem : allElements) {
+            for (size_t i = 0; i < allElementsSize; i++) {
+                auto elem = allElements[i];
                 if (!isMiniMode && elem == "MEM")
                     continue;
                 elementOrder.emplace_back(elem);
