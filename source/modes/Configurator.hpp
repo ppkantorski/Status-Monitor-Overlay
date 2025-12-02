@@ -1663,15 +1663,21 @@ public:
             "DTC","BAT","CPU","GPU","RAM","MEM","READ","SOC","TMP","FPS","RES"
         };
         
-        auto exists = [&](std::string_view s) {
-            return std::find(elementOrder.begin(), elementOrder.end(), s) != elementOrder.end();
-        };
-        
-        for (auto elem : allElements) {
-            if (!isMiniMode && elem == "MEM")
-                continue;
-        
-            if (!exists(elem)) {
+        elementOrder.clear();
+        if (!orderValue.empty()) {
+            convertToUpper(orderValue);
+            ult::StringStream orderSS(orderValue);
+            std::string orderItem;
+            while (orderSS.getline(orderItem, '+')) {
+                if (!orderItem.empty()) {
+                    elementOrder.push_back(orderItem);
+                }
+            }
+        } else {
+            // Initialize with allElements order instead
+            for (auto elem : allElements) {
+                if (!isMiniMode && elem == "MEM")
+                    continue;
                 elementOrder.emplace_back(elem);
             }
         }
