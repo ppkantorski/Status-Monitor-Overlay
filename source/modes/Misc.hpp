@@ -50,7 +50,7 @@ public:
 
         smExit();
         StartMiscThread();
-        tsl::elm::g_disableMenuCacheOnReturn.store(true, std::memory_order_release);
+        //tsl::elm::g_disableMenuCacheOnReturn.store(true, std::memory_order_release);
     }
 
     ~MiscOverlay() {
@@ -121,7 +121,7 @@ public:
             
         });
         
-        tsl::elm::g_disableMenuCacheOnReturn.store(true, std::memory_order_release);
+        //tsl::elm::g_disableMenuCacheOnReturn.store(true, std::memory_order_release);
         tsl::elm::HeaderOverlayFrame* rootFrame = new tsl::elm::HeaderOverlayFrame("Status Monitor", APP_VERSION, true);
         rootFrame->setContent(Status);
         
