@@ -1696,7 +1696,7 @@ public:
             const bool isEnabled = enabledElements.find(element) != enabledElements.end();
             
             auto* elementItem = new tsl::elm::ListItem(element);
-            elementItem->setValue(isEnabled ? "On" : "Off", !isEnabled ? true : false);
+            elementItem->setValue(isEnabled ? ult::ON : ult::OFF, !isEnabled);
             
             elementItem->setClickListener([this, elementItem, element](uint64_t keys) {
                 static bool hasNotTriggeredAnimation = false;
