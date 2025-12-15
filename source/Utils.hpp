@@ -520,6 +520,7 @@ bool usingEOS() {
     return versionString.find("eos") != std::string::npos;
 }
 
+
 // === ULTRA-FAST VOLTAGE READING ===
 static constexpr PowerDomainId domains[] = {
     PcvPowerDomainId_Max77621_Cpu,    // [0] CPU
@@ -618,20 +619,32 @@ void Misc(void*) {
                 rgltrCloseSession(&session);
             }
             
-            // VDD2 (DRAM)
-            if (R_SUCCEEDED(rgltrOpenSession(&session, PcvPowerDomainId_Max77812_Dram))) {
-                if (R_FAILED(rgltrGetVoltage(&session, &vdd2_raw))) {
-                    vdd2_raw = 0;
+            // VDD2 (DRAM) - different domains for Mariko vs Erista
+            if (isMariko) {
+                if (R_SUCCEEDED(rgltrOpenSession(&session, PcvPowerDomainId_Max77812_Dram))) {
+                    if (R_FAILED(rgltrGetVoltage(&session, &vdd2_raw))) {
+                        vdd2_raw = 0;
+                    }
+                    rgltrCloseSession(&session);
                 }
-                rgltrCloseSession(&session);
+            } else {
+                // Erista uses Max77620_Sd1 for VDD2
+                if (R_SUCCEEDED(rgltrOpenSession(&session, PcvPowerDomainId_Max77620_Sd1))) {
+                    if (R_FAILED(rgltrGetVoltage(&session, &vdd2_raw))) {
+                        vdd2_raw = 0;
+                    }
+                    rgltrCloseSession(&session);
+                }
             }
             
             // VDDQ
-            if (R_SUCCEEDED(rgltrOpenSession(&session, PcvPowerDomainId_Max77620_Sd1))) {
-                if (R_FAILED(rgltrGetVoltage(&session, &vddq_raw))) {
-                    vddq_raw = 0;
+            if (isMariko) {
+                if (R_SUCCEEDED(rgltrOpenSession(&session, PcvPowerDomainId_Max77620_Sd1))) {
+                    if (R_FAILED(rgltrGetVoltage(&session, &vddq_raw))) {
+                        vddq_raw = 0;
+                    }
+                    rgltrCloseSession(&session);
                 }
-                rgltrCloseSession(&session);
             }
             
             // Pack VDD2 and VDDQ into realRAM_mV in sys-clk format
@@ -789,12 +802,22 @@ void Misc3(void*) {
                 rgltrCloseSession(&session);
             }
             
-            // VDD2 (DRAM)
-            if (R_SUCCEEDED(rgltrOpenSession(&session, domains[2]))) {
-                if (R_FAILED(rgltrGetVoltage(&session, &vdd2_raw))) {
-                    vdd2_raw = 0;
+            // VDD2 (DRAM) - different domains for Mariko vs Erista
+            if (isMariko) {
+                if (R_SUCCEEDED(rgltrOpenSession(&session, PcvPowerDomainId_Max77812_Dram))) {
+                    if (R_FAILED(rgltrGetVoltage(&session, &vdd2_raw))) {
+                        vdd2_raw = 0;
+                    }
+                    rgltrCloseSession(&session);
                 }
-                rgltrCloseSession(&session);
+            } else {
+                // Erista uses Max77620_Sd1 for VDD2
+                if (R_SUCCEEDED(rgltrOpenSession(&session, PcvPowerDomainId_Max77620_Sd1))) {
+                    if (R_FAILED(rgltrGetVoltage(&session, &vdd2_raw))) {
+                        vdd2_raw = 0;
+                    }
+                    rgltrCloseSession(&session);
+                }
             }
             
             // SOC voltage
@@ -806,11 +829,13 @@ void Misc3(void*) {
             }
             
             // VDDQ
-            if (R_SUCCEEDED(rgltrOpenSession(&session, domains[4]))) {
-                if (R_FAILED(rgltrGetVoltage(&session, &vddq_raw))) {
-                    vddq_raw = 0;
+            if (isMariko) {
+                if (R_SUCCEEDED(rgltrOpenSession(&session, domains[4]))) {
+                    if (R_FAILED(rgltrGetVoltage(&session, &vddq_raw))) {
+                        vddq_raw = 0;
+                    }
+                    rgltrCloseSession(&session);
                 }
-                rgltrCloseSession(&session);
             }
             
             // Pack VDD2 and VDDQ into realRAM_mV in sys-clk format
