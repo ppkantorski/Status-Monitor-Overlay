@@ -621,7 +621,7 @@ void Misc(void*) {
             
             // VDD2 (DRAM) - different domains for Mariko vs Erista
             if (isMariko) {
-                if (R_SUCCEEDED(rgltrOpenSession(&session, PcvPowerDomainId_Max77812_Dram))) {
+                if (R_SUCCEEDED(rgltrOpenSession(&session, PcvPowerDomainId_Max77620_Sd1))) {
                     if (R_FAILED(rgltrGetVoltage(&session, &vdd2_raw))) {
                         vdd2_raw = 0;
                     }
@@ -639,7 +639,7 @@ void Misc(void*) {
             
             // VDDQ
             if (isMariko) {
-                if (R_SUCCEEDED(rgltrOpenSession(&session, PcvPowerDomainId_Max77620_Sd1))) {
+                if (R_SUCCEEDED(rgltrOpenSession(&session, PcvPowerDomainId_Max77812_Dram))) {
                     if (R_FAILED(rgltrGetVoltage(&session, &vddq_raw))) {
                         vddq_raw = 0;
                     }
