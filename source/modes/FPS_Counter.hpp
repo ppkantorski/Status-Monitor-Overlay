@@ -245,11 +245,53 @@ public:
             //int posX = frameOffsetX;
             //int posY = frameOffsetY;
 
-            int _frameOffsetX = ult::limitedMemory ? std::max(0, frameOffsetX - (1280-448)) : frameOffsetX;
+            int _frameOffsetX;
+            int posX, posY;
             
-            // Clamp to screen bounds (accounting for total size including border)
-            const int posX = std::max(int(framePadding), std::min(_frameOffsetX, static_cast<int>(screenWidth - totalWidth - framePadding)));
-            const int posY = std::max(int(framePadding), std::min(frameOffsetY, static_cast<int>(screenHeight - totalHeight - framePadding)));
+            // In limited memory mode, correct frameOffsetX first, then calculate display position
+            if (ult::limitedMemory) {
+                // Calculate valid range for frameOffsetX (in full 1280px coordinate space)
+                const int minFrameX = framePadding;
+                const int maxFrameX = screenWidth - framePadding - totalWidth;
+                
+                // Clamp frameOffsetX to valid bounds
+                if (frameOffsetX < minFrameX) {
+                    frameOffsetX = minFrameX;
+                } else if (frameOffsetX > maxFrameX) {
+                    frameOffsetX = maxFrameX;
+                }
+                
+                // Check Y bounds
+                const int minFrameY = framePadding;
+                const int maxFrameY = screenHeight - framePadding - totalHeight;
+                
+                if (frameOffsetY < minFrameY) {
+                    frameOffsetY = minFrameY;
+                } else if (frameOffsetY > maxFrameY) {
+                    frameOffsetY = maxFrameY;
+                }
+                
+                // Now calculate _frameOffsetX for the 448px layer
+                _frameOffsetX = std::max(0, frameOffsetX - (1280-448));
+                
+                // Calculate position with corrected frame offsets
+                posX = _frameOffsetX;
+                posY = frameOffsetY;
+                
+                // Update layer position
+                tsl::gfx::Renderer::get().setLayerPos(
+                    std::max(std::min((int)(frameOffsetX*1.5 + 0.5) - tsl::impl::currentUnderscanPixels.first, 
+                                      1280-32 - tsl::impl::currentUnderscanPixels.first), 0), 
+                    0
+                );
+            } else {
+                // Non-limited memory mode - use original logic with clamping
+                _frameOffsetX = frameOffsetX;
+                
+                // Clamp to screen bounds (accounting for total size including border)
+                posX = std::max(int(framePadding), std::min(_frameOffsetX, static_cast<int>(screenWidth - totalWidth - framePadding)));
+                posY = std::max(int(framePadding), std::min(frameOffsetY, static_cast<int>(screenHeight - totalHeight - framePadding)));
+            }
             
             // Draw the rounded rectangle (background)
             const tsl::Color bgColor = !isDragging

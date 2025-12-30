@@ -213,19 +213,56 @@ public:
         
             int total_width = 360 - 20;
             int total_height = 200;
-        
-            // Check clipping bounds (same as before)
-            if (base_x + frameOffsetX < int(framePadding))
-                clippingOffsetX = framePadding - (base_x + frameOffsetX);
-            else if ((base_x + frameOffsetX + total_width) > static_cast<int>(screenWidth - framePadding))
-                clippingOffsetX = (screenWidth - framePadding) - (base_x + frameOffsetX + total_width);
-        
-            if (base_y + frameOffsetY < int(framePadding))
-                clippingOffsetY = framePadding - (base_y + frameOffsetY);
-            else if ((base_y + frameOffsetY + total_height) > static_cast<int>(screenHeight - framePadding))
-                clippingOffsetY = (screenHeight - framePadding) - (base_y + frameOffsetY + total_height);
             
-            int _frameOffsetX = ult::limitedMemory ? std::max(0, frameOffsetX - (1280-448)) : frameOffsetX;
+            int _frameOffsetX;
+            
+            // In limited memory mode, correct frameOffsetX first, then calculate _frameOffsetX
+            if (ult::limitedMemory) {
+                // Calculate valid range for frameOffsetX (in full 1280px coordinate space)
+                const int minFrameX = framePadding - base_x;
+                const int maxFrameX = screenWidth - framePadding - total_width - base_x;
+                
+                // Clamp frameOffsetX to valid bounds
+                if (frameOffsetX < minFrameX) {
+                    frameOffsetX = minFrameX;
+                } else if (frameOffsetX > maxFrameX) {
+                    frameOffsetX = maxFrameX;
+                }
+                
+                // Check Y bounds
+                const int minFrameY = framePadding - base_y;
+                const int maxFrameY = screenHeight - framePadding - total_height - base_y;
+                
+                if (frameOffsetY < minFrameY) {
+                    frameOffsetY = minFrameY;
+                } else if (frameOffsetY > maxFrameY) {
+                    frameOffsetY = maxFrameY;
+                }
+                
+                // Now calculate _frameOffsetX for the 448px layer
+                _frameOffsetX = std::max(0, frameOffsetX - (1280-448));
+                
+                // Update layer position
+                tsl::gfx::Renderer::get().setLayerPos(
+                    std::max(std::min((int)(frameOffsetX*1.5 + 0.5) - tsl::impl::currentUnderscanPixels.first, 
+                                      1280-32 - tsl::impl::currentUnderscanPixels.first), 0), 
+                    0
+                );
+            } else {
+                // Non-limited memory mode - use original clipping offset logic
+                _frameOffsetX = frameOffsetX;
+                
+                // Check clipping bounds
+                if (base_x + _frameOffsetX < int(framePadding))
+                    clippingOffsetX = framePadding - (base_x + _frameOffsetX);
+                else if ((base_x + _frameOffsetX + total_width) > static_cast<int>(screenWidth - framePadding))
+                    clippingOffsetX = (screenWidth - framePadding) - (base_x + _frameOffsetX + total_width);
+            
+                if (base_y + frameOffsetY < int(framePadding))
+                    clippingOffsetY = framePadding - (base_y + frameOffsetY);
+                else if ((base_y + frameOffsetY + total_height) > static_cast<int>(screenHeight - framePadding))
+                    clippingOffsetY = (screenHeight - framePadding) - (base_y + frameOffsetY + total_height);
+            }
 
             const int final_base_x = base_x + _frameOffsetX + clippingOffsetX;
             const int final_base_y = base_y + frameOffsetY + clippingOffsetY;

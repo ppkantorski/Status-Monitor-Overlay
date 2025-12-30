@@ -288,15 +288,57 @@ public:
                 range = std::abs(rectangle_range_max - rectangle_range_min) + 1;
             };
 
-            int _frameOffsetX = ult::limitedMemory ? std::max(0, frameOffsetX - (1280-448)) : frameOffsetX;
-
-            // Calculate position with frame offsets (for the rounded rect, which includes border)
-            int posX = base_x + _frameOffsetX - border;
-            int posY = base_y + frameOffsetY - border;
+            int _frameOffsetX;
+            int posX, posY;
             
-            // Clamp to screen bounds (accounting for total size including border)
-            posX = std::max(int(framePadding), std::min(posX, static_cast<int>(screenWidth - totalWidth - framePadding)));
-            posY = std::max(int(framePadding), std::min(posY, static_cast<int>(screenHeight - totalHeight - framePadding)));
+            // In limited memory mode, correct frameOffsetX first, then calculate display position
+            if (ult::limitedMemory) {
+                // Calculate valid range for frameOffsetX (in full 1280px coordinate space)
+                const int minFrameX = framePadding - (base_x - border);
+                const int maxFrameX = screenWidth - framePadding - totalWidth - (base_x - border);
+                
+                // Clamp frameOffsetX to valid bounds
+                if (frameOffsetX < minFrameX) {
+                    frameOffsetX = minFrameX;
+                } else if (frameOffsetX > maxFrameX) {
+                    frameOffsetX = maxFrameX;
+                }
+                
+                // Check Y bounds
+                const int minFrameY = framePadding - (base_y - border);
+                const int maxFrameY = screenHeight - framePadding - totalHeight - (base_y - border);
+                
+                if (frameOffsetY < minFrameY) {
+                    frameOffsetY = minFrameY;
+                } else if (frameOffsetY > maxFrameY) {
+                    frameOffsetY = maxFrameY;
+                }
+                
+                // Now calculate _frameOffsetX for the 448px layer
+                _frameOffsetX = std::max(0, frameOffsetX - (1280-448));
+                
+                // Calculate position with corrected frame offsets
+                posX = base_x + _frameOffsetX - border;
+                posY = base_y + frameOffsetY - border;
+                
+                // Update layer position
+                tsl::gfx::Renderer::get().setLayerPos(
+                    std::max(std::min((int)(frameOffsetX*1.5 + 0.5) - tsl::impl::currentUnderscanPixels.first, 
+                                      1280-32 - tsl::impl::currentUnderscanPixels.first), 0), 
+                    0
+                );
+            } else {
+                // Non-limited memory mode - use original logic with clamping
+                _frameOffsetX = frameOffsetX;
+                
+                // Calculate position with frame offsets (for the rounded rect, which includes border)
+                posX = base_x + _frameOffsetX - border;
+                posY = base_y + frameOffsetY - border;
+                
+                // Clamp to screen bounds (accounting for total size including border)
+                posX = std::max(int(framePadding), std::min(posX, static_cast<int>(screenWidth - totalWidth - framePadding)));
+                posY = std::max(int(framePadding), std::min(posY, static_cast<int>(screenHeight - totalHeight - framePadding)));
+            }
             
             // Draw the rounded rectangle (background)
             const tsl::Color bgColor = !isDragging

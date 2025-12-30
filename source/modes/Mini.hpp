@@ -595,28 +595,64 @@ public:
             const tsl::Color bgColor = !isDragging
                 ? settings.backgroundColor // full opacity
                 : settings.focusBackgroundColor;
-
             int clippingOffsetX = 0, clippingOffsetY = 0;
-            
-            int _frameOffsetX = ult::limitedMemory ? std::max(0, frameOffsetX - (1280-448)) : frameOffsetX;
             
             const int leftPadding = settings.showLabels ? 0 : settings.spacing + bottomPadding;
             const uint32_t overlayWidth = settings.showLabels 
                 ? (margin + rectangleWidth + (fontsize / 3))
                 : (rectangleWidth + (fontsize / 3) * 2 + leftPadding);
             
-            // Check X bounds and calculate clipping offset
-            if (cachedBaseX + _frameOffsetX < int(framePadding)) {
-                clippingOffsetX = framePadding - (cachedBaseX + _frameOffsetX);
-            } else if ((cachedBaseX + _frameOffsetX + overlayWidth) > screenWidth - framePadding) {
-                clippingOffsetX = (screenWidth - framePadding) - (cachedBaseX + _frameOffsetX + overlayWidth);
-            }
+            int _frameOffsetX;
             
-            // Check Y bounds and calculate clipping offset  
-            if (cachedBaseY + frameOffsetY < int(framePadding)) {
-                clippingOffsetY = framePadding - (cachedBaseY + frameOffsetY);
-            } else if ((cachedBaseY + frameOffsetY + cachedHeight) > screenHeight - framePadding) {
-                clippingOffsetY = (screenHeight - framePadding) - (cachedBaseY + frameOffsetY + cachedHeight);
+            // In limited memory mode, correct frameOffsetX first, then calculate _frameOffsetX
+            if (ult::limitedMemory) {
+                // Calculate valid range for frameOffsetX (in full 1280px coordinate space)
+                const int minFrameX = framePadding - cachedBaseX;
+                const int maxFrameX = screenWidth - framePadding - overlayWidth - cachedBaseX;
+                
+                // Clamp frameOffsetX to valid bounds
+                if (frameOffsetX < minFrameX) {
+                    frameOffsetX = minFrameX;
+                } else if (frameOffsetX > maxFrameX) {
+                    frameOffsetX = maxFrameX;
+                }
+                
+                // Check Y bounds
+                const int minFrameY = framePadding - cachedBaseY;
+                const int maxFrameY = screenHeight - framePadding - cachedHeight - cachedBaseY;
+                
+                if (frameOffsetY < minFrameY) {
+                    frameOffsetY = minFrameY;
+                } else if (frameOffsetY > maxFrameY) {
+                    frameOffsetY = maxFrameY;
+                }
+                
+                // Now calculate _frameOffsetX for the 448px layer
+                _frameOffsetX = std::max(0, frameOffsetX - (1280-448));
+                
+                // Update layer position
+                tsl::gfx::Renderer::get().setLayerPos(
+                    std::max(std::min((int)(frameOffsetX*1.5 + 0.5) - tsl::impl::currentUnderscanPixels.first, 
+                                      1280-32 - tsl::impl::currentUnderscanPixels.first), 0), 
+                    0
+                );
+            } else {
+                // Non-limited memory mode - use original clipping offset logic
+                _frameOffsetX = frameOffsetX;
+                
+                // Check X bounds and calculate clipping offset
+                if (cachedBaseX + _frameOffsetX < int(framePadding)) {
+                    clippingOffsetX = framePadding - (cachedBaseX + _frameOffsetX);
+                } else if ((cachedBaseX + _frameOffsetX + overlayWidth) > screenWidth - framePadding) {
+                    clippingOffsetX = (screenWidth - framePadding) - (cachedBaseX + _frameOffsetX + overlayWidth);
+                }
+                
+                // Check Y bounds and calculate clipping offset  
+                if (cachedBaseY + frameOffsetY < int(framePadding)) {
+                    clippingOffsetY = framePadding - (cachedBaseY + frameOffsetY);
+                } else if ((cachedBaseY + frameOffsetY + cachedHeight) > screenHeight - framePadding) {
+                    clippingOffsetY = (screenHeight - framePadding) - (cachedBaseY + frameOffsetY + cachedHeight);
+                }
             }
             
             // Apply to all drawing calls
