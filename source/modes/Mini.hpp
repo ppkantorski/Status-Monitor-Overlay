@@ -600,7 +600,7 @@ public:
             
             int _frameOffsetX = ult::limitedMemory ? std::max(0, frameOffsetX - (1280-448)) : frameOffsetX;
             
-            const int leftPadding = settings.showLabels ? 0 : settings.spacing;
+            const int leftPadding = settings.showLabels ? 0 : settings.spacing + topPadding;
             const uint32_t overlayWidth = settings.showLabels 
                 ? (margin + rectangleWidth + (fontsize / 3))
                 : (rectangleWidth + (fontsize / 3) * 2 + leftPadding);
@@ -677,7 +677,7 @@ public:
                 
                 // Determine rendering method based on label type
                 const std::string& currentLine = _variableLines[i];
-                const int leftPadding = settings.showLabels ? 0 : settings.spacing;
+                const int leftPadding = settings.showLabels ? 0 : settings.spacing + topPadding;
                 const int baseX = settings.showLabels 
                     ? (cachedBaseX + margin + _frameOffsetX + clippingOffsetX)
                     : (cachedBaseX + (fontsize / 3) + leftPadding + _frameOffsetX + clippingOffsetX);
@@ -1457,7 +1457,7 @@ public:
         
         const int overlayX = frameOffsetX;//ult::limitedMemory ? cachedBaseX + std::max(0, frameOffsetX - (1280-448)) : cachedBaseX + frameOffsetX;
         const int overlayY = cachedBaseY + frameOffsetY;
-        const int leftPadding = settings.showLabels ? 0 : settings.spacing;
+        const int leftPadding = settings.showLabels ? 0 : settings.spacing + topPadding;
         const int overlayWidth = settings.showLabels 
             ? (margin + rectangleWidth + (fontsize / 3))
             : (rectangleWidth + (fontsize / 3) * 2 + leftPadding);
