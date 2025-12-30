@@ -381,6 +381,14 @@ public:
             // Mini/Micro modes: shared toggles
             const std::string section = isMiniMode ? "mini" : "micro";
             
+            if (isMiniMode) {
+                auto* showLabels = new tsl::elm::ToggleListItem("Labels", getCurrentShowLabels());
+                showLabels->setStateChangedListener([this, section](bool state) {
+                    ult::setIniFileValue(configIniPath, section, "show_labels", state ? "true" : "false");
+                });
+                list->addItem(showLabels);
+            }
+
             auto* realFreqs = new tsl::elm::ToggleListItem("Real Frequencies", getCurrentRealFreqs());
             realFreqs->setStateChangedListener([this, section](bool state) {
                 ult::setIniFileValue(configIniPath, section, "real_freqs", state ? "true" : "false");
@@ -513,6 +521,13 @@ private:
     // Helper methods for getting current toggle states
     bool getCurrentShowInfo() {
         std::string value = ult::parseValueFromIniSection(configIniPath, "fps-graph", "show_info");
+        if (value.empty()) return true;
+        convertToUpper(value);
+        return value == "TRUE";
+    }
+
+    bool getCurrentShowLabels() {
+        std::string value = ult::parseValueFromIniSection(configIniPath, "mini", "show_labels");
         if (value.empty()) return true;
         convertToUpper(value);
         return value == "TRUE";

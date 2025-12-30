@@ -1397,6 +1397,7 @@ struct MiniSettings {
     uint8_t refreshRate;
     bool realFrequencies;
     bool realVolts;
+    bool showLabels;
     bool showFullCPU;
     bool showFullResolution;
     bool showFanPercentage;
@@ -1535,6 +1536,7 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
     convertStrToRGBA4444("#2DFF", &(settings->catColor));
     convertStrToRGBA4444("#FFFF", &(settings->textColor));
     settings->show = "DTC+BAT+CPU+GPU+RAM+TMP+FPS+RES";
+    settings->showLabels = true;
     settings->showRAMLoad = true;
     settings->showRAMLoadCPUGPU = false;
     settings->invertBatteryDisplay = true;
@@ -1645,6 +1647,13 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
             settings->textColor = temp;
     }
     
+    it = section.find("show_labels");
+    if (it != section.end()) {
+        key = it->second;
+        convertToUpper(key);
+        settings->showLabels = !(key == "FALSE");
+    }
+
     // Process RAM load flag
     it = section.find("show_full_cpu");
     if (it != section.end()) {

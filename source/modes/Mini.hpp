@@ -600,11 +600,16 @@ public:
             
             int _frameOffsetX = ult::limitedMemory ? std::max(0, frameOffsetX - (1280-448)) : frameOffsetX;
             
+            const int leftPadding = settings.showLabels ? 0 : settings.spacing;
+            const uint32_t overlayWidth = settings.showLabels 
+                ? (margin + rectangleWidth + (fontsize / 3))
+                : (rectangleWidth + (fontsize / 3) * 2 + leftPadding);
+            
             // Check X bounds and calculate clipping offset
             if (cachedBaseX + _frameOffsetX < int(framePadding)) {
                 clippingOffsetX = framePadding - (cachedBaseX + _frameOffsetX);
-            } else if ((cachedBaseX + _frameOffsetX + margin + rectangleWidth + (fontsize / 3)) > screenWidth - framePadding) {
-                clippingOffsetX = (screenWidth - framePadding) - (cachedBaseX + _frameOffsetX + margin + rectangleWidth + (fontsize / 3));
+            } else if ((cachedBaseX + _frameOffsetX + overlayWidth) > screenWidth - framePadding) {
+                clippingOffsetX = (screenWidth - framePadding) - (cachedBaseX + _frameOffsetX + overlayWidth);
             }
             
             // Check Y bounds and calculate clipping offset  
@@ -618,7 +623,7 @@ public:
             renderer->drawRoundedRectSingleThreaded(
                 cachedBaseX + _frameOffsetX + clippingOffsetX, 
                 cachedBaseY + frameOffsetY + clippingOffsetY, 
-                margin + rectangleWidth + (fontsize / 3), 
+                overlayWidth, 
                 cachedHeight, 
                 16, 
                 a(bgColor)
@@ -664,7 +669,7 @@ public:
                 }
 
                 // Draw label (centered in label region)
-                if (!labelLines[labelIndex].empty()) {
+                if (settings.showLabels && !labelLines[labelIndex].empty()) {
                     labelWidth = renderer->getTextDimensions(labelLines[labelIndex], false, fontsize).first;
                     labelCenterX = cachedBaseX + (margin / 2) - (labelWidth / 2);
                     renderer->drawString(labelLines[labelIndex], false, labelCenterX + _frameOffsetX + clippingOffsetX, currentY + frameOffsetY + clippingOffsetY, fontsize, settings.catColor);
@@ -672,7 +677,10 @@ public:
                 
                 // Determine rendering method based on label type
                 const std::string& currentLine = _variableLines[i];
-                const int baseX = cachedBaseX + margin + _frameOffsetX + clippingOffsetX;
+                const int leftPadding = settings.showLabels ? 0 : settings.spacing;
+                const int baseX = settings.showLabels 
+                    ? (cachedBaseX + margin + _frameOffsetX + clippingOffsetX)
+                    : (cachedBaseX + (fontsize / 3) + leftPadding + _frameOffsetX + clippingOffsetX);
                 const int baseY = currentY + frameOffsetY + clippingOffsetY;
                 
                 if (settings.useDynamicColors) {
@@ -1449,7 +1457,10 @@ public:
         
         const int overlayX = frameOffsetX;//ult::limitedMemory ? cachedBaseX + std::max(0, frameOffsetX - (1280-448)) : cachedBaseX + frameOffsetX;
         const int overlayY = cachedBaseY + frameOffsetY;
-        const int overlayWidth = margin + rectangleWidth + (fontsize / 3);
+        const int leftPadding = settings.showLabels ? 0 : settings.spacing;
+        const int overlayWidth = settings.showLabels 
+            ? (margin + rectangleWidth + (fontsize / 3))
+            : (rectangleWidth + (fontsize / 3) * 2 + leftPadding);
         const int overlayHeight = cachedOverlayHeight;
         
         // Add padding to make touch detection more forgiving
