@@ -229,12 +229,6 @@ uint32_t realRAM_mV = 0;
 uint32_t realSOC_mV = 0; 
 uint8_t refreshRate = 0;
 
-void shiftItemFocus(tsl::elm::Element* element) {
-    if (auto& currentGui = tsl::Overlay::get()->getCurrentGui()) {
-        currentGui->requestFocus(element, tsl::FocusDirection::None);
-    }
-}
-
 int compare (const void* elem1, const void* elem2) {
     if ((((resolutionCalls*)(elem1))->calls) > (((resolutionCalls*)(elem2))->calls)) return -1;
     else return 1;
