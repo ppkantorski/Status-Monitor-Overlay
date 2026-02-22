@@ -1,4 +1,4 @@
-# Status Monitor Overlay
+# Status Monitor Overlay (libultrahand build)
 Monitor Your hardware in real time!
 
 This is an overlay homebrew dedicated to Nintendo Switch.
