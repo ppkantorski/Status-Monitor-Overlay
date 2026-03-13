@@ -33,6 +33,15 @@ private:
 
     Thread touchPollThread;
     std::atomic<bool> touchPollRunning{false};
+
+    void updateLayerPos() {
+        if (!ult::limitedMemory) return;
+        const int pos = std::max(std::min(
+            (int)(frameOffsetX * 1.5f + 0.5f) - tsl::impl::currentUnderscanPixels.first,
+            1280 - 32 - tsl::impl::currentUnderscanPixels.first), 0);
+        tsl::gfx::Renderer::get().setLayerPos(pos, 0);
+        ult::layerEdge = frameOffsetX;  // touch-space (1280px), NOT VI-space (pos)
+    }
 public:
     MiniOverlay() { 
         tsl::hlp::requestForeground(false);
@@ -61,9 +70,10 @@ public:
         topPadding = 5;
         bottomPadding = 2;
 
-        if (ult::limitedMemory) {
-            tsl::gfx::Renderer::get().setLayerPos(std::max(std::min((int)(frameOffsetX*1.5 + 0.5) - tsl::impl::currentUnderscanPixels.first, 1280-32 - tsl::impl::currentUnderscanPixels.first), 0), 0);
-        }
+        //if (ult::limitedMemory) {
+        //    tsl::gfx::Renderer::get().setLayerPos(std::max(std::min((int)(frameOffsetX*1.5 + 0.5) - tsl::impl::currentUnderscanPixels.first, 1280-32 - tsl::impl::currentUnderscanPixels.first), 0), 0);
+        //}
+        updateLayerPos();
         
         FullMode = false;
         TeslaFPS = settings.refreshRate;
@@ -246,7 +256,8 @@ public:
                     if (lastUnderscanPixels != tsl::impl::currentUnderscanPixels) {
                         for (int i = 0; i < 2; i++) {
                             tsl::gfx::Renderer::get().updateLayerSize();
-                            tsl::gfx::Renderer::get().setLayerPos(std::max(std::min((int)(overlay->frameOffsetX*1.5 + 0.5) - tsl::impl::currentUnderscanPixels.first, 1280-32 - tsl::impl::currentUnderscanPixels.first), 0), 0);
+                            overlay->updateLayerPos();
+                            //tsl::gfx::Renderer::get().setLayerPos(std::max(std::min((int)(overlay->frameOffsetX*1.5 + 0.5) - tsl::impl::currentUnderscanPixels.first, 1280-32 - tsl::impl::currentUnderscanPixels.first), 0), 0);
                         }
                     }
                     lastUnderscanPixels = tsl::impl::currentUnderscanPixels;
@@ -269,6 +280,8 @@ public:
         //tsl::hlp::requestForeground(true);
         //alphabackground = 0xD;
         deactivateOriginalFooter = false;
+        if (ult::limitedMemory)
+            ult::layerEdge = (ult::useRightAlignment && ult::correctFrameSize) ? (1280 - 448) : 0;
     }
 
     resolutionCalls m_resolutionRenderCalls[8] = {0};
@@ -616,11 +629,7 @@ public:
                 _frameOffsetX = std::max(0, frameOffsetX - (1280-448));
                 
                 // Update layer position
-                tsl::gfx::Renderer::get().setLayerPos(
-                    std::max(std::min((int)(frameOffsetX*1.5 + 0.5) - tsl::impl::currentUnderscanPixels.first, 
-                                      1280-32 - tsl::impl::currentUnderscanPixels.first), 0), 
-                    0
-                );
+                updateLayerPos();
             } else {
                 // Non-limited memory mode - use original clipping offset logic
                 _frameOffsetX = frameOffsetX;
@@ -1556,9 +1565,7 @@ public:
                 frameOffsetX = newFrameOffsetX;
                 frameOffsetY = newFrameOffsetY;
 
-                if (ult::limitedMemory) {
-                    tsl::gfx::Renderer::get().setLayerPos(std::max(std::min((int)(frameOffsetX*1.5 + 0.5) - tsl::impl::currentUnderscanPixels.first, 1280-32 - tsl::impl::currentUnderscanPixels.first), 0), 0);
-                }
+                updateLayerPos();
                 boundsNeedUpdate = true;
             }
         } else if (!currentTouchDetected && oldTouchDetected && isDragging && !currentPlusHeld) {
@@ -1631,9 +1638,10 @@ public:
                 frameOffsetX = newFrameOffsetX;
                 frameOffsetY = newFrameOffsetY;
 
-                if (ult::limitedMemory) {
-                    tsl::gfx::Renderer::get().setLayerPos(std::max(std::min((int)(frameOffsetX*1.5 + 0.5) - tsl::impl::currentUnderscanPixels.first, 1280-32 - tsl::impl::currentUnderscanPixels.first), 0), 0);
-                }
+                //if (ult::limitedMemory) {
+                //    tsl::gfx::Renderer::get().setLayerPos(std::max(std::min((int)(frameOffsetX*1.5 + 0.5) - tsl::impl::currentUnderscanPixels.first, 1280-32 - tsl::impl::currentUnderscanPixels.first), 0), 0);
+                //}
+                updateLayerPos();
                 boundsNeedUpdate = true;
             }
         } else if ((!currentPlusHeld && oldPlusHeld) && isDragging) {

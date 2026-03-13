@@ -32,6 +32,15 @@ private:
     size_t actualTotalWidth = 0;
     size_t actualTotalHeight = 0;
 
+    void updateLayerPos() {
+        if (!ult::limitedMemory) return;
+        const int pos = std::max(std::min(
+            (int)(frameOffsetX * 1.5f + 0.5f) - tsl::impl::currentUnderscanPixels.first,
+            1280 - 32 - tsl::impl::currentUnderscanPixels.first), 0);
+        tsl::gfx::Renderer::get().setLayerPos(pos, 0);
+        ult::layerEdge = frameOffsetX;  // touch-space (1280px), NOT VI-space (pos)
+    }
+
 public:
     com_FPS() { 
         tsl::hlp::requestForeground(false);
@@ -50,9 +59,7 @@ public:
         frameOffsetY = settings.frameOffsetY;
         framePadding = settings.framePadding;
         
-        if (ult::limitedMemory) {
-            tsl::gfx::Renderer::get().setLayerPos(std::max(std::min((int)(frameOffsetX*1.5 + 0.5) - tsl::impl::currentUnderscanPixels.first, 1280-32 - tsl::impl::currentUnderscanPixels.first), 0), 0);
-        }
+        updateLayerPos();
         
         FullMode = false;
         TeslaFPS = settings.refreshRate;
@@ -175,7 +182,7 @@ public:
                     if (lastUnderscanPixels != tsl::impl::currentUnderscanPixels) {
                         for (int i = 0; i < 2; i++) {
                             tsl::gfx::Renderer::get().updateLayerSize();
-                            tsl::gfx::Renderer::get().setLayerPos(std::max(std::min((int)(overlay->frameOffsetX*1.5 + 0.5) - tsl::impl::currentUnderscanPixels.first, 1280-32 - tsl::impl::currentUnderscanPixels.first), 0), 0);
+                            overlay->updateLayerPos();
                         }
                     }
                     lastUnderscanPixels = tsl::impl::currentUnderscanPixels;
@@ -202,6 +209,9 @@ public:
             tsl::gfx::Renderer::get().addScreenshotStacks();
         }
         deactivateOriginalFooter = false;
+
+        if (ult::limitedMemory)
+            ult::layerEdge = (ult::useRightAlignment && ult::correctFrameSize) ? (1280 - 448) : 0;
     }
 
     virtual tsl::elm::Element* createUI() override {
@@ -265,11 +275,7 @@ public:
                 posY = frameOffsetY;
                 
                 // Update layer position
-                tsl::gfx::Renderer::get().setLayerPos(
-                    std::max(std::min((int)(frameOffsetX*1.5 + 0.5) - tsl::impl::currentUnderscanPixels.first, 
-                                      1280-32 - tsl::impl::currentUnderscanPixels.first), 0), 
-                    0
-                );
+                updateLayerPos();
             } else {
                 // Non-limited memory mode - use original logic with clamping
                 _frameOffsetX = frameOffsetX;
@@ -445,9 +451,7 @@ public:
                 frameOffsetX = std::max(minX, std::min(maxX, initialFrameOffsetX + deltaX));
                 frameOffsetY = std::max(minY, std::min(maxY, initialFrameOffsetY + deltaY));
 
-                if (ult::limitedMemory) {
-                    tsl::gfx::Renderer::get().setLayerPos(std::max(std::min((int)(frameOffsetX*1.5 + 0.5) - tsl::impl::currentUnderscanPixels.first, 1280-32 - tsl::impl::currentUnderscanPixels.first), 0), 0);
-                }
+                updateLayerPos();
             }
         } else if (!currentTouchDetected && oldTouchDetected && isDragging && !currentPlusHeld) {
             // Touch just released
@@ -509,9 +513,7 @@ public:
                 frameOffsetX = std::max(minX, std::min(maxX, frameOffsetX + deltaX));
                 frameOffsetY = std::max(minY, std::min(maxY, frameOffsetY + deltaY));
 
-                if (ult::limitedMemory) {
-                    tsl::gfx::Renderer::get().setLayerPos(std::max(std::min((int)(frameOffsetX*1.5 + 0.5) - tsl::impl::currentUnderscanPixels.first, 1280-32 - tsl::impl::currentUnderscanPixels.first), 0), 0);
-                }
+                updateLayerPos();
             }
         } else if ((!currentPlusHeld && oldPlusHeld) && isDragging) {
             // Button just released - stop joystick dragging
