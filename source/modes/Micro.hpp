@@ -1101,11 +1101,14 @@ public:
         //static bool skipOnce = true;
     
         if (!skipOnce) {
-            //static bool runOnce = true;
             if (runOnce) {
-                isRendering = true;
-                leventClear(&renderingStopEvent);
-                runOnce = false;  // Add this to prevent repeated calls
+                if (!(tsl::notification && tsl::notification->isActive())) {
+                    isRendering = true;
+                    leventClear(&renderingStopEvent);
+                } else {
+                    wasRendering = true;
+                }
+                runOnce = false;
             }
         } else {
             skipOnce = false;

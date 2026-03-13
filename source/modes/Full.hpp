@@ -606,8 +606,12 @@ public:
         
         if (!skipOnce) {
             if (runOnce) {
-                isRendering = true;
-                leventClear(&renderingStopEvent);
+                if (!(tsl::notification && tsl::notification->isActive())) {
+                    isRendering = true;
+                    leventClear(&renderingStopEvent);
+                } else {
+                    wasRendering = true;
+                }
                 runOnce = false;
             }
         } else {

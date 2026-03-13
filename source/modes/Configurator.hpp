@@ -784,12 +784,27 @@ public:
 class FramePaddingConfig : public tsl::Gui {
 private:
     std::string modeName;
+    bool isMiniMode;
+    bool isGameResolutionsMode;
+    bool isFPSCounterMode;
+    bool isFPSGraphMode;
     int currentPadding;
     
 public:
     FramePaddingConfig(const std::string& mode) : modeName(mode) {
-        const std::string value = ult::parseValueFromIniSection(configIniPath, "mini", "frame_padding");
-        currentPadding = value.empty() ? 10 : std::clamp(atoi(value.c_str()), 0, 14); // max value 14
+        isMiniMode = (mode == "Mini");
+        isGameResolutionsMode = (mode == "Game Resolutions");
+        isFPSCounterMode = (mode == "FPS Counter");
+        isFPSGraphMode = (mode == "FPS Graph");
+
+        std::string section;
+        if (isMiniMode) section = "mini";
+        else if (isGameResolutionsMode) section = "game_resolutions";
+        else if (isFPSCounterMode) section = "fps-counter";
+        else if (isFPSGraphMode) section = "fps-graph";
+
+        const std::string value = ult::parseValueFromIniSection(configIniPath, section, "frame_padding");
+        currentPadding = value.empty() ? 10 : std::clamp(atoi(value.c_str()), 0, 14);
     }
 
     ~FramePaddingConfig() {
@@ -800,6 +815,12 @@ public:
         auto* list = new tsl::elm::List();
         list->addItem(new tsl::elm::CategoryHeader("Frame Padding"));
 
+        std::string section;
+        if (isMiniMode) section = "mini";
+        else if (isGameResolutionsMode) section = "game_resolutions";
+        else if (isFPSCounterMode) section = "fps-counter";
+        else if (isFPSGraphMode) section = "fps-graph";
+
         static const std::vector<int> paddingValues = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14};
         for (int padding : paddingValues) {
             auto* paddingItem = new tsl::elm::ListItem(std::to_string(padding) + " px");
@@ -807,9 +828,9 @@ public:
                 paddingItem->setValue(ult::CHECKMARK_SYMBOL);
                 lastSelectedListItem = paddingItem;
             }
-            paddingItem->setClickListener([this, paddingItem, padding](uint64_t keys) {
+            paddingItem->setClickListener([this, paddingItem, padding, section](uint64_t keys) {
                 if (keys & KEY_A) {
-                    ult::setIniFileValue(configIniPath, "mini", "frame_padding", std::to_string(padding));
+                    ult::setIniFileValue(configIniPath, section, "frame_padding", std::to_string(padding));
                     paddingItem->setValue(ult::CHECKMARK_SYMBOL);
                     if (lastSelectedListItem && paddingItem != lastSelectedListItem)
                         lastSelectedListItem->setValue("");
@@ -2126,13 +2147,17 @@ private:
     }
     
     int getCurrentFramePadding() {
-        if (isMiniMode) {
-            std::string value = ult::parseValueFromIniSection(configIniPath, "mini", "frame_padding");
-            return value.empty() ? 10 : atoi(value.c_str());
-        }
-        return 10;
+        std::string section;
+        if (isMiniMode) section = "mini";
+        else if (isGameResolutionsMode) section = "game_resolutions";
+        else if (isFPSCounterMode) section = "fps-counter";
+        else if (isFPSGraphMode) section = "fps-graph";
+        else return 10;
+    
+        std::string value = ult::parseValueFromIniSection(configIniPath, section, "frame_padding");
+        return value.empty() ? 10 : atoi(value.c_str());
     }
-
+    
     std::string getCurrentTextAlign() {
         if (isMicroMode) {
             std::string value = ult::parseValueFromIniSection(configIniPath, "micro", "text_align");

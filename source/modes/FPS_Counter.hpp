@@ -21,7 +21,6 @@ private:
     bool originalUseRightAlignment = ult::useRightAlignment;
 
     struct ButtonState {
-        std::atomic<bool> minusDragActive{false};
         std::atomic<bool> plusDragActive{false};
     } buttonState;
 
@@ -82,8 +81,7 @@ public:
             PadState pad_handheld;
             padInitialize(&pad_p1, HidNpadIdType_No1);
             padInitialize(&pad_handheld, HidNpadIdType_Handheld);
-        
-            u64 minusHoldStart = 0;
+            
             u64 plusHoldStart = 0;
             static constexpr u64 HOLD_THRESHOLD_NS = 500'000'000ULL;
         
@@ -142,19 +140,8 @@ public:
                     const u64 keysHeld = padGetButtons(&pad_p1) | padGetButtons(&pad_handheld);
                     const u64 now = armTicksToNs(armGetSystemTick());
                     
-                    // Track MINUS hold duration
-                    if ((keysHeld & KEY_MINUS) && !(keysHeld & ~KEY_MINUS & ALL_KEYS_MASK)) {
-                        if (minusHoldStart == 0) {
-                            minusHoldStart = now;
-                        }
-                        if (now - minusHoldStart >= HOLD_THRESHOLD_NS) {
-                            inputDetected = true;
-                            overlay->buttonState.minusDragActive.exchange(true, std::memory_order_acq_rel);
-                        }
-                    }
-                    
                     // Track PLUS hold duration
-                    else if ((keysHeld & KEY_PLUS) && !(keysHeld & ~KEY_PLUS & ALL_KEYS_MASK)) {
+                    if ((keysHeld & KEY_PLUS) && !(keysHeld & ~KEY_PLUS & ALL_KEYS_MASK)) {
                         if (plusHoldStart == 0) {
                             plusHoldStart = now;
                         }
@@ -165,8 +152,7 @@ public:
                     }
 
                     else {
-                        minusHoldStart = plusHoldStart = 0;
-                        overlay->buttonState.minusDragActive.exchange(false, std::memory_order_acq_rel);
+                        plusHoldStart = 0;
                         overlay->buttonState.plusDragActive.exchange(false, std::memory_order_acq_rel);
                     }
                     
@@ -344,8 +330,12 @@ public:
     
         if (!skipOnce) {
             if (runOnce) {
-                isRendering = true;
-                leventClear(&renderingStopEvent);
+                if (!(tsl::notification && tsl::notification->isActive())) {
+                    isRendering = true;
+                    leventClear(&renderingStopEvent);
+                } else {
+                    wasRendering = true;
+                }
                 runOnce = false;
             }
         } else {
@@ -356,7 +346,6 @@ public:
     virtual bool handleInput(u64 keysDown, u64 keysHeld, const HidTouchState &touchPos, HidAnalogStickState joyStickPosLeft, HidAnalogStickState joyStickPosRight) override {
         // Static variables to maintain drag state between function calls
         static bool oldTouchDetected = false;
-        static bool oldMinusHeld = false;
         static bool oldPlusHeld = false;
         static HidTouchState initialTouchPos = {0};
         static int initialFrameOffsetX = 0;
@@ -372,8 +361,12 @@ public:
         
         if (clearOnRelease && !isRendering) {
             clearOnRelease = false;
-            isRendering = true;
-            leventClear(&renderingStopEvent);
+            if (!(tsl::notification && tsl::notification->isActive())) {
+                isRendering = true;
+                leventClear(&renderingStopEvent);
+            } else {
+                wasRendering = true; // hand off — notification completion path re-enables when done
+            }
         }
         
         // Use actual dimensions from last render, fallback to estimate if not available
@@ -406,12 +399,10 @@ public:
         const int maxX = screenWidth - totalWidth - framePadding;
         const int minY = framePadding;
         const int maxY = screenHeight - totalHeight - framePadding;
-    
-        const bool minusDragReady = buttonState.minusDragActive.load(std::memory_order_acquire);
+
         const bool plusDragReady = buttonState.plusDragActive.load(std::memory_order_acquire);
 
         // Check button states
-        const bool currentMinusHeld = (keysHeld & KEY_MINUS) && !(keysHeld & ~KEY_MINUS & ALL_KEYS_MASK) && minusDragReady;
         const bool currentPlusHeld = (keysHeld & KEY_PLUS) && !(keysHeld & ~KEY_PLUS & ALL_KEYS_MASK) && plusDragReady;
     
         // Handle touch dragging
@@ -434,7 +425,7 @@ public:
                     initialFrameOffsetY = frameOffsetY;
                 }
             }
-        } else if (currentTouchDetected && isDragging && !currentMinusHeld && !currentPlusHeld) {
+        } else if (currentTouchDetected && isDragging && !currentPlusHeld) {
             // Continue touch dragging
             const int touchX = touchPos.x;
             const int touchY = touchPos.y;
@@ -458,7 +449,7 @@ public:
                     tsl::gfx::Renderer::get().setLayerPos(std::max(std::min((int)(frameOffsetX*1.5 + 0.5) - tsl::impl::currentUnderscanPixels.first, 1280-32 - tsl::impl::currentUnderscanPixels.first), 0), 0);
                 }
             }
-        } else if (!currentTouchDetected && oldTouchDetected && isDragging && !currentMinusHeld && !currentPlusHeld) {
+        } else if (!currentTouchDetected && oldTouchDetected && isDragging && !currentPlusHeld) {
             // Touch just released
             if (hasMoved) {
                 // Save position when touch drag ends
@@ -477,17 +468,17 @@ public:
         }
     
         // Handle joystick dragging (MINUS + right joystick OR PLUS + left joystick)
-        if ((currentMinusHeld || currentPlusHeld) && !isDragging) {
+        if (currentPlusHeld && !isDragging) {
             // Start joystick dragging
             isDragging = true;
             triggerRumbleClick.store(true, std::memory_order_release);
             triggerOnSound.store(true, std::memory_order_release);
-        } else if ((currentMinusHeld || currentPlusHeld) && isDragging) {
+        } else if (currentPlusHeld && isDragging) {
             // Continue joystick dragging
             static constexpr int JOYSTICK_DEADZONE = 20;
             
             // Choose the appropriate joystick based on which button is held
-            const HidAnalogStickState& activeJoystick = currentMinusHeld ? joyStickPosRight : joyStickPosLeft;
+            const HidAnalogStickState& activeJoystick = joyStickPosLeft;
             
             // Only move if joystick is outside deadzone
             if (abs(activeJoystick.x) > JOYSTICK_DEADZONE || abs(activeJoystick.y) > JOYSTICK_DEADZONE) {
@@ -522,7 +513,7 @@ public:
                     tsl::gfx::Renderer::get().setLayerPos(std::max(std::min((int)(frameOffsetX*1.5 + 0.5) - tsl::impl::currentUnderscanPixels.first, 1280-32 - tsl::impl::currentUnderscanPixels.first), 0), 0);
                 }
             }
-        } else if (((!currentMinusHeld && oldMinusHeld) || (!currentPlusHeld && oldPlusHeld)) && isDragging) {
+        } else if ((!currentPlusHeld && oldPlusHeld) && isDragging) {
             // Button just released - stop joystick dragging
             auto iniData = ult::getParsedDataFromIniFile(configIniPath);
             iniData["fps-counter"]["frame_offset_x"] = std::to_string(frameOffsetX);
@@ -536,7 +527,6 @@ public:
         
         // Update state for next frame
         oldTouchDetected = currentTouchDetected;
-        oldMinusHeld = currentMinusHeld;
         oldPlusHeld = currentPlusHeld;
         
         // Handle existing key input logic (but don't interfere with dragging)
