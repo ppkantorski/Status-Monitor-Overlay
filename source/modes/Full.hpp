@@ -624,8 +624,7 @@ public:
         if (isKeyComboPressed(keysHeld, keysDown)) {
             isRendering = false;
             leventSignal(&renderingStopEvent);
-            triggerRumbleDoubleClick.store(true, std::memory_order_release);
-            triggerExitSound.store(true, std::memory_order_release);
+            triggerExitFeedback();
             skipOnce = true;
             runOnce = true;
             TeslaFPS = 60;

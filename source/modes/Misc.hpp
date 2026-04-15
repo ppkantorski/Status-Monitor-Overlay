@@ -177,8 +177,7 @@ public:
         if (keysDown & KEY_B) {
             isRendering = false;
             leventSignal(&renderingStopEvent);
-            triggerRumbleDoubleClick.store(true, std::memory_order_release);
-            triggerExitSound.store(true, std::memory_order_release);
+            triggerExitFeedback();
             lastSelectedItem = "Miscellaneous";
             lastMode = "";
             tsl::swapTo<OtherMenu>();

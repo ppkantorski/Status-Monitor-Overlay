@@ -622,8 +622,7 @@ public:
                     
                     // Start touch dragging
                     isDragging = true;
-                    triggerRumbleClick.store(true, std::memory_order_release);
-                    triggerOnSound.store(true, std::memory_order_release);
+                    triggerOnFeedback();
                     hasMoved = false;
                     initialTouchPos = touchPos;
                     initialFrameOffsetX = frameOffsetX;
@@ -666,16 +665,14 @@ public:
             isDragging = false;
             hasMoved = false;
             clearOnRelease = true;
-            triggerRumbleDoubleClick.store(true, std::memory_order_release);
-            triggerOffSound.store(true, std::memory_order_release);
+            triggerOffFeedback(true);
         }
     
         // Handle joystick dragging (MINUS + right joystick OR PLUS + left joystick)
         if (currentPlusHeld && !isDragging) {
             // Start joystick dragging
             isDragging = true;
-            triggerRumbleClick.store(true, std::memory_order_release);
-            triggerOnSound.store(true, std::memory_order_release);
+            triggerOnFeedback();
         } else if (currentPlusHeld && isDragging) {
             // Continue joystick dragging
             static constexpr int JOYSTICK_DEADZONE = 20;
@@ -722,8 +719,7 @@ public:
             ult::saveIniFileData(configIniPath, iniData);
             isDragging = false;
             clearOnRelease = true;
-            triggerRumbleDoubleClick.store(true, std::memory_order_release);
-            triggerOffSound.store(true, std::memory_order_release);
+            triggerOffFeedback(true);
         }
         
         // Update state for next frame

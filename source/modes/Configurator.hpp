@@ -164,8 +164,7 @@ public:
     
     virtual bool handleInput(u64 keysDown, u64 keysHeld, const HidTouchState &touchPos, HidAnalogStickState joyStickPosLeft, HidAnalogStickState joyStickPosRight) override {
         if (keysDown & KEY_B) {
-            triggerRumbleDoubleClick.store(true, std::memory_order_release);
-            triggerExitSound.store(true, std::memory_order_release);
+            triggerExitFeedback();
             jumpItemName = title;
             jumpItemValue = "";
             jumpItemExactMatch = false;
@@ -269,8 +268,7 @@ public:
     
     virtual bool handleInput(u64 keysDown, u64 keysHeld, const HidTouchState &touchPos, HidAnalogStickState joyStickPosLeft, HidAnalogStickState joyStickPosRight) override {
         if (keysDown & KEY_B) {
-            triggerRumbleDoubleClick.store(true, std::memory_order_release);
-            triggerExitSound.store(true, std::memory_order_release);
+            triggerExitFeedback();
             jumpItemName = "DTC Format";
             jumpItemValue = "";
             jumpItemExactMatch = false;
@@ -509,8 +507,7 @@ public:
     
     virtual bool handleInput(u64 keysDown, u64 keysHeld, const HidTouchState &touchPos, HidAnalogStickState joyStickPosLeft, HidAnalogStickState joyStickPosRight) override {
         if (keysDown & KEY_B) {
-            triggerRumbleDoubleClick.store(true, std::memory_order_release);
-            triggerExitSound.store(true, std::memory_order_release);
+            triggerExitFeedback();
             tsl::goBack();
             return true;
         }
@@ -767,8 +764,7 @@ public:
     
     virtual bool handleInput(u64 keysDown, u64 keysHeld, const HidTouchState &touchPos, HidAnalogStickState joyStickPosLeft, HidAnalogStickState joyStickPosRight) override {
         if (keysDown & KEY_B) {
-            triggerRumbleDoubleClick.store(true, std::memory_order_release);
-            triggerExitSound.store(true, std::memory_order_release);
+            triggerExitFeedback();
             jumpItemName = "Refresh Rate";
             jumpItemValue = "";
             jumpItemExactMatch = false;
@@ -851,8 +847,7 @@ public:
     
     virtual bool handleInput(u64 keysDown, u64 keysHeld, const HidTouchState &touchPos, HidAnalogStickState joyStickPosLeft, HidAnalogStickState joyStickPosRight) override {
         if (keysDown & KEY_B) {
-            triggerRumbleDoubleClick.store(true, std::memory_order_release);
-            triggerExitSound.store(true, std::memory_order_release);
+            triggerExitFeedback();
             jumpItemName = "Frame Padding";
             jumpItemValue = "";
             jumpItemExactMatch = false;
@@ -939,8 +934,7 @@ public:
     
     virtual bool handleInput(u64 keysDown, u64 keysHeld, const HidTouchState &touchPos, HidAnalogStickState joyStickPosLeft, HidAnalogStickState joyStickPosRight) override {
         if (keysDown & KEY_B) {
-            triggerRumbleDoubleClick.store(true, std::memory_order_release);
-            triggerExitSound.store(true, std::memory_order_release);
+            triggerExitFeedback();
             jumpItemName = title;
             jumpItemValue = "";
             jumpItemExactMatch = false;
@@ -987,7 +981,7 @@ public:
         handheldItem->setValue(std::to_string(handheldSize) + " pt");
         handheldItem->setClickListener([this, handheldItem](uint64_t keys) {
             if (keys & KEY_A) {
-                tsl::shiftItemFocus(handheldItem);
+                //tsl::shiftItemFocus(handheldItem);
                 tsl::changeTo<FontSizeSelector>(modeName, "handheld");
                 return true;
             }
@@ -999,7 +993,7 @@ public:
         dockedItem->setValue(std::to_string(dockedSize) + " pt");
         dockedItem->setClickListener([this, dockedItem](uint64_t keys) {
             if (keys & KEY_A) {
-                tsl::shiftItemFocus(dockedItem);
+                //tsl::shiftItemFocus(dockedItem);
                 tsl::changeTo<FontSizeSelector>(modeName, "docked");
                 return true;
             }
@@ -1020,8 +1014,7 @@ public:
     
     virtual bool handleInput(u64 keysDown, u64 keysHeld, const HidTouchState &touchPos, HidAnalogStickState joyStickPosLeft, HidAnalogStickState joyStickPosRight) override {
         if (keysDown & KEY_B) {
-            triggerRumbleDoubleClick.store(true, std::memory_order_release);
-            triggerExitSound.store(true, std::memory_order_release);
+            triggerExitFeedback();
             tsl::goBack();
             return true;
         }
@@ -1226,8 +1219,7 @@ public:
     
     virtual bool handleInput(u64 keysDown, u64 keysHeld, const HidTouchState &touchPos, HidAnalogStickState joyStickPosLeft, HidAnalogStickState joyStickPosRight) override {
         if (keysDown & KEY_B) {
-            triggerRumbleDoubleClick.store(true, std::memory_order_release);
-            triggerExitSound.store(true, std::memory_order_release);
+            triggerExitFeedback();
             jumpItemName = modeTitle;
             jumpItemValue = "";
             jumpItemExactMatch = false;
@@ -1386,7 +1378,7 @@ public:
             bgColor->setValue(getColorName(bgCurrentColor));
             bgColor->setClickListener([this, bgColor, bgDefault](uint64_t keys) {
                 if (keys & KEY_A) {
-                    tsl::shiftItemFocus(bgColor);
+                    //tsl::shiftItemFocus(bgColor);
                     tsl::changeTo<ColorSelector>(modeName, "Background Color", "background_color", bgDefault);
                     return true;
                 }
@@ -1399,7 +1391,7 @@ public:
             bgAlpha->setValue(getAlphaPercentage(bgCurrentColor));
             bgAlpha->setClickListener([this, bgAlpha](uint64_t keys) {
                 if (keys & KEY_A) {
-                    tsl::shiftItemFocus(bgAlpha);
+                    //tsl::shiftItemFocus(bgAlpha);
                     tsl::changeTo<AlphaSelector>(modeName, "background_color", "Background Alpha");
                     return true;
                 }
@@ -1414,7 +1406,7 @@ public:
                 focusBgColor->setValue(getColorName(focusCurrentColor));
                 focusBgColor->setClickListener([this, focusBgColor](uint64_t keys) {
                     if (keys & KEY_A) {
-                        tsl::shiftItemFocus(focusBgColor);
+                        //tsl::shiftItemFocus(focusBgColor);
                         tsl::changeTo<ColorSelector>(modeName, "Focus Color", "focus_background_color", "#000F");
                         return true;
                     }
@@ -1427,7 +1419,7 @@ public:
                 focusAlpha->setValue(getAlphaPercentage(focusCurrentColor));
                 focusAlpha->setClickListener([this, focusAlpha](uint64_t keys) {
                     if (keys & KEY_A) {
-                        tsl::shiftItemFocus(focusAlpha);
+                        //tsl::shiftItemFocus(focusAlpha);
                         tsl::changeTo<AlphaSelector>(modeName, "focus_background_color", "Focus Alpha");
                         return true;
                     }
@@ -1444,7 +1436,7 @@ public:
         textColor->setValue(getColorName(textCurrentColor));
         textColor->setClickListener([this, textColor](uint64_t keys) {
             if (keys & KEY_A) {
-                tsl::shiftItemFocus(textColor);
+                //tsl::shiftItemFocus(textColor);
                 tsl::changeTo<ColorSelector>(modeName, "Text Color", "text_color", "#FFFF");
                 return true;
             }
@@ -1466,7 +1458,7 @@ public:
             catColor->setValue(getColorName(getCurrentColor("cat_color", "#0F0F")));
             catColor->setClickListener([this, catColor](uint64_t keys) {
                 if (keys & KEY_A) {
-                    tsl::shiftItemFocus(catColor);
+                    //tsl::shiftItemFocus(catColor);
                     tsl::changeTo<ColorSelector>(modeName, "Category Color", "cat_color", "#0F0F");
                     return true;
                 }
@@ -1499,7 +1491,7 @@ public:
                 
                 colorItem->setClickListener([this, colorItem, color](uint64_t keys) {
                     if (keys & KEY_A) {
-                        tsl::shiftItemFocus(colorItem);
+                        //tsl::shiftItemFocus(colorItem);
                         tsl::changeTo<ColorSelector>(modeName, color.name, color.key, color.defaultVal);
                         return true;
                     }
@@ -1513,7 +1505,7 @@ public:
                     alphaItem->setValue(getAlphaPercentage(currentVal));
                     alphaItem->setClickListener([this, alphaItem, color](uint64_t keys) {
                         if (keys & KEY_A) {
-                            tsl::shiftItemFocus(alphaItem);
+                            //tsl::shiftItemFocus(alphaItem);
                             tsl::changeTo<AlphaSelector>(modeName, color.key, color.name + " Alpha");
                             return true;
                         }
@@ -1529,7 +1521,7 @@ public:
             catColor1->setValue(getColorName(getCurrentColor("cat_color_1", "#8FFF")));
             catColor1->setClickListener([this, catColor1](uint64_t keys) {
                 if (keys & KEY_A) {
-                    tsl::shiftItemFocus(catColor1);
+                    //tsl::shiftItemFocus(catColor1);
                     tsl::changeTo<ColorSelector>(modeName, "Category Color 1", "cat_color_1", "#8FFF");
                     return true;
                 }
@@ -1542,7 +1534,7 @@ public:
             catColor2->setValue(getColorName(getCurrentColor("cat_color_2", "#2DFF")));
             catColor2->setClickListener([this, catColor2](uint64_t keys) {
                 if (keys & KEY_A) {
-                    tsl::shiftItemFocus(catColor2);
+                    //tsl::shiftItemFocus(catColor2);
                     tsl::changeTo<ColorSelector>(modeName, "Category Color 2", "cat_color_2", "#2DFF");
                     return true;
                 }
@@ -1555,7 +1547,7 @@ public:
             sepColor->setValue(getColorName(getCurrentColor("separator_color", "#888F")));
             sepColor->setClickListener([this, sepColor](uint64_t keys) {
                 if (keys & KEY_A) {
-                    tsl::shiftItemFocus(sepColor);
+                    //tsl::shiftItemFocus(sepColor);
                     tsl::changeTo<ColorSelector>(modeName, "Separator Color", "separator_color", "#888F");
                     return true;
                 }
@@ -1568,7 +1560,7 @@ public:
             catColor->setValue(getColorName(getCurrentColor("cat_color", "#2DFF")));
             catColor->setClickListener([this, catColor](uint64_t keys) {
                 if (keys & KEY_A) {
-                    tsl::shiftItemFocus(catColor);
+                    //tsl::shiftItemFocus(catColor);
                     tsl::changeTo<ColorSelector>(modeName, "Category Color", "cat_color", "#2DFF");
                     return true;
                 }
@@ -1581,7 +1573,7 @@ public:
             sepColor->setValue(getColorName(getCurrentColor("separator_color", "#888F")));
             sepColor->setClickListener([this, sepColor](uint64_t keys) {
                 if (keys & KEY_A) {
-                    tsl::shiftItemFocus(sepColor);
+                    //tsl::shiftItemFocus(sepColor);
                     tsl::changeTo<ColorSelector>(modeName, "Separator Color", "separator_color", "#888F");
                     return true;
                 }
@@ -1594,7 +1586,7 @@ public:
             catColor->setValue(getColorName(getCurrentColor("cat_color", "#2DFF")));
             catColor->setClickListener([this, catColor](uint64_t keys) {
                 if (keys & KEY_A) {
-                    tsl::shiftItemFocus(catColor);
+                    //tsl::shiftItemFocus(catColor);
                     tsl::changeTo<ColorSelector>(modeName, "Category Color", "cat_color", "#2DFF");
                     return true;
                 }
@@ -1607,7 +1599,7 @@ public:
             sepColor->setValue(getColorName(getCurrentColor("separator_color", "#888F")));
             sepColor->setClickListener([this, sepColor](uint64_t keys) {
                 if (keys & KEY_A) {
-                    tsl::shiftItemFocus(sepColor);
+                    //tsl::shiftItemFocus(sepColor);
                     tsl::changeTo<ColorSelector>(modeName, "Separator Color", "separator_color", "#888F");
                     return true;
                 }
@@ -1622,7 +1614,7 @@ public:
             catColor->setValue(getColorName(getCurrentColor("cat_color", "#2DFF")));
             catColor->setClickListener([this, catColor](uint64_t keys) {
                 if (keys & KEY_A) {
-                    tsl::shiftItemFocus(catColor);
+                    //tsl::shiftItemFocus(catColor);
                     tsl::changeTo<ColorSelector>(modeName, "Category Color", "cat_color", "#2DFF");
                     return true;
                 }
@@ -1648,8 +1640,7 @@ public:
     
     virtual bool handleInput(u64 keysDown, u64 keysHeld, const HidTouchState &touchPos, HidAnalogStickState joyStickPosLeft, HidAnalogStickState joyStickPosRight) override {
         if (keysDown & KEY_B) {
-            triggerRumbleDoubleClick.store(true, std::memory_order_release);
-            triggerExitSound.store(true, std::memory_order_release);
+            triggerExitFeedback();
             tsl::goBack();
             return true;
         }
@@ -1799,8 +1790,7 @@ public:
                             }
                             elementOrder[elementOrder.size() - 1] = temp;
                         }
-                        triggerRumbleClick.store(true, std::memory_order_release);
-                        triggerMoveSound.store(true, std::memory_order_release);
+                        triggerMoveFeedback();
                     } else if (keys & KEY_Y) {
                         if (currentPos < elementOrder.size() - 1) {
                             std::swap(elementOrder[currentPos], elementOrder[currentPos + 1]);
@@ -1811,8 +1801,7 @@ public:
                             }
                             elementOrder[0] = temp;
                         }
-                        triggerRumbleClick.store(true, std::memory_order_release);
-                        triggerMoveSound.store(true, std::memory_order_release);
+                        triggerMoveFeedback();
                     }
                     
                     updateShowAndOrder();
@@ -1843,8 +1832,7 @@ public:
     
     virtual bool handleInput(u64 keysDown, u64 keysHeld, const HidTouchState &touchPos, HidAnalogStickState joyStickPosLeft, HidAnalogStickState joyStickPosRight) override {
         if (keysDown & KEY_B) {
-            triggerRumbleDoubleClick.store(true, std::memory_order_release);
-            triggerExitSound.store(true, std::memory_order_release);
+            triggerExitFeedback();
             tsl::goBack();
             return true;
         }
@@ -1911,7 +1899,7 @@ public:
             showSettings->setValue(ult::DROPDOWN_SYMBOL);
             showSettings->setClickListener([this, showSettings](uint64_t keys) {
                 if (keys & KEY_A) {
-                    tsl::shiftItemFocus(showSettings);
+                    //tsl::shiftItemFocus(showSettings);
                     tsl::changeTo<ShowConfig>(modeName);
                     return true;
                 }
@@ -1926,7 +1914,7 @@ public:
         toggles->setValue(ult::DROPDOWN_SYMBOL);
         toggles->setClickListener([this, toggles](uint64_t keys) {
             if (keys & KEY_A) {
-                tsl::shiftItemFocus(toggles);
+                //tsl::shiftItemFocus(toggles);
                 tsl::changeTo<TogglesConfig>(modeName);
                 return true;
             }
@@ -1941,7 +1929,7 @@ public:
         colors->setValue(ult::DROPDOWN_SYMBOL);
         colors->setClickListener([this, colors](uint64_t keys) {
             if (keys & KEY_A) {
-                tsl::shiftItemFocus(colors);
+                //tsl::shiftItemFocus(colors);
                 tsl::changeTo<ColorConfig>(modeName);
                 return true;
             }
@@ -1957,7 +1945,7 @@ public:
             fontSizes->setValue(ult::DROPDOWN_SYMBOL);
             fontSizes->setClickListener([this, fontSizes](uint64_t keys) {
                 if (keys & KEY_A) {
-                    tsl::shiftItemFocus(fontSizes);
+                    //tsl::shiftItemFocus(fontSizes);
                     tsl::changeTo<FontSizeConfig>(modeName);
                     return true;
                 }
@@ -1971,7 +1959,7 @@ public:
         refreshRate->setValue(std::to_string(getCurrentRefreshRate()) + " Hz");
         refreshRate->setClickListener([this, refreshRate](uint64_t keys) {
             if (keys & KEY_A) {
-                tsl::shiftItemFocus(refreshRate);
+                //tsl::shiftItemFocus(refreshRate);
                 tsl::changeTo<RefreshRateConfig>(modeName);
                 return true;
             }
@@ -1985,7 +1973,7 @@ public:
             dtcFormat->setValue(getCurrentDTCFormat());
             dtcFormat->setClickListener([this, dtcFormat](uint64_t keys) {
                 if (keys & KEY_A) {
-                    tsl::shiftItemFocus(dtcFormat);
+                    //tsl::shiftItemFocus(dtcFormat);
                     tsl::changeTo<DTCFormatConfig>(modeName);
                     return true;
                 }
@@ -2000,7 +1988,7 @@ public:
             framePadding->setValue(std::to_string(getCurrentFramePadding()) + " px");
             framePadding->setClickListener([this, framePadding](uint64_t keys) {
                 if (keys & KEY_A) {
-                    tsl::shiftItemFocus(framePadding);
+                    //tsl::shiftItemFocus(framePadding);
                     tsl::changeTo<FramePaddingConfig>(modeName);
                     return true;
                 }
@@ -2092,8 +2080,7 @@ public:
     
     virtual bool handleInput(u64 keysDown, u64 keysHeld, const HidTouchState &touchPos, HidAnalogStickState joyStickPosLeft, HidAnalogStickState joyStickPosRight) override {
         if (keysDown & KEY_B) {
-            triggerRumbleDoubleClick.store(true, std::memory_order_release);
-            triggerExitSound.store(true, std::memory_order_release);
+            triggerExitFeedback();
             lastSelectedItem = modeName;
             tsl::swapTo<MainMenu>();
             return true;

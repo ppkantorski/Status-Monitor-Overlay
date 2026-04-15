@@ -33,7 +33,7 @@ private:
 
     Thread touchPollThread;
     std::atomic<bool> touchPollRunning{false};
-
+    
     void updateLayerPos() {
         if (!ult::limitedMemory) return;
         const int pos = std::max(std::min(
@@ -1534,8 +1534,7 @@ public:
                     isDragging = true;
                     //isRendering = false;
                     //leventSignal(&renderingStopEvent);
-                    triggerRumbleClick.store(true, std::memory_order_release);
-                    triggerOnSound.store(true, std::memory_order_release);
+                    triggerOnFeedback();
                     hasMoved = false;
                     initialTouchPos = touchPos;
                     initialFrameOffsetX = frameOffsetX;
@@ -1584,8 +1583,7 @@ public:
             //isRendering = true;
             //leventClear(&renderingStopEvent);
             clearOnRelease = true;
-            triggerRumbleDoubleClick.store(true, std::memory_order_release);
-            triggerOffSound.store(true, std::memory_order_release);
+            triggerOffFeedback(true);
         }
         
 
@@ -1595,8 +1593,7 @@ public:
             isDragging = true;
             //isRendering = false;
             //leventSignal(&renderingStopEvent);
-            triggerRumbleClick.store(true, std::memory_order_release);
-            triggerOnSound.store(true, std::memory_order_release);
+            triggerOnFeedback();
         } else if (currentPlusHeld && isDragging) {
             // Continue joystick dragging
             static constexpr int JOYSTICK_DEADZONE = 20;
@@ -1654,8 +1651,7 @@ public:
             //isRendering = true;
             //leventClear(&renderingStopEvent);
             clearOnRelease = true;
-            triggerRumbleDoubleClick.store(true, std::memory_order_release);
-            triggerOffSound.store(true, std::memory_order_release);
+            triggerOffFeedback(true);
         }
         
         // Update state for next frame

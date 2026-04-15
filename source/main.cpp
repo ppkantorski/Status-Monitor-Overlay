@@ -1,4 +1,6 @@
 #define TESLA_INIT_IMPL
+
+#include <exception_wrap.hpp>
 #include <tesla.hpp>
 #include "Utils.hpp"
 #include <cstdlib>
@@ -160,8 +162,7 @@ public:
         if (keysDown & KEY_B) {
             
             tsl::swapTo<MainMenu>();
-            triggerRumbleDoubleClick.store(true, std::memory_order_release);
-            triggerExitSound.store(true, std::memory_order_release);
+            triggerExitFeedback();
             return true;
         }
         return false;
@@ -193,8 +194,7 @@ public:
                 return true;
             }
             if (keys & KEY_Y) {
-                triggerRumbleClick.store(true, std::memory_order_release);
-                triggerSettingsSound.store(true, std::memory_order_release);
+                triggerSettingsFeedback();
                 // Launch configurator for Mini mode
                 tsl::swapTo<ConfiguratorOverlay>("Full");
                 return true;
@@ -228,18 +228,17 @@ public:
             }
         }
         if (fileExist) {
-            auto* Mini = new tsl::elm::ListItem("Mini");
+            auto* Mini = new tsl::elm::SilentListItem("Mini");
             Mini->enableShortHoldKey();
             Mini->disableClickAnimation();
             Mini->setClickListener([](uint64_t keys) {
                 if (keys & KEY_A) {
-                    tsl::setNextOverlay(filepath, "-mini_");
+                    tsl::setNextOverlay(filepath, "-mini");
                     tsl::Overlay::get()->close();
                     return true;
                 }
                 if (keys & KEY_Y) {
-                    triggerRumbleClick.store(true, std::memory_order_release);
-                    triggerSettingsSound.store(true, std::memory_order_release);
+                    triggerSettingsFeedback();
                     // Launch configurator for Mini mode
                     tsl::swapTo<ConfiguratorOverlay>("Mini");
                     return true;
@@ -248,18 +247,17 @@ public:
             });
             list->addItem(Mini);
 
-            auto* Micro = new tsl::elm::ListItem("Micro");
+            auto* Micro = new tsl::elm::SilentListItem("Micro");
             Micro->enableShortHoldKey();
             Micro->disableClickAnimation();
             Micro->setClickListener([](uint64_t keys) {
                 if (keys & KEY_A) {
-                    tsl::setNextOverlay(filepath, "-micro_");
+                    tsl::setNextOverlay(filepath, "-micro");
                     tsl::Overlay::get()->close();
                     return true;
                 }
                 if (keys & KEY_Y) {
-                    triggerRumbleClick.store(true, std::memory_order_release);
-                    triggerSettingsSound.store(true, std::memory_order_release);
+                    triggerSettingsFeedback();
                     // Launch configurator for Micro mode
                     tsl::swapTo<ConfiguratorOverlay>("Micro");
                     return true;
@@ -280,7 +278,7 @@ public:
             //});
             //list->addItem(Graphs);
 
-            auto* comFPSGraph = new tsl::elm::ListItem("FPS Graph");
+            auto* comFPSGraph = new tsl::elm::SilentListItem("FPS Graph");
             comFPSGraph->enableShortHoldKey();
             comFPSGraph->disableClickAnimation();
             comFPSGraph->setClickListener([](uint64_t keys) {
@@ -291,14 +289,13 @@ public:
                 //    return true;
                 //}
                 if (keys & KEY_A) {
-                    tsl::setNextOverlay(filepath, "-fps_graph_");
+                    tsl::setNextOverlay(filepath, "-fps_graph");
                     tsl::Overlay::get()->close();
                     return true;
                 }
 
                 if (keys & KEY_Y) {
-                    triggerRumbleClick.store(true, std::memory_order_release);
-                    triggerSettingsSound.store(true, std::memory_order_release);
+                    triggerSettingsFeedback();
                     // Launch configurator for Micro mode
                     tsl::swapTo<ConfiguratorOverlay>("FPS Graph");
                     return true;
@@ -307,7 +304,7 @@ public:
             });
             list->addItem(comFPSGraph);
 
-            auto* comFPSCounter = new tsl::elm::ListItem("FPS Counter");
+            auto* comFPSCounter = new tsl::elm::SilentListItem("FPS Counter");
             comFPSCounter->enableShortHoldKey();
             comFPSCounter->disableClickAnimation();
             comFPSCounter->setClickListener([](uint64_t keys) {
@@ -318,14 +315,13 @@ public:
                 //    return true;
                 //}
                 if (keys & KEY_A) {
-                    tsl::setNextOverlay(filepath, "-fps_counter_");
+                    tsl::setNextOverlay(filepath, "-fps_counter");
                     tsl::Overlay::get()->close();
                     return true;
                 }
 
                 if (keys & KEY_Y) {
-                    triggerRumbleClick.store(true, std::memory_order_release);
-                    triggerSettingsSound.store(true, std::memory_order_release);
+                    triggerSettingsFeedback();
                     // Launch configurator for Micro mode
                     tsl::swapTo<ConfiguratorOverlay>("FPS Counter");
                     return true;
@@ -334,7 +330,7 @@ public:
             });
             list->addItem(comFPSCounter);
 
-            auto* Res = new tsl::elm::ListItem("Game Resolutions");
+            auto* Res = new tsl::elm::SilentListItem("Game Resolutions");
             Res->enableShortHoldKey();
             Res->disableClickAnimation();
             Res->setClickListener([](uint64_t keys) {
@@ -345,13 +341,12 @@ public:
                 //    return true;
                 //}
                 if (keys & KEY_A) {
-                    tsl::setNextOverlay(filepath, "-game_resolutions_");
+                    tsl::setNextOverlay(filepath, "-game_resolutions");
                     tsl::Overlay::get()->close();
                     return true;
                 }
                 if (keys & KEY_Y) {
-                    triggerRumbleClick.store(true, std::memory_order_release);
-                    triggerSettingsSound.store(true, std::memory_order_release);
+                    triggerSettingsFeedback();
                     // Launch configurator for Micro mode
                     tsl::swapTo<ConfiguratorOverlay>("Game Resolutions");
                     return true;
@@ -366,8 +361,7 @@ public:
         Other->setValue(ult::DROPDOWN_SYMBOL);
         Other->setClickListener([](uint64_t keys) {
             if (keys & KEY_A) {
-                triggerRumbleClick.store(true, std::memory_order_release);
-                triggerEnterSound.store(true, std::memory_order_release);
+                //triggerEnterFeedback();
                 tsl::swapTo<OtherMenu>();
                 return true;
             }
@@ -994,16 +988,16 @@ int main(int argc, char **argv) {
 
     // load heap settings outside of loop (only Status Monitor directive)
     ult::currentHeapSize = ult::getCurrentHeapSize();
-    ult::expandedMemory = ult::currentHeapSize >= ult::OverlayHeapSize::Size_8MB;
-    ult::limitedMemory = ult::currentHeapSize == ult::OverlayHeapSize::Size_4MB;
+    ult::expandedMemory = ult::currentHeapSize >= ult::OverlayHeapSize::Size_6MB;
+    ult::limitedMemory = false;//ult::currentHeapSize == ult::OverlayHeapSize::Size_4MB;
     
     
     // Initialize buffer sizes based on expanded memory setting
     if (ult::expandedMemory) {
-        ult::furtherExpandedMemory = ult::currentHeapSize > ult::OverlayHeapSize::Size_8MB;
+        ult::furtherExpandedMemory = ult::currentHeapSize > ult::OverlayHeapSize::Size_6MB;
         
         if (!ult::furtherExpandedMemory) {
-            ult::loaderTitle += "+";
+            //ult::loaderTitle += "+";
             ult::COPY_BUFFER_SIZE = 262144;
             ult::HEX_BUFFER_SIZE = 8192;
             ult::UNZIP_READ_BUFFER = 262144;
@@ -1011,18 +1005,28 @@ int main(int argc, char **argv) {
             ult::DOWNLOAD_READ_BUFFER = 131072;
             ult::DOWNLOAD_WRITE_BUFFER = 131072;
         } else {
-            ult::loaderTitle += "×";
-            ult::COPY_BUFFER_SIZE = 262144*2;
-            ult::HEX_BUFFER_SIZE = 8192;
-            ult::UNZIP_READ_BUFFER = 262144*2;
-            ult::UNZIP_WRITE_BUFFER = 131072*4;
-            ult::DOWNLOAD_READ_BUFFER = 131072*4;
-            ult::DOWNLOAD_WRITE_BUFFER = 131072*4;
+            if (ult::currentHeapSize > ult::OverlayHeapSize::Size_8MB) {
+                ult::loaderTitle += "+";
+                ult::COPY_BUFFER_SIZE = 262144;
+                ult::HEX_BUFFER_SIZE = 8192;
+                ult::UNZIP_READ_BUFFER = 262144;
+                ult::UNZIP_WRITE_BUFFER = 131072;
+                ult::DOWNLOAD_READ_BUFFER = 131072;
+                ult::DOWNLOAD_WRITE_BUFFER = 131072;
+            } else {
+                ult::loaderTitle += "×";
+                ult::COPY_BUFFER_SIZE = 262144*2;
+                ult::HEX_BUFFER_SIZE = 8192;
+                ult::UNZIP_READ_BUFFER = 262144*2;
+                ult::UNZIP_WRITE_BUFFER = 131072*4;
+                ult::DOWNLOAD_READ_BUFFER = 131072*4;
+                ult::DOWNLOAD_WRITE_BUFFER = 131072*4;
+            }
         }
-    } else if (ult::limitedMemory) {
+    } else if (ult::currentHeapSize == ult::OverlayHeapSize::Size_4MB) {
         ult::loaderTitle += "-";
-        ult::DOWNLOAD_READ_BUFFER = 16*1024;
-        ult::UNZIP_READ_BUFFER = 16*1024;
+        //ult::DOWNLOAD_READ_BUFFER = 16*1024;
+        //ult::UNZIP_READ_BUFFER = 16*1024;
     }
     
     systemtickfrequency = armGetSystemTickFreq();
@@ -1055,31 +1059,23 @@ int main(int argc, char **argv) {
             }
         }
     
+        // Pre-scan for --direct: present means launched via combo/direct, absent means UI-initiated.
+        // This replaces the old trailing-underscore convention (e.g. "-mini_" vs "-mini").
+        bool directLaunch = false;
+        for (u8 arg = 1; arg < argc; arg++) {
+            if (strcmp(argv[arg], "--direct") == 0) { directLaunch = true; break; }
+        }
+
         // Process command line arguments
         for (u8 arg = 0; arg < argc; arg++) {
             const char* argStr = argv[arg];
             if (argStr[0] != '-') continue;
             
-            // Check if ends with underscore and create comparison string without it
-            const size_t len = strlen(argStr);
-            const bool hasUnderscore = (len > 1 && argStr[len-1] == '_');
-            
-            // For underscore variants, compare without the trailing underscore
-            char modeStr[32];
-            const char* compareStr;
-            if (hasUnderscore) {
-                strncpy(modeStr, argStr, len - 1);
-                modeStr[len - 1] = '\0';
-                compareStr = modeStr;
-            } else {
-                compareStr = argStr;
-            }
-            
             // Micro mode
-            if (strcasecmp(compareStr, "-micro") == 0) {
+            if (strcasecmp(argStr, "-micro") == 0) {
                 FullMode = false;
                 lastMode = "micro";
-                if (hasUnderscore) {
+                if (!directLaunch) {
                     setupMode(lastMode);
                 } else {
                     skipMain = true;
@@ -1095,10 +1091,10 @@ int main(int argc, char **argv) {
                 return tsl::loop<MicroMode>(argc, argv);
             }
             // Mini mode
-            else if (strcasecmp(compareStr, "-mini") == 0) {
+            else if (strcasecmp(argStr, "-mini") == 0) {
                 FullMode = false;
                 lastMode = "mini";
-                if (hasUnderscore) {
+                if (!directLaunch) {
                     setupMode();
                 } else {
                     skipMain = true;
@@ -1110,10 +1106,10 @@ int main(int argc, char **argv) {
                 return tsl::loop<MiniEntryOverlay>(argc, argv);
             }
             // FPS Graph mode
-            else if (strcasecmp(compareStr, "-fps_graph") == 0) {
+            else if (strcasecmp(argStr, "-fps_graph") == 0) {
                 FullMode = false;
                 lastMode = "fps_graph";
-                if (hasUnderscore) {
+                if (!directLaunch) {
                     setupMode();
                 } else {
                     skipMain = true;
@@ -1125,10 +1121,10 @@ int main(int argc, char **argv) {
                 return tsl::loop<FPSGraphEntryOverlay>(argc, argv);
             }
             // FPS Counter mode
-            else if (strcasecmp(compareStr, "-fps_counter") == 0) {
+            else if (strcasecmp(argStr, "-fps_counter") == 0) {
                 FullMode = false;
                 lastMode = "fps_counter";
-                if (hasUnderscore) {
+                if (!directLaunch) {
                     setupMode();
                 } else {
                     skipMain = true;
@@ -1140,10 +1136,10 @@ int main(int argc, char **argv) {
                 return tsl::loop<FPSCounterEntryOverlay>(argc, argv);
             }
             // Game Resolutions mode
-            else if (strcasecmp(compareStr, "-game_resolutions") == 0) {
+            else if (strcasecmp(argStr, "-game_resolutions") == 0) {
                 FullMode = false;
                 lastMode = "game_resolutions";
-                if (hasUnderscore) {
+                if (!directLaunch) {
                     setupMode();
                 } else {
                     skipMain = true;
