@@ -989,7 +989,7 @@ int main(int argc, char **argv) {
     // load heap settings outside of loop (only Status Monitor directive)
     ult::currentHeapSize = ult::getCurrentHeapSize();
     ult::expandedMemory = ult::currentHeapSize >= ult::OverlayHeapSize::Size_6MB;
-    ult::limitedMemory = false;//ult::currentHeapSize == ult::OverlayHeapSize::Size_4MB;
+    ult::limitedMemory = ult::currentHeapSize == ult::OverlayHeapSize::Size_4MB;
     
     
     // Initialize buffer sizes based on expanded memory setting
