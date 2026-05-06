@@ -562,7 +562,20 @@ public:
                                 // Render remaining text with normal color
                                 if (!restPart.empty()) {
                                     const uint32_t tempPartWidth = renderer->getTextDimensions(tempPart, false, fontsize).first;
-                                    renderer->drawStringWithColoredSections(restPart, false, specialChars, current_x + tempPartWidth, base_y + cachedMargin, fontsize, textColorA, a(settings.separatorColor));
+                                    uint32_t afterTempX = current_x + tempPartWidth;
+                                    const size_t divPos = restPart.find(ult::DIVIDER_SYMBOL);
+                                    if (divPos != std::string::npos) {
+                                        const size_t divLen = ult::DIVIDER_SYMBOL.length();
+                                        afterTempX += renderer->drawString(restPart.substr(0, divPos + divLen), false, afterTempX, base_y + cachedMargin, fontsize, a(settings.separatorColor)).first;
+                                        const std::string afterDiv = restPart.substr(divPos + divLen);
+                                        if (!afterDiv.empty()) {
+                                            static const std::vector<std::string> fanIconChars = {""};
+                                            renderer->drawStringWithColoredSections(afterDiv, false, fanIconChars,
+                                                afterTempX, base_y + cachedMargin, fontsize, textColorA, catColorA);
+                                        }
+                                    } else {
+                                        renderer->drawStringWithColoredSections(restPart, false, specialChars, afterTempX, base_y + cachedMargin, fontsize, textColorA, a(settings.separatorColor));
+                                    }
                                 }
                             } else {
                                 // Fallback: render normally
@@ -621,7 +634,20 @@ public:
                         // Render any remaining text (like " (50%)")
                         if (pos < dataStr.length()) {
                             const std::string restPart = dataStr.substr(pos);
-                            renderer->drawStringWithColoredSections(restPart, false, specialChars, renderX, base_y + cachedMargin, fontsize, textColorA, a(settings.separatorColor));
+                            const size_t divPos = restPart.find(ult::DIVIDER_SYMBOL);
+                            if (divPos != std::string::npos) {
+                                const size_t divLen = ult::DIVIDER_SYMBOL.length();
+                                const std::string beforeAndDiv = restPart.substr(0, divPos + divLen);
+                                renderX += renderer->drawString(beforeAndDiv, false, renderX, base_y + cachedMargin, fontsize, a(settings.separatorColor)).first;
+                                const std::string afterDiv = restPart.substr(divPos + divLen);
+                                if (!afterDiv.empty()) {
+                                    static const std::vector<std::string> fanIconChars = {""};
+                                    renderer->drawStringWithColoredSections(afterDiv, false, fanIconChars,
+                                        renderX, base_y + cachedMargin, fontsize, textColorA, catColorA);
+                                }
+                            } else {
+                                renderer->drawStringWithColoredSections(restPart, false, specialChars, renderX, base_y + cachedMargin, fontsize, textColorA, a(settings.separatorColor));
+                            }
                         }
                         
                         // If parsing failed, fall back to normal rendering

@@ -927,6 +927,90 @@ public:
 };
 
 
+class FullEntryOverlay : public tsl::Overlay {
+public:
+    FullEntryOverlay() {}
+
+    virtual void initServices() override {
+        tsl::hlp::doWithSmSession([this]{
+            apmInitialize();
+            if (hosversionAtLeast(8,0,0)) clkrstCheck = clkrstInitialize();
+            else pcvCheck = pcvInitialize();
+
+            if (R_SUCCEEDED(nvInitialize())) nvCheck = nvOpen(&fd, "/dev/nvhost-ctrl-gpu");
+
+            if (hosversionAtLeast(5,0,0)) tcCheck = tcInitialize();
+
+            if (hosversionAtLeast(6,0,0) && R_SUCCEEDED(pwmInitialize())) {
+                pwmCheck = pwmOpenSession2(&g_ICon, 0x3D000001);
+            }
+
+            i2cCheck = i2cInitialize();
+
+            psmCheck = psmInitialize();
+            if (R_SUCCEEDED(psmCheck)) {
+                psmService = psmGetServiceSession();
+            }
+
+            SaltySD = CheckPort();
+
+            if (SaltySD) {
+                LoadSharedMemoryAndRefreshRate();
+            }
+            if (sysclkIpcRunning() && R_SUCCEEDED(sysclkIpcInitialize())) {
+                uint32_t sysClkApiVer = 0;
+                sysclkIpcGetAPIVersion(&sysClkApiVer);
+                if (sysClkApiVer < 4) {
+                    sysclkIpcExit();
+                }
+                else sysclkCheck = 0;
+            }
+            if (R_SUCCEEDED(splInitialize())) {
+                u64 sku = 0;
+                splGetConfig(SplConfigItem_HardwareType, &sku);
+                switch(sku) {
+                    case 2 ... 5:
+                        isMariko = true;
+                        break;
+                    default:
+                        isMariko = false;
+                }
+            }
+            splExit();
+        });
+        Hinted = envIsSyscallHinted(0x6F);
+    }
+
+    virtual void exitServices() override {
+        CloseThreads();
+        shmemClose(&_sharedmemory);
+        if (R_SUCCEEDED(sysclkCheck)) {
+            sysclkIpcExit();
+        }
+        clkrstExit();
+        pcvExit();
+        tsExit();
+        tcExit();
+        pwmChannelSessionClose(&g_ICon);
+        pwmExit();
+        i2cExit();
+        psmExit();
+        nvClose(fd);
+        nvExit();
+        apmExit();
+    }
+
+    virtual void onShow() override {
+        tsl::hlp::requestForeground(false);
+        //deactivateOriginalFooter = true;
+    }
+
+    virtual std::unique_ptr<tsl::Gui> loadInitialGui() override {
+        return initially<FullOverlay>();
+    }
+};
+
+
 // Helper function to check if overlay file exists
 bool checkOverlayFile(const std::string& filename) {
     struct stat buffer;
@@ -1041,17 +1125,17 @@ int main(int argc, char **argv) {
                 auto& section = sectionIt->second;
                 
                 // Compare and update if values differ
-                const std::string expectedArgs = "(-mini, -micro, -fps_graph, -fps_counter, -game_resolutions)";
+                const std::string expectedArgs = "(-full, -mini, -micro, -fps_graph, -fps_counter, -game_resolutions)";
                 
                 if (section["mode_args"] != expectedArgs) {
                     section["mode_args"] = expectedArgs;
-                    section["mode_labels"] = "(Mini, Micro, FPS Graph, FPS Counter, Game Resolutions)";
+                    section["mode_labels"] = "(Full, Mini, Micro, FPS Graph, FPS Counter, Game Resolutions)";
                     ult::saveIniFileData(ult::OVERLAYS_INI_FILEPATH, iniData);
                 }
             } else {
                 // If section doesn't exist, create it with expected values
-                iniData[filename]["mode_args"] = "(-mini, -micro, -fps_graph, -fps_counter, -game_resolutions)";
-                iniData[filename]["mode_labels"] = "(Mini, Micro, FPS Graph, FPS Counter, Game Resolutions)";
+                iniData[filename]["mode_args"] = "(-full, -mini, -micro, -fps_graph, -fps_counter, -game_resolutions)";
+                iniData[filename]["mode_labels"] = "(Full, Mini, Micro, FPS Graph, FPS Counter, Game Resolutions)";
                 ult::saveIniFileData(ult::OVERLAYS_INI_FILEPATH, iniData);
             }
         }
@@ -1068,8 +1152,16 @@ int main(int argc, char **argv) {
             const char* argStr = argv[arg];
             if (argStr[0] != '-') continue;
             
+
+            // Full mode
+            if (strcasecmp(argStr, "-full") == 0) {
+                FullMode = true;
+                lastMode = "full";
+                skipMain = true;
+                return tsl::loop<FullEntryOverlay>(argc, argv);
+            }
             // Micro mode
-            if (strcasecmp(argStr, "-micro") == 0) {
+            else if (strcasecmp(argStr, "-micro") == 0) {
                 FullMode = false;
                 lastMode = "micro";
                 if (!directLaunch) {

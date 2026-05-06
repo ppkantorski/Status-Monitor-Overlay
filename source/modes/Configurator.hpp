@@ -106,11 +106,12 @@ static constexpr size_t kModeComboSlotCount = 5;
 // for modes that don't have a dedicated mode_args slot (e.g. "Full"), in
 // which case the picker won't be shown.
 inline int modeComboIndexFor(const std::string& modeName) {
-    if (modeName == "Mini")             return 0;
-    if (modeName == "Micro")            return 1;
-    if (modeName == "FPS Graph")        return 2;
-    if (modeName == "FPS Counter")      return 3;
-    if (modeName == "Game Resolutions") return 4;
+    if (modeName == "Full")             return 0;
+    if (modeName == "Mini")             return 1;
+    if (modeName == "Micro")            return 2;
+    if (modeName == "FPS Graph")        return 3;
+    if (modeName == "FPS Counter")      return 4;
+    if (modeName == "Game Resolutions") return 5;
     return -1;
 }
 
@@ -582,6 +583,15 @@ public:
             list->addItem(socVoltage);
 
             if (isMiniMode) {
+                // Toggle to show CPU/GPU/RAM die temps (via HOC IPC or direct SOCTHERM read)
+                auto* compTemps = new tsl::elm::ToggleListItem("CPU/GPU/RAM Temps", getCurrentShowComponentTemps());
+                compTemps->setStateChangedListener([this, section](bool state) {
+                    ult::setIniFileValue(configIniPath, section, "show_component_temps", state ? "true" : "false");
+                });
+                list->addItem(compTemps);
+            }
+
+            if (isMiniMode) {
                 auto* ramLoadCPUGPU = new tsl::elm::ToggleListItem("RAM Load CPU/GPU", getCurrentShowRAMLoadCPUGPU());
                 ramLoadCPUGPU->setStateChangedListener([this, section](bool state) {
                     ult::setIniFileValue(configIniPath, section, "show_RAM_load_CPU_GPU", state ? "true" : "false");
@@ -746,6 +756,13 @@ private:
         convertToUpper(value);
         return value != "FALSE";
     }
+    bool getCurrentShowComponentTemps() {
+        std::string value = ult::parseValueFromIniSection(configIniPath, "mini", "show_component_temps");
+        if (value.empty()) return false;  // Default: false (off)
+        convertToUpper(value);
+        return value != "FALSE";
+    }
+
 
     bool getCurrentInvertBatteryDisplay() {
         const std::string section = isMiniMode ? "mini" : "micro";

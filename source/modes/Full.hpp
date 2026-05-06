@@ -20,6 +20,9 @@ private:
     char SOC_temperature_c[32] = "";
     char PCB_temperature_c[32] = "";
     char skin_temperature_c[32] = "";
+    char CPU_temp_c[16] = "";
+    char GPU_temp_c[16] = "";
+    char MEM_temp_c[16] = "";
     char BatteryDraw_c[64] = "";
     char FPS_var_compressed_c[64] = "";
     char RAM_load_c[64] = "";
@@ -167,12 +170,12 @@ public:
             ///GPU
             if (R_SUCCEEDED(clkrstCheck) || R_SUCCEEDED(pcvCheck) || R_SUCCEEDED(nvCheck)) {
                 
-                uint32_t height_offset = 320-8;
+                uint32_t height_offset = 306;
                 if (realGPU_Hz && settings.showRealFreqs) {
-                    height_offset = 327-8;
+                    height_offset = 313;
                 }
 
-                renderer->drawString("GPU Usage", false, COMMON_MARGIN, 285-8, 20, (settings.catColor1));
+                renderer->drawString("GPU Usage", false, COMMON_MARGIN, 271, 20, (settings.catColor1));
                 if (R_SUCCEEDED(clkrstCheck) || R_SUCCEEDED(pcvCheck)) {
                     if (settings.showTargetFreqs) { 
                         //static auto targetFreqWidth = renderer->getTextDimensions("Target Frequency: ", false, 15).first;
@@ -207,12 +210,12 @@ public:
             ///RAM
             if (R_SUCCEEDED(clkrstCheck) || R_SUCCEEDED(pcvCheck) || R_SUCCEEDED(Hinted)) {
                 
-                uint32_t height_offset = 410;
+                uint32_t height_offset = 397;
                 if (realRAM_Hz && settings.showRealFreqs) {
                     height_offset += 7;
                 }
 
-                renderer->drawString("RAM Usage", false, COMMON_MARGIN, 375, 20, (settings.catColor1));
+                renderer->drawString("RAM Usage", false, COMMON_MARGIN, 362, 20, (settings.catColor1));
                 if (R_SUCCEEDED(clkrstCheck) || R_SUCCEEDED(pcvCheck)) {
                     if (settings.showTargetFreqs) {
                         //static auto targetFreqWidth = renderer->getTextDimensions("Target Frequency: ", false, 15).first;
@@ -250,45 +253,80 @@ public:
             
             ///Thermal
             if (R_SUCCEEDED(i2cCheck) || R_SUCCEEDED(tcCheck) || R_SUCCEEDED(pwmCheck)) {
-                renderer->drawString("Board", false, 20, 550+2, 20, (settings.catColor1));
+                renderer->drawString("Board", false, 20, 536+2, 20, (settings.catColor1));
                 if (R_SUCCEEDED(i2cCheck)) {
-                    renderer->drawString("Battery Power Flow", false, COMMON_MARGIN, 575+2, 15, (settings.catColor2));
-                    renderer->drawStringWithColoredSections(BatteryDraw_c, false, specialChars, COMMON_MARGIN + valueOffset, 575+2, 15, (settings.textColor), settings.separatorColor);
+                    renderer->drawString("Battery Power Flow", false, COMMON_MARGIN, 561+2, 15, (settings.catColor2));
+                    renderer->drawStringWithColoredSections(BatteryDraw_c, false, specialChars, COMMON_MARGIN + valueOffset, 561+2, 15, (settings.textColor), settings.separatorColor);
                 }
                 if (R_SUCCEEDED(pwmCheck)) {
-                    renderer->drawString("Fan Rotation Level", false, COMMON_MARGIN, 590+2, 15, (settings.catColor2));
-                    renderer->drawString(Rotation_SpeedLevel_c, false, COMMON_MARGIN + valueOffset, 590+2, 15, (settings.textColor));
+                    renderer->drawString("Fan Rotation Level", false, COMMON_MARGIN, 576+2, 15, (settings.catColor2));
+                    renderer->drawString(Rotation_SpeedLevel_c, false, COMMON_MARGIN + valueOffset, 576+2, 15, (settings.textColor));
                 }
                 if (R_SUCCEEDED(i2cCheck) || R_SUCCEEDED(tcCheck)) {
-                    static auto socLabelWidth = renderer->getTextDimensions("SOC  ", false, 15).first;
-                    static auto pcbLabelWidth = renderer->getTextDimensions("PCB  ", false, 15).first;
-                    static auto maxLabelWidth = std::max(socLabelWidth, pcbLabelWidth);
-                    static auto skinLabelWidth = renderer->getTextDimensions("Skin  ", false, 15).first;
-                    
-                    // Compute gradient colors for temperatures
-                    const tsl::Color socColor = settings.useDynamicColors ? tsl::GradientColor(SOC_temperatureF) : settings.textColor;
-                    const tsl::Color pcbColor = settings.useDynamicColors ? tsl::GradientColor(PCB_temperatureF) : settings.textColor;
+                    // Pre-measure label widths for column alignment
+                    static auto lbl_cpu  = renderer->getTextDimensions("CPU  ", false, 15).first;
+                    static auto lbl_gpu  = renderer->getTextDimensions("GPU  ", false, 15).first;
+                    static auto lbl_mem  = renderer->getTextDimensions("MEM  ", false, 15).first;
+                    static auto lbl_soc  = renderer->getTextDimensions("SOC  ", false, 15).first;
+                    static auto lbl_pcb  = renderer->getTextDimensions("PCB  ", false, 15).first;
+                    static auto lbl_skin = renderer->getTextDimensions("Skin  ", false, 15).first;
+
+                    // Per-column label width: align CPU/SOC, GPU/PCB, MEM/Skin
+                    const auto col1_lbl = std::max(lbl_cpu, lbl_soc);
+                    const auto col2_lbl = std::max(lbl_gpu, lbl_pcb);
+                    const auto col3_lbl = std::max(lbl_mem, lbl_skin);
+
+                    // Value width — use SOC as reference (all values similar width)
+                    const auto val_w   = renderer->getTextDimensions(SOC_temperature_c, false, 15).first;
+                    const uint32_t col_gap = 14;  // gap between value end and next column label
+
+                    // Total grid width, then compute centered start_x
+                    const uint32_t total_w = col1_lbl + val_w + col_gap
+                                           + col2_lbl + val_w + col_gap
+                                           + col3_lbl + val_w;
+                    const uint32_t start_x = (448 - total_w) / 2;
+
+                    const uint32_t col1_x = start_x;
+                    const uint32_t col2_x = col1_x + col1_lbl + val_w + col_gap;
+                    const uint32_t col3_x = col2_x + col2_lbl + val_w + col_gap;
+
+                    // Temperatures label moves up with the Board section;
+                    // grid rows are hardcoded so they stay fixed in place
+                    const uint32_t temp_label_y = 591 + 2;
+                    const uint32_t row1_y = 620-2-1;  // fixed: CPU / GPU / MEM
+                    const uint32_t row2_y = 635-2+1;  // fixed: SOC / PCB / Skin
+
+                    // Gradient colors for board temps
+                    const tsl::Color socColor  = settings.useDynamicColors ? tsl::GradientColor(SOC_temperatureF) : settings.textColor;
+                    const tsl::Color pcbColor  = settings.useDynamicColors ? tsl::GradientColor(PCB_temperatureF) : settings.textColor;
                     const tsl::Color skinColor = settings.useDynamicColors ? tsl::GradientColor(static_cast<float>(skin_temperaturemiliC) / 1000.0f) : settings.textColor;
-                    
-                    renderer->drawString("Temperatures", false, COMMON_MARGIN, 605+2, 15, (settings.catColor2));
-                    
-                    // SOC - starts at valueOffset next to "Temperatures"
-                    uint32_t current_x = COMMON_MARGIN + valueOffset;
-                    renderer->drawString("SOC  ", false, current_x, 605+2, 15, (settings.catColor2));
-                    current_x += maxLabelWidth;
-                    renderer->drawString(SOC_temperature_c, false, current_x, 605+2, 15, socColor);
-                    
-                    // SKIN - same spacing to the right
-                    current_x += renderer->getTextDimensions(SOC_temperature_c, false, 15).first + 15;
-                    renderer->drawString("Skin  ", false, current_x, 605+2, 15, (settings.catColor2));
-                    current_x += skinLabelWidth;
-                    renderer->drawString(skin_temperature_c, false, current_x, 605+2, 15, skinColor);
-                    
-                    // PCB - below SOC on next line
-                    current_x = COMMON_MARGIN + valueOffset;
-                    renderer->drawString("PCB  ", false, current_x, 620+2, 15, (settings.catColor2));
-                    current_x += maxLabelWidth;
-                    renderer->drawString(PCB_temperature_c, false, current_x, 620+2, 15, pcbColor);
+
+                    // Gradient colors for component die temps
+                    const tsl::Color cpuColor = settings.useDynamicColors ? tsl::GradientColor(componentCPU_mC / 1000.0f) : settings.textColor;
+                    const tsl::Color gpuColor = settings.useDynamicColors ? tsl::GradientColor(componentGPU_mC / 1000.0f) : settings.textColor;
+                    const tsl::Color memColor = settings.useDynamicColors ? tsl::GradientColor(componentRAM_mC / 1000.0f) : settings.textColor;
+
+                    renderer->drawString("Temperatures", false, COMMON_MARGIN, temp_label_y, 15, settings.catColor2);
+
+                    // --- Row 1: CPU | GPU | MEM ---
+                    renderer->drawString("CPU  ", false, col1_x, row1_y, 15, settings.catColor2);
+                    renderer->drawString(CPU_temp_c,   false, col1_x + col1_lbl, row1_y, 15, cpuColor);
+
+                    renderer->drawString("GPU  ", false, col2_x, row1_y, 15, settings.catColor2);
+                    renderer->drawString(GPU_temp_c,   false, col2_x + col2_lbl, row1_y, 15, gpuColor);
+
+                    renderer->drawString("MEM  ", false, col3_x, row1_y, 15, settings.catColor2);
+                    renderer->drawString(MEM_temp_c,   false, col3_x + col3_lbl, row1_y, 15, memColor);
+
+                    // --- Row 2: SOC | PCB | Skin ---
+                    renderer->drawString("SOC  ", false, col1_x, row2_y, 15, settings.catColor2);
+                    renderer->drawString(SOC_temperature_c, false, col1_x + col1_lbl, row2_y, 15, socColor);
+
+                    renderer->drawString("PCB  ", false, col2_x, row2_y, 15, settings.catColor2);
+                    renderer->drawString(PCB_temperature_c, false, col2_x + col2_lbl, row2_y, 15, pcbColor);
+
+                    renderer->drawString("Skin  ", false, col3_x, row2_y, 15, settings.catColor2);
+                    renderer->drawString(skin_temperature_c, false, col3_x + col3_lbl, row2_y, 15, skinColor);
                 }
             }
             
@@ -296,9 +334,9 @@ public:
             if (GameRunning) {
                 const uint32_t width_offset = valueOffset;
                 if (settings.showFPS || settings.showRES || settings.showRDSD) {
-                    renderer->drawString("Game", false, COMMON_MARGIN + width_offset, 185+12, 20, (settings.catColor1));
+                    renderer->drawString("Game", false, COMMON_MARGIN + width_offset, 185+12-1, 20, (settings.catColor1));
                 }
-                uint32_t height = 210+12;
+                uint32_t height = 210+12+1;
                 if (settings.showFPS == true) {
                     static auto pfpsWidth = renderer->getTextDimensions("PFPS  ", false, 15).first;
                     static auto fpsWidth = renderer->getTextDimensions("FPS  ", false, 15).first;
@@ -457,6 +495,10 @@ public:
         snprintf(SOC_temperature_c, sizeof SOC_temperature_c, "%.1f\u00B0C", SOC_temperatureF);
         snprintf(PCB_temperature_c, sizeof PCB_temperature_c, "%.1f\u00B0C", PCB_temperatureF);
         snprintf(skin_temperature_c, sizeof skin_temperature_c, "%d.%d\u00B0C", skin_temperaturemiliC / 1000, (skin_temperaturemiliC / 100) % 10);
+        // HOC component die temps (always populate; displayed when available)
+        snprintf(CPU_temp_c, sizeof CPU_temp_c, "%.1f\u00B0C", componentCPU_mC / 1000.0f);
+        snprintf(GPU_temp_c, sizeof GPU_temp_c, "%.1f\u00B0C", componentGPU_mC / 1000.0f);
+        snprintf(MEM_temp_c, sizeof MEM_temp_c, "%.1f\u00B0C", componentRAM_mC / 1000.0f);
 
         snprintf(Rotation_SpeedLevel_c, sizeof Rotation_SpeedLevel_c, "%.1f%%", Rotation_Duty);
         
@@ -624,13 +666,23 @@ public:
         if (isKeyComboPressed(keysHeld, keysDown)) {
             isRendering = false;
             leventSignal(&renderingStopEvent);
-            triggerExitFeedback();
+            
             skipOnce = true;
             runOnce = true;
             TeslaFPS = 60;
             lastSelectedItem = "Full";
             lastMode = "";
             tsl::swapTo<MainMenu>();
+            if (skipMain) {
+                //lastSelectedItem = "Micro";
+                lastMode = "returning";
+                tsl::Overlay::get()->close();
+                
+            }
+            else {
+                triggerExitFeedback();
+                tsl::swapTo<MainMenu>();
+            }
             return true;
         }
         return false;
