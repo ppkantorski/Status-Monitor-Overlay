@@ -302,9 +302,9 @@ public:
                     const tsl::Color skinColor = settings.useDynamicColors ? tsl::GradientColor(static_cast<float>(skin_temperaturemiliC) / 1000.0f) : settings.textColor;
 
                     // Gradient colors for component die temps
-                    const tsl::Color cpuColor = settings.useDynamicColors ? tsl::GradientColor(componentCPU_mC / 1000.0f) : settings.textColor;
-                    const tsl::Color gpuColor = settings.useDynamicColors ? tsl::GradientColor(componentGPU_mC / 1000.0f) : settings.textColor;
-                    const tsl::Color memColor = settings.useDynamicColors ? tsl::GradientColor(componentRAM_mC / 1000.0f) : settings.textColor;
+                    const tsl::Color cpuColor = settings.useDynamicColors ? tsl::GradientColor(componentCPU_mC / 1000.0f, tsl::DEFAULT_TEMP_RANGE_HIGH) : settings.textColor;
+                    const tsl::Color gpuColor = settings.useDynamicColors ? tsl::GradientColor(componentGPU_mC / 1000.0f, tsl::DEFAULT_TEMP_RANGE_HIGH) : settings.textColor;
+                    const tsl::Color memColor = settings.useDynamicColors ? tsl::GradientColor(componentRAM_mC / 1000.0f, tsl::DEFAULT_TEMP_RANGE_HIGH) : settings.textColor;
 
                     renderer->drawString("Temperatures", false, COMMON_MARGIN, temp_label_y, 15, settings.catColor2);
 

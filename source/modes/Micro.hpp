@@ -1055,7 +1055,15 @@ public:
                     }
                 }
                 qsort(m_resolutionOutput, 8, sizeof(resolutionCalls), compare);
-                
+
+                // Prioritize 16:9 aspect ratios (e.g. 1280x720, 1920x1080) so the
+                // actual game render resolution appears before UI/buffer resolutions.
+                // stable_partition preserves call-count ordering within each group.
+                std::stable_partition(m_resolutionOutput, m_resolutionOutput + 8,
+                    [](const resolutionCalls& r) {
+                        return r.width != 0 && (r.width * 9 == r.height * 16);
+                    });
+
                 // Anti-flicker swap logic
                 static std::pair<uint16_t, uint16_t> old_res[2];
                 

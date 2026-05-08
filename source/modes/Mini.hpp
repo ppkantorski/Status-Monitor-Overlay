@@ -850,7 +850,7 @@ public:
                             const std::string tempPart = currentLine.substr(pos, cPos + 1 - pos);
                             const int temp = atoi(tempPart.c_str());
                             renderer->drawString(tempPart, false, currentX, baseY, fontsize,
-                                settings.useDynamicColors ? tsl::GradientColor((float)temp) : settings.textColor);
+                                settings.useDynamicColors ? tsl::GradientColor((float)temp, tsl::DEFAULT_TEMP_RANGE_HIGH) : settings.textColor);
                             currentX += renderer->getTextDimensions(tempPart, false, fontsize).first;
                             pos = cPos + 1;
                         }
@@ -1370,6 +1370,14 @@ public:
                     }
                 }
                 qsort(m_resolutionOutput, 8, sizeof(resolutionCalls), compare);
+
+                // Prioritize 16:9 aspect ratios (e.g. 1280x720, 1920x1080) so the
+                // actual game render resolution appears before UI/buffer resolutions.
+                // stable_partition preserves call-count ordering within each group.
+                std::stable_partition(m_resolutionOutput, m_resolutionOutput + 8,
+                    [](const resolutionCalls& r) {
+                        return r.width != 0 && (r.width * 9 == r.height * 16);
+                    });
             }
         } else if (!GameRunning && resolutionLookup != 0) {
             resolutionLookup = 0;
