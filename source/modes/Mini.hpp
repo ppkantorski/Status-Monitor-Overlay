@@ -418,6 +418,16 @@ public:
                                 width = renderer->getTextDimensions("88\u00B0C 88\u00B0C 88\u00B0C 100%", false, fontsize).first;
                             else
                                 width = renderer->getTextDimensions("88\u00B0C 88\u00B0C 88\u00B0C", false, fontsize).first;
+                        } else if (!settings.showSideBySideFanSOC &&
+                                   settings.showFanPercentage &&
+                                   settings.showSOCVoltage) {
+                            // Split mode: fan on row 1, SOC volt on row 2 — width = max of both rows
+                            const uint32_t splitRow1 = renderer->getTextDimensions("88\u00B0C 88\u00B0C 88\u00B0C 100%", false, fontsize).first;
+                            const bool bothGroups = settings.showComponentTemps && settings.showSocPcbSkinTemps;
+                            const uint32_t splitRow2 = bothGroups
+                                ? renderer->getTextDimensions("88\u00B0C 88\u00B0C 88\u00B0C444 mV", false, fontsize).first
+                                : renderer->getTextDimensions("444 mV", false, fontsize).first;
+                            width = splitRow1 > splitRow2 ? splitRow1 : splitRow2;
                         } else {
                             if (settings.showSOCVoltage) {
                                 if (settings.showFanPercentage)
@@ -431,7 +441,7 @@ public:
                                     width = renderer->getTextDimensions("88\u00B0C 88\u00B0C 88\u00B0C", false, fontsize).first;
                             }
                         }
-                    } else if (key == "BAT") {
+                                        } else if (key == "BAT") {
                         //dimensions = renderer->drawString("-44.44 W100.0% [44:44]", false, 0, 0, fontsize, renderer->a(0x0000));
                         width = renderer->getTextDimensions("-44.44 W100.0% [44:44]", false, fontsize).first;
                     } else if (key == "FPS") {
@@ -528,7 +538,15 @@ public:
                         labelText = "SOC";
                         flags |= 8;
                     } else if (key == "TMP" && !(flags & 16)) {
-                        if (settings.showComponentTemps && settings.showSocPcbSkinTemps) {
+                        // Split mode: fan on row 1, SOC volt on row 2 (requires both fan AND volt active)
+                        const bool wantSplit = !settings.showSideBySideFanSOC &&
+                                               settings.showFanPercentage &&
+                                               settings.realVolts && settings.showSOCVoltage;
+                        if (wantSplit) {
+                            // Split mode: always 2 rows regardless of temp group config
+                            labelLines.push_back("TMP_SFAN");
+                            labelLines.push_back("TMP_SVOLT");
+                        } else if (settings.showComponentTemps && settings.showSocPcbSkinTemps) {
                             // HOC mode: TMP expands to two rows
                             labelLines.push_back("TMP_TOP");
                             labelLines.push_back("TMP_BOT");
@@ -591,8 +609,10 @@ public:
                 
                 // Use the actual entry count for height calculation
                 cachedHeight = ((fontsize + settings.spacing) * actualEntryCount) + (fontsize / 3) + settings.spacing + topPadding + bottomPadding;
-                // HOC component temps: two TMP rows use half inter-row spacing, so trim box height
-                if (settings.showComponentTemps && settings.showSocPcbSkinTemps)
+                // Two-row TMP blocks (HOC or split fan/volt) use half inter-row spacing, so trim box height
+                if ((settings.showComponentTemps && settings.showSocPcbSkinTemps) ||
+                    (!settings.showSideBySideFanSOC && settings.showFanPercentage &&
+                     settings.realVolts && settings.showSOCVoltage))
                     cachedHeight -= settings.spacing / 2;
                 //const uint32_t margin = (fontsize * 4);
                 
@@ -695,6 +715,7 @@ public:
             
             static const std::vector<std::string> specialChars = {""};
             static uint32_t labelWidth, labelCenterX;
+            static int sfanFanColX = 0; // shared between TMP_SFAN and TMP_SVOLT
             static std::vector<std::string> _variableLines;
             if (!delayUpdate)
                 _variableLines = variableLines;
@@ -715,10 +736,11 @@ public:
                 }
 
                 // Draw label (centered in label region)
-                // TMP_TOP/TMP_BOT/TMP_COMP: skip default label draw (we draw "TMP" manually in the data section)
+                // TMP_TOP/TMP_BOT/TMP_COMP/TMP_SFAN/TMP_SVOLT: skip default label draw (we draw "TMP" manually in the data section)
                 const bool isTmpHocRow = (labelIndex < labelLines.size() &&
                     (labelLines[labelIndex] == "TMP_TOP" || labelLines[labelIndex] == "TMP_BOT" ||
-                     labelLines[labelIndex] == "TMP_COMP"));
+                     labelLines[labelIndex] == "TMP_COMP" ||
+                     labelLines[labelIndex] == "TMP_SFAN" || labelLines[labelIndex] == "TMP_SVOLT"));
                 if (!isTmpHocRow && settings.showLabels && !labelLines[labelIndex].empty()) {
                     labelWidth = renderer->getTextDimensions(labelLines[labelIndex], false, fontsize).first;
                     labelCenterX = cachedBaseX + (margin / 2) - (labelWidth / 2);
@@ -813,21 +835,34 @@ public:
                             pos = tempEnd;
                         }
                         
-                        // Render remaining text: split divider from fan icon so icon gets catColor
+                        // Render remaining: div1(sep) + fan(cat) [+ div2(sep) + voltage(sep)]
                         if (pos < currentLine.length()) {
                             std::string restPart = currentLine.substr(pos);
-                            const size_t divPos = restPart.find(ult::DIVIDER_SYMBOL);
-                            if (divPos != std::string::npos) {
-                                const size_t divLen = ult::DIVIDER_SYMBOL.length();
-                                // Draw everything up to and including the divider in separator color
-                                const std::string beforeAndDiv = restPart.substr(0, divPos + divLen);
-                                currentX += renderer->drawString(beforeAndDiv, false, currentX, baseY, fontsize, settings.separatorColor).first;
-                                // Draw fan icon + percentage: icon in catColor, rest in textColor
-                                const std::string afterDiv = restPart.substr(divPos + divLen);
-                                if (!afterDiv.empty()) {
-                                    static const std::vector<std::string> fanIconChars = {""};
-                                    renderer->drawStringWithColoredSections(afterDiv, false, fanIconChars,
-                                        currentX, baseY, fontsize, settings.textColor, settings.catColor);
+                            const size_t divLen = ult::DIVIDER_SYMBOL.length();
+                            const size_t div1Pos = restPart.find(ult::DIVIDER_SYMBOL);
+                            if (div1Pos != std::string::npos) {
+                                // Draw first divider (before fan) in separatorColor
+                                currentX += renderer->drawString(restPart.substr(0, div1Pos + divLen), false, currentX, baseY, fontsize, settings.separatorColor).first;
+                                const std::string afterDiv1 = restPart.substr(div1Pos + divLen);
+                                const size_t div2Pos = afterDiv1.find(ult::DIVIDER_SYMBOL);
+                                if (div2Pos != std::string::npos) {
+                                    // Fan part before second divider: fan icon in catColor
+                                    static const std::vector<std::string> tmpFanIconChars = {""};
+                                    currentX += renderer->drawStringWithColoredSections(afterDiv1.substr(0, div2Pos), false, tmpFanIconChars,
+                                        currentX, baseY, fontsize, settings.textColor, settings.catColor).first;
+                                    // Second divider (fan -> voltage) in separatorColor
+                                    currentX += renderer->drawString(ult::DIVIDER_SYMBOL, false, currentX, baseY, fontsize, settings.separatorColor).first;
+                                    // Voltage in separatorColor
+                                    const std::string voltPart = afterDiv1.substr(div2Pos + divLen);
+                                    if (!voltPart.empty())
+                                        renderer->drawStringWithColoredSections(voltPart, false, specialChars, currentX, baseY, fontsize, settings.textColor, settings.separatorColor);
+                                } else {
+                                    // Fan only (no voltage), fan icon in catColor
+                                    if (!afterDiv1.empty()) {
+                                        static const std::vector<std::string> tmpFanOnlyChars = {""};
+                                        renderer->drawStringWithColoredSections(afterDiv1, false, tmpFanOnlyChars,
+                                            currentX, baseY, fontsize, settings.textColor, settings.catColor);
+                                    }
                                 }
                             } else {
                                 renderer->drawStringWithColoredSections(restPart, false, specialChars, currentX, baseY, fontsize, settings.textColor, settings.separatorColor);
@@ -993,6 +1028,117 @@ public:
                             const int voltDivX = afterFanX + (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, afterFanX, baseY, fontsize, settings.separatorColor).first;
                             renderer->drawStringWithColoredSections(std::string(MINI_SOC_volt_c), false, specialChars, voltDivX, baseY, fontsize, settings.textColor, settings.separatorColor);
                         }
+                    } else if (labelIndex < labelLines.size() && labelLines[labelIndex] == "TMP_SFAN") {
+                        // Split fan row: temps + fan on row 1; "TMP" label drawn manually.
+                        // HOC split: temps at baseY (top row), label centered between both rows.
+                        // Single-group split: temps+label centered in the 2-row block; fan at baseY (top row).
+                        const bool sfanIsHoc = settings.showComponentTemps && settings.showSocPcbSkinTemps;
+                        const bool sfanHighGrad = settings.showComponentTemps;
+                        const int sfanTempY = sfanIsHoc
+                            ? baseY
+                            : (baseY + ((int)fontsize + (int)settings.spacing / 2) / 2);
+                        const int sfanLabelY = sfanIsHoc
+                            ? (baseY + ((int)fontsize + (int)settings.spacing / 2) / 2)
+                            : sfanTempY;
+                        int currentX = baseX;
+                        size_t pos = 0;
+                        bool parseSuccess = true;
+                        for (int tempCount = 0; tempCount < 3 && parseSuccess && pos < currentLine.length(); tempCount++) {
+                            while (pos < currentLine.length() && currentLine[pos] == ' ') {
+                                renderer->drawString(" ", false, currentX, sfanTempY, fontsize, settings.textColor);
+                                currentX += renderer->getTextDimensions(" ", false, fontsize).first;
+                                pos++;
+                            }
+                            if (pos >= currentLine.length()) break;
+                            const size_t degreesPos = currentLine.find("\u00B0", pos);
+                            if (degreesPos == std::string::npos) { parseSuccess = false; break; }
+                            const size_t cPos = currentLine.find("C", degreesPos);
+                            if (cPos == std::string::npos) { parseSuccess = false; break; }
+                            const std::string tempPart = currentLine.substr(pos, cPos + 1 - pos);
+                            const int temp = atoi(tempPart.c_str());
+                            renderer->drawString(tempPart, false, currentX, sfanTempY, fontsize,
+                                settings.useDynamicColors
+                                    ? (sfanHighGrad
+                                        ? tsl::GradientColor((float)temp, tsl::DEFAULT_TEMP_RANGE_HIGH)
+                                        : tsl::GradientColor((float)temp))
+                                    : settings.textColor);
+                            currentX += renderer->getTextDimensions(tempPart, false, fontsize).first;
+                            pos = cPos + 1;
+                        }
+                        if (!parseSuccess) {
+                            renderer->drawStringWithColoredSections(currentLine, false, specialChars, baseX, sfanTempY, fontsize, settings.textColor, settings.separatorColor);
+                            currentX = baseX + (int)renderer->getTextDimensions(currentLine, false, fontsize).first;
+                        }
+                        // Draw "TMP" label centered (isTmpHocRow skips generic label draw)
+                        if (settings.showLabels) {
+                            const std::string tmpLbl = "TMP";
+                            const uint32_t tmpLblW = renderer->getTextDimensions(tmpLbl, false, fontsize).first;
+                            const uint32_t tmpLblX = cachedBaseX + (margin / 2) - (tmpLblW / 2);
+                            renderer->drawString(tmpLbl, false, tmpLblX + _frameOffsetX + clippingOffsetX,
+                                sfanLabelY, fontsize, settings.catColor);
+                        }
+                        // Record where the fan column starts (used by TMP_SVOLT for single-group volt X alignment)
+                        sfanFanColX = currentX;
+
+                        // Connect center divider
+                        renderer->drawString(ult::DIVIDER_SYMBOL, false, sfanFanColX,
+                            sfanIsHoc ? sfanLabelY : sfanTempY, fontsize, settings.separatorColor);
+
+                        // Draw fan at baseY (top row), always at the fan column X
+                        if (settings.showFanPercentage) {
+                            const int fanDuty = safeFanDuty((int)Rotation_Duty);
+                            const int afterDivX = currentX + renderer->drawString(
+                                ult::DIVIDER_SYMBOL, false, currentX, baseY, fontsize, settings.separatorColor).first;
+                            char fanPctStr[24];
+                            snprintf(fanPctStr, sizeof(fanPctStr), " %d%%", fanDuty);
+                            static const std::vector<std::string> sfanIconChars = {""};
+                            renderer->drawStringWithColoredSections(std::string(fanPctStr), false, sfanIconChars,
+                                afterDivX, baseY, fontsize, settings.textColor, settings.catColor);
+                        }
+                    } else if (labelIndex < labelLines.size() && labelLines[labelIndex] == "TMP_SVOLT") {
+                        // Split volt row: row 2 draws optional SOC/PCB/Skin temps then SOC voltage.
+                        // HOC split (hasTemps): mirrors TMP_BOT with spacing/2 compression.
+                        // Single-group (!hasTemps): volt drawn at sfanFanColX (same X column as fan above).
+                        const bool hasTemps = currentLine.find("\u00B0") != std::string::npos;
+                        const int svoltY = baseY - (int)settings.spacing / 2;
+                        int currentX = hasTemps ? baseX : sfanFanColX;
+                        if (hasTemps) {
+                            size_t pos = 0;
+                            bool parseSuccess = true;
+                            for (int tempCount = 0; tempCount < 3 && parseSuccess && pos < currentLine.length(); tempCount++) {
+                                while (pos < currentLine.length() && currentLine[pos] == ' ') {
+                                    renderer->drawString(" ", false, currentX, svoltY, fontsize, settings.textColor);
+                                    currentX += renderer->getTextDimensions(" ", false, fontsize).first;
+                                    pos++;
+                                }
+                                if (pos >= currentLine.length()) break;
+                                const size_t degreesPos = currentLine.find("\u00B0", pos);
+                                if (degreesPos == std::string::npos) { parseSuccess = false; break; }
+                                const size_t cPos = currentLine.find("C", degreesPos);
+                                if (cPos == std::string::npos) { parseSuccess = false; break; }
+                                const std::string tempPart = currentLine.substr(pos, cPos + 1 - pos);
+                                const int temp = atoi(tempPart.c_str());
+                                renderer->drawString(tempPart, false, currentX, svoltY, fontsize,
+                                    settings.useDynamicColors
+                                        ? tsl::GradientColor((float)temp)
+                                        : settings.textColor);
+                                currentX += renderer->getTextDimensions(tempPart, false, fontsize).first;
+                                pos = cPos + 1;
+                            }
+                            if (!parseSuccess) {
+                                renderer->drawStringWithColoredSections(currentLine, false, specialChars, baseX, svoltY, fontsize, settings.textColor, settings.separatorColor);
+                                currentX = baseX + (int)renderer->getTextDimensions(currentLine, false, fontsize).first;
+                            }
+                        }
+                        // Draw SOC voltage: after temps (HOC) or at fan-column X (single-group)
+                        if (settings.realVolts && settings.showSOCVoltage && MINI_SOC_volt_c[0]) {
+                            const int voltDivX = currentX + (int)renderer->drawString(
+                                ult::DIVIDER_SYMBOL, false, currentX, svoltY, fontsize, settings.separatorColor).first;
+                            renderer->drawStringWithColoredSections(std::string(MINI_SOC_volt_c), false, specialChars,
+                                voltDivX, svoltY, fontsize, settings.textColor, settings.separatorColor);
+                        }
+                        // Both HOC and single-group split use spacing/2 compression: compensate currentY
+                        currentY -= (int)settings.spacing / 2;
                     } else if (labelIndex < labelLines.size() && labelLines[labelIndex] == "MEM") {
                         // MEM memory rendering with gradient color
                         // Extract numeric value for color determination
@@ -1371,9 +1517,13 @@ public:
                         (int)(componentRAM_mC / 1000));
                     skin_temperature_c[0] = '\0';
                 } else {
-                    // Only SOC/PCB/Skin temps (default single-row)
+                    // Only SOC/PCB/Skin temps (default single-row, or split row 1)
                     componentTemps_c[0] = '\0';
-                    if (settings.showFanPercentage) {
+                    // In split mode the fan is drawn by the renderer; strip it from the data string
+                    const bool splitFanSOC = !settings.showSideBySideFanSOC &&
+                                             settings.showFanPercentage &&
+                                             settings.realVolts && settings.showSOCVoltage;
+                    if (!splitFanSOC && settings.showFanPercentage) {
                         snprintf(skin_temperature_c, sizeof(skin_temperature_c),
                             "%d\u00B0C %d\u00B0C %hu\u00B0C %d%%",
                             (int)SOC_temperatureF, (int)PCB_temperatureF,
@@ -1537,7 +1687,24 @@ public:
             }
             else if (key == "TMP" && !(flags & 16)) {
                 if (Temp[0]) strcat(Temp, "\n");
-                if (settings.showComponentTemps && settings.showSocPcbSkinTemps && componentTemps_c[0]) {
+                // Determine if split mode is active (fan on row 1, volt on row 2)
+                const bool splitFanSOC = !settings.showSideBySideFanSOC &&
+                                         settings.showFanPercentage &&
+                                         settings.realVolts && settings.showSOCVoltage;
+                if (splitFanSOC) {
+                    // Split mode: row 1 = fan-row temps, row 2 = volt-row temps (or space)
+                    if (settings.showComponentTemps) {
+                        strcat(Temp, componentTemps_c);   // Row 1: comp temps (fan drawn by renderer)
+                    } else {
+                        strcat(Temp, skin_temperature_c); // Row 1: SOC/PCB/Skin temps (fan drawn by renderer)
+                    }
+                    strcat(Temp, "\n");
+                    if (settings.showComponentTemps && settings.showSocPcbSkinTemps) {
+                        strcat(Temp, skin_temperature_c); // Row 2: SOC/PCB/Skin temps (volt drawn by renderer)
+                    } else {
+                        strcat(Temp, " ");                // Row 2: empty (volt drawn by renderer)
+                    }
+                } else if (settings.showComponentTemps && settings.showSocPcbSkinTemps && componentTemps_c[0]) {
                     // Both rows: component temps first, SOC/PCB/Skin second
                     strcat(Temp, componentTemps_c);
                     strcat(Temp, "\n");

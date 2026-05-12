@@ -1721,6 +1721,7 @@ struct MiniSettings {
     bool showFullResolution;
     bool showFanPercentage;
     bool showSOCVoltage;
+    bool showSideBySideFanSOC;  // true = fan+volt inline (default); false = fan row1, volt row2
     bool useDynamicColors;
     bool showVDDQ;
     bool showVDD2;
@@ -1757,6 +1758,7 @@ struct MicroSettings {
     bool showFullCPU;
     bool showFullResolution;
     bool showSOCVoltage;
+    bool showSideBySideFanSOC;  // true = fan+volt inline (default); false = fan row1, volt row2
     bool useDynamicColors;
     bool showVDDQ;
     bool showVDD2;
@@ -1845,6 +1847,7 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
     settings->useDynamicColors = true;
     settings->showFullCPU = false;
     settings->showSOCVoltage = false;
+    settings->showSideBySideFanSOC = true;  // default: fan+volt side-by-side (existing behavior)
     settings->showVDDQ = false;
     settings->showVDD2 = true;
     settings->decimalVDD2 = false;
@@ -2000,6 +2003,13 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
         key = it->second;
         convertToUpper(key);
         settings->showSOCVoltage = !(key == "FALSE");
+    }
+
+    it = section.find("show_side_by_side_fan_soc");
+    if (it != section.end()) {
+        key = it->second;
+        convertToUpper(key);
+        settings->showSideBySideFanSOC = !(key == "FALSE");
     }
 
     it = section.find("use_dynamic_colors");
@@ -2163,6 +2173,7 @@ ALWAYS_INLINE void GetConfigSettings(MicroSettings* settings) {
     settings->showFullCPU = false;
     settings->showFullResolution = false;
     settings->showSOCVoltage = true;
+    settings->showSideBySideFanSOC = true;  // default: fan+volt side-by-side (existing behavior)
     settings->useDynamicColors = true;
     settings->showVDDQ = false;
     settings->showVDD2 = true;
@@ -2252,6 +2263,13 @@ ALWAYS_INLINE void GetConfigSettings(MicroSettings* settings) {
         key = it->second;
         convertToUpper(key);
         settings->showSOCVoltage = !(key == "FALSE");
+    }
+
+    it = section.find("show_side_by_side_fan_soc");
+    if (it != section.end()) {
+        key = it->second;
+        convertToUpper(key);
+        settings->showSideBySideFanSOC = !(key == "FALSE");
     }
 
     it = section.find("use_dynamic_colors");

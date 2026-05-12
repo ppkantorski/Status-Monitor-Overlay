@@ -583,6 +583,15 @@ public:
             list->addItem(socVoltage);
 
             if (isMiniMode || isMicroMode) {
+                // Side By Side Fan/SOC: when off, fan draws on row 1 and SOC voltage on row 2
+                auto* sideBySideFanSOC = new tsl::elm::ToggleListItem("Side By Side Fan/SOC", getCurrentShowSideBySideFanSOC());
+                sideBySideFanSOC->setStateChangedListener([this, section](bool state) {
+                    ult::setIniFileValue(configIniPath, section, "show_side_by_side_fan_soc", state ? "true" : "false");
+                });
+                list->addItem(sideBySideFanSOC);
+            }
+
+            if (isMiniMode || isMicroMode) {
                 // CPU/GPU/RAM die temps toggle
                 auto* compTemps = new tsl::elm::ToggleListItem("CPU/GPU/RAM Temps", getCurrentShowComponentTemps());
                 // SOC/PCB/Skin temps toggle  
@@ -775,6 +784,14 @@ private:
         const std::string section = isMiniMode ? "mini" : "micro";
         std::string value = ult::parseValueFromIniSection(configIniPath, section, "show_soc_voltage");
         if (value.empty()) return false; // Default: false for mini, true for micro
+        convertToUpper(value);
+        return value != "FALSE";
+    }
+
+    bool getCurrentShowSideBySideFanSOC() {
+        const std::string section = isMiniMode ? "mini" : "micro";
+        std::string value = ult::parseValueFromIniSection(configIniPath, section, "show_side_by_side_fan_soc");
+        if (value.empty()) return true;  // Default: true (side-by-side, existing behavior)
         convertToUpper(value);
         return value != "FALSE";
     }
