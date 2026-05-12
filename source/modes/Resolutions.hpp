@@ -317,6 +317,7 @@ public:
             if (!resolutionLookup) {
                 NxFps -> renderCalls[0].calls = 0xFFFF;
                 resolutionLookup = 1;
+                return; // wait for game to overwrite sentinel before displaying
             }
             else if (resolutionLookup == 1) {
                 if ((NxFps -> renderCalls[0].calls) != 0xFFFF) resolutionLookup = 2;

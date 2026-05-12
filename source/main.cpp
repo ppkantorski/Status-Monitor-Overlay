@@ -456,7 +456,12 @@ public:
             }
             // Fallback: try hoc-clk (Horizon OC native IPC, hoc:clk service)
             else if (hocclkIpcRunning() && R_SUCCEEDED(hocclkIpcInitialize())) {
-                hocclkCheck = 0;
+                uint32_t hocClkApiVer = 0;
+                hocclkIpcGetAPIVersion(&hocClkApiVer);
+                if (hocClkApiVer < 2) {
+                    hocclkIpcExit();
+                }
+                else hocclkCheck = 0;
             }
             if (R_SUCCEEDED(splInitialize())) {
                 u64 sku = 0;
@@ -548,7 +553,12 @@ public:
             }
             // Fallback: try hoc-clk (Horizon OC native IPC, hoc:clk service)
             else if (hocclkIpcRunning() && R_SUCCEEDED(hocclkIpcInitialize())) {
-                hocclkCheck = 0;
+                uint32_t hocClkApiVer = 0;
+                hocclkIpcGetAPIVersion(&hocClkApiVer);
+                if (hocClkApiVer < 2) {
+                    hocclkIpcExit();
+                }
+                else hocclkCheck = 0;
             }
             if (R_SUCCEEDED(splInitialize())) {
                 u64 sku = 0;
@@ -643,7 +653,12 @@ public:
             }
             // Fallback: try hoc-clk (Horizon OC native IPC, hoc:clk service)
             else if (hocclkIpcRunning() && R_SUCCEEDED(hocclkIpcInitialize())) {
-                hocclkCheck = 0;
+                uint32_t hocClkApiVer = 0;
+                hocclkIpcGetAPIVersion(&hocClkApiVer);
+                if (hocClkApiVer < 2) {
+                    hocclkIpcExit();
+                }
+                else hocclkCheck = 0;
             }
             if (R_SUCCEEDED(splInitialize())) {
                 u64 sku = 0;
@@ -741,7 +756,12 @@ public:
             }
             // Fallback: try hoc-clk (Horizon OC native IPC, hoc:clk service)
             else if (hocclkIpcRunning() && R_SUCCEEDED(hocclkIpcInitialize())) {
-                hocclkCheck = 0;
+                uint32_t hocClkApiVer = 0;
+                hocclkIpcGetAPIVersion(&hocClkApiVer);
+                if (hocClkApiVer < 2) {
+                    hocclkIpcExit();
+                }
+                else hocclkCheck = 0;
             }
             if (R_SUCCEEDED(splInitialize())) {
                 u64 sku = 0;
@@ -832,7 +852,12 @@ public:
             }
             // Fallback: try hoc-clk (Horizon OC native IPC, hoc:clk service)
             else if (hocclkIpcRunning() && R_SUCCEEDED(hocclkIpcInitialize())) {
-                hocclkCheck = 0;
+                uint32_t hocClkApiVer = 0;
+                hocclkIpcGetAPIVersion(&hocClkApiVer);
+                if (hocClkApiVer < 2) {
+                    hocclkIpcExit();
+                }
+                else hocclkCheck = 0;
             }
             if (R_SUCCEEDED(splInitialize())) {
                 u64 sku = 0;
@@ -923,7 +948,12 @@ public:
             }
             // Fallback: try hoc-clk (Horizon OC native IPC, hoc:clk service)
             else if (hocclkIpcRunning() && R_SUCCEEDED(hocclkIpcInitialize())) {
-                hocclkCheck = 0;
+                uint32_t hocClkApiVer = 0;
+                hocclkIpcGetAPIVersion(&hocClkApiVer);
+                if (hocClkApiVer < 2) {
+                    hocclkIpcExit();
+                }
+                else hocclkCheck = 0;
             }
             if (R_SUCCEEDED(splInitialize())) {
                 u64 sku = 0;
@@ -1015,7 +1045,12 @@ public:
             }
             // Fallback: try hoc-clk (Horizon OC native IPC, hoc:clk service)
             else if (hocclkIpcRunning() && R_SUCCEEDED(hocclkIpcInitialize())) {
-                hocclkCheck = 0;
+                uint32_t hocClkApiVer = 0;
+                hocclkIpcGetAPIVersion(&hocClkApiVer);
+                if (hocClkApiVer < 2) {
+                    hocclkIpcExit();
+                }
+                else hocclkCheck = 0;
             }
             if (R_SUCCEEDED(splInitialize())) {
                 u64 sku = 0;
