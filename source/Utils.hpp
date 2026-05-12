@@ -25,6 +25,7 @@ extern "C"
 #endif
 
 #include <sysclk/client/ipc.h>
+#include <hocclk/client/ipc.h>
 
 #if defined(__cplusplus)
 }
@@ -84,6 +85,7 @@ Result nvencCheck = 1;
 Result nvjpgCheck = 1;
 Result nifmCheck = 1;
 Result sysclkCheck = 1;
+Result hocclkCheck = 1;
 Result pwmDutyCycleCheck = 1;
 
 //Wi-Fi
@@ -749,6 +751,9 @@ bool usingEOS() {
 
 
 bool usingHOC() {
+    // If hoc-clk (hoc:clk) is connected, we are in HOC mode
+    if (R_SUCCEEDED(hocclkCheck)) return true;
+    // Otherwise check if sys-clk-hoc (sys:clk) reports "hoc" in its version string
     const std::string versionString = getVersionString();
     return versionString.find("hoc") != std::string::npos;
 }
@@ -807,7 +812,7 @@ void Misc(void*) {
             pcvGetClockRate(PcvModule_EMC, &RAM_Hz);
         }
         
-        // Get sys-clk data
+        // Get sys-clk data (sys-clk-hoc: sys:clk service)
         if (R_SUCCEEDED(sysclkCheck)) {
             SysClkContext sysclkCTX;
             if (R_SUCCEEDED(sysclkIpcGetCurrentContext(&sysclkCTX))) {
@@ -824,12 +829,43 @@ void Misc(void*) {
                     realRAM_mV = sysclkCTX.realVolts[2]; 
                     realSOC_mV = sysclkCTX.realVolts[3];
                 }
-                // HOC die temps via IPC struct (perfConfId/realProfile/reserved[0])
+                // HOC die temps via sys-clk-hoc IPC (packed into perfConfId/realProfile/reserved[0])
                 if (usingHOC()) {
                     componentCPU_mC = sysclkCTX.perfConfId;
                     componentGPU_mC = (uint32_t)sysclkCTX.realProfile;
                     componentRAM_mC = (uint32_t)sysclkCTX.reserved[0];
                 }
+            }
+        }
+        // Get hoc-clk data (Horizon OC native hoc:clk IPC)
+        else if (R_SUCCEEDED(hocclkCheck)) {
+            HocClkContext hocclkCTX;
+            if (R_SUCCEEDED(hocclkIpcGetCurrentContext(&hocclkCTX))) {
+                realCPU_Hz = hocclkCTX.stable.realFreqs[HocClkModule_CPU];
+                realGPU_Hz = hocclkCTX.stable.realFreqs[HocClkModule_GPU];
+                realRAM_Hz = hocclkCTX.stable.realFreqs[HocClkModule_MEM];
+                ramLoad[SysClkRamLoad_All] = hocclkCTX.stable.partLoad[HocClkPartLoad_EMC];
+                ramLoad[SysClkRamLoad_Cpu] = hocclkCTX.stable.partLoad[HocClkPartLoad_EMCCpu];
+                if (realVoltsPolling) {
+                    realCPU_mV = hocclkCTX.stable.voltages[HocClkVoltage_CPU];
+                    realGPU_mV = hocclkCTX.stable.voltages[HocClkVoltage_GPU];
+                    // voltages[] are in µV. Convert to mV then pack:
+                    // vdd2_mV * 100000 + vddq_mV * 10  (display unpacks same way as sys-clk-hoc)
+                    // Erista: EMCVDDQ == EMCVDD2 so skip VDDQ (matches sys-clk-hoc ipc_service.cpp)
+                    {
+                        const float    hoc_vdd2_mV = (float)hocclkCTX.stable.voltages[HocClkVoltage_EMCVDD2] / 1000.0f;
+                        const uint32_t hoc_vddq_mV = hocclkCTX.stable.voltages[HocClkVoltage_EMCVDDQ] / 1000u;
+                        realRAM_mV = (uint32_t)(hoc_vdd2_mV * 100000.0f);
+                        if (hoc_vddq_mV < 1000u) {  // Mariko: VDDQ is separate lower rail
+                            realRAM_mV += hoc_vddq_mV * 10u;
+                        }
+                    }
+                    realSOC_mV = hocclkCTX.stable.voltages[HocClkVoltage_SOC];
+                }
+                // HOC die temps directly from hoc-clk IPC (per-die SOCTHERM values)
+                componentCPU_mC = (uint32_t)hocclkCTX.stable.temps[HocClkThermalSensor_CPU];
+                componentGPU_mC = (uint32_t)hocclkCTX.stable.temps[HocClkThermalSensor_GPU];
+                componentRAM_mC = (uint32_t)hocclkCTX.stable.temps[HocClkThermalSensor_MEM];
             }
         }
 
@@ -1010,7 +1046,7 @@ void Misc3(void*) {
     do {
         mutexLock(&mutex_Misc);
         
-        // Get sys-clk data
+        // Get sys-clk data (sys-clk-hoc: sys:clk service)
         if (R_SUCCEEDED(sysclkCheck)) {
             SysClkContext sysclkCTX;
             if (R_SUCCEEDED(sysclkIpcGetCurrentContext(&sysclkCTX))) {
@@ -1024,12 +1060,40 @@ void Misc3(void*) {
                     realRAM_mV = sysclkCTX.realVolts[2]; 
                     realSOC_mV = sysclkCTX.realVolts[3];
                 }
-                // HOC die temps via IPC struct
+                // HOC die temps via sys-clk-hoc IPC (packed into perfConfId/realProfile/reserved[0])
                 if (usingHOC()) {
                     componentCPU_mC = sysclkCTX.perfConfId;
                     componentGPU_mC = (uint32_t)sysclkCTX.realProfile;
                     componentRAM_mC = (uint32_t)sysclkCTX.reserved[0];
                 }
+            }
+        }
+        // Get hoc-clk data (Horizon OC native hoc:clk IPC)
+        else if (R_SUCCEEDED(hocclkCheck)) {
+            HocClkContext hocclkCTX;
+            if (R_SUCCEEDED(hocclkIpcGetCurrentContext(&hocclkCTX))) {
+                ramLoad[SysClkRamLoad_All] = hocclkCTX.stable.partLoad[HocClkPartLoad_EMC];
+                ramLoad[SysClkRamLoad_Cpu] = hocclkCTX.stable.partLoad[HocClkPartLoad_EMCCpu];
+                if (realVoltsPolling) {
+                    realCPU_mV = hocclkCTX.stable.voltages[HocClkVoltage_CPU];
+                    realGPU_mV = hocclkCTX.stable.voltages[HocClkVoltage_GPU];
+                    // voltages[] are in µV. Convert to mV then pack:
+                    // vdd2_mV * 100000 + vddq_mV * 10  (display unpacks same way as sys-clk-hoc)
+                    // Erista: EMCVDDQ == EMCVDD2 so skip VDDQ (matches sys-clk-hoc ipc_service.cpp)
+                    {
+                        const float    hoc_vdd2_mV = (float)hocclkCTX.stable.voltages[HocClkVoltage_EMCVDD2] / 1000.0f;
+                        const uint32_t hoc_vddq_mV = hocclkCTX.stable.voltages[HocClkVoltage_EMCVDDQ] / 1000u;
+                        realRAM_mV = (uint32_t)(hoc_vdd2_mV * 100000.0f);
+                        if (hoc_vddq_mV < 1000u) {  // Mariko: VDDQ is separate lower rail
+                            realRAM_mV += hoc_vddq_mV * 10u;
+                        }
+                    }
+                    realSOC_mV = hocclkCTX.stable.voltages[HocClkVoltage_SOC];
+                }
+                // HOC die temps directly from hoc-clk IPC (per-die SOCTHERM values)
+                componentCPU_mC = (uint32_t)hocclkCTX.stable.temps[HocClkThermalSensor_CPU];
+                componentGPU_mC = (uint32_t)hocclkCTX.stable.temps[HocClkThermalSensor_GPU];
+                componentRAM_mC = (uint32_t)hocclkCTX.stable.temps[HocClkThermalSensor_MEM];
             }
         }
 

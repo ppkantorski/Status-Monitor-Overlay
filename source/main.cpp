@@ -454,6 +454,10 @@ public:
                 }
                 else sysclkCheck = 0;
             }
+            // Fallback: try hoc-clk (Horizon OC native IPC, hoc:clk service)
+            else if (hocclkIpcRunning() && R_SUCCEEDED(hocclkIpcInitialize())) {
+                hocclkCheck = 0;
+            }
             if (R_SUCCEEDED(splInitialize())) {
                 u64 sku = 0;
                 splGetConfig(SplConfigItem_HardwareType, &sku);
@@ -475,6 +479,10 @@ public:
         CloseThreads();
         if (R_SUCCEEDED(sysclkCheck)) {
             sysclkIpcExit();
+        }
+        if (R_SUCCEEDED(hocclkCheck)) {
+            hocclkIpcExit();
+            hocclkCheck = 1;
         }
         shmemClose(&_sharedmemory);
         //Exit services
@@ -538,6 +546,10 @@ public:
                 }
                 else sysclkCheck = 0;
             }
+            // Fallback: try hoc-clk (Horizon OC native IPC, hoc:clk service)
+            else if (hocclkIpcRunning() && R_SUCCEEDED(hocclkIpcInitialize())) {
+                hocclkCheck = 0;
+            }
             if (R_SUCCEEDED(splInitialize())) {
                 u64 sku = 0;
                 splGetConfig(SplConfigItem_HardwareType, &sku);
@@ -559,6 +571,10 @@ public:
         shmemClose(&_sharedmemory);
         if (R_SUCCEEDED(sysclkCheck)) {
             sysclkIpcExit();
+        }
+        if (R_SUCCEEDED(hocclkCheck)) {
+            hocclkIpcExit();
+            hocclkCheck = 1;
         }
         //Exit services
         clkrstExit();
@@ -625,6 +641,10 @@ public:
                 }
                 else sysclkCheck = 0;
             }
+            // Fallback: try hoc-clk (Horizon OC native IPC, hoc:clk service)
+            else if (hocclkIpcRunning() && R_SUCCEEDED(hocclkIpcInitialize())) {
+                hocclkCheck = 0;
+            }
             if (R_SUCCEEDED(splInitialize())) {
                 u64 sku = 0;
                 splGetConfig(SplConfigItem_HardwareType, &sku);
@@ -647,6 +667,10 @@ public:
         shmemClose(&_sharedmemory);
         if (R_SUCCEEDED(sysclkCheck)) {
             sysclkIpcExit();
+        }
+        if (R_SUCCEEDED(hocclkCheck)) {
+            hocclkIpcExit();
+            hocclkCheck = 1;
         }
         // Exit services
         clkrstExit();
@@ -715,6 +739,10 @@ public:
                 }
                 else sysclkCheck = 0;
             }
+            // Fallback: try hoc-clk (Horizon OC native IPC, hoc:clk service)
+            else if (hocclkIpcRunning() && R_SUCCEEDED(hocclkIpcInitialize())) {
+                hocclkCheck = 0;
+            }
             if (R_SUCCEEDED(splInitialize())) {
                 u64 sku = 0;
                 splGetConfig(SplConfigItem_HardwareType, &sku);
@@ -736,6 +764,10 @@ public:
         shmemClose(&_sharedmemory);
         if (R_SUCCEEDED(sysclkCheck)) {
             sysclkIpcExit();
+        }
+        if (R_SUCCEEDED(hocclkCheck)) {
+            hocclkIpcExit();
+            hocclkCheck = 1;
         }
         clkrstExit();
         pcvExit();
@@ -798,6 +830,10 @@ public:
                 }
                 else sysclkCheck = 0;
             }
+            // Fallback: try hoc-clk (Horizon OC native IPC, hoc:clk service)
+            else if (hocclkIpcRunning() && R_SUCCEEDED(hocclkIpcInitialize())) {
+                hocclkCheck = 0;
+            }
             if (R_SUCCEEDED(splInitialize())) {
                 u64 sku = 0;
                 splGetConfig(SplConfigItem_HardwareType, &sku);
@@ -819,6 +855,10 @@ public:
         shmemClose(&_sharedmemory);
         if (R_SUCCEEDED(sysclkCheck)) {
             sysclkIpcExit();
+        }
+        if (R_SUCCEEDED(hocclkCheck)) {
+            hocclkIpcExit();
+            hocclkCheck = 1;
         }
         clkrstExit();
         pcvExit();
@@ -881,6 +921,10 @@ public:
                 }
                 else sysclkCheck = 0;
             }
+            // Fallback: try hoc-clk (Horizon OC native IPC, hoc:clk service)
+            else if (hocclkIpcRunning() && R_SUCCEEDED(hocclkIpcInitialize())) {
+                hocclkCheck = 0;
+            }
             if (R_SUCCEEDED(splInitialize())) {
                 u64 sku = 0;
                 splGetConfig(SplConfigItem_HardwareType, &sku);
@@ -902,6 +946,10 @@ public:
         shmemClose(&_sharedmemory);
         if (R_SUCCEEDED(sysclkCheck)) {
             sysclkIpcExit();
+        }
+        if (R_SUCCEEDED(hocclkCheck)) {
+            hocclkIpcExit();
+            hocclkCheck = 1;
         }
         clkrstExit();
         pcvExit();
@@ -965,6 +1013,10 @@ public:
                 }
                 else sysclkCheck = 0;
             }
+            // Fallback: try hoc-clk (Horizon OC native IPC, hoc:clk service)
+            else if (hocclkIpcRunning() && R_SUCCEEDED(hocclkIpcInitialize())) {
+                hocclkCheck = 0;
+            }
             if (R_SUCCEEDED(splInitialize())) {
                 u64 sku = 0;
                 splGetConfig(SplConfigItem_HardwareType, &sku);
@@ -986,6 +1038,10 @@ public:
         shmemClose(&_sharedmemory);
         if (R_SUCCEEDED(sysclkCheck)) {
             sysclkIpcExit();
+        }
+        if (R_SUCCEEDED(hocclkCheck)) {
+            hocclkIpcExit();
+            hocclkCheck = 1;
         }
         clkrstExit();
         pcvExit();
