@@ -353,7 +353,7 @@ public:
                             else
                                 width = renderer->getTextDimensions("100%@4444.4444 mV", false, fontsize).first;
                         }
-                    } else if (key == "GPU" || (key == "RAM" && settings.showRAMLoad && R_SUCCEEDED(sysclkCheck))) {
+                    } else if (key == "GPU" || (key == "RAM" && settings.showRAMLoad && (R_SUCCEEDED(sysclkCheck) || R_SUCCEEDED(hocclkCheck)))) {
                         //dimensions = renderer->drawString("100.0%@4444.4", false, 0, 0, fontsize, renderer->a(0x0000));
 
                         if (!settings.showRAMLoadCPUGPU) {
@@ -369,7 +369,7 @@ public:
                                 width = renderer->getTextDimensions("100%[100%,100%]@4444.4444 mV", false, fontsize).first;
                             }
                         }
-                    } else if (key == "RAM" && (!settings.showRAMLoad || R_FAILED(sysclkCheck))) {
+                    } else if (key == "RAM" && (!settings.showRAMLoad || (R_FAILED(sysclkCheck) && R_FAILED(hocclkCheck)))) {
                         //dimensions = renderer->drawString("44444444MB@4444.4", false, 0, 0, fontsize, renderer->a(0x0000));
                         if (!settings.realVolts) {
                             width = renderer->getTextDimensions("100%@4444.4", false, fontsize).first;
@@ -1152,7 +1152,7 @@ public:
             } else {
                 unsigned ramLoadInt;
                 
-                if (R_SUCCEEDED(sysclkCheck)) {
+                if (R_SUCCEEDED(sysclkCheck) || R_SUCCEEDED(hocclkCheck)) {
                     ramLoadInt = ramLoad[SysClkRamLoad_All] / 10;
                     
                     if (settings.showRAMLoadCPUGPU) {

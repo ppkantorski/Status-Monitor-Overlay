@@ -236,7 +236,7 @@ public:
                     else if (realRAM_Hz && settings.showDeltas && (settings.showRealFreqs || settings.showTargetFreqs)) {
                         renderer->drawString(DeltaRAM_c, false, COMMON_MARGIN +  deltaOffset, height_offset, 15, (settings.textColor));
                     }
-                    if (R_SUCCEEDED(sysclkCheck)) {
+                    if (R_SUCCEEDED(sysclkCheck) || R_SUCCEEDED(hocclkCheck)) {
                         static std::vector<std::string> ramLoadColoredChars = {"CPU", "GPU"};
                         //static auto loadLabelWidth = renderer->getTextDimensions("Load: ", false, 15).first;
                         renderer->drawString("Load", false, COMMON_MARGIN, height_offset+15, 15, (settings.catColor2));
@@ -483,7 +483,7 @@ public:
             RAMPct_systemunsafe
         );
         
-        if (R_SUCCEEDED(sysclkCheck)) {
+        if (R_SUCCEEDED(sysclkCheck) || R_SUCCEEDED(hocclkCheck)) {
             const int RAM_GPU_Load = ramLoad[SysClkRamLoad_All] - ramLoad[SysClkRamLoad_Cpu];
             snprintf(RAM_load_c, sizeof RAM_load_c, 
                 "%u.%u%%    CPU  %u.%u%%   GPU  %u.%u%%",

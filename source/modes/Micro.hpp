@@ -844,8 +844,8 @@ public:
             snprintf(MICRO_RAM_all_c, sizeof(MICRO_RAM_all_c), "%.0f%.0fGB", RAM_Used_all_f, RAM_Total_all_f);
         } else {
             // User wants percentage display
-            if (R_SUCCEEDED(sysclkCheck)) {
-                // Use sys-clk's RAM load if available
+            if (R_SUCCEEDED(sysclkCheck) || R_SUCCEEDED(hocclkCheck)) {
+                // Use IPC RAM load if available (sys-clk-hoc or hoc-clk)
                 snprintf(MICRO_RAM_all_c, sizeof(MICRO_RAM_all_c), "%hu%%",
                          ramLoad[SysClkRamLoad_All] / 10);
             } else {
