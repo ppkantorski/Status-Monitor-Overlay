@@ -1740,6 +1740,7 @@ struct MiniSettings {
     bool showRAMLoad;
     bool showRAMLoadCPUGPU;
     bool showComponentTemps;    // HOC: show CPU/GPU/RAM die temps row
+    bool showSocPcbSkinTemps;   // show SOC/PCB/Skin temps row (default: true)
     bool invertBatteryDisplay;
     bool disableScreenshots;
     bool sleepExit;
@@ -1773,6 +1774,9 @@ struct MicroSettings {
     uint16_t textColor;
     std::string show;
     bool showRAMLoad;
+    bool showComponentTemps;    // show CPU/GPU/RAM die temps (default: false)
+    bool showSocPcbSkinTemps;   // show SOC/PCB/Skin temps (default: true)
+    bool showSideBySideTemps;   // show both temp groups on one line with divider (default: false)
     bool setPosBottom;
     bool disableScreenshots;
     bool sleepExit;
@@ -1860,6 +1864,7 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
     settings->showRAMLoad = true;
     settings->showRAMLoadCPUGPU = false;
     settings->showComponentTemps = false;
+    settings->showSocPcbSkinTemps = true;
     settings->invertBatteryDisplay = true;
     settings->refreshRate = 1;
     settings->disableScreenshots = false;
@@ -2077,6 +2082,17 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
         settings->showComponentTemps = (key != "FALSE");
     }
 
+    // Process SOC/PCB/Skin temps flag
+    it = section.find("show_soc_pcb_skin_temps");
+    if (it != section.end()) {
+        key = it->second;
+        convertToUpper(key);
+        settings->showSocPcbSkinTemps = (key != "FALSE");
+    }
+    // Enforce mutual exclusivity: at least one must be on
+    if (!settings->showComponentTemps && !settings->showSocPcbSkinTemps)
+        settings->showSocPcbSkinTemps = true;
+
     // Invert the battery display value
     it = section.find("invert_battery_display");
     if (it != section.end()) {
@@ -2164,6 +2180,9 @@ ALWAYS_INLINE void GetConfigSettings(MicroSettings* settings) {
     convertStrToRGBA4444("#FFFF", &(settings->textColor));
     settings->show = "FPS+CPU+GPU+RAM+SOC+BAT+DTC";
     settings->showRAMLoad = true;
+    settings->showComponentTemps = false;
+    settings->showSocPcbSkinTemps = true;
+    settings->showSideBySideTemps = false;
     settings->setPosBottom = false;
     settings->disableScreenshots = false;
     settings->sleepExit = false;
@@ -2387,6 +2406,34 @@ ALWAYS_INLINE void GetConfigSettings(MicroSettings* settings) {
         convertToUpper(key);
         settings->sleepExit = (key != "FALSE");
     }
+
+    // Process component temps flag (also used in Micro)
+    it = section.find("show_component_temps");
+    if (it != section.end()) {
+        key = it->second;
+        convertToUpper(key);
+        settings->showComponentTemps = (key != "FALSE");
+    }
+
+    // Process SOC/PCB/Skin temps flag
+    it = section.find("show_soc_pcb_skin_temps");
+    if (it != section.end()) {
+        key = it->second;
+        convertToUpper(key);
+        settings->showSocPcbSkinTemps = (key != "FALSE");
+    }
+
+    // Process side-by-side temps flag
+    it = section.find("show_side_by_side_temps");
+    if (it != section.end()) {
+        key = it->second;
+        convertToUpper(key);
+        settings->showSideBySideTemps = (key != "FALSE");
+    }
+
+    // Enforce mutual exclusivity: at least one temp group must be on
+    if (!settings->showComponentTemps && !settings->showSocPcbSkinTemps)
+        settings->showSocPcbSkinTemps = true;
 
 }
 

@@ -582,13 +582,43 @@ public:
             });
             list->addItem(socVoltage);
 
-            if (isMiniMode) {
-                // Toggle to show CPU/GPU/RAM die temps (via HOC IPC or direct SOCTHERM read)
+            if (isMiniMode || isMicroMode) {
+                // CPU/GPU/RAM die temps toggle
                 auto* compTemps = new tsl::elm::ToggleListItem("CPU/GPU/RAM Temps", getCurrentShowComponentTemps());
-                compTemps->setStateChangedListener([this, section](bool state) {
-                    ult::setIniFileValue(configIniPath, section, "show_component_temps", state ? "true" : "false");
+                // SOC/PCB/Skin temps toggle  
+                auto* socPcbTemps = new tsl::elm::ToggleListItem("SOC/PCB/Skin Temps", getCurrentShowSocPcbSkinTemps());
+
+                // Mutual exclusivity: at least one must always be on
+                compTemps->setStateChangedListener([this, section, compTemps, socPcbTemps](bool state) {
+                    if (!state && !socPcbTemps->getState()) {
+                        // Revert: can't turn off the last active temps toggle
+                        compTemps->setState(true);
+                        ult::setIniFileValue(configIniPath, section, "show_component_temps", "true");
+                    } else {
+                        ult::setIniFileValue(configIniPath, section, "show_component_temps", state ? "true" : "false");
+                    }
                 });
+                socPcbTemps->setStateChangedListener([this, section, compTemps, socPcbTemps](bool state) {
+                    if (!state && !compTemps->getState()) {
+                        // Revert: can't turn off the last active temps toggle
+                        socPcbTemps->setState(true);
+                        ult::setIniFileValue(configIniPath, section, "show_soc_pcb_skin_temps", "true");
+                    } else {
+                        ult::setIniFileValue(configIniPath, section, "show_soc_pcb_skin_temps", state ? "true" : "false");
+                    }
+                });
+
                 list->addItem(compTemps);
+                list->addItem(socPcbTemps);
+
+                if (isMicroMode) {
+                    // Side By Side Temps: show both groups on one line with divider (default off)
+                    auto* sideBySide = new tsl::elm::ToggleListItem("Side By Side Temps", getCurrentShowSideBySideTemps());
+                    sideBySide->setStateChangedListener([this](bool state) {
+                        ult::setIniFileValue(configIniPath, "micro", "show_side_by_side_temps", state ? "true" : "false");
+                    });
+                    list->addItem(sideBySide);
+                }
             }
 
             if (isMiniMode) {
@@ -757,7 +787,23 @@ private:
         return value != "FALSE";
     }
     bool getCurrentShowComponentTemps() {
-        std::string value = ult::parseValueFromIniSection(configIniPath, "mini", "show_component_temps");
+        const std::string section = isMiniMode ? "mini" : "micro";
+        std::string value = ult::parseValueFromIniSection(configIniPath, section, "show_component_temps");
+        if (value.empty()) return false;  // Default: false (off)
+        convertToUpper(value);
+        return value != "FALSE";
+    }
+
+    bool getCurrentShowSocPcbSkinTemps() {
+        const std::string section = isMiniMode ? "mini" : "micro";
+        std::string value = ult::parseValueFromIniSection(configIniPath, section, "show_soc_pcb_skin_temps");
+        if (value.empty()) return true;  // Default: true (on)
+        convertToUpper(value);
+        return value != "FALSE";
+    }
+
+    bool getCurrentShowSideBySideTemps() {
+        std::string value = ult::parseValueFromIniSection(configIniPath, "micro", "show_side_by_side_temps");
         if (value.empty()) return false;  // Default: false (off)
         convertToUpper(value);
         return value != "FALSE";
