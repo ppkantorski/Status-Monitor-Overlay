@@ -125,7 +125,15 @@ public:
 
         if (ult::limitedMemory && settings.setPosBottom) {
             const auto [horizontalUnderscanPixels, verticalUnderscanPixels] = tsl::gfx::getUnderscanPixels();
-            tsl::gfx::Renderer::get().setLayerPos(0, !verticalUnderscanPixels ? 1038 : 1038- (tsl::cfg::ScreenHeight/720. * verticalUnderscanPixels) +0.5);
+            // VI space is always 1080 units tall; the layer must be positioned so its
+            // bottom edge aligns with the screen bottom.  At handheld 720p the scale
+            // factor is 1.5x, so: layerY = 1080 - FramebufferHeight * 1.5
+            // (The old hardcoded 1038 was 1080 - 28*1.5 for the former 28-row FB.)
+            const float bottomVI = 1080.0f - static_cast<float>(tsl::cfg::FramebufferHeight) * 1.5f;
+            tsl::gfx::Renderer::get().setLayerPos(0,
+                !verticalUnderscanPixels
+                    ? static_cast<uint32_t>(bottomVI)
+                    : static_cast<uint32_t>(bottomVI - (tsl::cfg::ScreenHeight / 720.0f * verticalUnderscanPixels) + 0.5f));
         }
 
         if (settings.disableScreenshots) {

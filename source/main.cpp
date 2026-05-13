@@ -1117,7 +1117,7 @@ inline void setupMode(const std::string& modeType = "") {
             ult::DefaultFramebufferHeight = 720;
         } else {
             ult::DefaultFramebufferWidth = 1280;
-            ult::DefaultFramebufferHeight = 28;
+            ult::DefaultFramebufferHeight = 360;
         }
     } else {
         if (!ult::limitedMemory) {
@@ -1265,7 +1265,7 @@ int main(int argc, char **argv) {
                         ult::DefaultFramebufferHeight = 720;
                     } else {
                         ult::DefaultFramebufferWidth = 1280;
-                        ult::DefaultFramebufferHeight = 28;
+                        ult::DefaultFramebufferHeight = 360;
                     }
                 }
                 return tsl::loop<MicroMode>(argc, argv);
