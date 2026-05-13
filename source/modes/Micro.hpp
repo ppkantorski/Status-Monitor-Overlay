@@ -799,7 +799,7 @@ public:
                                         rx, gridBotY, fontsize, textColorA, (settings.separatorColor));
                                 }
                             }
-} else if (tmpIsGrid) {
+                        } else if (tmpIsGrid) {
                             // —— GRID MODE: two rows ——
                             // Top row: CPU/GPU/RAM die temps with HIGH gradient
                             {
