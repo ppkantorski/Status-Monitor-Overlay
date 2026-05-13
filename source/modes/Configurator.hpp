@@ -1230,6 +1230,109 @@ public:
 };
 
 
+// Micro Horizontal Padding (0–10 px)
+class MicroHPaddingConfig : public tsl::Gui {
+    int currentPadding;
+public:
+    MicroHPaddingConfig() {
+        const std::string value = ult::parseValueFromIniSection(configIniPath, "micro", "horizontal_padding");
+        currentPadding = value.empty() ? 8 : std::clamp(atoi(value.c_str()), 0, 10);
+    }
+    ~MicroHPaddingConfig() { lastSelectedListItem = nullptr; }
+
+    virtual tsl::elm::Element* createUI() override {
+        auto* list = new tsl::elm::List();
+        list->addItem(new tsl::elm::CategoryHeader("Horizontal Padding"));
+        for (int p = 0; p <= 10; ++p) {
+            auto* item = new tsl::elm::ListItem(std::to_string(p) + " px");
+            if (p == currentPadding) {
+                item->setValue(ult::CHECKMARK_SYMBOL);
+                lastSelectedListItem = item;
+            }
+            item->setClickListener([this, item, p](uint64_t keys) {
+                if (keys & KEY_A) {
+                    ult::setIniFileValue(configIniPath, "micro", "horizontal_padding", std::to_string(p));
+                    item->setValue(ult::CHECKMARK_SYMBOL);
+                    if (lastSelectedListItem && item != lastSelectedListItem)
+                        lastSelectedListItem->setValue("");
+                    lastSelectedListItem = item;
+                    return true;
+                }
+                return false;
+            });
+            list->addItem(item);
+        }
+        list->jumpToItem("", ult::CHECKMARK_SYMBOL, false);
+        auto* rootFrame = new tsl::elm::OverlayFrame("Status Monitor", "Configuration");
+        rootFrame->setContent(list);
+        return rootFrame;
+    }
+
+    virtual bool handleInput(u64 keysDown, u64 keysHeld, const HidTouchState &touchPos, HidAnalogStickState joyStickPosLeft, HidAnalogStickState joyStickPosRight) override {
+        if (keysDown & KEY_B) {
+            triggerExitFeedback();
+            jumpItemName = "Horizontal Padding";
+            jumpItemValue = "";
+            jumpItemExactMatch = false;
+            tsl::swapTo<ConfiguratorOverlay>(SwapDepth(2), "Micro");
+            return true;
+        }
+        return false;
+    }
+};
+
+// Micro Vertical Padding (0–8 px)
+class MicroVPaddingConfig : public tsl::Gui {
+    int currentPadding;
+public:
+    MicroVPaddingConfig() {
+        const std::string value = ult::parseValueFromIniSection(configIniPath, "micro", "vertical_padding");
+        currentPadding = value.empty() ? 2 : std::clamp(atoi(value.c_str()), 0, 8);
+    }
+    ~MicroVPaddingConfig() { lastSelectedListItem = nullptr; }
+
+    virtual tsl::elm::Element* createUI() override {
+        auto* list = new tsl::elm::List();
+        list->addItem(new tsl::elm::CategoryHeader("Vertical Padding"));
+        for (int p = 0; p <= 8; ++p) {
+            auto* item = new tsl::elm::ListItem(std::to_string(p) + " px");
+            if (p == currentPadding) {
+                item->setValue(ult::CHECKMARK_SYMBOL);
+                lastSelectedListItem = item;
+            }
+            item->setClickListener([this, item, p](uint64_t keys) {
+                if (keys & KEY_A) {
+                    ult::setIniFileValue(configIniPath, "micro", "vertical_padding", std::to_string(p));
+                    item->setValue(ult::CHECKMARK_SYMBOL);
+                    if (lastSelectedListItem && item != lastSelectedListItem)
+                        lastSelectedListItem->setValue("");
+                    lastSelectedListItem = item;
+                    return true;
+                }
+                return false;
+            });
+            list->addItem(item);
+        }
+        list->jumpToItem("", ult::CHECKMARK_SYMBOL, false);
+        auto* rootFrame = new tsl::elm::OverlayFrame("Status Monitor", "Configuration");
+        rootFrame->setContent(list);
+        return rootFrame;
+    }
+
+    virtual bool handleInput(u64 keysDown, u64 keysHeld, const HidTouchState &touchPos, HidAnalogStickState joyStickPosLeft, HidAnalogStickState joyStickPosRight) override {
+        if (keysDown & KEY_B) {
+            triggerExitFeedback();
+            jumpItemName = "Vertical Padding";
+            jumpItemValue = "";
+            jumpItemExactMatch = false;
+            tsl::swapTo<ConfiguratorOverlay>(SwapDepth(2), "Micro");
+            return true;
+        }
+        return false;
+    }
+};
+
+
 // Font Size Selector
 class FontSizeSelector : public tsl::Gui {
 private:
@@ -2394,6 +2497,30 @@ public:
                 return false;
             });
             list->addItem(layerPos);
+
+            // Horizontal Padding for Micro
+            auto* hPadding = new tsl::elm::ListItem("Horizontal Padding");
+            hPadding->setValue(std::to_string(getCurrentMicroHPadding()) + " px");
+            hPadding->setClickListener([this](uint64_t keys) {
+                if (keys & KEY_A) {
+                    tsl::changeTo<MicroHPaddingConfig>();
+                    return true;
+                }
+                return false;
+            });
+            list->addItem(hPadding);
+
+            // Vertical Padding for Micro
+            auto* vPadding = new tsl::elm::ListItem("Vertical Padding");
+            vPadding->setValue(std::to_string(getCurrentMicroVPadding()) + " px");
+            vPadding->setClickListener([this](uint64_t keys) {
+                if (keys & KEY_A) {
+                    tsl::changeTo<MicroVPaddingConfig>();
+                    return true;
+                }
+                return false;
+            });
+            list->addItem(vPadding);
             
         } else if (isFullMode) {
             // Horizontal Position for Full (Left/Right only)
@@ -2530,6 +2657,16 @@ private:
         return formatStr;
     }
     
+    int getCurrentMicroHPadding() {
+        const std::string value = ult::parseValueFromIniSection(configIniPath, "micro", "horizontal_padding");
+        return value.empty() ? 8 : std::clamp(atoi(value.c_str()), 0, 10);
+    }
+
+    int getCurrentMicroVPadding() {
+        const std::string value = ult::parseValueFromIniSection(configIniPath, "micro", "vertical_padding");
+        return value.empty() ? 2 : std::clamp(atoi(value.c_str()), 0, 8);
+    }
+
     int getCurrentFramePadding() {
         std::string section;
         if (isMiniMode) section = "mini";

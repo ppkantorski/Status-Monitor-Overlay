@@ -362,6 +362,9 @@ public:
                         const bool splitVDDQ_A = key == "RAM" && !settings.showSideBySideVDDQ &&
                                                  settings.realVolts && settings.showVDD2 &&
                                                  settings.showVDDQ && isMariko;
+                        const bool sideBySideVDDQ_A = key == "RAM" && settings.showSideBySideVDDQ &&
+                                                      settings.realVolts && settings.showVDD2 &&
+                                                      settings.showVDDQ && isMariko;
                         if (!settings.showRAMLoadCPUGPU) {
                             if (!settings.realVolts) {
                                 width = renderer->getTextDimensions("100%@4444.4", false, fontsize).first;
@@ -369,6 +372,10 @@ public:
                                 width = settings.decimalVDD2
                                     ? renderer->getTextDimensions("100%@4444.44444.4 mV", false, fontsize).first
                                     : renderer->getTextDimensions("100%@4444.44444 mV", false, fontsize).first;
+                            } else if (sideBySideVDDQ_A) {
+                                width = settings.decimalVDD2
+                                    ? renderer->getTextDimensions("100%@4444.44444.4 mV444 mV", false, fontsize).first
+                                    : renderer->getTextDimensions("100%@4444.44444 mV444 mV", false, fontsize).first;
                             } else {
                                 width = renderer->getTextDimensions("100%@4444.4444 mV", false, fontsize).first;
                             }
@@ -379,6 +386,10 @@ public:
                                 width = settings.decimalVDD2
                                     ? renderer->getTextDimensions("100%[100%,100%]@4444.44444.4 mV", false, fontsize).first
                                     : renderer->getTextDimensions("100%[100%,100%]@4444.44444 mV", false, fontsize).first;
+                            } else if (sideBySideVDDQ_A) {
+                                width = settings.decimalVDD2
+                                    ? renderer->getTextDimensions("100%[100%,100%]@4444.44444.4 mV444 mV", false, fontsize).first
+                                    : renderer->getTextDimensions("100%[100%,100%]@4444.44444 mV444 mV", false, fontsize).first;
                             } else {
                                 width = renderer->getTextDimensions("100%[100%,100%]@4444.4444 mV", false, fontsize).first;
                             }
@@ -398,9 +409,9 @@ public:
                                         ? renderer->getTextDimensions("100%@4444.44444.4 mV", false, fontsize).first
                                         : renderer->getTextDimensions("100%@4444.44444 mV", false, fontsize).first;
                                 } else if (settings.showVDD2 && settings.decimalVDD2 && settings.showVDDQ)
-                                    width = renderer->getTextDimensions("100%@4444.44444.4444 mV", false, fontsize).first;
+                                    width = renderer->getTextDimensions("44444444MB@4444.44444.4 mV444 mV", false, fontsize).first;
                                 else if (settings.showVDD2 && !settings.decimalVDD2 && settings.showVDDQ)
-                                    width = renderer->getTextDimensions("100%@4444.44444444 mV", false, fontsize).first;
+                                    width = renderer->getTextDimensions("44444444MB@4444.44444 mV444 mV", false, fontsize).first;
                                 else if (settings.showVDD2 && settings.decimalVDD2)
                                     width = renderer->getTextDimensions("100%@4444.44444.4 mV", false, fontsize).first;
                                 else if (settings.showVDD2 && !settings.decimalVDD2)

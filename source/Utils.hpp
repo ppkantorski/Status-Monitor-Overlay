@@ -1784,6 +1784,8 @@ struct MicroSettings {
     bool setPosBottom;
     bool disableScreenshots;
     bool sleepExit;
+    uint8_t horizontalPadding;  // 0-10 px, left/right gap from screen edge to text; default 8
+    uint8_t verticalPadding;    // 0-8 px, gap above/below text within bar; default 2
 };
 
 struct FpsCounterSettings {
@@ -2209,6 +2211,8 @@ ALWAYS_INLINE void GetConfigSettings(MicroSettings* settings) {
     settings->disableScreenshots = false;
     settings->sleepExit = false;
     settings->refreshRate = 1;
+    settings->horizontalPadding = 8;   // matches medium-font label_data_gap
+    settings->verticalPadding   = 2;   // keeps current bar height (cachedMargin+4), text centered
 
     // Open and read file efficiently
     FILE* configFile = fopen(configIniPath, "r");
@@ -2470,6 +2474,16 @@ ALWAYS_INLINE void GetConfigSettings(MicroSettings* settings) {
     // Enforce mutual exclusivity: at least one temp group must be on
     if (!settings->showComponentTemps && !settings->showSocPcbSkinTemps)
         settings->showSocPcbSkinTemps = true;
+
+    // Horizontal/vertical padding for bar text margins
+    it = section.find("horizontal_padding");
+    if (it != section.end()) {
+        settings->horizontalPadding = (uint8_t)std::clamp(atoi(it->second.c_str()), 0, 10);
+    }
+    it = section.find("vertical_padding");
+    if (it != section.end()) {
+        settings->verticalPadding = (uint8_t)std::clamp(atoi(it->second.c_str()), 0, 8);
+    }
 
 }
 

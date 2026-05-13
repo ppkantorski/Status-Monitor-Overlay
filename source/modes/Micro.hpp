@@ -60,9 +60,11 @@ private:
 
     std::vector<RenderItem> renderItems;
     uint32_t cachedMargin = 0;
+    int32_t  cachedAscent = 0;      // pixels above baseline
+    int32_t  cachedDescentAbs = 0;  // pixels below baseline (positive value)
     tsl::Color catColorA = 0;
     tsl::Color textColorA = 0;
-    uint32_t base_y = 0;
+    int32_t base_y = 0;             // signed: text-baseline = base_y + cachedMargin
     bool renderDataDirty = true;
 
     bool skipOnce = true;
@@ -102,8 +104,9 @@ private:
             layout.volt_data_gap = 0;
             layout.item_spacing = 20;
         }
-        // Side padding matches the label↔data gap so text never crowds the screen edge
-        layout.side_margin = layout.label_data_gap;
+        // Horizontal padding setting controls left/right gap from screen edge to text.
+        // The bar rectangle always spans full screen width; only the text is inset.
+        layout.side_margin = settings.horizontalPadding;
         
         layout.calculated = true;
     }
@@ -342,8 +345,27 @@ public:
                 
                 catColorA = settings.catColor;
                 textColorA = settings.textColor;
-                base_y = settings.setPosBottom ? 
-                    tsl::cfg::FramebufferHeight - (fontsize + (fontsize / 4)) +1: 0;
+                {
+                    // Get true ascent / descent from the font so we can center text
+                    // properly inside the bar rectangle.
+                    const auto fm = tsl::gfx::FontManager::getFontMetricsForCharacter('A', fontsize);
+                    cachedAscent    = fm.ascent;           // positive: pixels above baseline
+                    cachedDescentAbs = -fm.descent;        // fm.descent is negative; make positive
+                    const int32_t vPad = (int32_t)settings.verticalPadding;
+                    if (settings.setPosBottom) {
+                        // Bar bottom is at FramebufferHeight; text centered with vPad on each side.
+                        // baseline = FramebufferHeight - vPad - cachedDescentAbs
+                        // base_y   = baseline - cachedMargin
+                        base_y = (int32_t)tsl::cfg::FramebufferHeight
+                                 - cachedDescentAbs - vPad
+                                 - (int32_t)cachedMargin;
+                    } else {
+                        // Bar top is at 0; text centered with vPad on each side.
+                        // baseline = vPad + cachedAscent
+                        // base_y   = baseline - cachedMargin  (may be negative, that's fine)
+                        base_y = vPad + cachedAscent - (int32_t)cachedMargin;
+                    }
+                }
                 Initialized = true;
                 renderDataDirty = true;
                 layout.calculated = false; // Force recalculation
@@ -356,8 +378,15 @@ public:
             calculateLayoutMetrics(renderer);
             {
                 const int32_t gridExtraHeight = (tmpIsGrid || tmpIsSplit || ramIsSplit) ? ((int32_t)cachedMargin + gridGap) : 0;
-                const int32_t barY  = settings.setPosBottom ? (int32_t)base_y - 1 - gridExtraHeight : 0;
-                const int32_t barH  = (int32_t)cachedMargin + gridExtraHeight + 4;
+                const int32_t vPad = (int32_t)settings.verticalPadding;
+                // Visual text height = ascent + |descent|  (excludes lineGap)
+                const int32_t textVisualH = cachedAscent + cachedDescentAbs;
+                // barH: textVisualH + N above + N below, plus any grid expansion
+                const int32_t barH = textVisualH + 2 * vPad + gridExtraHeight;
+                // barY: top position → flush at Y=0; bottom → bar bottom at FramebufferHeight
+                const int32_t barY = settings.setPosBottom
+                    ? (int32_t)tsl::cfg::FramebufferHeight - barH
+                    : 0;
                 renderer->drawRect(0, barY, tsl::cfg::FramebufferWidth, barH, a(settings.backgroundColor));
             }
 
@@ -770,7 +799,7 @@ public:
                                         rx, gridBotY, fontsize, textColorA, (settings.separatorColor));
                                 }
                             }
-} else if (tmpIsGrid) {
+                        } else if (tmpIsGrid) {
                             // —— GRID MODE: two rows ——
                             // Top row: CPU/GPU/RAM die temps with HIGH gradient
                             {
