@@ -2478,11 +2478,11 @@ ALWAYS_INLINE void GetConfigSettings(MicroSettings* settings) {
     // Horizontal/vertical padding for bar text margins
     it = section.find("horizontal_padding");
     if (it != section.end()) {
-        settings->horizontalPadding = (uint8_t)std::clamp(atoi(it->second.c_str()), 0, 10);
+        settings->horizontalPadding = (uint8_t)std::clamp(atoi(it->second.c_str()), 0, 20);
     }
     it = section.find("vertical_padding");
     if (it != section.end()) {
-        settings->verticalPadding = (uint8_t)std::clamp(atoi(it->second.c_str()), 0, 8);
+        settings->verticalPadding = (uint8_t)std::clamp(atoi(it->second.c_str()), 0, 20);
     }
 
 }

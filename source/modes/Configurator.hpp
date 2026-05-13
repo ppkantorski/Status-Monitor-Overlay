@@ -558,6 +558,14 @@ public:
             });
             list->addItem(showFullCPU);
             
+            if (isMiniMode) {
+                auto* ramLoadCPUGPU = new tsl::elm::ToggleListItem("RAM Load CPU/GPU", getCurrentShowRAMLoadCPUGPU());
+                ramLoadCPUGPU->setStateChangedListener([this, section](bool state) {
+                    ult::setIniFileValue(configIniPath, section, "show_RAM_load_CPU_GPU", state ? "true" : "false");
+                });
+                list->addItem(ramLoadCPUGPU);
+            }
+
             if (isMariko) {
                 auto* showVDD2 = new tsl::elm::ToggleListItem("VDD2", getCurrentShowVDD2());
                 showVDD2->setStateChangedListener([this, section](bool state) {
@@ -580,28 +588,7 @@ public:
                 });
                 list->addItem(sideBySideVDDQ);
             }
-
-            auto* showFullRes = new tsl::elm::ToggleListItem("Full Resolution", getCurrentShowFullRes());
-            showFullRes->setStateChangedListener([this, section](bool state) {
-                ult::setIniFileValue(configIniPath, section, "show_full_res", state ? "true" : "false");
-            });
-            list->addItem(showFullRes);
             
-            auto* socVoltage = new tsl::elm::ToggleListItem("SOC Voltage", getCurrentShowSOCVoltage());
-            socVoltage->setStateChangedListener([this, section](bool state) {
-                ult::setIniFileValue(configIniPath, section, "show_soc_voltage", state ? "true" : "false");
-            });
-            list->addItem(socVoltage);
-
-            if (isMiniMode || isMicroMode) {
-                // Side By Side Fan/SOC: when off, fan draws on row 1 and SOC voltage on row 2
-                auto* sideBySideFanSOC = new tsl::elm::ToggleListItem("Side By Side Fan/SOC", getCurrentShowSideBySideFanSOC());
-                sideBySideFanSOC->setStateChangedListener([this, section](bool state) {
-                    ult::setIniFileValue(configIniPath, section, "show_side_by_side_fan_soc", state ? "true" : "false");
-                });
-                list->addItem(sideBySideFanSOC);
-
-            }
 
             if (isMiniMode || isMicroMode) {
                 // CPU/GPU/RAM die temps toggle
@@ -642,13 +629,34 @@ public:
                 }
             }
 
-            if (isMiniMode) {
-                auto* ramLoadCPUGPU = new tsl::elm::ToggleListItem("RAM Load CPU/GPU", getCurrentShowRAMLoadCPUGPU());
-                ramLoadCPUGPU->setStateChangedListener([this, section](bool state) {
-                    ult::setIniFileValue(configIniPath, section, "show_RAM_load_CPU_GPU", state ? "true" : "false");
+            auto* dynamicColors = new tsl::elm::ToggleListItem("Use Dynamic Colors", getCurrentUseDynamicColors());
+            dynamicColors->setStateChangedListener([this, section](bool state) {
+                ult::setIniFileValue(configIniPath, section, "use_dynamic_colors", state ? "true" : "false");
+            });
+            list->addItem(dynamicColors);
+
+            auto* socVoltage = new tsl::elm::ToggleListItem("SOC Voltage", getCurrentShowSOCVoltage());
+            socVoltage->setStateChangedListener([this, section](bool state) {
+                ult::setIniFileValue(configIniPath, section, "show_soc_voltage", state ? "true" : "false");
+            });
+            list->addItem(socVoltage);
+
+            if (isMiniMode || isMicroMode) {
+                // Side By Side Fan/SOC: when off, fan draws on row 1 and SOC voltage on row 2
+                auto* sideBySideFanSOC = new tsl::elm::ToggleListItem("Side By Side Fan/SOC", getCurrentShowSideBySideFanSOC());
+                sideBySideFanSOC->setStateChangedListener([this, section](bool state) {
+                    ult::setIniFileValue(configIniPath, section, "show_side_by_side_fan_soc", state ? "true" : "false");
                 });
-                list->addItem(ramLoadCPUGPU);
+                list->addItem(sideBySideFanSOC);
+
             }
+
+
+            auto* showFullRes = new tsl::elm::ToggleListItem("Full Resolution", getCurrentShowFullRes());
+            showFullRes->setStateChangedListener([this, section](bool state) {
+                ult::setIniFileValue(configIniPath, section, "show_full_res", state ? "true" : "false");
+            });
+            list->addItem(showFullRes);
 
             if (isMiniMode || isMicroMode) {
                 auto* invertBatteryDisplay = new tsl::elm::ToggleListItem("Invert Battery Display", getCurrentInvertBatteryDisplay());
@@ -663,12 +671,6 @@ public:
                 ult::setIniFileValue(configIniPath, section, "use_dtc_symbol", state ? "true" : "false");
             });
             list->addItem(dtcSymbol);
-
-            auto* dynamicColors = new tsl::elm::ToggleListItem("Use Dynamic Colors", getCurrentUseDynamicColors());
-            dynamicColors->setStateChangedListener([this, section](bool state) {
-                ult::setIniFileValue(configIniPath, section, "use_dynamic_colors", state ? "true" : "false");
-            });
-            list->addItem(dynamicColors);
 
             auto* disableScreenshots = new tsl::elm::ToggleListItem("Disable Screenshots", getCurrentDisableScreenshots(section));
             disableScreenshots->setStateChangedListener([this, section](bool state) {
@@ -1233,17 +1235,19 @@ public:
 // Micro Horizontal Padding (0–10 px)
 class MicroHPaddingConfig : public tsl::Gui {
     int currentPadding;
+private:
+    static constexpr int MAX_PADDING = 20;
 public:
     MicroHPaddingConfig() {
         const std::string value = ult::parseValueFromIniSection(configIniPath, "micro", "horizontal_padding");
-        currentPadding = value.empty() ? 8 : std::clamp(atoi(value.c_str()), 0, 10);
+        currentPadding = value.empty() ? 8 : std::clamp(atoi(value.c_str()), 0, MAX_PADDING);
     }
     ~MicroHPaddingConfig() { lastSelectedListItem = nullptr; }
 
     virtual tsl::elm::Element* createUI() override {
         auto* list = new tsl::elm::List();
         list->addItem(new tsl::elm::CategoryHeader("Horizontal Padding"));
-        for (int p = 0; p <= 10; ++p) {
+        for (int p = 0; p <= MAX_PADDING; ++p) {
             auto* item = new tsl::elm::ListItem(std::to_string(p) + " px");
             if (p == currentPadding) {
                 item->setValue(ult::CHECKMARK_SYMBOL);
@@ -1284,17 +1288,20 @@ public:
 // Micro Vertical Padding (0–8 px)
 class MicroVPaddingConfig : public tsl::Gui {
     int currentPadding;
+private:
+    static constexpr int MAX_PADDING = 20;
+
 public:
     MicroVPaddingConfig() {
         const std::string value = ult::parseValueFromIniSection(configIniPath, "micro", "vertical_padding");
-        currentPadding = value.empty() ? 2 : std::clamp(atoi(value.c_str()), 0, 8);
+        currentPadding = value.empty() ? 2 : std::clamp(atoi(value.c_str()), 0, MAX_PADDING);
     }
     ~MicroVPaddingConfig() { lastSelectedListItem = nullptr; }
 
     virtual tsl::elm::Element* createUI() override {
         auto* list = new tsl::elm::List();
         list->addItem(new tsl::elm::CategoryHeader("Vertical Padding"));
-        for (int p = 0; p <= 8; ++p) {
+        for (int p = 0; p <= MAX_PADDING; ++p) {
             auto* item = new tsl::elm::ListItem(std::to_string(p) + " px");
             if (p == currentPadding) {
                 item->setValue(ult::CHECKMARK_SYMBOL);
@@ -2659,12 +2666,12 @@ private:
     
     int getCurrentMicroHPadding() {
         const std::string value = ult::parseValueFromIniSection(configIniPath, "micro", "horizontal_padding");
-        return value.empty() ? 8 : std::clamp(atoi(value.c_str()), 0, 10);
+        return value.empty() ? 8 : std::clamp(atoi(value.c_str()), 0, 20);
     }
 
     int getCurrentMicroVPadding() {
         const std::string value = ult::parseValueFromIniSection(configIniPath, "micro", "vertical_padding");
-        return value.empty() ? 2 : std::clamp(atoi(value.c_str()), 0, 8);
+        return value.empty() ? 2 : std::clamp(atoi(value.c_str()), 0, 20);
     }
 
     int getCurrentFramePadding() {
