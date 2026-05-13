@@ -20,6 +20,7 @@ private:
 
     struct ButtonState {
         std::atomic<bool> plusDragActive{false};
+        std::atomic<bool> touchDragActive{false};
     } buttonState;
 
     Thread touchPollThread;
@@ -77,6 +78,7 @@ public:
             padInitialize(&pad_handheld, HidNpadIdType_Handheld);
             
             u64 plusHoldStart = 0;
+            u64 touchHoldStart = 0;
             static constexpr u64 HOLD_THRESHOLD_NS = 500'000'000ULL;
         
             HidTouchScreenState state = {0};
@@ -86,6 +88,7 @@ public:
                 // Only poll when rendering and not dragging
                 {
                     overlay->inputDetected.store(false, std::memory_order_release);
+                    const u64 now = armTicksToNs(armGetSystemTick());
                     
                     // Check touch in bounds
                     if (hidGetTouchScreenStates(&state, 1) && state.count > 0) {
@@ -108,11 +111,28 @@ public:
                         const int touchableWidth = overlayWidth + (touchPadding * 2);
                         const int touchableHeight = overlayHeight + (touchPadding * 2);
                         
-                        // Check if touch is within bounds
+                        // Check if touch is within bounds — 500ms hold required
                         if (touchX >= touchableX && touchX <= touchableX + touchableWidth &&
                             touchY >= touchableY && touchY <= touchableY + touchableHeight) {
-                            overlay->inputDetected.store(true, std::memory_order_release);
+                            if (overlay->buttonState.touchDragActive.load(std::memory_order_acquire)) {
+                                // Drag already confirmed — keep input signalled
+                                overlay->inputDetected.store(true, std::memory_order_release);
+                            } else {
+                                if (touchHoldStart == 0) touchHoldStart = now;
+                                if (now - touchHoldStart >= HOLD_THRESHOLD_NS) {
+                                    overlay->inputDetected.store(true, std::memory_order_release);
+                                    overlay->buttonState.touchDragActive.exchange(true, std::memory_order_acq_rel);
+                                }
+                            }
+                        } else {
+                            // Touch out of overlay bounds — reset hold timer
+                            touchHoldStart = 0;
+                            overlay->buttonState.touchDragActive.exchange(false, std::memory_order_acq_rel);
                         }
+                    } else {
+                        // No touch detected — reset hold timer and drag-ready flag
+                        touchHoldStart = 0;
+                        overlay->buttonState.touchDragActive.exchange(false, std::memory_order_acq_rel);
                     }
                     
                     // Poll buttons from both controllers
@@ -121,7 +141,6 @@ public:
                     
                     // Combine input from both controllers
                     const u64 keysHeld = padGetButtons(&pad_p1) | padGetButtons(&pad_handheld);
-                    const u64 now = armTicksToNs(armGetSystemTick());
                     
                     
                     // Track PLUS hold duration
@@ -452,25 +471,18 @@ public:
         // Check button states
         const bool currentPlusHeld = (keysHeld & KEY_PLUS) && !(keysHeld & ~KEY_PLUS & ALL_KEYS_MASK) && plusDragReady;
     
-        // Handle touch dragging
-        if (currentTouchDetected && !isDragging) {
-            const int touchX = touchPos.x;
-            const int touchY = touchPos.y;
-            
-            if (!oldTouchDetected) {
-                // Touch just started - check if within overlay bounds
-                if (touchX >= touchableX && touchX <= touchableX + touchableWidth &&
-                    touchY >= touchableY && touchY <= touchableY + touchableHeight) {
-                    
-                    // Start touch dragging
-                    isDragging = true;
-                    triggerOnFeedback();
-                    hasMoved = false;
-                    initialTouchPos = touchPos;
-                    initialFrameOffsetX = frameOffsetX;
-                    initialFrameOffsetY = frameOffsetY;
-                }
-            }
+        // Handle touch dragging — activation timed by poll thread (500ms hold)
+        const bool touchDragReady = buttonState.touchDragActive.load(std::memory_order_acquire);
+        static bool oldTouchDragReady = false;
+        
+        if (currentTouchDetected && !isDragging && touchDragReady && !oldTouchDragReady) {
+            // Poll thread confirmed 500ms in-bounds hold — start drag now
+            isDragging = true;
+            triggerOnFeedback();
+            hasMoved = false;
+            initialTouchPos = touchPos;
+            initialFrameOffsetX = frameOffsetX;
+            initialFrameOffsetY = frameOffsetY;
         } else if (currentTouchDetected && isDragging && !currentPlusHeld) {
             // Continue touch dragging
             const int touchX = touchPos.x;
@@ -514,6 +526,7 @@ public:
             clearOnRelease = true;
             triggerOffFeedback(true);
         }
+        oldTouchDragReady = touchDragReady && currentTouchDetected;
     
         // Handle joystick dragging (MINUS + right joystick OR PLUS + left joystick)
         if (currentPlusHeld && !isDragging) {
