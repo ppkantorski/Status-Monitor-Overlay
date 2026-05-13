@@ -130,7 +130,7 @@ public:
             // (Old hardcoded 1038 = 1080 - 28*1.5 for the former 28-row FB.)
             const float bottomVI = 1080.0f - static_cast<float>(tsl::cfg::FramebufferHeight) * 1.5f;
             const float underscanAdj = verticalUnderscanPixels
-                ? (tsl::cfg::ScreenHeight / 720.0f * static_cast<float>(verticalUnderscanPixels))
+                ? (static_cast<float>(verticalUnderscanPixels))
                 : 0.0f;
             // Clamp to 0 before casting: bottomVI is only 540 for a 360-row FB, so
             // large underscan values can make the result negative — casting a negative
