@@ -1850,37 +1850,37 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
     settings->showFanPercentage = true;
     settings->useDynamicColors = true;
     settings->showFullCPU = false;
-    settings->showSOCVoltage = false;
-    settings->showSideBySideFanSOC = true;  // default: fan+volt side-by-side (existing behavior)
-    settings->showSideBySideVDDQ = true;   // default: VDD2+VDDQ side-by-side (existing behavior)
-    settings->showVDDQ = false;
+    settings->showSOCVoltage = true;
+    settings->showSideBySideFanSOC = false;
+    settings->showSideBySideVDDQ = false;
+    settings->showVDDQ = true;
     settings->showVDD2 = true;
     settings->decimalVDD2 = false;
     settings->showDTC = true;
     settings->useDTCSymbol = true;
-    settings->dtcFormat = "%m-%d-%Y%H:%M:%S";//"%Y-%m-%d %I:%M:%S %p";
+    settings->dtcFormat = "%a, %b %d%I:%M %p";
     settings->handheldFontSize = 15;
     settings->dockedFontSize = 15;
     settings->spacing = 8;
-    convertStrToRGBA4444("#0009", &(settings->backgroundColor));
+    convertStrToRGBA4444("#000C", &(settings->backgroundColor));
     convertStrToRGBA4444("#000F", &(settings->focusBackgroundColor));
-    convertStrToRGBA4444("#888F", &(settings->separatorColor));
+    convertStrToRGBA4444("#2DFF", &(settings->separatorColor));
     convertStrToRGBA4444("#2DFF", &(settings->catColor));
     convertStrToRGBA4444("#FFFF", &(settings->textColor));
     settings->show = "DTC+BAT+CPU+GPU+RAM+TMP+FPS+RES";
     settings->showLabels = true;
     settings->showRAMLoad = true;
     settings->showRAMLoadCPUGPU = false;
-    settings->showComponentTemps = false;
+    settings->showComponentTemps = true;
     settings->showSocPcbSkinTemps = true;
     settings->invertBatteryDisplay = true;
-    settings->refreshRate = 1;
+    settings->refreshRate = 5;
     settings->disableScreenshots = false;
     settings->sleepExit = false;
     //settings->setPos = 0;
-    settings->frameOffsetX = 10;
-    settings->frameOffsetY = 10;
-    settings->framePadding = 10;
+    settings->frameOffsetX = 6;
+    settings->frameOffsetY = 6;
+    settings->framePadding = 6;
 
     // Open and read file efficiently
     FILE* configFile = fopen(configIniPath, "r");
@@ -2185,34 +2185,34 @@ ALWAYS_INLINE void GetConfigSettings(MicroSettings* settings) {
     settings->showFullCPU = false;
     settings->showFullResolution = false;
     settings->showSOCVoltage = true;
-    settings->showSideBySideFanSOC = true;  // default: fan+volt side-by-side (existing behavior)
-    settings->showSideBySideVDDQ = true;   // default: VDD2+VDDQ side-by-side (existing behavior)
+    settings->showSideBySideFanSOC = false;  // default: fan+volt side-by-side
+    settings->showSideBySideVDDQ = false;   // default: VDD2+VDDQ side-by-side
     settings->useDynamicColors = true;
-    settings->showVDDQ = false;
+    settings->showVDDQ = true;
     settings->showVDD2 = true;
     settings->decimalVDD2 = false;
     settings->showDTC = true;
     settings->useDTCSymbol = true;
-    settings->dtcFormat = "%H:%M:%S";//"%Y-%m-%d %I:%M:%S %p";
+    settings->dtcFormat = "%H:%M";
     settings->invertBatteryDisplay = false;
     settings->handheldFontSize = 15;
     settings->dockedFontSize = 15;
     settings->alignTo = 1; // CENTER
     convertStrToRGBA4444("#0009", &(settings->backgroundColor));
-    convertStrToRGBA4444("#888F", &(settings->separatorColor));
+    convertStrToRGBA4444("#2DFF", &(settings->separatorColor));
     convertStrToRGBA4444("#2DFF", &(settings->catColor));
     convertStrToRGBA4444("#FFFF", &(settings->textColor));
-    settings->show = "FPS+CPU+GPU+RAM+SOC+BAT+DTC";
+    settings->show = "FPS+CPU+GPU+RAM+TMP+BAT+DTC";
     settings->showRAMLoad = true;
-    settings->showComponentTemps = false;
+    settings->showComponentTemps = true;
     settings->showSocPcbSkinTemps = true;
     settings->showSideBySideTemps = false;
     settings->setPosBottom = false;
     settings->disableScreenshots = false;
     settings->sleepExit = false;
-    settings->refreshRate = 1;
-    settings->horizontalPadding = 8;   // matches medium-font label_data_gap
-    settings->verticalPadding   = 2;   // keeps current bar height (cachedMargin+4), text centered
+    settings->refreshRate = 5;
+    settings->horizontalPadding = 12;
+    settings->verticalPadding   = 6;
 
     // Open and read file efficiently
     FILE* configFile = fopen(configIniPath, "r");
@@ -2635,15 +2635,15 @@ ALWAYS_INLINE void GetConfigSettings(FpsGraphSettings* settings) {
     convertStrToRGBA4444("#0C0F", &(settings->perfectLineColor));
 
     convertStrToRGBA4444("#FFFF", &(settings->textColor));
-    convertStrToRGBA4444("#0F0F", &(settings->catColor));
+    convertStrToRGBA4444("#2DFF", &(settings->catColor));
 
-    settings->refreshRate = 30;
+    settings->refreshRate = 5;
     settings->useDynamicColors = true;
     settings->disableScreenshots = false;
 
-    settings->frameOffsetX = 10;
-    settings->frameOffsetY = 10;
-    settings->framePadding = 10;
+    settings->frameOffsetX = 6;
+    settings->frameOffsetY = 6;
+    settings->framePadding = 6;
 
 
     // Open and read file efficiently
@@ -2766,7 +2766,7 @@ ALWAYS_INLINE void GetConfigSettings(FpsGraphSettings* settings) {
 ALWAYS_INLINE void GetConfigSettings(FullSettings* settings) {
     // Initialize defaults
     settings->setPosRight = false;
-    settings->refreshRate = 1;
+    settings->refreshRate = 5;
     settings->showRealFreqs = true;
     settings->showDeltas = true;
     settings->showTargetFreqs = true;
@@ -2912,13 +2912,13 @@ ALWAYS_INLINE void GetConfigSettings(ResolutionSettings* settings) {
     convertStrToRGBA4444("#8FFF", &(settings->catColor));
     //convertStrToRGBA4444("#8CFF", &(settings->catColor2));
     convertStrToRGBA4444("#FFFF", &(settings->textColor));
-    settings->refreshRate = 10;
+    settings->refreshRate = 5;
     //ettings->setPos = 0;
     settings->disableScreenshots = false;
 
-    settings->frameOffsetX = 10;
-    settings->frameOffsetY = 10;
-    settings->framePadding = 10;
+    settings->frameOffsetX = 6;
+    settings->frameOffsetY = 6;
+    settings->framePadding = 6;
 
 
     // Open and read file efficiently

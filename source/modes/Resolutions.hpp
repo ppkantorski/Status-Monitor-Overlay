@@ -445,20 +445,10 @@ public:
             boundsNeedUpdate = false;
         }
         
-        const int overlayX = cachedBaseX + frameOffsetX;
-        const int overlayY = cachedBaseY + frameOffsetY;
-        
         // Overlay dimensions based on game state
         int overlayWidth, overlayHeight;
         overlayWidth = 360-20;
         overlayHeight = 200;
-        
-        // Add padding to make touch detection more forgiving
-        static constexpr int touchPadding = 4;
-        const int touchableX = overlayX - touchPadding;
-        const int touchableY = overlayY - touchPadding;
-        const int touchableWidth = overlayWidth + (touchPadding * 2);
-        const int touchableHeight = overlayHeight + (touchPadding * 2);
         
         // Screen boundaries for clamping
         const int minX = -cachedBaseX + framePadding;

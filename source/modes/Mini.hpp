@@ -2022,20 +2022,11 @@ public:
             lastVariables = Variables;
         }
         
-        const int overlayX = frameOffsetX;//ult::limitedMemory ? cachedBaseX + std::max(0, frameOffsetX - (1280-448)) : cachedBaseX + frameOffsetX;
-        const int overlayY = cachedBaseY + frameOffsetY;
         const int leftPadding = settings.showLabels ? 0 : settings.spacing + bottomPadding;
         const int overlayWidth = settings.showLabels 
             ? (margin + rectangleWidth + (fontsize / 3))
             : (rectangleWidth + (fontsize / 3) * 2 + leftPadding);
         const int overlayHeight = cachedOverlayHeight;
-        
-        // Add padding to make touch detection more forgiving
-        static constexpr int touchPadding = 4;
-        const int touchableX = overlayX - touchPadding;
-        const int touchableY = overlayY - touchPadding;
-        const int touchableWidth = overlayWidth + (touchPadding * 2);
-        const int touchableHeight = overlayHeight + (touchPadding * 2);
         
         // Screen boundaries for clamping
         const int minX = -cachedBaseX + framePadding;

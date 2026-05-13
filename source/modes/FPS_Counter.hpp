@@ -408,17 +408,6 @@ public:
             totalHeight = innerHeight + (2 * border);
         }
         
-        // Current overlay position
-        const int overlayX = frameOffsetX;
-        const int overlayY = frameOffsetY;
-        
-        // Touch detection area (with padding for easier interaction)
-        static constexpr int touchPadding = 4;
-        const int touchableX = overlayX - touchPadding;
-        const int touchableY = overlayY - touchPadding;
-        const int touchableWidth = totalWidth + (touchPadding * 2);
-        const int touchableHeight = totalHeight + (touchPadding * 2);
-        
         // Screen boundaries for clamping (accounting for total size)
         const int minX = framePadding;
         const int maxX = screenWidth - totalWidth - framePadding;

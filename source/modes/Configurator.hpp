@@ -2152,7 +2152,7 @@ public:
         std::string orderValue = ult::parseValueFromIniSection(configIniPath, section, "element_order");
         
         if (showValue.empty()) {
-            showValue = isMiniMode ? "DTC+BAT+CPU+GPU+RAM+TMP+FPS+RES" : "FPS+CPU+GPU+RAM+SOC+BAT+DTC";
+            showValue = isMiniMode ? "DTC+BAT+CPU+GPU+RAM+TMP+FPS+RES" : "FPS+CPU+GPU+RAM+TMP+BAT+DTC";
         }
         convertToUpper(showValue);
         
