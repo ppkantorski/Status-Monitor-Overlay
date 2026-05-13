@@ -125,15 +125,18 @@ public:
 
         if (ult::limitedMemory && settings.setPosBottom) {
             const auto [horizontalUnderscanPixels, verticalUnderscanPixels] = tsl::gfx::getUnderscanPixels();
-            // VI space is always 1080 units tall; the layer must be positioned so its
-            // bottom edge aligns with the screen bottom.  At handheld 720p the scale
-            // factor is 1.5x, so: layerY = 1080 - FramebufferHeight * 1.5
-            // (The old hardcoded 1038 was 1080 - 28*1.5 for the former 28-row FB.)
+            // VI space is always 1080 units tall. At handheld 720p (1.5x scale):
+            //   layerY = 1080 - FramebufferHeight * 1.5  (bottom-aligns the layer)
+            // (Old hardcoded 1038 = 1080 - 28*1.5 for the former 28-row FB.)
             const float bottomVI = 1080.0f - static_cast<float>(tsl::cfg::FramebufferHeight) * 1.5f;
-            tsl::gfx::Renderer::get().setLayerPos(0,
-                !verticalUnderscanPixels
-                    ? static_cast<uint32_t>(bottomVI)
-                    : static_cast<uint32_t>(bottomVI - (tsl::cfg::ScreenHeight / 720.0f * verticalUnderscanPixels) + 0.5f));
+            const float underscanAdj = verticalUnderscanPixels
+                ? (tsl::cfg::ScreenHeight / 720.0f * static_cast<float>(verticalUnderscanPixels))
+                : 0.0f;
+            // Clamp to 0 before casting: bottomVI is only 540 for a 360-row FB, so
+            // large underscan values can make the result negative — casting a negative
+            // float to uint32_t is UB and will crash on AArch64.
+            tsl::gfx::Renderer::get().setLayerPos(0u,
+                static_cast<uint32_t>(std::max(0.0f, bottomVI - underscanAdj)));
         }
 
         if (settings.disableScreenshots) {
