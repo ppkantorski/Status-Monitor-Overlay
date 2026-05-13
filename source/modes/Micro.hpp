@@ -19,6 +19,8 @@ private:
     char CPU_volt_c[16];
     char GPU_volt_c[16];
     char RAM_volt_c[32];
+    char vdd2_only_c[16];   // split RAM mode: VDD2 string alone
+    char vddq_only_c[16];  // split RAM mode: VDDQ string alone
     char SOC_volt_c[16];
     char RES_var_compressed_c[32];
     char READ_var_compressed_c[32];
@@ -38,6 +40,7 @@ private:
     uint64_t systemtickfrequency_impl = systemtickfrequency;
     bool tmpIsGrid = false;  // true when TMP shown as 2-row grid (both groups, no SBS, no split)
     bool tmpIsSplit = false; // true when fan on row 1, SOC volt on row 2 (showSideBySideFanSOC=false)
+    bool ramIsSplit = false; // true when VDD2 on row 1, VDDQ on row 2 (showSideBySideVDDQ=false, Mariko only)
     
     // Pre-compiled render data structures
     struct RenderItem {
@@ -243,7 +246,12 @@ public:
                         break;
                     case 0x52414D: // "RAM"
                         if (!(seen_flags & 4)) {
-                            renderItems.push_back({2, "RAM", RAM_var_compressed_c, RAM_volt_c, settings.realVolts});
+                            // In split VDD2/VDDQ mode, voltage is drawn by the renderer
+                            const bool splitRAMVolt = !settings.showSideBySideVDDQ &&
+                                                      settings.realVolts && settings.showVDD2 &&
+                                                      settings.showVDDQ && isMariko;
+                            renderItems.push_back({2, "RAM", RAM_var_compressed_c, RAM_volt_c,
+                                settings.realVolts && !splitRAMVolt});
                             seen_flags |= 4;
                         }
                         break;
@@ -314,6 +322,15 @@ public:
                     settings.showSocPcbSkinTemps &&
                     !settings.showSideBySideTemps &&
                     !tmpIsSplit;  // split takes priority over grid
+
+        bool hasRam = false;
+        for (const auto& ri : renderItems) {
+            if (ri.type == 2) { hasRam = true; break; }
+        }
+        ramIsSplit = hasRam &&
+                     !settings.showSideBySideVDDQ &&
+                     settings.realVolts && settings.showVDD2 &&
+                     settings.showVDDQ && isMariko;
     }
     
     virtual tsl::elm::Element* createUI() override {
@@ -338,7 +355,7 @@ public:
             prepareRenderItems();
             calculateLayoutMetrics(renderer);
             {
-                const int32_t gridExtraHeight = (tmpIsGrid || tmpIsSplit) ? ((int32_t)cachedMargin + gridGap) : 0;
+                const int32_t gridExtraHeight = (tmpIsGrid || tmpIsSplit || ramIsSplit) ? ((int32_t)cachedMargin + gridGap) : 0;
                 const int32_t barY  = settings.setPosBottom ? (int32_t)base_y - 1 - gridExtraHeight : 0;
                 const int32_t barH  = (int32_t)cachedMargin + gridExtraHeight + 4;
                 renderer->drawRect(0, barY, tsl::cfg::FramebufferWidth, barH, a(settings.backgroundColor));
@@ -427,6 +444,15 @@ public:
                         const uint32_t bottom_w = temp_part_w + sep_width + volt_w;
                         item_layout.total_width = item_layout.label_width + layout.label_data_gap +
                                                   std::max(item_layout.data_width, bottom_w);
+                    }
+
+                    // In split RAM mode both rows share the volt column: take max(vdd2_w, vddq_w)
+                    // so the item is wide enough for whichever voltage string is longer.
+                    if (ramIsSplit && item.type == 2 && (vdd2_only_c[0] || vddq_only_c[0])) {
+                        const uint32_t vdd2_w = vdd2_only_c[0] ? renderer->getTextDimensions(vdd2_only_c, false, fontsize).first : 0;
+                        const uint32_t vddq_w = vddq_only_c[0] ? renderer->getTextDimensions(vddq_only_c, false, fontsize).first : 0;
+                        item_layout.total_width = item_layout.label_width + layout.label_data_gap +
+                                                  item_layout.data_width + sep_width + std::max(vdd2_w, vddq_w);
                     }
                 }
                 
@@ -569,11 +595,11 @@ public:
             // \u2500\u2500 Grid-mode Y coordinates \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
             // When tmpIsGrid: bar is taller; other items centered in expanded bar;
             // TMP renders as two rows (componentTemps_c top, skin_temperature_c bottom).
-            const int32_t gridExtraH  = (tmpIsGrid || tmpIsSplit) ? ((int32_t)cachedMargin + gridGap) : 0;
+            const int32_t gridExtraH  = (tmpIsGrid || tmpIsSplit || ramIsSplit) ? ((int32_t)cachedMargin + gridGap) : 0;
             const int32_t halfExtra   = gridExtraH / 2;
             // Y for non-TMP items — centered in expanded bar (grid or split)
             const int32_t singleItemY = (int32_t)base_y + (int32_t)cachedMargin +
-                                        ((tmpIsGrid || tmpIsSplit) ? (settings.setPosBottom ? -halfExtra : halfExtra) : 0);
+                                        ((tmpIsGrid || tmpIsSplit || ramIsSplit) ? (settings.setPosBottom ? -halfExtra : halfExtra) : 0);
             // Y for the two TMP rows (used by both grid mode and split fan/volt mode)
             const int32_t gridTopY = (int32_t)base_y + (int32_t)cachedMargin +
                                      (settings.setPosBottom ? -(int32_t)gridExtraH : 0);
@@ -895,6 +921,26 @@ public:
                     current_x += sep_width + layout.volt_data_gap;
                     renderer->drawStringWithColoredSections(item.volt_ptr, false, specialChars, current_x, singleItemY, fontsize, textColorA, (settings.separatorColor));
                 }
+
+                // RAM split: usage already centered at singleItemY by normal draw;
+                // draw VDD2 at gridTopY and VDDQ at gridBotY with connector at singleItemY.
+                if (ramIsSplit && item.type == 2) {
+                    const uint32_t voltColX = current_x; // past data_width, at volt column
+                    // Centre connector divider at singleItemY
+                    renderer->drawString(ult::DIVIDER_SYMBOL, false, voltColX, singleItemY, fontsize, (settings.separatorColor));
+                    // VDD2 at top row
+                    if (vdd2_only_c[0]) {
+                        uint32_t rx = voltColX;
+                        rx += renderer->drawString(ult::DIVIDER_SYMBOL, false, rx, gridTopY, fontsize, (settings.separatorColor)).first;
+                        renderer->drawStringWithColoredSections(vdd2_only_c, false, specialChars, rx, gridTopY, fontsize, textColorA, (settings.separatorColor));
+                    }
+                    // VDDQ at bottom row
+                    if (vddq_only_c[0]) {
+                        uint32_t rx = voltColX;
+                        rx += renderer->drawString(ult::DIVIDER_SYMBOL, false, rx, gridBotY, fontsize, (settings.separatorColor)).first;
+                        renderer->drawStringWithColoredSections(vddq_only_c, false, specialChars, rx, gridBotY, fontsize, textColorA, (settings.separatorColor));
+                    }
+                }
                         }
         });
         
@@ -1106,11 +1152,22 @@ public:
              * → split, convert to mV                           */
             const float mv_vdd2 = (realRAM_mV / 10000) / 10.0f;   // VDD2
             const uint32_t mv_vddq = (realRAM_mV % 10000) / 10;   // VDDQ
-        
-            // Build voltage string based on settings
-            RAM_volt_c[0] = '\0'; // Start with empty string
+
+            // Build separate single-volt strings (used by split VDD2/VDDQ mode)
             char temp_buffer[16];
-            
+            vdd2_only_c[0] = '\0';
+            vddq_only_c[0] = '\0';
+            if (settings.showVDD2) {
+                if (settings.decimalVDD2)
+                    snprintf(vdd2_only_c, sizeof(vdd2_only_c), "%.1f mV", mv_vdd2);
+                else
+                    snprintf(vdd2_only_c, sizeof(vdd2_only_c), "%u mV", (uint32_t)mv_vdd2);
+            }
+            if (settings.showVDDQ && isMariko)
+                snprintf(vddq_only_c, sizeof(vddq_only_c), "%u mV", mv_vddq);
+
+            // Build combined voltage string (side-by-side mode)
+            RAM_volt_c[0] = '\0';
             if (settings.showVDD2) {
                 if (settings.decimalVDD2) {
                     snprintf(temp_buffer, sizeof(temp_buffer), "%.1f mV", mv_vdd2);
@@ -1119,7 +1176,6 @@ public:
                 }
                 strcat(RAM_volt_c, temp_buffer);
             }
-            
             if (settings.showVDDQ && isMariko) {
                 if (RAM_volt_c[0] != '\0') {
                     strcat(RAM_volt_c, "");

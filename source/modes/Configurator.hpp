@@ -558,17 +558,28 @@ public:
             });
             list->addItem(showFullCPU);
             
+            if (isMariko) {
+                auto* showVDD2 = new tsl::elm::ToggleListItem("VDD2", getCurrentShowVDD2());
+                showVDD2->setStateChangedListener([this, section](bool state) {
+                    ult::setIniFileValue(configIniPath, section, "show_vdd2", state ? "true" : "false");
+                });
+                list->addItem(showVDD2);
+            }
+
             auto* showVDDQ = new tsl::elm::ToggleListItem("VDDQ", getCurrentShowVDDQ());
             showVDDQ->setStateChangedListener([this, section](bool state) {
                 ult::setIniFileValue(configIniPath, section, "show_vddq", state ? "true" : "false");
             });
             list->addItem(showVDDQ);
 
-            auto* showVDD2 = new tsl::elm::ToggleListItem("VDD2", getCurrentShowVDD2());
-            showVDD2->setStateChangedListener([this, section](bool state) {
-                ult::setIniFileValue(configIniPath, section, "show_vdd2", state ? "true" : "false");
-            });
-            list->addItem(showVDD2);
+            if (isMariko && (isMiniMode || isMicroMode)) {
+                // Side By Side VDD2/VDDQ: when off, VDD2 top row / VDDQ bottom row (Mariko only)
+                auto* sideBySideVDDQ = new tsl::elm::ToggleListItem("Side By Side VDD2/VDDQ", getCurrentShowSideBySideVDDQ());
+                sideBySideVDDQ->setStateChangedListener([this, section](bool state) {
+                    ult::setIniFileValue(configIniPath, section, "show_side_by_side_vddq", state ? "true" : "false");
+                });
+                list->addItem(sideBySideVDDQ);
+            }
 
             auto* showFullRes = new tsl::elm::ToggleListItem("Full Resolution", getCurrentShowFullRes());
             showFullRes->setStateChangedListener([this, section](bool state) {
@@ -589,6 +600,7 @@ public:
                     ult::setIniFileValue(configIniPath, section, "show_side_by_side_fan_soc", state ? "true" : "false");
                 });
                 list->addItem(sideBySideFanSOC);
+
             }
 
             if (isMiniMode || isMicroMode) {
@@ -791,6 +803,14 @@ private:
     bool getCurrentShowSideBySideFanSOC() {
         const std::string section = isMiniMode ? "mini" : "micro";
         std::string value = ult::parseValueFromIniSection(configIniPath, section, "show_side_by_side_fan_soc");
+        if (value.empty()) return true;  // Default: true (side-by-side, existing behavior)
+        convertToUpper(value);
+        return value != "FALSE";
+    }
+
+    bool getCurrentShowSideBySideVDDQ() {
+        const std::string section = isMiniMode ? "mini" : "micro";
+        std::string value = ult::parseValueFromIniSection(configIniPath, section, "show_side_by_side_vddq");
         if (value.empty()) return true;  // Default: true (side-by-side, existing behavior)
         convertToUpper(value);
         return value != "FALSE";

@@ -10,6 +10,8 @@ private:
     char skin_temperature_c[64] = "";
     char componentTemps_c[64] = "";  // HOC component die temps: "CPU°C GPU°C RAM°C"
     char MINI_SOC_volt_c[16] = "";   // SOC voltage string, e.g. "1234 mV"
+    char vdd2_only_c[16] = "";        // split RAM mode: VDD2 string alone
+    char vddq_only_c[16] = "";        // split RAM mode: VDDQ string alone
 
     uint32_t rectangleWidth;
     char Variables[512];
@@ -356,27 +358,46 @@ public:
                         }
                     } else if (key == "GPU" || (key == "RAM" && settings.showRAMLoad && (R_SUCCEEDED(sysclkCheck) || R_SUCCEEDED(hocclkCheck)))) {
                         //dimensions = renderer->drawString("100.0%@4444.4", false, 0, 0, fontsize, renderer->a(0x0000));
-
+                        // Split VDD2/VDDQ: width = row1 (VDD2 only), always wider than row2
+                        const bool splitVDDQ_A = key == "RAM" && !settings.showSideBySideVDDQ &&
+                                                 settings.realVolts && settings.showVDD2 &&
+                                                 settings.showVDDQ && isMariko;
                         if (!settings.showRAMLoadCPUGPU) {
                             if (!settings.realVolts) {
                                 width = renderer->getTextDimensions("100%@4444.4", false, fontsize).first;
+                            } else if (splitVDDQ_A) {
+                                width = settings.decimalVDD2
+                                    ? renderer->getTextDimensions("100%@4444.44444.4 mV", false, fontsize).first
+                                    : renderer->getTextDimensions("100%@4444.44444 mV", false, fontsize).first;
                             } else {
                                 width = renderer->getTextDimensions("100%@4444.4444 mV", false, fontsize).first;
                             }
                         } else {
                             if (!settings.realVolts) {
                                 width = renderer->getTextDimensions("100%[100%,100%]@4444.4", false, fontsize).first;
+                            } else if (splitVDDQ_A) {
+                                width = settings.decimalVDD2
+                                    ? renderer->getTextDimensions("100%[100%,100%]@4444.44444.4 mV", false, fontsize).first
+                                    : renderer->getTextDimensions("100%[100%,100%]@4444.44444 mV", false, fontsize).first;
                             } else {
                                 width = renderer->getTextDimensions("100%[100%,100%]@4444.4444 mV", false, fontsize).first;
                             }
                         }
                     } else if (key == "RAM" && (!settings.showRAMLoad || (R_FAILED(sysclkCheck) && R_FAILED(hocclkCheck)))) {
                         //dimensions = renderer->drawString("44444444MB@4444.4", false, 0, 0, fontsize, renderer->a(0x0000));
+                        const bool splitVDDQ_B = !settings.showSideBySideVDDQ &&
+                                                 settings.realVolts && settings.showVDD2 &&
+                                                 settings.showVDDQ && isMariko;
                         if (!settings.realVolts) {
                             width = renderer->getTextDimensions("100%@4444.4", false, fontsize).first;
                         } else {
                             if (isMariko) {
-                                if (settings.showVDD2 && settings.decimalVDD2 && settings.showVDDQ)
+                                // Split: width = row1 (VDD2 only), always >= row2 (VDDQ alone)
+                                if (splitVDDQ_B) {
+                                    width = settings.decimalVDD2
+                                        ? renderer->getTextDimensions("100%@4444.44444.4 mV", false, fontsize).first
+                                        : renderer->getTextDimensions("100%@4444.44444 mV", false, fontsize).first;
+                                } else if (settings.showVDD2 && settings.decimalVDD2 && settings.showVDDQ)
                                     width = renderer->getTextDimensions("100%@4444.44444.4444 mV", false, fontsize).first;
                                 else if (settings.showVDD2 && !settings.decimalVDD2 && settings.showVDDQ)
                                     width = renderer->getTextDimensions("100%@4444.44444444 mV", false, fontsize).first;
@@ -530,8 +551,17 @@ public:
                         labelText = "GPU";
                         flags |= 2;
                     } else if (key == "RAM" && !(flags & 4)) {
-                        shouldAdd = true;
-                        labelText = "RAM";
+                        const bool wantSplitVDDQ = !settings.showSideBySideVDDQ &&
+                                                   settings.realVolts && settings.showVDD2 &&
+                                                   settings.showVDDQ && isMariko;
+                        if (wantSplitVDDQ) {
+                            labelLines.push_back("RAM_SVDD2");
+                            labelLines.push_back("RAM_SVDDQ");
+                            entryCount++;  // two rows count as one extra
+                        } else {
+                            shouldAdd = true;
+                            labelText = "RAM";
+                        }
                         flags |= 4;
                     } else if (key == "SOC" && !(flags & 8)) {
                         shouldAdd = true;
@@ -609,10 +639,13 @@ public:
                 
                 // Use the actual entry count for height calculation
                 cachedHeight = ((fontsize + settings.spacing) * actualEntryCount) + (fontsize / 3) + settings.spacing + topPadding + bottomPadding;
-                // Two-row TMP blocks (HOC or split fan/volt) use half inter-row spacing, so trim box height
+                // Two-row blocks (HOC, TMP split, RAM split) use half inter-row spacing, trim box height
                 if ((settings.showComponentTemps && settings.showSocPcbSkinTemps) ||
                     (!settings.showSideBySideFanSOC && settings.showFanPercentage &&
                      settings.realVolts && settings.showSOCVoltage))
+                    cachedHeight -= settings.spacing / 2;
+                if (!settings.showSideBySideVDDQ && settings.realVolts &&
+                    settings.showVDD2 && settings.showVDDQ && isMariko)
                     cachedHeight -= settings.spacing / 2;
                 //const uint32_t margin = (fontsize * 4);
                 
@@ -715,7 +748,8 @@ public:
             
             static const std::vector<std::string> specialChars = {""};
             static uint32_t labelWidth, labelCenterX;
-            static int sfanFanColX = 0; // shared between TMP_SFAN and TMP_SVOLT
+            static int sfanFanColX = 0;     // shared between TMP_SFAN and TMP_SVOLT
+            static int ramSplitVoltColX = 0; // shared between RAM_SVDD2 and RAM_SVDDQ
             static std::vector<std::string> _variableLines;
             if (!delayUpdate)
                 _variableLines = variableLines;
@@ -740,7 +774,8 @@ public:
                 const bool isTmpHocRow = (labelIndex < labelLines.size() &&
                     (labelLines[labelIndex] == "TMP_TOP" || labelLines[labelIndex] == "TMP_BOT" ||
                      labelLines[labelIndex] == "TMP_COMP" ||
-                     labelLines[labelIndex] == "TMP_SFAN" || labelLines[labelIndex] == "TMP_SVOLT"));
+                     labelLines[labelIndex] == "TMP_SFAN" || labelLines[labelIndex] == "TMP_SVOLT" ||
+                     labelLines[labelIndex] == "RAM_SVDD2" || labelLines[labelIndex] == "RAM_SVDDQ"));
                 if (!isTmpHocRow && settings.showLabels && !labelLines[labelIndex].empty()) {
                     labelWidth = renderer->getTextDimensions(labelLines[labelIndex], false, fontsize).first;
                     labelCenterX = cachedBaseX + (margin / 2) - (labelWidth / 2);
@@ -1028,6 +1063,46 @@ public:
                             const int voltDivX = afterFanX + (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, afterFanX, baseY, fontsize, settings.separatorColor).first;
                             renderer->drawStringWithColoredSections(std::string(MINI_SOC_volt_c), false, specialChars, voltDivX, baseY, fontsize, settings.textColor, settings.separatorColor);
                         }
+                    } else if (labelIndex < labelLines.size() && labelLines[labelIndex] == "RAM_SVDD2") {
+                        // Split VDD2/VDDQ row 1.
+                        // Usage drawn at centre (between rows), VDD2 at baseY (top), mirroring TMP_SFAN single-group.
+                        const int ramCenterY = baseY + ((int)fontsize + (int)settings.spacing / 2) / 2;
+                        int currentX = baseX;
+                        // Usage at centre Y
+                        renderer->drawStringWithColoredSections(currentLine, false, specialChars,
+                            currentX, ramCenterY, fontsize, settings.textColor, settings.separatorColor);
+                        currentX += (int)renderer->getTextDimensions(currentLine, false, fontsize).first;
+                        ramSplitVoltColX = currentX;
+                        // "RAM" label at centre Y
+                        if (settings.showLabels) {
+                            const std::string ramLbl = "RAM";
+                            const uint32_t ramLblW = renderer->getTextDimensions(ramLbl, false, fontsize).first;
+                            const uint32_t ramLblX = cachedBaseX + (margin / 2) - (ramLblW / 2);
+                            renderer->drawString(ramLbl, false, ramLblX + _frameOffsetX + clippingOffsetX,
+                                ramCenterY, fontsize, settings.catColor);
+                        }
+                        // Centre connector divider at ramCenterY
+                        renderer->drawString(ult::DIVIDER_SYMBOL, false, ramSplitVoltColX,
+                            ramCenterY, fontsize, settings.separatorColor);
+                        // VDD2 at top row (baseY)
+                        if (vdd2_only_c[0]) {
+                            int rx = ramSplitVoltColX;
+                            rx += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, rx, baseY,
+                                fontsize, settings.separatorColor).first;
+                            renderer->drawStringWithColoredSections(std::string(vdd2_only_c), false,
+                                specialChars, rx, baseY, fontsize, settings.textColor, settings.separatorColor);
+                        }
+                    } else if (labelIndex < labelLines.size() && labelLines[labelIndex] == "RAM_SVDDQ") {
+                        // Split VDD2/VDDQ row 2: VDDQ at the volt column; uses spacing/2 compression.
+                        const int svddqY = baseY - (int)settings.spacing / 2;
+                        if (vddq_only_c[0]) {
+                            int rx = ramSplitVoltColX;
+                            rx += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, rx, svddqY,
+                                fontsize, settings.separatorColor).first;
+                            renderer->drawStringWithColoredSections(std::string(vddq_only_c), false,
+                                specialChars, rx, svddqY, fontsize, settings.textColor, settings.separatorColor);
+                        }
+                        currentY -= (int)settings.spacing / 2;
                     } else if (labelIndex < labelLines.size() && labelLines[labelIndex] == "TMP_SFAN") {
                         // Split fan row: temps + fan on row 1; "TMP" label drawn manually.
                         // HOC split: temps at baseY (top row), label centered between both rows.
@@ -1420,7 +1495,19 @@ public:
                 const float mv_vdd2_f = realRAM_mV / 100000.0f;
                 const uint32_t mv_vdd2_i = realRAM_mV / 100000;
                 const uint32_t mv_vddq   = (realRAM_mV % 10000) / 10;
-            
+
+                // Build separate single-volt strings (used by split VDD2/VDDQ mode)
+                vdd2_only_c[0] = '\0';
+                vddq_only_c[0] = '\0';
+                if (settings.showVDD2) {
+                    if (settings.decimalVDD2)
+                        snprintf(vdd2_only_c, sizeof(vdd2_only_c), "%.1f mV", mv_vdd2_f);
+                    else
+                        snprintf(vdd2_only_c, sizeof(vdd2_only_c), "%u mV", mv_vdd2_i);
+                }
+                if (settings.showVDDQ && isMariko)
+                    snprintf(vddq_only_c, sizeof(vddq_only_c), "%u mV", mv_vddq);
+
                 if (isMariko) {
                     if (settings.showVDDQ && settings.showVDD2) {
                         if (settings.decimalVDD2)
@@ -1669,10 +1756,21 @@ public:
             }
             else if (key == "RAM" && !(flags & 4)) {
                 if (Temp[0]) strcat(Temp, "\n");
-                strcat(Temp, MINI_RAM_var_compressed_c);
-                if (settings.realVolts && MINI_RAM_volt_c[0]) {
-                    strcat(Temp, "");
-                    strcat(Temp, MINI_RAM_volt_c);
+                const bool splitVDDQ = !settings.showSideBySideVDDQ &&
+                                       settings.realVolts && settings.showVDD2 &&
+                                       settings.showVDDQ && isMariko;
+                if (splitVDDQ) {
+                    // Row 1: usage only (VDD2 drawn by renderer)
+                    strcat(Temp, MINI_RAM_var_compressed_c);
+                    strcat(Temp, "\n");
+                    // Row 2: space placeholder (VDDQ drawn by renderer at ramSplitVoltColX)
+                    strcat(Temp, " ");
+                } else {
+                    strcat(Temp, MINI_RAM_var_compressed_c);
+                    if (settings.realVolts && MINI_RAM_volt_c[0]) {
+                        strcat(Temp, "");
+                        strcat(Temp, MINI_RAM_volt_c);
+                    }
                 }
                 flags |= 4;
             }

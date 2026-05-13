@@ -1722,6 +1722,7 @@ struct MiniSettings {
     bool showFanPercentage;
     bool showSOCVoltage;
     bool showSideBySideFanSOC;  // true = fan+volt inline (default); false = fan row1, volt row2
+    bool showSideBySideVDDQ;   // true = VDD2+VDDQ inline (default); false = VDD2 row1, VDDQ row2 (Mariko only)
     bool useDynamicColors;
     bool showVDDQ;
     bool showVDD2;
@@ -1759,6 +1760,7 @@ struct MicroSettings {
     bool showFullResolution;
     bool showSOCVoltage;
     bool showSideBySideFanSOC;  // true = fan+volt inline (default); false = fan row1, volt row2
+    bool showSideBySideVDDQ;   // true = VDD2+VDDQ inline (default); false = VDD2 row1, VDDQ row2 (Mariko only)
     bool useDynamicColors;
     bool showVDDQ;
     bool showVDD2;
@@ -1848,6 +1850,7 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
     settings->showFullCPU = false;
     settings->showSOCVoltage = false;
     settings->showSideBySideFanSOC = true;  // default: fan+volt side-by-side (existing behavior)
+    settings->showSideBySideVDDQ = true;   // default: VDD2+VDDQ side-by-side (existing behavior)
     settings->showVDDQ = false;
     settings->showVDD2 = true;
     settings->decimalVDD2 = false;
@@ -2012,6 +2015,13 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
         settings->showSideBySideFanSOC = !(key == "FALSE");
     }
 
+    it = section.find("show_side_by_side_vddq");
+    if (it != section.end()) {
+        key = it->second;
+        convertToUpper(key);
+        settings->showSideBySideVDDQ = !(key == "FALSE");
+    }
+
     it = section.find("use_dynamic_colors");
     if (it != section.end()) {
         key = it->second;
@@ -2174,6 +2184,7 @@ ALWAYS_INLINE void GetConfigSettings(MicroSettings* settings) {
     settings->showFullResolution = false;
     settings->showSOCVoltage = true;
     settings->showSideBySideFanSOC = true;  // default: fan+volt side-by-side (existing behavior)
+    settings->showSideBySideVDDQ = true;   // default: VDD2+VDDQ side-by-side (existing behavior)
     settings->useDynamicColors = true;
     settings->showVDDQ = false;
     settings->showVDD2 = true;
@@ -2270,6 +2281,13 @@ ALWAYS_INLINE void GetConfigSettings(MicroSettings* settings) {
         key = it->second;
         convertToUpper(key);
         settings->showSideBySideFanSOC = !(key == "FALSE");
+    }
+
+    it = section.find("show_side_by_side_vddq");
+    if (it != section.end()) {
+        key = it->second;
+        convertToUpper(key);
+        settings->showSideBySideVDDQ = !(key == "FALSE");
     }
 
     it = section.find("use_dynamic_colors");
