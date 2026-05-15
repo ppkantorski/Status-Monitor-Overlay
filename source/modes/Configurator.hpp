@@ -266,19 +266,24 @@ public:
         }
         std::string currentAlpha = extractAlphaFromColor(currentColor);
         
-        // Alpha options
+        // Alpha options — all 16 rgba4444 steps with correct integer percentages
         static const std::vector<std::pair<std::string, char>> alphaOptions = {
-            {"Transparent", '0'},
-            {"10%", '1'},
-            {"20%", '3'},
-            {"30%", '4'},
-            {"40%", '6'},
-            {"50%", '8'},
-            {"60%", '9'},
-            {"70%", 'B'},
-            {"80%", 'C'},
-            {"90%", 'E'},
-            {"Opaque", 'F'}
+            {"0%",   '0'},
+            {"7%",   '1'},
+            {"13%",  '2'},
+            {"20%",  '3'},
+            {"27%",  '4'},
+            {"33%",  '5'},
+            {"40%",  '6'},
+            {"47%",  '7'},
+            {"53%",  '8'},
+            {"60%",  '9'},
+            {"67%",  'A'},
+            {"73%",  'B'},
+            {"80%",  'C'},
+            {"87%",  'D'},
+            {"93%",  'E'},
+            {"100%", 'F'}
         };
         
         for (const auto& option : alphaOptions) {
@@ -970,7 +975,7 @@ public:
         else if (isFPSGraphMode) section = "fps-graph";
         
         const std::string value = ult::parseValueFromIniSection(configIniPath, section, "refresh_rate");
-        int defaultRate = (isGameResolutionsMode) ? 10 : ((isFPSCounterMode || isFPSGraphMode) ? 30 : 1);
+        int defaultRate = (isGameResolutionsMode) ? 3 : ((isFPSCounterMode || isFPSGraphMode) ? 5 : 3);
         currentRate = value.empty() ? defaultRate : std::clamp(atoi(value.c_str()), 1, 60);
     }
 
@@ -1835,15 +1840,20 @@ public:
                 char alpha = color[4];
                 switch(alpha) {
                     case '0': return "0%";
-                    case '1': return "10%";
+                    case '1': return "7%";
+                    case '2': return "13%";
                     case '3': return "20%";
-                    case '4': return "30%";
+                    case '4': return "27%";
+                    case '5': return "33%";
                     case '6': return "40%";
-                    case '8': return "50%";
+                    case '7': return "47%";
+                    case '8': return "53%";
                     case '9': return "60%";
-                    case 'B': case 'b': return "70%";
+                    case 'A': case 'a': return "67%";
+                    case 'B': case 'b': return "73%";
                     case 'C': case 'c': return "80%";
-                    case 'E': case 'e': return "90%";
+                    case 'D': case 'd': return "87%";
+                    case 'E': case 'e': return "93%";
                     case 'F': case 'f': return "100%";
                     default: return "60%";
                 }
@@ -2632,7 +2642,7 @@ private:
         else if (isFPSGraphMode) section = "fps-graph";
         
         std::string value = ult::parseValueFromIniSection(configIniPath, section, "refresh_rate");
-        int defaultRate = (isGameResolutionsMode) ? 10 : ((isFPSCounterMode || isFPSGraphMode) ? 30 : 1);
+        int defaultRate = (isGameResolutionsMode) ? 3 : ((isFPSCounterMode || isFPSGraphMode) ? 5 : 3);
         return value.empty() ? defaultRate : atoi(value.c_str());
     }
     

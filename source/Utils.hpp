@@ -1860,7 +1860,7 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
     settings->handheldFontSize = 15;
     settings->dockedFontSize = 15;
     settings->spacing = 8;
-    convertStrToRGBA4444("#000C", &(settings->backgroundColor));
+    convertStrToRGBA4444("#0009", &(settings->backgroundColor));
     convertStrToRGBA4444("#000F", &(settings->focusBackgroundColor));
     convertStrToRGBA4444("#2DFF", &(settings->separatorColor));
     convertStrToRGBA4444("#2DFF", &(settings->catColor));
@@ -1872,7 +1872,7 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
     settings->showComponentTemps = true;
     settings->showSocPcbSkinTemps = true;
     settings->invertBatteryDisplay = true;
-    settings->refreshRate = 5;
+    settings->refreshRate = 3;
     settings->disableScreenshots = false;
     //settings->setPos = 0;
     settings->frameOffsetX = 6;
@@ -2198,7 +2198,7 @@ ALWAYS_INLINE void GetConfigSettings(MicroSettings* settings) {
     settings->showSideBySideTemps = false;
     settings->setPosBottom = false;
     settings->disableScreenshots = false;
-    settings->refreshRate = 5;
+    settings->refreshRate = 3;
     settings->horizontalPadding = 12;
     settings->verticalPadding   = 6;
 
@@ -2475,7 +2475,7 @@ ALWAYS_INLINE void GetConfigSettings(FpsCounterSettings* settings) {
     convertStrToRGBA4444("#000F", &(settings->focusBackgroundColor));
     convertStrToRGBA4444("#8CFF", &(settings->textColor));
     //settings->setPos = 0;
-    settings->refreshRate = 30;
+    settings->refreshRate = 5;
     settings->useIntegerCounter = false;
     settings->disableScreenshots = false;
 
@@ -2746,7 +2746,7 @@ ALWAYS_INLINE void GetConfigSettings(FpsGraphSettings* settings) {
 ALWAYS_INLINE void GetConfigSettings(FullSettings* settings) {
     // Initialize defaults
     settings->setPosRight = false;
-    settings->refreshRate = 5;
+    settings->refreshRate = 3;
     settings->showRealFreqs = true;
     settings->showDeltas = true;
     settings->showTargetFreqs = true;
@@ -2892,7 +2892,7 @@ ALWAYS_INLINE void GetConfigSettings(ResolutionSettings* settings) {
     convertStrToRGBA4444("#8FFF", &(settings->catColor));
     //convertStrToRGBA4444("#8CFF", &(settings->catColor2));
     convertStrToRGBA4444("#FFFF", &(settings->textColor));
-    settings->refreshRate = 5;
+    settings->refreshRate = 3;
     //ettings->setPos = 0;
     settings->disableScreenshots = false;
 
