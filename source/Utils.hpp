@@ -1723,6 +1723,12 @@ struct MiniSettings {
     bool showSOCVoltage;
     bool showSideBySideFanSOC;  // true = fan+volt inline (default); false = fan row1, volt row2
     bool showSideBySideVDDQ;   // true = VDD2+VDDQ inline (default); false = VDD2 row1, VDDQ row2 (Mariko only)
+    bool showCPUTemp;           // show CPU die temp below CPU volt
+    bool showGPUTemp;           // show GPU die temp below GPU volt
+    bool showRAMTemp;           // show RAM die temp (next to VDDQ)
+    bool showSideBySideCPUTemp; // true = CPU temp inline SBS; false = split row below volt
+    bool showSideBySideGPUTemp; // true = GPU temp inline SBS; false = split row below volt
+    bool showSideBySideRAMTemp; // true = RAM temp inline SBS; false = next to VDDQ
     bool useDynamicColors;
     bool showVDDQ;
     bool showVDD2;
@@ -1760,6 +1766,12 @@ struct MicroSettings {
     bool showSOCVoltage;
     bool showSideBySideFanSOC;  // true = fan+volt inline (default); false = fan row1, volt row2
     bool showSideBySideVDDQ;   // true = VDD2+VDDQ inline (default); false = VDD2 row1, VDDQ row2 (Mariko only)
+    bool showCPUTemp;           // show CPU die temp below CPU volt
+    bool showGPUTemp;           // show GPU die temp below GPU volt
+    bool showRAMTemp;           // show RAM die temp (next to VDDQ)
+    bool showSideBySideCPUTemp; // true = CPU temp inline SBS; false = split row below volt
+    bool showSideBySideGPUTemp; // true = GPU temp inline SBS; false = split row below volt
+    bool showSideBySideRAMTemp; // true = RAM temp inline SBS; false = next to VDDQ
     bool useDynamicColors;
     bool showVDDQ;
     bool showVDD2;
@@ -1851,6 +1863,12 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
     settings->showSOCVoltage = true;
     settings->showSideBySideFanSOC = false;
     settings->showSideBySideVDDQ = false;
+    settings->showCPUTemp = false;
+    settings->showGPUTemp = false;
+    settings->showRAMTemp = false;
+    settings->showSideBySideCPUTemp = false;
+    settings->showSideBySideGPUTemp = false;
+    settings->showSideBySideRAMTemp = false;
     settings->showVDDQ = true;
     settings->showVDD2 = true;
     settings->decimalVDD2 = false;
@@ -2021,6 +2039,48 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
         settings->showSideBySideVDDQ = !(key == "FALSE");
     }
 
+    it = section.find("show_cpu_temp");
+    if (it != section.end()) {
+        key = it->second;
+        convertToUpper(key);
+        settings->showCPUTemp = (key == "TRUE");
+    }
+
+    it = section.find("show_gpu_temp");
+    if (it != section.end()) {
+        key = it->second;
+        convertToUpper(key);
+        settings->showGPUTemp = (key == "TRUE");
+    }
+
+    it = section.find("show_ram_temp");
+    if (it != section.end()) {
+        key = it->second;
+        convertToUpper(key);
+        settings->showRAMTemp = (key == "TRUE");
+    }
+
+    it = section.find("show_side_by_side_cpu_temp");
+    if (it != section.end()) {
+        key = it->second;
+        convertToUpper(key);
+        settings->showSideBySideCPUTemp = (key == "TRUE");
+    }
+
+    it = section.find("show_side_by_side_gpu_temp");
+    if (it != section.end()) {
+        key = it->second;
+        convertToUpper(key);
+        settings->showSideBySideGPUTemp = (key == "TRUE");
+    }
+
+    it = section.find("show_side_by_side_ram_temp");
+    if (it != section.end()) {
+        key = it->second;
+        convertToUpper(key);
+        settings->showSideBySideRAMTemp = (key == "TRUE");
+    }
+
     it = section.find("use_dynamic_colors");
     if (it != section.end()) {
         key = it->second;
@@ -2176,6 +2236,12 @@ ALWAYS_INLINE void GetConfigSettings(MicroSettings* settings) {
     settings->showSOCVoltage = true;
     settings->showSideBySideFanSOC = false;  // default: fan+volt side-by-side
     settings->showSideBySideVDDQ = false;   // default: VDD2+VDDQ side-by-side
+    settings->showCPUTemp = false;
+    settings->showGPUTemp = false;
+    settings->showRAMTemp = false;
+    settings->showSideBySideCPUTemp = false;
+    settings->showSideBySideGPUTemp = false;
+    settings->showSideBySideRAMTemp = false;
     settings->useDynamicColors = true;
     settings->showVDDQ = true;
     settings->showVDD2 = true;
@@ -2280,6 +2346,48 @@ ALWAYS_INLINE void GetConfigSettings(MicroSettings* settings) {
         key = it->second;
         convertToUpper(key);
         settings->showSideBySideVDDQ = !(key == "FALSE");
+    }
+
+    it = section.find("show_cpu_temp");
+    if (it != section.end()) {
+        key = it->second;
+        convertToUpper(key);
+        settings->showCPUTemp = (key == "TRUE");
+    }
+
+    it = section.find("show_gpu_temp");
+    if (it != section.end()) {
+        key = it->second;
+        convertToUpper(key);
+        settings->showGPUTemp = (key == "TRUE");
+    }
+
+    it = section.find("show_ram_temp");
+    if (it != section.end()) {
+        key = it->second;
+        convertToUpper(key);
+        settings->showRAMTemp = (key == "TRUE");
+    }
+
+    it = section.find("show_side_by_side_cpu_temp");
+    if (it != section.end()) {
+        key = it->second;
+        convertToUpper(key);
+        settings->showSideBySideCPUTemp = (key == "TRUE");
+    }
+
+    it = section.find("show_side_by_side_gpu_temp");
+    if (it != section.end()) {
+        key = it->second;
+        convertToUpper(key);
+        settings->showSideBySideGPUTemp = (key == "TRUE");
+    }
+
+    it = section.find("show_side_by_side_ram_temp");
+    if (it != section.end()) {
+        key = it->second;
+        convertToUpper(key);
+        settings->showSideBySideRAMTemp = (key == "TRUE");
     }
 
     it = section.find("use_dynamic_colors");

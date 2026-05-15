@@ -576,7 +576,33 @@ public:
                 ult::setIniFileValue(configIniPath, section, "show_full_cpu", state ? "true" : "false");
             });
             list->addItem(showFullCPU);
-            
+
+            auto* cpuTemp = new tsl::elm::ToggleListItem("CPU Temp", getCurrentShowCPUTemp());
+            cpuTemp->setStateChangedListener([this, section](bool state) {
+                ult::setIniFileValue(configIniPath, section, "show_cpu_temp", state ? "true" : "false");
+            });
+            list->addItem(cpuTemp);
+
+            auto* sideBySideCPUTemp = new tsl::elm::ToggleListItem("Side By Side CPU Temp", getCurrentShowSideBySideCPUTemp());
+            sideBySideCPUTemp->setStateChangedListener([this, section](bool state) {
+                ult::setIniFileValue(configIniPath, section, "show_side_by_side_cpu_temp", state ? "true" : "false");
+            });
+            list->addItem(sideBySideCPUTemp);
+
+            list->addItem(new tsl::elm::CategoryHeader("GPU"));
+
+            auto* gpuTemp = new tsl::elm::ToggleListItem("GPU Temp", getCurrentShowGPUTemp());
+            gpuTemp->setStateChangedListener([this, section](bool state) {
+                ult::setIniFileValue(configIniPath, section, "show_gpu_temp", state ? "true" : "false");
+            });
+            list->addItem(gpuTemp);
+
+            auto* sideBySideGPUTemp = new tsl::elm::ToggleListItem("Side By Side GPU Temp", getCurrentShowSideBySideGPUTemp());
+            sideBySideGPUTemp->setStateChangedListener([this, section](bool state) {
+                ult::setIniFileValue(configIniPath, section, "show_side_by_side_gpu_temp", state ? "true" : "false");
+            });
+            list->addItem(sideBySideGPUTemp);
+
             list->addItem(new tsl::elm::CategoryHeader("RAM"));
 
             if (isMiniMode) {
@@ -609,6 +635,18 @@ public:
                 });
                 list->addItem(sideBySideVDDQ);
             }
+
+            auto* ramTemp = new tsl::elm::ToggleListItem("RAM Temp", getCurrentShowRAMTemp());
+            ramTemp->setStateChangedListener([this, section](bool state) {
+                ult::setIniFileValue(configIniPath, section, "show_ram_temp", state ? "true" : "false");
+            });
+            list->addItem(ramTemp);
+
+            auto* sideBySideRAMTemp = new tsl::elm::ToggleListItem("Side By Side RAM Temp", getCurrentShowSideBySideRAMTemp());
+            sideBySideRAMTemp->setStateChangedListener([this, section](bool state) {
+                ult::setIniFileValue(configIniPath, section, "show_side_by_side_ram_temp", state ? "true" : "false");
+            });
+            list->addItem(sideBySideRAMTemp);
             
             list->addItem(new tsl::elm::CategoryHeader("TMP"));
 
@@ -830,6 +868,43 @@ private:
         if (value.empty()) return true;  // Default: true (side-by-side, existing behavior)
         convertToUpper(value);
         return value != "FALSE";
+    }
+
+    bool getCurrentShowCPUTemp() {
+        const std::string sec = isMiniMode ? "mini" : "micro";
+        std::string value = ult::parseValueFromIniSection(configIniPath, sec, "show_cpu_temp");
+        convertToUpper(value);
+        return value == "TRUE";
+    }
+    bool getCurrentShowGPUTemp() {
+        const std::string sec = isMiniMode ? "mini" : "micro";
+        std::string value = ult::parseValueFromIniSection(configIniPath, sec, "show_gpu_temp");
+        convertToUpper(value);
+        return value == "TRUE";
+    }
+    bool getCurrentShowRAMTemp() {
+        const std::string sec = isMiniMode ? "mini" : "micro";
+        std::string value = ult::parseValueFromIniSection(configIniPath, sec, "show_ram_temp");
+        convertToUpper(value);
+        return value == "TRUE";
+    }
+    bool getCurrentShowSideBySideCPUTemp() {
+        const std::string sec = isMiniMode ? "mini" : "micro";
+        std::string value = ult::parseValueFromIniSection(configIniPath, sec, "show_side_by_side_cpu_temp");
+        convertToUpper(value);
+        return value == "TRUE";
+    }
+    bool getCurrentShowSideBySideGPUTemp() {
+        const std::string sec = isMiniMode ? "mini" : "micro";
+        std::string value = ult::parseValueFromIniSection(configIniPath, sec, "show_side_by_side_gpu_temp");
+        convertToUpper(value);
+        return value == "TRUE";
+    }
+    bool getCurrentShowSideBySideRAMTemp() {
+        const std::string sec = isMiniMode ? "mini" : "micro";
+        std::string value = ult::parseValueFromIniSection(configIniPath, sec, "show_side_by_side_ram_temp");
+        convertToUpper(value);
+        return value == "TRUE";
     }
 
     bool getCurrentShowRAMLoadCPUGPU() {

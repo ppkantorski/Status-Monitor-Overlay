@@ -10,8 +10,13 @@ private:
     char skin_temperature_c[64] = "";
     char componentTemps_c[64] = "";  // HOC component die temps: "CPU°C GPU°C RAM°C"
     char MINI_SOC_volt_c[16] = "";   // SOC voltage string, e.g. "1234 mV"
+    char MINI_CPU_volt_c[16] = "";   // CPU voltage string, e.g. "1100 mV"
+    char MINI_GPU_volt_c[20] = "";   // GPU voltage string, e.g. "900 mV"
     char vdd2_only_c[16] = "";        // split RAM mode: VDD2 string alone
     char vddq_only_c[16] = "";        // split RAM mode: VDDQ string alone
+    char mini_cpu_temp_c[16] = "";    // CPU die temp string e.g. "52°C"
+    char mini_gpu_temp_c[16] = "";    // GPU die temp string e.g. "48°C"
+    char mini_ram_temp_c[16] = "";    // RAM die temp string e.g. "45°C"
 
     uint32_t rectangleWidth;
     char Variables[512];
@@ -364,6 +369,7 @@ public:
                 for (const auto& key : showKeys) {
                     if (key == "CPU") {
                         //dimensions = renderer->drawString("[100%,100%,100%,100%]@4444.4", false, 0, 0, fontsize, renderer->a(0x0000));
+                        const bool cpuSplit = settings.showCPUTemp && !settings.showSideBySideCPUTemp && settings.realVolts;
                         if (!settings.realVolts) {
                             if (settings.showFullCPU)
                                 width = renderer->getTextDimensions("[100%,100%,100%,100%]@4444.4", false, fontsize).first;
@@ -375,6 +381,12 @@ public:
                             else
                                 width = renderer->getTextDimensions("100%@4444.4444 mV", false, fontsize).first;
                         }
+
+                            // SBS CPU temp: add divider + temp + "CPU" label (only when not split)
+                            if (!cpuSplit && settings.showCPUTemp && settings.showSideBySideCPUTemp) {
+                                const uint32_t div_w = renderer->getTextDimensions(ult::DIVIDER_SYMBOL, false, fontsize).first;
+                                width += div_w + renderer->getTextDimensions("88°C", false, fontsize).first;
+                            }
                     } else if (key == "GPU" || (key == "RAM" && settings.showRAMLoad && (R_SUCCEEDED(sysclkCheck) || R_SUCCEEDED(hocclkCheck)))) {
                         //dimensions = renderer->drawString("100.0%@4444.4", false, 0, 0, fontsize, renderer->a(0x0000));
                         // Split VDD2/VDDQ: width = row1 (VDD2 only), always wider than row2
@@ -413,6 +425,54 @@ public:
                                 width = renderer->getTextDimensions("100%[100%,100%]@4444.4444 mV", false, fontsize).first;
                             }
                         }
+
+                         // SBS GPU temp: add divider + temp + "GPU" label (GPU key only)
+                        if (key == "GPU" && settings.showGPUTemp && settings.showSideBySideGPUTemp) {
+                            const uint32_t div_w = renderer->getTextDimensions(ult::DIVIDER_SYMBOL, false, fontsize).first;
+                            width += div_w + renderer->getTextDimensions("88°C", false, fontsize).first;
+                        }
+                        // RAM temp width accounting
+                        if (key == "RAM" && settings.showRAMTemp) {
+                            const uint32_t div_w = renderer->getTextDimensions(ult::DIVIDER_SYMBOL, false, fontsize).first;
+                            const uint32_t tmp_w = renderer->getTextDimensions("88°C", false, fontsize).first;
+                            if (splitVDDQ_A) {
+                                // Split VDD2+VDDQ: check if the extended VDDQ row (with temp)
+                                // or the center row (SBS temp) overflows the VDD2 proxy width.
+                                if (!settings.showSideBySideRAMTemp) {
+                                    // non-SBS: VDDQ row has DIVIDER+vddq+DIVIDER+temp
+                                    // Use actual vddq_only_c to avoid underestimating wide values like "1100 mV"
+                                    const uint32_t sbs_dw4b = renderer->getTextDimensions(ult::DIVIDER_SYMBOL, false, fontsize).first;
+                                    const uint32_t vddq_rw4b = vddq_only_c[0] ? renderer->getTextDimensions(vddq_only_c, false, fontsize).first : 0;
+                                    const uint32_t tmp_rw4b = mini_ram_temp_c[0] ? renderer->getTextDimensions(mini_ram_temp_c, false, fontsize).first
+                                                                                  : renderer->getTextDimensions("88°C", false, fontsize).first;
+                                    const uint32_t data_rw4b = !settings.showRAMLoadCPUGPU
+                                        ? renderer->getTextDimensions("100%@4444.4", false, fontsize).first
+                                        : renderer->getTextDimensions("100%[100%,100%]@4444.4", false, fontsize).first;
+                                    const uint32_t vddq_row_w = data_rw4b + sbs_dw4b + vddq_rw4b + sbs_dw4b + tmp_rw4b;
+                                    width = std::max(width, vddq_row_w);
+                                } else {
+                                    // SBS: temp at center row = data + DIVIDER + max(vdd2_w,vddq_w) + DIVIDER + temp
+                                    const uint32_t vdd2_rw4 = vdd2_only_c[0] ? renderer->getTextDimensions(vdd2_only_c, false, fontsize).first : 0;
+                                    const uint32_t vddq_rw4 = vddq_only_c[0] ? renderer->getTextDimensions(vddq_only_c, false, fontsize).first : 0;
+                                    const uint32_t sbs_dw4 = renderer->getTextDimensions(ult::DIVIDER_SYMBOL, false, fontsize).first;
+                                    const uint32_t data_rw4 = !settings.showRAMLoadCPUGPU
+                                        ? renderer->getTextDimensions("100%@4444.4", false, fontsize).first
+                                        : renderer->getTextDimensions("100%[100%,100%]@4444.4", false, fontsize).first;
+                                    const uint32_t ctr_row_w = data_rw4 + sbs_dw4 + std::max(vdd2_rw4, vddq_rw4) + sbs_dw4 + tmp_w;
+                                    width = std::max(width, ctr_row_w);
+                                }
+                            } else {
+                                // Not split VDD2+VDDQ: inline temp appended to volt
+                                // Skip if this is a ramTempSplit case (handled by proxy already)
+                                const bool rts_w = !settings.showSideBySideRAMTemp && settings.realVolts &&
+                                                   ((settings.showVDDQ && isMariko && !settings.showVDD2) ||
+                                                    (settings.showVDD2 && !settings.showVDDQ));
+
+                                if (!rts_w) {
+                                    width += div_w + tmp_w;
+                                }
+                            }
+                        }
                     } else if (key == "RAM" && (!settings.showRAMLoad || (R_FAILED(sysclkCheck) && R_FAILED(hocclkCheck)))) {
                         //dimensions = renderer->drawString("44444444MB@4444.4", false, 0, 0, fontsize, renderer->a(0x0000));
                         const bool splitVDDQ_B = !settings.showSideBySideVDDQ &&
@@ -442,6 +502,39 @@ public:
                                     width = renderer->getTextDimensions("100%@4444.44444.4 mV", false, fontsize).first;
                                 else
                                     width = renderer->getTextDimensions("100%@4444.44444 mV", false, fontsize).first;
+                            }
+                        }
+                        // RAM temp width for RAM-only block
+                        if (settings.showRAMTemp) {
+                            const uint32_t div_wB = renderer->getTextDimensions(ult::DIVIDER_SYMBOL, false, fontsize).first;
+                            const uint32_t tmp_wB = renderer->getTextDimensions("88°C", false, fontsize).first;
+                            if (splitVDDQ_B) {
+                                // Split VDD2+VDDQ: ensure VDDQ row (or center row SBS) is covered
+                                if (!settings.showSideBySideRAMTemp) {
+                                    // non-SBS: use actual vddq_only_c to avoid "444 mV" underestimating wide values
+                                    const uint32_t sbs_dw5 = renderer->getTextDimensions(ult::DIVIDER_SYMBOL, false, fontsize).first;
+                                    const uint32_t vddq_rw5 = vddq_only_c[0] ? renderer->getTextDimensions(vddq_only_c, false, fontsize).first : 0;
+                                    const uint32_t tmp_rw5 = mini_ram_temp_c[0] ? renderer->getTextDimensions(mini_ram_temp_c, false, fontsize).first
+                                                                                  : renderer->getTextDimensions("88°C", false, fontsize).first;
+                                    const uint32_t vddq_row_w = renderer->getTextDimensions("100%@4444.4", false, fontsize).first + sbs_dw5 + vddq_rw5 + sbs_dw5 + tmp_rw5;
+                                    width = std::max(width, vddq_row_w);
+                                } else {
+                                    // SBS: data + DIVIDER + max(vdd2_w, vddq_w) + DIVIDER + temp
+                                    const uint32_t vdd2_rw5 = vdd2_only_c[0] ? renderer->getTextDimensions(vdd2_only_c, false, fontsize).first : 0;
+                                    const uint32_t vddq_rw5 = vddq_only_c[0] ? renderer->getTextDimensions(vddq_only_c, false, fontsize).first : 0;
+                                    const uint32_t sbs_dw5 = renderer->getTextDimensions(ult::DIVIDER_SYMBOL, false, fontsize).first;
+                                    const uint32_t data_rw5 = renderer->getTextDimensions("100%@4444.4", false, fontsize).first;
+                                    const uint32_t ctr_row_w = data_rw5 + sbs_dw5 + std::max(vdd2_rw5, vddq_rw5) + sbs_dw5 + tmp_wB;
+                                    width = std::max(width, ctr_row_w);
+                                }
+                            } else {
+                                const bool rts_wB = !settings.showSideBySideRAMTemp && settings.realVolts &&
+                                                    ((settings.showVDDQ && isMariko && !settings.showVDD2) ||
+                                                     (settings.showVDD2 && !settings.showVDDQ));
+
+                                if (!rts_wB) {
+                                    width += div_wB + tmp_wB;
+                                }
                             }
                         }
                     } else if (key == "SOC") {                // new block
@@ -573,21 +666,45 @@ public:
                     labelText = "";
                     
                     if (key == "CPU" && !(flags & 1)) {
-                        shouldAdd = true;
-                        labelText = "CPU";
+                        const bool wantCPUSplit = settings.showCPUTemp && !settings.showSideBySideCPUTemp && settings.realVolts;
+                        if (wantCPUSplit) {
+                            labelLines.push_back("CPU_SVOLT");
+                            labelLines.push_back("CPU_STEMP");
+                            entryCount++;
+                        } else {
+                            shouldAdd = true;
+                            labelText = "CPU";
+                        }
                         flags |= 1;
                     } else if (key == "GPU" && !(flags & 2)) {
-                        shouldAdd = true;
-                        labelText = "GPU";
+                        const bool wantGPUSplit = settings.showGPUTemp && !settings.showSideBySideGPUTemp && settings.realVolts;
+                        if (wantGPUSplit) {
+                            labelLines.push_back("GPU_SVOLT");
+                            labelLines.push_back("GPU_STEMP");
+                            entryCount++;
+                        } else {
+                            shouldAdd = true;
+                            labelText = "GPU";
+                        }
                         flags |= 2;
                     } else if (key == "RAM" && !(flags & 4)) {
                         const bool wantSplitVDDQ = !settings.showSideBySideVDDQ &&
                                                    settings.realVolts && settings.showVDD2 &&
                                                    settings.showVDDQ && isMariko;
+                        // ramTempSplit: single volt rail (VDDQ-only Mariko, or VDD2-only any platform), RAM temp non-SBS
+                        const bool wantRAMTempSplit = settings.showRAMTemp && !settings.showSideBySideRAMTemp &&
+                                                      !wantSplitVDDQ && settings.realVolts &&
+                                                      ((settings.showVDDQ && isMariko && !settings.showVDD2) ||
+                                                       (settings.showVDD2 && !settings.showVDDQ));
+
                         if (wantSplitVDDQ) {
                             labelLines.push_back("RAM_SVDD2");
                             labelLines.push_back("RAM_SVDDQ");
                             entryCount++;  // two rows count as one extra
+                        } else if (wantRAMTempSplit) {
+                            labelLines.push_back("RAM_SVDDQ_ONLY");
+                            labelLines.push_back("RAM_STEMP");
+                            entryCount++;
                         } else {
                             shouldAdd = true;
                             labelText = "RAM";
@@ -677,6 +794,28 @@ public:
                 if (!settings.showSideBySideVDDQ && settings.realVolts &&
                     settings.showVDD2 && settings.showVDDQ && isMariko)
                     cachedHeight -= settings.spacing / 2;
+                // CPU/GPU temp split contributes one compressed row per split
+                {
+                    const bool wantCPUSplit = settings.showCPUTemp && !settings.showSideBySideCPUTemp && settings.realVolts;
+                    const bool wantGPUSplit = settings.showGPUTemp && !settings.showSideBySideGPUTemp && settings.realVolts;
+                    const bool wantRAMTempSplit = settings.showRAMTemp && !settings.showSideBySideRAMTemp &&
+                                                  settings.realVolts &&
+                                                  ((settings.showVDDQ && isMariko && !settings.showVDD2) ||
+                                                   (settings.showVDD2 && !settings.showVDDQ));
+
+                    const bool wantVDDQSplit = !settings.showSideBySideVDDQ && settings.realVolts && settings.showVDD2 && settings.showVDDQ && isMariko;
+                    for (const auto& k : showKeys) {
+                        if (k == "CPU" && wantCPUSplit) { cachedHeight -= settings.spacing / 2; break; }
+                    }
+                    for (const auto& k : showKeys) {
+                        if (k == "GPU" && wantGPUSplit) { cachedHeight -= settings.spacing / 2; break; }
+                    }
+                    if (!wantVDDQSplit) {
+                        for (const auto& k : showKeys) {
+                            if (k == "RAM" && wantRAMTempSplit) { cachedHeight -= settings.spacing / 2; break; }
+                        }
+                    }
+                }
                 //const uint32_t margin = (fontsize * 4);
                 
                 cachedBaseX = 0;
@@ -780,6 +919,9 @@ public:
             static uint32_t labelWidth, labelCenterX;
             static int sfanFanColX = 0;     // shared between TMP_SFAN and TMP_SVOLT
             static int ramSplitVoltColX = 0; // shared between RAM_SVDD2 and RAM_SVDDQ
+            static int cpuSplitVoltColX = 0; // shared between CPU_SVOLT and CPU_STEMP
+            static int gpuSplitVoltColX = 0; // shared between GPU_SVOLT and GPU_STEMP
+            static int ramTempVoltColX = 0;  // shared between RAM_SVDDQ_ONLY and RAM_STEMP
             static std::vector<std::string> _variableLines;
             if (!delayUpdate)
                 _variableLines = variableLines;
@@ -805,7 +947,10 @@ public:
                     (labelLines[labelIndex] == "TMP_TOP" || labelLines[labelIndex] == "TMP_BOT" ||
                      labelLines[labelIndex] == "TMP_COMP" ||
                      labelLines[labelIndex] == "TMP_SFAN" || labelLines[labelIndex] == "TMP_SVOLT" ||
-                     labelLines[labelIndex] == "RAM_SVDD2" || labelLines[labelIndex] == "RAM_SVDDQ"));
+                     labelLines[labelIndex] == "RAM_SVDD2" || labelLines[labelIndex] == "RAM_SVDDQ" ||
+                     labelLines[labelIndex] == "CPU_SVOLT" || labelLines[labelIndex] == "CPU_STEMP" ||
+                     labelLines[labelIndex] == "GPU_SVOLT" || labelLines[labelIndex] == "GPU_STEMP" ||
+                     labelLines[labelIndex] == "RAM_SVDDQ_ONLY" || labelLines[labelIndex] == "RAM_STEMP"));
                 if (!isTmpHocRow && settings.showLabels && !labelLines[labelIndex].empty()) {
                     labelWidth = renderer->getTextDimensions(labelLines[labelIndex], false, fontsize).first;
                     labelCenterX = cachedBaseX + (margin / 2) - (labelWidth / 2);
@@ -1114,6 +1259,19 @@ public:
                         // Centre connector divider at ramCenterY
                         renderer->drawString(ult::DIVIDER_SYMBOL, false, ramSplitVoltColX,
                             ramCenterY, fontsize, settings.separatorColor);
+                        // SBS RAM temp: draw AFTER max(vdd2, vddq) + second divider at ramCenterY
+                        if (settings.showRAMTemp && settings.showSideBySideRAMTemp && mini_ram_temp_c[0]) {
+                            const uint32_t sbs_dw = (int)renderer->getTextDimensions(ult::DIVIDER_SYMBOL, false, fontsize).first;
+                            const uint32_t vdd2_rw = vdd2_only_c[0] ? (int)renderer->getTextDimensions(vdd2_only_c, false, fontsize).first : 0;
+                            const uint32_t vddq_rw = vddq_only_c[0] ? (int)renderer->getTextDimensions(vddq_only_c, false, fontsize).first : 0;
+                            int cx = ramSplitVoltColX + sbs_dw + std::max(vdd2_rw, vddq_rw);
+                            cx += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, cx, ramCenterY, fontsize, settings.separatorColor).first;
+                            const int rtv = atoi(mini_ram_temp_c);
+                            renderer->drawString(std::string(mini_ram_temp_c), false, cx, ramCenterY, fontsize,
+                                settings.useDynamicColors
+                                    ? tsl::GradientColor((float)rtv, tsl::DEFAULT_TEMP_RANGE_HIGH)
+                                    : settings.textColor);
+                        }
                         // VDD2 at top row (baseY)
                         if (vdd2_only_c[0]) {
                             int rx = ramSplitVoltColX;
@@ -1131,8 +1289,158 @@ public:
                                 fontsize, settings.separatorColor).first;
                             renderer->drawStringWithColoredSections(std::string(vddq_only_c), false,
                                 specialChars, rx, svddqY, fontsize, settings.textColor, settings.separatorColor);
+                            // non-SBS: RAM temp appended after VDDQ at bottom row
+                            if (settings.showRAMTemp && !settings.showSideBySideRAMTemp && mini_ram_temp_c[0]) {
+                                rx += (int)renderer->getTextDimensions(std::string(vddq_only_c), false, fontsize).first;
+                                rx += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, rx, svddqY,
+                                    fontsize, settings.separatorColor).first;
+                                const int rtv = atoi(mini_ram_temp_c);
+                                renderer->drawString(std::string(mini_ram_temp_c), false, rx, svddqY, fontsize,
+                                    settings.useDynamicColors
+                                        ? tsl::GradientColor((float)rtv, tsl::DEFAULT_TEMP_RANGE_HIGH)
+                                        : settings.textColor);
+
+                            }
                         }
                         currentY -= (int)settings.spacing / 2;
+
+                    } else if (labelIndex < labelLines.size() && labelLines[labelIndex] == "CPU_SVOLT") {
+                        // CPU split row 1: data centered between rows, volt at top (baseY).
+                        const int cpuCenterY = baseY + ((int)fontsize + (int)settings.spacing / 2) / 2;
+                        int currentX = baseX;
+                        // Data at center Y
+                        renderer->drawStringWithColoredSections(currentLine, false, specialChars,
+                            currentX, cpuCenterY, fontsize, settings.textColor, settings.separatorColor);
+                        currentX += (int)renderer->getTextDimensions(currentLine, false, fontsize).first;
+                        cpuSplitVoltColX = currentX;
+                        // CPU label centered (if showLabels)
+                        if (settings.showLabels) {
+                            const std::string cpuLbl = "CPU";
+                            const uint32_t cpuLblW = renderer->getTextDimensions(cpuLbl, false, fontsize).first;
+                            const uint32_t cpuLblX = cachedBaseX + (margin / 2) - (cpuLblW / 2);
+                            renderer->drawString(cpuLbl, false, cpuLblX + _frameOffsetX + clippingOffsetX,
+                                cpuCenterY, fontsize, settings.catColor);
+                        }
+                        // Centre connector divider
+                        renderer->drawString(ult::DIVIDER_SYMBOL, false, cpuSplitVoltColX,
+                            cpuCenterY, fontsize, settings.separatorColor);
+                        // CPU volt at top row (baseY)
+                        if (settings.realVolts && MINI_CPU_volt_c[0]) {
+                            int rx = cpuSplitVoltColX;
+                            rx += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, rx, baseY,
+                                fontsize, settings.separatorColor).first;
+                            renderer->drawStringWithColoredSections(std::string(MINI_CPU_volt_c), false,
+                                specialChars, rx, baseY, fontsize, settings.textColor, settings.separatorColor);
+                        }
+
+                    } else if (labelIndex < labelLines.size() && labelLines[labelIndex] == "CPU_STEMP") {
+                        // CPU split row 2: CPU temp at bottom row; uses spacing/2 compression.
+                        // Re-locate voltColX from the CPU_SVOLT pass — stored in the static above
+                        const int stempY = baseY - (int)settings.spacing / 2;
+                        if (mini_cpu_temp_c[0]) {
+                            // Re-read cpuSplitVoltColX: use baseX + data width approach
+                            // We use the same static variable (shared scope trick) — draw at baseX for now
+                            // Actually, the static is per-translation unit: use the same name for consistent storage
+                            int rx = cpuSplitVoltColX ? cpuSplitVoltColX : baseX;
+                            rx += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, rx, stempY,
+                                fontsize, settings.separatorColor).first;
+                            const int tv = atoi(mini_cpu_temp_c);
+                            renderer->drawString(std::string(mini_cpu_temp_c), false, rx, stempY, fontsize,
+                                settings.useDynamicColors
+                                    ? tsl::GradientColor((float)tv, tsl::DEFAULT_TEMP_RANGE_HIGH)
+                                    : settings.textColor);
+                        }
+                        currentY -= (int)settings.spacing / 2;
+
+                    } else if (labelIndex < labelLines.size() && labelLines[labelIndex] == "GPU_SVOLT") {
+                        // GPU split row 1: data centered between rows, volt at top (baseY).
+                        const int gpuCenterY = baseY + ((int)fontsize + (int)settings.spacing / 2) / 2;
+                        int currentX = baseX;
+                        // Data at center Y
+                        renderer->drawStringWithColoredSections(currentLine, false, specialChars,
+                            currentX, gpuCenterY, fontsize, settings.textColor, settings.separatorColor);
+                        currentX += (int)renderer->getTextDimensions(currentLine, false, fontsize).first;
+                        gpuSplitVoltColX = currentX;
+                        // GPU label centered (if showLabels)
+                        if (settings.showLabels) {
+                            const std::string gpuLbl = "GPU";
+                            const uint32_t gpuLblW = renderer->getTextDimensions(gpuLbl, false, fontsize).first;
+                            const uint32_t gpuLblX = cachedBaseX + (margin / 2) - (gpuLblW / 2);
+                            renderer->drawString(gpuLbl, false, gpuLblX + _frameOffsetX + clippingOffsetX,
+                                gpuCenterY, fontsize, settings.catColor);
+                        }
+                        // Centre connector divider
+                        renderer->drawString(ult::DIVIDER_SYMBOL, false, gpuSplitVoltColX,
+                            gpuCenterY, fontsize, settings.separatorColor);
+                        // GPU volt at top row (baseY)
+                        if (settings.realVolts && MINI_GPU_volt_c[0]) {
+                            int rx = gpuSplitVoltColX;
+                            rx += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, rx, baseY,
+                                fontsize, settings.separatorColor).first;
+                            renderer->drawStringWithColoredSections(std::string(MINI_GPU_volt_c), false,
+                                specialChars, rx, baseY, fontsize, settings.textColor, settings.separatorColor);
+                        }
+
+                    } else if (labelIndex < labelLines.size() && labelLines[labelIndex] == "GPU_STEMP") {
+                        // GPU split row 2: GPU temp at bottom row; uses spacing/2 compression.
+                        const int stempY = baseY - (int)settings.spacing / 2;
+                        if (mini_gpu_temp_c[0]) {
+                            int rx = gpuSplitVoltColX ? gpuSplitVoltColX : baseX;
+                            rx += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, rx, stempY,
+                                fontsize, settings.separatorColor).first;
+                            const int tv = atoi(mini_gpu_temp_c);
+                            renderer->drawString(std::string(mini_gpu_temp_c), false, rx, stempY, fontsize,
+                                settings.useDynamicColors
+                                    ? tsl::GradientColor((float)tv, tsl::DEFAULT_TEMP_RANGE_HIGH)
+                                    : settings.textColor);
+                        }
+                        currentY -= (int)settings.spacing / 2;
+
+                    } else if (labelIndex < labelLines.size() && labelLines[labelIndex] == "RAM_SVDDQ_ONLY") {
+                        // RAM temp split row 1 (single volt rail): data centered, volt at top (baseY).
+                        const int ramTCenterY = baseY + ((int)fontsize + (int)settings.spacing / 2) / 2;
+                        int currentX = baseX;
+                        // RAM data at center Y
+                        renderer->drawStringWithColoredSections(currentLine, false, specialChars,
+                            currentX, ramTCenterY, fontsize, settings.textColor, settings.separatorColor);
+                        currentX += (int)renderer->getTextDimensions(currentLine, false, fontsize).first;
+                        ramTempVoltColX = currentX;
+                        // RAM label centered (if showLabels)
+                        if (settings.showLabels) {
+                            const std::string ramLbl = "RAM";
+                            const uint32_t ramLblW = renderer->getTextDimensions(ramLbl, false, fontsize).first;
+                            const uint32_t ramLblX = cachedBaseX + (margin / 2) - (ramLblW / 2);
+                            renderer->drawString(ramLbl, false, ramLblX + _frameOffsetX + clippingOffsetX,
+                                ramTCenterY, fontsize, settings.catColor);
+                        }
+                        // Centre connector divider
+                        renderer->drawString(ult::DIVIDER_SYMBOL, false, ramTempVoltColX,
+                            ramTCenterY, fontsize, settings.separatorColor);
+                        // Volt at top row (prefer VDDQ, fall back to VDD2)
+                        const char* ramSplitTopVolt = vddq_only_c[0] ? vddq_only_c : vdd2_only_c;
+                        if (ramSplitTopVolt[0]) {
+                            int rx = ramTempVoltColX;
+                            rx += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, rx, baseY,
+                                fontsize, settings.separatorColor).first;
+                            renderer->drawStringWithColoredSections(std::string(ramSplitTopVolt), false,
+                                specialChars, rx, baseY, fontsize, settings.textColor, settings.separatorColor);
+                        }
+
+                    } else if (labelIndex < labelLines.size() && labelLines[labelIndex] == "RAM_STEMP") {
+                        // RAM temp split row 2: RAM temp at bottom; uses spacing/2 compression.
+                        const int stempY = baseY - (int)settings.spacing / 2;
+                        if (mini_ram_temp_c[0]) {
+                            int rx = ramTempVoltColX ? ramTempVoltColX : baseX;
+                            rx += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, rx, stempY,
+                                fontsize, settings.separatorColor).first;
+                            const int tv = atoi(mini_ram_temp_c);
+                            renderer->drawString(std::string(mini_ram_temp_c), false, rx, stempY, fontsize,
+                                settings.useDynamicColors
+                                    ? tsl::GradientColor((float)tv, tsl::DEFAULT_TEMP_RANGE_HIGH)
+                                    : settings.textColor);
+                        }
+                        currentY -= (int)settings.spacing / 2;
+
                     } else if (labelIndex < labelLines.size() && labelLines[labelIndex] == "TMP_SFAN") {
                         // Split fan row: temps + fan on row 1; "TMP" label drawn manually.
                         // HOC split: temps at baseY (top row), label centered between both rows.
@@ -1278,10 +1586,54 @@ public:
                     } else {
                         // Normal rendering for all other line types (CPU, GPU, RAM, BAT, FPS, RES, DTC)
                         renderer->drawStringWithColoredSections(currentLine, false, specialChars, baseX, baseY, fontsize, settings.textColor, settings.separatorColor);
+                        int afterX = baseX + (int)renderer->getTextDimensions(currentLine, false, fontsize).first;
+                        if (labelIndex < labelLines.size() && labelLines[labelIndex] == "CPU" &&
+                            settings.showCPUTemp && settings.showSideBySideCPUTemp && mini_cpu_temp_c[0]) {
+                            afterX += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, afterX, baseY, fontsize, settings.separatorColor).first;
+                            const int tv = atoi(mini_cpu_temp_c);
+                            renderer->drawString(std::string(mini_cpu_temp_c), false, afterX, baseY, fontsize,
+                                settings.useDynamicColors ? tsl::GradientColor((float)tv, tsl::DEFAULT_TEMP_RANGE_HIGH) : settings.textColor);
+                        }
+                        if (labelIndex < labelLines.size() && labelLines[labelIndex] == "GPU" &&
+                            settings.showGPUTemp && settings.showSideBySideGPUTemp && mini_gpu_temp_c[0]) {
+                            afterX += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, afterX, baseY, fontsize, settings.separatorColor).first;
+                            const int tv = atoi(mini_gpu_temp_c);
+                            renderer->drawString(std::string(mini_gpu_temp_c), false, afterX, baseY, fontsize,
+                                settings.useDynamicColors ? tsl::GradientColor((float)tv, tsl::DEFAULT_TEMP_RANGE_HIGH) : settings.textColor);
+                        }
+                        if (labelIndex < labelLines.size() && labelLines[labelIndex] == "RAM" &&
+                            settings.showRAMTemp && mini_ram_temp_c[0]) {
+                            afterX += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, afterX, baseY, fontsize, settings.separatorColor).first;
+                            const int tv = atoi(mini_ram_temp_c);
+                            renderer->drawString(std::string(mini_ram_temp_c), false, afterX, baseY, fontsize,
+                                settings.useDynamicColors ? tsl::GradientColor((float)tv, tsl::DEFAULT_TEMP_RANGE_HIGH) : settings.textColor);
+                        }
                     }
                 } else {
                     // Normal rendering for all other line types (CPU, GPU, RAM, BAT, FPS, RES, DTC)
                     renderer->drawStringWithColoredSections(currentLine, false, specialChars, baseX, baseY, fontsize, settings.textColor, settings.separatorColor);
+                    int afterX = baseX + (int)renderer->getTextDimensions(currentLine, false, fontsize).first;
+                    if (labelIndex < labelLines.size() && labelLines[labelIndex] == "CPU" &&
+                        settings.showCPUTemp && settings.showSideBySideCPUTemp && mini_cpu_temp_c[0]) {
+                        afterX += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, afterX, baseY, fontsize, settings.separatorColor).first;
+                        const int tv = atoi(mini_cpu_temp_c);
+                        renderer->drawString(std::string(mini_cpu_temp_c), false, afterX, baseY, fontsize,
+                            settings.useDynamicColors ? tsl::GradientColor((float)tv, tsl::DEFAULT_TEMP_RANGE_HIGH) : settings.textColor);
+                    }
+                    if (labelIndex < labelLines.size() && labelLines[labelIndex] == "GPU" &&
+                        settings.showGPUTemp && settings.showSideBySideGPUTemp && mini_gpu_temp_c[0]) {
+                        afterX += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, afterX, baseY, fontsize, settings.separatorColor).first;
+                        const int tv = atoi(mini_gpu_temp_c);
+                        renderer->drawString(std::string(mini_gpu_temp_c), false, afterX, baseY, fontsize,
+                            settings.useDynamicColors ? tsl::GradientColor((float)tv, tsl::DEFAULT_TEMP_RANGE_HIGH) : settings.textColor);
+                    }
+                    if (labelIndex < labelLines.size() && labelLines[labelIndex] == "RAM" &&
+                        settings.showRAMTemp && mini_ram_temp_c[0]) {
+                        afterX += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, afterX, baseY, fontsize, settings.separatorColor).first;
+                        const int tv = atoi(mini_ram_temp_c);
+                        renderer->drawString(std::string(mini_ram_temp_c), false, afterX, baseY, fontsize,
+                            settings.useDynamicColors ? tsl::GradientColor((float)tv, tsl::DEFAULT_TEMP_RANGE_HIGH) : settings.textColor);
+                    }
                 }
                 
                 currentY += fontsize + settings.spacing;
@@ -1345,13 +1697,13 @@ public:
     
         // Variables to store formatted strings
         char MINI_CPU_compressed_c[42] = "";
-        char MINI_CPU_volt_c[16] = "";
         char MINI_GPU_Load_c[20] = "";
-        char MINI_GPU_volt_c[20] = "";
         char MINI_RAM_var_compressed_c[35] = "";
         char MINI_RAM_volt_c[32] = "";
         char MINI_MEM_RAM_c[32] = "";
         MINI_SOC_volt_c[0] = '\0';  // reset each frame
+        MINI_CPU_volt_c[0] = '\0';  // reset each frame
+        MINI_GPU_volt_c[0] = '\0';  // reset each frame
 
         // Only process CPU if needed
         if (isActive("CPU")) {
@@ -1412,6 +1764,11 @@ public:
                 const uint32_t mv = realCPU_mV / 1000;
                 snprintf(MINI_CPU_volt_c, sizeof(MINI_CPU_volt_c), "%u mV", mv);
             }
+            // Individual CPU die temp for per-component display
+            if (settings.showCPUTemp)
+                snprintf(mini_cpu_temp_c, sizeof(mini_cpu_temp_c), "%d\u00B0C", (int)(componentCPU_mC / 1000));
+            else
+                mini_cpu_temp_c[0] = '\0';
         }
     
         // Only process GPU if needed
@@ -1432,6 +1789,11 @@ public:
                 const uint32_t mv = realGPU_mV / 1000;
                 snprintf(MINI_GPU_volt_c, sizeof(MINI_GPU_volt_c), "%u mV", mv);
             }
+            // Individual GPU die temp for per-component display
+            if (settings.showGPUTemp)
+                snprintf(mini_gpu_temp_c, sizeof(mini_gpu_temp_c), "%d\u00B0C", (int)(componentGPU_mC / 1000));
+            else
+                mini_gpu_temp_c[0] = '\0';
         }
     
         // Only process RAM if needed
@@ -1549,6 +1911,12 @@ public:
             }
         }
     
+        // Individual RAM die temp for per-component display
+        if (isActive("RAM") && settings.showRAMTemp)
+            snprintf(mini_ram_temp_c, sizeof(mini_ram_temp_c), "%d\u00B0C", (int)(componentRAM_mC / 1000));
+        else
+            mini_ram_temp_c[0] = '\0';
+
         // Only process MEM if needed
         if (isActive("MEM")) {
             const u64 freeRamBytes = RAM_Total_system_u - RAM_Used_system_u;
@@ -1754,32 +2122,59 @@ public:
         for (const auto& key : showKeys) {
             if (key == "CPU" && !(flags & 1)) {
                 if (Temp[0]) strcat(Temp, "\n");
-                strcat(Temp, MINI_CPU_compressed_c);
-                if (settings.realVolts && MINI_CPU_volt_c[0]) {
-                    strcat(Temp, "");
-                    strcat(Temp, MINI_CPU_volt_c);
+                const bool cpuSplit_v = settings.showCPUTemp && !settings.showSideBySideCPUTemp && settings.realVolts;
+                if (cpuSplit_v) {
+                    strcat(Temp, MINI_CPU_compressed_c);
+                    strcat(Temp, "\n");
+                    strcat(Temp, " ");
+                } else {
+                    strcat(Temp, MINI_CPU_compressed_c);
+                    if (settings.realVolts && MINI_CPU_volt_c[0]) {
+                        strcat(Temp, "");
+                        strcat(Temp, MINI_CPU_volt_c);
+                    }
+
                 }
                 flags |= 1;
             }
             else if (key == "GPU" && !(flags & 2)) {
                 if (Temp[0]) strcat(Temp, "\n");
-                strcat(Temp, MINI_GPU_Load_c);
-                if (settings.realVolts && MINI_GPU_volt_c[0]) {
-                    strcat(Temp, "");
-                    strcat(Temp, MINI_GPU_volt_c);
+                const bool gpuSplit_v = settings.showGPUTemp && !settings.showSideBySideGPUTemp && settings.realVolts;
+                if (gpuSplit_v) {
+                    strcat(Temp, MINI_GPU_Load_c);
+                    strcat(Temp, "\n");
+                    strcat(Temp, " ");
+                } else {
+                    strcat(Temp, MINI_GPU_Load_c);
+                    if (settings.realVolts && MINI_GPU_volt_c[0]) {
+                        strcat(Temp, "");
+                        strcat(Temp, MINI_GPU_volt_c);
+                    }
+
                 }
                 flags |= 2;
             }
             else if (key == "RAM" && !(flags & 4)) {
                 if (Temp[0]) strcat(Temp, "\n");
-                const bool splitVDDQ = !settings.showSideBySideVDDQ &&
-                                       settings.realVolts && settings.showVDD2 &&
-                                       settings.showVDDQ && isMariko;
-                if (splitVDDQ) {
+                const bool splitVDDQ_t = !settings.showSideBySideVDDQ &&
+                                        settings.realVolts && settings.showVDD2 &&
+                                        settings.showVDDQ && isMariko;
+                const bool ramTempSplit_t = settings.showRAMTemp && !settings.showSideBySideRAMTemp &&
+                                            !splitVDDQ_t && settings.realVolts &&
+                                            ((settings.showVDDQ && isMariko && !settings.showVDD2) ||
+                                             (settings.showVDD2 && !settings.showVDDQ));
+
+                if (splitVDDQ_t) {
                     // Row 1: usage only (VDD2 drawn by renderer)
                     strcat(Temp, MINI_RAM_var_compressed_c);
                     strcat(Temp, "\n");
-                    // Row 2: space placeholder (VDDQ drawn by renderer at ramSplitVoltColX)
+                    // Row 2: space placeholder (VDDQ drawn by renderer)
+                    strcat(Temp, " ");
+                } else if (ramTempSplit_t) {
+                    // Row 1: RAM data only (VDDQ top drawn by renderer)
+                    strcat(Temp, MINI_RAM_var_compressed_c);
+                    strcat(Temp, "\n");
+                    // Row 2: placeholder (RAM temp bottom drawn by renderer)
                     strcat(Temp, " ");
                 } else {
                     strcat(Temp, MINI_RAM_var_compressed_c);
@@ -1787,6 +2182,7 @@ public:
                         strcat(Temp, "");
                         strcat(Temp, MINI_RAM_volt_c);
                     }
+
                 }
                 flags |= 4;
             }
