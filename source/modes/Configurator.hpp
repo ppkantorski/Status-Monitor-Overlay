@@ -456,10 +456,17 @@ public:
     
     virtual tsl::elm::Element* createUI() override {
         auto* list = new tsl::elm::List();
-        list->addItem(new tsl::elm::CategoryHeader("Toggles"));
         
         if (isFPSGraphMode) {
-            // FPS Graph: show_info and disable_screenshots
+            // FPS Graph
+            list->addItem(new tsl::elm::CategoryHeader("Global"));
+
+            auto* disableScreenshots = new tsl::elm::ToggleListItem("Disable Screenshots", getCurrentDisableScreenshots("fps-graph"));
+            disableScreenshots->setStateChangedListener([this](bool state) {
+                ult::setIniFileValue(configIniPath, "fps-graph", "disable_screenshots", state ? "true" : "false");
+            });
+            list->addItem(disableScreenshots);
+
             auto* showInfo = new tsl::elm::ToggleListItem("Info", getCurrentShowInfo());
             showInfo->setStateChangedListener([this](bool state) {
                 ult::setIniFileValue(configIniPath, "fps-graph", "show_info", state ? "true" : "false");
@@ -471,15 +478,18 @@ public:
                 ult::setIniFileValue(configIniPath, "fps-graph", "use_dynamic_colors", state ? "true" : "false");
             });
             list->addItem(dynamicColors);
-
-            auto* disableScreenshots = new tsl::elm::ToggleListItem("Disable Screenshots", getCurrentDisableScreenshots("fps-graph"));
-            disableScreenshots->setStateChangedListener([this](bool state) {
-                ult::setIniFileValue(configIniPath, "fps-graph", "disable_screenshots", state ? "true" : "false");
-            });
-            list->addItem(disableScreenshots);
             
         } else if (isFullMode) {
-            // Full mode: specific full toggles
+            // Full mode
+            list->addItem(new tsl::elm::CategoryHeader("Global"));
+
+            auto* disableScreenshots2 = new tsl::elm::ToggleListItem("Disable Screenshots", getCurrentDisableScreenshots("full"));
+            disableScreenshots2->setStateChangedListener([this](bool state) {
+                ult::setIniFileValue(configIniPath, "full", "disable_screenshots", state ? "true" : "false");
+            });
+            list->addItem(disableScreenshots2);
+
+            list->addItem(new tsl::elm::CategoryHeader("Full Mode"));
             auto* realFreqs = new tsl::elm::ToggleListItem("Real Freqs", getCurrentShowRealFreqs());
             realFreqs->setStateChangedListener([this](bool state) {
                 ult::setIniFileValue(configIniPath, "full", "show_real_freqs", state ? "true" : "false");
@@ -516,21 +526,23 @@ public:
             });
             list->addItem(showRDSD);
 
-            auto* dynamicColors = new tsl::elm::ToggleListItem("Use Dynamic Colors", getCurrentUseDynamicColors());
-            dynamicColors->setStateChangedListener([this](bool state) {
+            auto* dynamicColors2 = new tsl::elm::ToggleListItem("Use Dynamic Colors", getCurrentUseDynamicColors());
+            dynamicColors2->setStateChangedListener([this](bool state) {
                 ult::setIniFileValue(configIniPath, "fps-graph", "use_dynamic_colors", state ? "true" : "false");
             });
-            list->addItem(dynamicColors);
-
-            auto* disableScreenshots = new tsl::elm::ToggleListItem("Disable Screenshots", getCurrentDisableScreenshots("full"));
-            disableScreenshots->setStateChangedListener([this](bool state) {
-                ult::setIniFileValue(configIniPath, "full", "disable_screenshots", state ? "true" : "false");
-            });
-            list->addItem(disableScreenshots);
+            list->addItem(dynamicColors2);
             
         } else if (isMiniMode || isMicroMode) {
             // Mini/Micro modes: shared toggles
             const std::string section = isMiniMode ? "mini" : "micro";
+
+            list->addItem(new tsl::elm::CategoryHeader("Global"));
+
+            auto* disableScreenshots = new tsl::elm::ToggleListItem("Disable Screenshots", getCurrentDisableScreenshots(section));
+            disableScreenshots->setStateChangedListener([this, section](bool state) {
+                ult::setIniFileValue(configIniPath, section, "disable_screenshots", state ? "true" : "false");
+            });
+            list->addItem(disableScreenshots);
             
             if (isMiniMode) {
                 auto* showLabels = new tsl::elm::ToggleListItem("Labels", getCurrentShowLabels());
@@ -552,12 +564,16 @@ public:
             });
             list->addItem(realVolts);
             
+            list->addItem(new tsl::elm::CategoryHeader("CPU"));
+
             auto* showFullCPU = new tsl::elm::ToggleListItem("Full CPU", getCurrentShowFullCPU());
             showFullCPU->setStateChangedListener([this, section](bool state) {
                 ult::setIniFileValue(configIniPath, section, "show_full_cpu", state ? "true" : "false");
             });
             list->addItem(showFullCPU);
             
+            list->addItem(new tsl::elm::CategoryHeader("RAM"));
+
             if (isMiniMode) {
                 auto* ramLoadCPUGPU = new tsl::elm::ToggleListItem("RAM Load CPU/GPU", getCurrentShowRAMLoadCPUGPU());
                 ramLoadCPUGPU->setStateChangedListener([this, section](bool state) {
@@ -589,6 +605,13 @@ public:
                 list->addItem(sideBySideVDDQ);
             }
             
+            list->addItem(new tsl::elm::CategoryHeader("TMP"));
+
+            auto* dynamicColors = new tsl::elm::ToggleListItem("Use Dynamic Colors", getCurrentUseDynamicColors());
+            dynamicColors->setStateChangedListener([this, section](bool state) {
+                ult::setIniFileValue(configIniPath, section, "use_dynamic_colors", state ? "true" : "false");
+            });
+            list->addItem(dynamicColors);
 
             if (isMiniMode || isMicroMode) {
                 // CPU/GPU/RAM die temps toggle
@@ -629,12 +652,6 @@ public:
                 }
             }
 
-            auto* dynamicColors = new tsl::elm::ToggleListItem("Use Dynamic Colors", getCurrentUseDynamicColors());
-            dynamicColors->setStateChangedListener([this, section](bool state) {
-                ult::setIniFileValue(configIniPath, section, "use_dynamic_colors", state ? "true" : "false");
-            });
-            list->addItem(dynamicColors);
-
             auto* socVoltage = new tsl::elm::ToggleListItem("SOC Voltage", getCurrentShowSOCVoltage());
             socVoltage->setStateChangedListener([this, section](bool state) {
                 ult::setIniFileValue(configIniPath, section, "show_soc_voltage", state ? "true" : "false");
@@ -651,6 +668,7 @@ public:
 
             }
 
+            list->addItem(new tsl::elm::CategoryHeader("RES"));
 
             auto* showFullRes = new tsl::elm::ToggleListItem("Full Resolution", getCurrentShowFullRes());
             showFullRes->setStateChangedListener([this, section](bool state) {
@@ -659,6 +677,7 @@ public:
             list->addItem(showFullRes);
 
             if (isMiniMode || isMicroMode) {
+                list->addItem(new tsl::elm::CategoryHeader("BAT"));
                 auto* invertBatteryDisplay = new tsl::elm::ToggleListItem("Invert Battery Display", getCurrentInvertBatteryDisplay());
                 invertBatteryDisplay->setStateChangedListener([this, section](bool state) {
                     ult::setIniFileValue(configIniPath, section, "invert_battery_display", state ? "true" : "false");
@@ -666,26 +685,16 @@ public:
                 list->addItem(invertBatteryDisplay);
             }
             
+            list->addItem(new tsl::elm::CategoryHeader("DTC"));
             auto* dtcSymbol = new tsl::elm::ToggleListItem("Use DTC Symbol", getCurrentUseDTCSymbol());
             dtcSymbol->setStateChangedListener([this, section](bool state) {
                 ult::setIniFileValue(configIniPath, section, "use_dtc_symbol", state ? "true" : "false");
             });
             list->addItem(dtcSymbol);
-
-            auto* disableScreenshots = new tsl::elm::ToggleListItem("Disable Screenshots", getCurrentDisableScreenshots(section));
-            disableScreenshots->setStateChangedListener([this, section](bool state) {
-                ult::setIniFileValue(configIniPath, section, "disable_screenshots", state ? "true" : "false");
-            });
-            list->addItem(disableScreenshots);
-
-            auto* sleepExit = new tsl::elm::ToggleListItem("Sleep Exit", getCurrentSleepExit(section));
-            sleepExit->setStateChangedListener([this, section](bool state) {
-                ult::setIniFileValue(configIniPath, section, "sleep_exit", state ? "true" : "false");
-            });
-            list->addItem(sleepExit);
             
         } else if (isGameResolutionsMode) {
-            // Game Resolutions mode: only disable_screenshots
+            // Game Resolutions mode
+            list->addItem(new tsl::elm::CategoryHeader("Global"));
             auto* disableScreenshots = new tsl::elm::ToggleListItem("Disable Screenshots", getCurrentDisableScreenshots("game_resolutions"));
             disableScreenshots->setStateChangedListener([this](bool state) {
                 ult::setIniFileValue(configIniPath, "game_resolutions", "disable_screenshots", state ? "true" : "false");
@@ -693,19 +702,19 @@ public:
             list->addItem(disableScreenshots);
             
         } else if (isFPSCounterMode) {
-            // FPS Counter mode: only disable_screenshots
-            auto* integerCounter = new tsl::elm::ToggleListItem("Use Integer Counter", getCurrentUseIntegerCounter("fps-counter"));
-            integerCounter->setStateChangedListener([this](bool state) {
-                ult::setIniFileValue(configIniPath, "fps-counter", "use_integer_counter", state ? "true" : "false");
-            });
-            list->addItem(integerCounter);
-
-            // FPS Counter mode: only disable_screenshots
+            // FPS Counter mode
+            list->addItem(new tsl::elm::CategoryHeader("Global"));
             auto* disableScreenshots = new tsl::elm::ToggleListItem("Disable Screenshots", getCurrentDisableScreenshots("fps-counter"));
             disableScreenshots->setStateChangedListener([this](bool state) {
                 ult::setIniFileValue(configIniPath, "fps-counter", "disable_screenshots", state ? "true" : "false");
             });
             list->addItem(disableScreenshots);
+
+            auto* integerCounter = new tsl::elm::ToggleListItem("Use Integer Counter", getCurrentUseIntegerCounter("fps-counter"));
+            integerCounter->setStateChangedListener([this](bool state) {
+                ult::setIniFileValue(configIniPath, "fps-counter", "use_integer_counter", state ? "true" : "false");
+            });
+            list->addItem(integerCounter);
         }
         
         list->jumpToItem(jumpItemName, jumpItemValue, jumpItemExactMatch);
@@ -887,13 +896,6 @@ private:
         return value != "FALSE";  // True if not explicitly "FALSE"
     }
 
-    bool getCurrentSleepExit(const std::string& section) {
-        std::string value = ult::parseValueFromIniSection(configIniPath, section, "sleep_exit");
-        if (value.empty()) return false;
-        convertToUpper(value);
-        return value != "FALSE";  // True if not explicitly "FALSE"
-    }
-    
     // Full mode toggle helpers
     bool getCurrentShowRealFreqs() {
         std::string value = ult::parseValueFromIniSection(configIniPath, "full", "show_real_freqs");

@@ -1428,20 +1428,6 @@ public:
                          GPU_Hz / 1000000, (GPU_Hz / 100000) % 10);
             }
     
-            // Handle sleep exit
-            if (settings.sleepExit) {
-                const auto GPU_Hz_int = int(GPU_Hz / 1000000);
-                static auto lastGPU_Hz_int = GPU_Hz_int;
-                if (GPU_Hz_int == 0 && lastGPU_Hz_int != 0) {
-                    isRendering = false;
-                    leventSignal(&renderingStopEvent);
-                    triggerExitNow = true;
-                    mutexUnlock(&mutex_Misc);
-                    return;
-                }
-                lastGPU_Hz_int = GPU_Hz_int;
-            }
-            
             if (settings.realVolts) {
                 const uint32_t mv = realGPU_mV / 1000;
                 snprintf(MINI_GPU_volt_c, sizeof(MINI_GPU_volt_c), "%u mV", mv);

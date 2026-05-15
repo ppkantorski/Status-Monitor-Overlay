@@ -1745,7 +1745,6 @@ struct MiniSettings {
     bool showSocPcbSkinTemps;   // show SOC/PCB/Skin temps row (default: true)
     bool invertBatteryDisplay;
     bool disableScreenshots;
-    bool sleepExit;
     //int setPos;
     int frameOffsetX;
     int frameOffsetY;
@@ -1783,7 +1782,6 @@ struct MicroSettings {
     bool showSideBySideTemps;   // show both temp groups on one line with divider (default: false)
     bool setPosBottom;
     bool disableScreenshots;
-    bool sleepExit;
     uint8_t horizontalPadding;  // 0-10 px, left/right gap from screen edge to text; default 8
     uint8_t verticalPadding;    // 0-8 px, gap above/below text within bar; default 2
 };
@@ -1876,7 +1874,6 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
     settings->invertBatteryDisplay = true;
     settings->refreshRate = 5;
     settings->disableScreenshots = false;
-    settings->sleepExit = false;
     //settings->setPos = 0;
     settings->frameOffsetX = 6;
     settings->frameOffsetY = 6;
@@ -2131,14 +2128,6 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
         settings->disableScreenshots = (key != "FALSE");
     }
 
-    // Process exit on sleep
-    it = section.find("sleep_exit");
-    if (it != section.end()) {
-        key = it->second;
-        convertToUpper(key);
-        settings->sleepExit = (key != "FALSE");
-    }
-    
     // Process alignment settings
     //it = section.find("layer_width_align");
     //if (it != section.end()) {
@@ -2209,7 +2198,6 @@ ALWAYS_INLINE void GetConfigSettings(MicroSettings* settings) {
     settings->showSideBySideTemps = false;
     settings->setPosBottom = false;
     settings->disableScreenshots = false;
-    settings->sleepExit = false;
     settings->refreshRate = 5;
     settings->horizontalPadding = 12;
     settings->verticalPadding   = 6;
@@ -2437,14 +2425,6 @@ ALWAYS_INLINE void GetConfigSettings(MicroSettings* settings) {
         key = it->second;
         convertToUpper(key);
         settings->disableScreenshots = (key != "FALSE");
-    }
-
-    // Process exit on sleep
-    it = section.find("sleep_exit");
-    if (it != section.end()) {
-        key = it->second;
-        convertToUpper(key);
-        settings->sleepExit = (key != "FALSE");
     }
 
     // Process component temps flag (also used in Micro)

@@ -1117,19 +1117,6 @@ public:
         //        realGPU_mV/1000, (isMariko ? (realGPU_mV/100)%10 : (realGPU_mV/10)%100));
         //}
 
-        // For properly handling sleep exit
-        if (settings.sleepExit) {
-            const auto GPU_Hz_int = int(GPU_Hz / 1000000);
-            static auto lastGPU_Hz_int = GPU_Hz_int;
-            if (GPU_Hz_int == 0 && lastGPU_Hz_int != 0) {
-                isRendering = false;
-                leventSignal(&renderingStopEvent);
-                
-                triggerExitNow = true;
-                return;
-            }
-            lastGPU_Hz_int = GPU_Hz_int;
-        }
         
 
         /* ── GPU voltage ───────────────────────────── */
