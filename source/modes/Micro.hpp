@@ -35,8 +35,8 @@ private:
     // Performance optimization members
     bool Initialized = false;
     MicroSettings settings;
-    size_t text_width = 0;
-    size_t fps_width = 0;
+    //size_t text_width = 0;
+    //size_t fps_width = 0;
     ApmPerformanceMode performanceMode = ApmPerformanceMode_Invalid;
     size_t fontsize = 0;
     bool showFPS = false;
@@ -697,13 +697,13 @@ public:
                         item_positions.push_back(prev_pos + prev_width + gap);
                     }
             
-                    // Fix any rounding error for center alignment
+                    // Fix rounding error by distributing remainder evenly across gaps
                     const int32_t last_item_end = item_positions.back() + all_layouts_ordered.back().total_width;
                     const int32_t overflow = (int32_t)tsl::cfg::FramebufferWidth - layout.side_margin - last_item_end;
                     
-                    if (overflow != 0) {
+                    if (overflow != 0 && N > 1) {
                         for (size_t i = 1; i < item_positions.size(); ++i) {
-                            item_positions[i] += overflow;
+                            item_positions[i] += (overflow * (int32_t)i) / (int32_t)(N - 1);
                         }
                     }
                 }

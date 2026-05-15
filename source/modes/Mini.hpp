@@ -589,8 +589,8 @@ public:
                         //dimensions = renderer->drawString("-44.44 W100.0% [44:44]", false, 0, 0, fontsize, renderer->a(0x0000));
                         width = renderer->getTextDimensions("-44.44 W100.0% [44:44]", false, fontsize).first;
                     } else if (key == "FPS") {
-                        //dimensions = renderer->drawString("444.4", false, 0, 0, fontsize, renderer->a(0x0000));
-                        width = renderer->getTextDimensions("444.4", false, fontsize).first;
+                        //dimensions = renderer->drawString("144.4", false, 0, 0, fontsize, renderer->a(0x0000));
+                        width = renderer->getTextDimensions("144.4", false, fontsize).first;
                     } else if (key == "RES") {
                         //dimensions = renderer->drawString("3840x21603840x2160", false, 0, 0, fontsize, renderer->a(0x0000));
                         if (settings.showFullResolution)
