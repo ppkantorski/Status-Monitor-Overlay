@@ -5,7 +5,7 @@ average_gpu_load=false
 use_old_fps_average=false
 
 [full]
-refresh_rate=5
+refresh_rate=3
 layer_width_align=left
 show_real_freqs=true
 show_deltas=true
@@ -21,7 +21,7 @@ cat_color_2=#8CFF
 text_color=#FFFF
 
 [mini]
-refresh_rate=5
+refresh_rate=3
 handheld_font_size=15
 docked_font_size=15
 spacing=8
@@ -52,14 +52,14 @@ sleep_exit=false
 frame_offset_x=6
 frame_offset_y=6
 frame_padding=6
-background_color=#000C
+background_color=#0009
 focus_background_color=#000F
 separator_color=#2DFF
 cat_color=#2DFF
 text_color=#FFFF
 
 [micro]
-refresh_rate=5
+refresh_rate=3
 layer_height_align=top
 handheld_font_size=15
 docked_font_size=15
@@ -129,7 +129,7 @@ text_color=#FFFF
 cat_color=#2DFF
 
 [game_resolutions]
-refresh_rate=5
+refresh_rate=3
 disable_screenshots=false
 frame_offset_x=6
 frame_offset_y=6
