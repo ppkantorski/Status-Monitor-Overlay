@@ -212,7 +212,7 @@ public:
                             }
                         }
                         const int overlayHeight = ((overlay->fontsize + overlay->settings.spacing) * actualEntryCount) + 
-                                                 (overlay->fontsize / 3) + overlay->settings.spacing + 
+                                                 overlay->settings.spacing + 
                                                  overlay->topPadding + overlay->bottomPadding;
                         
                         // Add touch padding
@@ -862,7 +862,7 @@ public:
                 const size_t actualEntryCount = labelLines.size();
                 
                 // Use the actual entry count for height calculation
-                cachedHeight = ((fontsize + settings.spacing) * actualEntryCount) + (fontsize / 3) + settings.spacing + topPadding + bottomPadding;
+                cachedHeight = ((fontsize + settings.spacing) * actualEntryCount) + settings.spacing + topPadding + bottomPadding;
                 // Two-row blocks (HOC, TMP split, RAM split) use half inter-row spacing, trim box height
                 if ((settings.showComponentTemps && settings.showSocPcbSkinTemps) ||
                     (!settings.showSideBySideFanSOC && settings.showFanPercentage &&
@@ -1240,15 +1240,22 @@ public:
                         // Anchor starts right after the SOC/PCB/Skin temp text
                         const int fanX = baseX + (int)renderer->getTextDimensions(std::string(skin_temperature_c), false, fontsize).first;
                         int afterContentX = fanX;
+                        // 3-tall divider stack: connecting divider between 2-row temp data and centered fan/volt.
+                        // Draw at top-row Y (baseY), center Y (fanY), and bot-row Y so it spans the full block height.
+                        const int tmpTopRowY = baseY;
+                        const int tmpBotRowY = baseY + (int)fontsize + (int)settings.spacing / 2;
+                        renderer->drawString(ult::DIVIDER_SYMBOL, false, fanX, tmpTopRowY, fontsize, settings.separatorColor);
+                        renderer->drawString(ult::DIVIDER_SYMBOL, false, fanX, fanY,       fontsize, settings.separatorColor);
+                        renderer->drawString(ult::DIVIDER_SYMBOL, false, fanX, tmpBotRowY, fontsize, settings.separatorColor);
+                        afterContentX = fanX + (int)renderer->getTextDimensions(ult::DIVIDER_SYMBOL, false, fontsize).first;
                         if (settings.showFanPercentage) {
                             const int fanDuty = safeFanDuty((int)Rotation_Duty);
-                            const int afterDivX = fanX + renderer->drawString(ult::DIVIDER_SYMBOL, false, fanX, fanY, fontsize, settings.separatorColor).first;
                             char fanPctStr[24];
                             snprintf(fanPctStr, sizeof(fanPctStr), " %d%%", fanDuty);
                             static const std::vector<std::string> fanIconChars = {""};
                             renderer->drawStringWithColoredSections(std::string(fanPctStr), false, fanIconChars,
-                                afterDivX, fanY, fontsize, settings.textColor, settings.catColor);
-                            afterContentX = afterDivX + (int)renderer->getTextDimensions(std::string(fanPctStr), false, fontsize).first;
+                                afterContentX, fanY, fontsize, settings.textColor, settings.catColor);
+                            afterContentX += (int)renderer->getTextDimensions(std::string(fanPctStr), false, fontsize).first;
                         }
                         if (settings.realVolts && settings.showSOCVoltage && MINI_SOC_volt_c[0]) {
                             const int voltDivX = afterContentX + (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, afterContentX, fanY, fontsize, settings.separatorColor).first;
@@ -1386,6 +1393,11 @@ public:
                             // Layout mirrors SVDD2 lines 1599-1608:
                             //   center connector | temp | right-fork connector | DIV + VDD2 (top) / DIV + VDDQ (bot)
                             // Shift ramLoadVoltColX past the temp column so BOT's VDDQ aligns with TOP's VDD2.
+                            // The LEFT side of the temp column needs a 3-tall divider stack:
+                            // center connector already drawn above; add top-row and bot-row dividers here.
+                            const int rLoadBotY = baseY + (int)fontsize + (int)settings.spacing / 2;
+                            renderer->drawString(ult::DIVIDER_SYMBOL, false, ramLoadVoltColX, baseY,     fontsize, settings.separatorColor);
+                            renderer->drawString(ult::DIVIDER_SYMBOL, false, ramLoadVoltColX, rLoadBotY, fontsize, settings.separatorColor);
                             const int rtv = atoi(mini_ram_temp_c);
                             int cx = ramLoadVoltColX + (int)sbs_dw;
                             renderer->drawString(std::string(mini_ram_temp_c), false, cx, ramLoadCtrY, fontsize,
@@ -1512,7 +1524,14 @@ public:
                             const uint32_t vddq_rw = vddq_only_c[0]
                                 ? renderer->getTextDimensions(std::string(vddq_only_c), false, fontsize).first : 0;
                             const int rtv = atoi(mini_ram_temp_c);
-                            int cx = afterBotX + (int)sbs_dw + (int)std::max(vdd2_rw, vddq_rw);
+                            const int dividerX = afterBotX + (int)sbs_dw + (int)std::max(vdd2_rw, vddq_rw);
+                            // 3-tall divider stack: top row, center, bot row — connects the 2-row volt column
+                            // (VDD2 top, VDDQ bot) to the single-row temp at center Y.
+                            renderer->drawString(ult::DIVIDER_SYMBOL, false, dividerX, ramLoadTopBaseY,
+                                fontsize, settings.separatorColor);
+                            renderer->drawString(ult::DIVIDER_SYMBOL, false, dividerX, ramLoadBotY,
+                                fontsize, settings.separatorColor);
+                            int cx = dividerX;
                             cx += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, cx, ramLoadCtrY,
                                 fontsize, settings.separatorColor).first;
                             renderer->drawString(std::string(mini_ram_temp_c), false, cx, ramLoadCtrY, fontsize,
@@ -1545,6 +1564,19 @@ public:
                         // Inline mode: draw all volt/temp at ramLoadCtrY (centered between rows,
                         // inline with the "RAM" label) starting at ramLoadVoltColX.
                         const int yInline = ramLoadCtrY;
+                        // Determine if any inline content will be drawn — if so, draw a 3-tall divider stack
+                        // at ramLoadVoltColX (top row baseY, center Y, bot row Y) so the connector visually
+                        // spans the full height of the 2-row data block on the left.
+                        const bool anyInlineVolt = settings.realVolts && (vdd2_only_c[0] || vddq_only_c[0]);
+                        const bool anyInlineTemp = settings.showRAMTemp && mini_ram_temp_c[0];
+                        const bool willDrawInline = anyInlineVolt || anyInlineTemp;
+                        if (willDrawInline) {
+                            renderer->drawString(ult::DIVIDER_SYMBOL, false, ramLoadVoltColX, ramLoadTopBaseY,
+                                fontsize, settings.separatorColor);
+                            renderer->drawString(ult::DIVIDER_SYMBOL, false, ramLoadVoltColX, ramLoadBotY,
+                                fontsize, settings.separatorColor);
+                            // The center-Y divider is drawn naturally as part of the first inline DIV below.
+                        }
                         // Volt inline before temp (when voltageAtEnd is OFF)
                         if (!settings.voltageAtEndRAM && settings.realVolts && (vdd2_only_c[0] || vddq_only_c[0])) {
                             if (vdd2_only_c[0] && vddq_only_c[0]) {
@@ -1806,8 +1838,19 @@ public:
                         // volt/temp drawn at cpuFullCenterY (same row as CPU label), freq on bottom via CPU_SFREQ.
                         renderer->drawStringWithColoredSections(currentLine, false, specialChars,
                             baseX, baseY, fontsize, settings.textColor, settings.separatorColor);
-                        // Center connector divider at right edge of brackets
+                        // 3-tall divider stack at right edge of brackets, spanning the full 2-row data block
+                        // on the left (brackets top, freq bot). Only draw the top/bot extensions if content
+                        // (volt or temp) will follow — otherwise the dividers would be orphan visual noise.
                         const int voltColX = baseX + cpuFullSplitBracketsW;
+                        const bool willDrawAnyCpu = (settings.realVolts && MINI_CPU_volt_c[0]) ||
+                                                     mini_cpu_temp_c[0];
+                        if (willDrawAnyCpu) {
+                            const int cpuFullBotY = baseY + (int)fontsize + (int)settings.spacing / 2;
+                            renderer->drawString(ult::DIVIDER_SYMBOL, false, voltColX, baseY,
+                                fontsize, settings.separatorColor);
+                            renderer->drawString(ult::DIVIDER_SYMBOL, false, voltColX, cpuFullBotY,
+                                fontsize, settings.separatorColor);
+                        }
                         renderer->drawString(ult::DIVIDER_SYMBOL, false, voltColX, cpuFullCenterY,
                             fontsize, settings.separatorColor);
                         if (settings.showLabels)
@@ -3029,7 +3072,7 @@ public:
             }
             
             cachedOverlayHeight = ((fontsize + settings.spacing) * actualEntryCount) + 
-                                 (fontsize / 3) + settings.spacing + topPadding + bottomPadding;
+                                 settings.spacing + topPadding + bottomPadding;
             if (settings.showComponentTemps && settings.showSocPcbSkinTemps)
                 cachedOverlayHeight -= settings.spacing / 2;
             
