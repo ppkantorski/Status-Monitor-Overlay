@@ -950,8 +950,14 @@ public:
                             }
                         }
                         // Center connector divider (between fan and volt column)
-                        if (SOC_volt_c[0])
+                        // HOC: 2 rows of temp on left -> 3-tall stack at fanColX
+                        if (splitIsHoc) {
+                            renderer->drawString(ult::DIVIDER_SYMBOL, false, fanColX, gridTopY,    fontsize, (settings.separatorColor));
                             renderer->drawString(ult::DIVIDER_SYMBOL, false, fanColX, singleItemY, fontsize, (settings.separatorColor));
+                            renderer->drawString(ult::DIVIDER_SYMBOL, false, fanColX, gridBotY,    fontsize, (settings.separatorColor));
+                        } else if (SOC_volt_c[0]) {
+                            renderer->drawString(ult::DIVIDER_SYMBOL, false, fanColX, singleItemY, fontsize, (settings.separatorColor));
+                        }
                         // Bottom row: optional HOC temps + SOC voltage
                         {
                             // Single-group: volt starts at fanColX; HOC: volt starts after bot temps
@@ -1047,7 +1053,12 @@ public:
                                 const size_t dv = rest.find(ult::DIVIDER_SYMBOL);
                                 if (dv != std::string::npos) {
                                     const size_t dl = ult::DIVIDER_SYMBOL.length();
-                                    rx += renderer->drawString(rest.substr(0, dv + dl), false, rx, singleItemY, fontsize, (settings.separatorColor)).first;
+                                    // Left side is 2-row (top+bot temps) -> 3-tall connector before fan/volt,
+                                    // mirroring Mini TMP_TOP lines 1243-1250.
+                                    renderer->drawString(ult::DIVIDER_SYMBOL, false, rx, gridTopY,    fontsize, (settings.separatorColor));
+                                    renderer->drawString(ult::DIVIDER_SYMBOL, false, rx, singleItemY, fontsize, (settings.separatorColor));
+                                    renderer->drawString(ult::DIVIDER_SYMBOL, false, rx, gridBotY,    fontsize, (settings.separatorColor));
+                                    rx += renderer->getTextDimensions(ult::DIVIDER_SYMBOL, false, fontsize).first;
                                     const std::string ad = rest.substr(dv + dl);
                                     if (!ad.empty()) {
                                         static const std::vector<std::string> fic2 = {""};
@@ -1130,6 +1141,9 @@ public:
                     renderer->drawStringWithColoredSections(item.data_ptr, false, specialChars, current_x, dataY, fontsize, textColorA, (settings.separatorColor));
                 }
                 current_x += item_layout.data_width;
+                // Save the start of the data column before voltage may advance current_x.
+                // Used by ramLoadIsSplit to draw the bottom row at the correct X.
+                const uint32_t dataColStartX = current_x - item_layout.data_width;
 
                 // Draw voltage if present -- inline at singleItemY for all modes including TMP grid
                 if (item.has_voltage && item.volt_ptr) {
@@ -1171,6 +1185,7 @@ public:
                             const uint32_t vdd2_rw = vdd2_only_c[0] ? renderer->getTextDimensions(vdd2_only_c, false, fontsize).first : 0;
                             const uint32_t vddq_rw = vddq_only_c[0] ? renderer->getTextDimensions(vddq_only_c, false, fontsize).first : 0;
                             uint32_t cx = voltColX + rdiv_w + std::max(vdd2_rw, vddq_rw);
+                            // Single center divider: temp is 1-row at singleItemY; 3-tall only between two 2-row blocks
                             cx += renderer->drawString(ult::DIVIDER_SYMBOL, false, cx, singleItemY, fontsize, (settings.separatorColor)).first;
                             const int rtv = atoi(ram_temp_c);
                             renderer->drawString(ram_temp_c, false, cx, singleItemY, fontsize,
@@ -1201,16 +1216,27 @@ public:
                             // Layout from voltColX:  ╸[temp]╸[VDD2 top]
                             //                        ╸[temp]╸  (right connector at center)
                             //                        ╸[temp]╸[VDDQ bot]
+                            // Left connector at voltColX: center already drawn at singleItemY above.
+                            // Add top+bot only when left data block is also 2-row (ramLoadIsSplit);
+                            // 3-tall only when both sides are 2-row. 1-row data needs just the center.
+                            if (ramLoadIsSplit) {
+                                renderer->drawString(ult::DIVIDER_SYMBOL, false, voltColX, gridTopY, fontsize, (settings.separatorColor));
+                                renderer->drawString(ult::DIVIDER_SYMBOL, false, voltColX, gridBotY, fontsize, (settings.separatorColor));
+                            }
                             uint32_t voltStartX = voltColX + rdiv_w; // right after left connector; temp starts here
                             if (settings.showRAMTemp && settings.showSideBySideRAMTemp && ram_temp_c[0]) {
-                                // Temp at center row — the left connector already drawn IS the ╸ before temp
+                                // Temp at center row; right-fork is 3-tall before the volt column
                                 const int rtv = atoi(ram_temp_c);
                                 renderer->drawString(ram_temp_c, false, voltStartX, singleItemY, fontsize,
                                     settings.useDynamicColors ? tsl::GradientColor((float)rtv, tsl::DEFAULT_TEMP_RANGE_HIGH) : textColorA);
                                 voltStartX += renderer->getTextDimensions(ram_temp_c, false, fontsize).first;
-                                // Draw right-fork connector at singleItemY before the volt column
+                                // Right-fork: center divider only; don't advance voltStartX —
+                                // VDD2/VDDQ each draw their own top/bot DIVs at this same X,
+                                // overlapping the center to complete the 3-tall (mirrors Mini line 1407-1408).
                                 renderer->drawString(ult::DIVIDER_SYMBOL, false, voltStartX, singleItemY, fontsize, (settings.separatorColor));
                             }
+                            // VDD2/VDDQ each draw DIV+content; together with the center right-fork above,
+                            // this completes the 3-tall at voltStartX.
                             if (vdd2_only_c[0]) {
                                 uint32_t rx = voltStartX;
                                 rx += renderer->drawString(ult::DIVIDER_SYMBOL, false, rx, gridTopY, fontsize, (settings.separatorColor)).first;
@@ -1255,7 +1281,14 @@ public:
                                                    + item_layout.data_width);
                     // Center connector + inline volt/temp (only when cpuIsSplit is NOT handling stacked case)
                     if (!cpuIsSplit) {
-                        // Center connector divider connecting top-row and bottom-row dividers
+                        // Center connector: 3-tall when volt/temp content will follow
+                        const bool cpuFullWillDraw = cpu_temp_c[0] || (settings.realVolts && CPU_volt_c[0]);
+                        if (cpuFullWillDraw) {
+                            renderer->drawString(ult::DIVIDER_SYMBOL, false, (uint32_t)bracketsRightX,
+                                gridTopY, fontsize, (settings.separatorColor));
+                            renderer->drawString(ult::DIVIDER_SYMBOL, false, (uint32_t)bracketsRightX,
+                                gridBotY, fontsize, (settings.separatorColor));
+                        }
                         renderer->drawString(ult::DIVIDER_SYMBOL, false, (uint32_t)bracketsRightX,
                             singleItemY, fontsize, (settings.separatorColor));
                         // Inline volt/temp at singleItemY, right of center connector
@@ -1369,10 +1402,30 @@ public:
                     renderer->drawString(botStr, false, dataStartX, gridBotY, fontsize, textColorA);
                 }
 
-                // RAM load split: draw total@freq on bottom row, same X as brackets
-                if (ramLoadIsSplit && item.type == 2 && RAM_load_bot_c[0]) {
-                    const uint32_t dataStartX = current_x - item_layout.data_width;
-                    renderer->drawString(RAM_load_bot_c, false, dataStartX, gridBotY, fontsize, textColorA);
+                // RAM load split: draw total@freq on bottom row aligned with [cpu% gpu%].
+                // Also draw a 3-tall divider stack at the volt column to visually connect
+                // the 2-row load data block with whatever right-side content follows.
+                if (ramLoadIsSplit && item.type == 2) {
+                    if (RAM_load_bot_c[0])
+                        renderer->drawString(RAM_load_bot_c, false, dataColStartX, gridBotY, fontsize, textColorA);
+                    const bool rLoadHasRight = (item.has_voltage && item.volt_ptr)
+                                             || ramIsSplit || ramTempSplit
+                                             || (!ramIsSplit && !ramTempSplit && settings.showRAMTemp && ram_temp_c[0]);
+                    if (rLoadHasRight) {
+                        const uint32_t rLoadVoltColX = dataColStartX + item_layout.data_width;
+                        // Left data block is always 2-row when ramLoadIsSplit=true → always draw top+bot
+                        // (mirrors Mini lines 1573-1578). Center comes naturally from the first inline
+                        // DIV drawn by whoever follows (ramIsSplit, ramTempSplit, inline temp, or has_voltage).
+                        renderer->drawString(ult::DIVIDER_SYMBOL, false, rLoadVoltColX, gridTopY, fontsize, (settings.separatorColor));
+                        renderer->drawString(ult::DIVIDER_SYMBOL, false, rLoadVoltColX, gridBotY, fontsize, (settings.separatorColor));
+                        // Center only needed when has_voltage is the sole right-side content:
+                        // its \ue031 separator is not a DIVIDER_SYMBOL so explicitly complete the fork.
+                        const bool rLoadNeedsCenter = !ramIsSplit && !ramTempSplit
+                                                    && (item.has_voltage && item.volt_ptr)
+                                                    && !(settings.showRAMTemp && ram_temp_c[0]);
+                        if (rLoadNeedsCenter)
+                            renderer->drawString(ult::DIVIDER_SYMBOL, false, rLoadVoltColX, singleItemY, fontsize, (settings.separatorColor));
+                    }
                 }
 
                 // SBS GPU temp: normal = DIV+temp after volt; voltAtEnd = sep+DIV+temp+volt
