@@ -6,17 +6,21 @@ private:
     char Rotation_SpeedLevel_c[64] = "";
     char RAM_var_compressed_c[128] = "";
     char Battery_c[64] = "";
+    char Battery_draw_c[16] = "";
+    char Battery_pct_c[32] = "";
     char soc_temperature_c[64] = "";
     char skin_temperature_c[64] = "";
     char componentTemps_c[64] = "";  // HOC component die temps: "CPU°C GPU°C RAM°C"
     char MINI_SOC_volt_c[16] = "";   // SOC voltage string, e.g. "1234 mV"
     char MINI_CPU_volt_c[16] = "";   // CPU voltage string, e.g. "1100 mV"
+    char MINI_CPU_freq_c[16] = "";   // freq part for full CPU split mode e.g. "@1000.0"
     char MINI_GPU_volt_c[20] = "";   // GPU voltage string, e.g. "900 mV"
     char vdd2_only_c[16] = "";        // split RAM mode: VDD2 string alone
     char vddq_only_c[16] = "";        // split RAM mode: VDDQ string alone
     char mini_cpu_temp_c[16] = "";    // CPU die temp string e.g. "52°C"
     char mini_gpu_temp_c[16] = "";    // GPU die temp string e.g. "48°C"
     char mini_ram_temp_c[16] = "";    // RAM die temp string e.g. "45°C"
+    char MINI_RAM_load_bot_c[32] = ""; // RAM load split row 2: "total%@freq"
 
     uint32_t rectangleWidth;
     char Variables[512];
@@ -78,7 +82,7 @@ public:
         frameOffsetY = settings.frameOffsetY;
         framePadding = settings.framePadding;
         topPadding = 5;
-        bottomPadding = 2;
+        bottomPadding = 5;
 
         //if (ult::limitedMemory) {
         //    tsl::gfx::Renderer::get().setLayerPos(std::max(std::min((int)(frameOffsetX*1.5 + 0.5) - tsl::impl::currentUnderscanPixels.first, 1280-32 - tsl::impl::currentUnderscanPixels.first), 0), 0);
@@ -135,18 +139,21 @@ public:
             strcpy(remainingBatteryLife, "--:--");
         }
         
-        if (!settings.invertBatteryDisplay) {
-            snprintf(Battery_c, sizeof(Battery_c),
-                     "%.2f W%.1f%% [%s]",
-                     drawW,
-                     (float)_batteryChargeInfoFields.RawBatteryCharge / 1000.0f,
-                     remainingBatteryLife);
-        } else {
-            snprintf(Battery_c, sizeof(Battery_c),
-                     "%.1f%% [%s]%.2f W",
-                     (float)_batteryChargeInfoFields.RawBatteryCharge / 1000.0f,
-                     remainingBatteryLife,
-                     drawW);
+        {
+            const float charge = (float)_batteryChargeInfoFields.RawBatteryCharge / 1000.0f;
+            snprintf(Battery_draw_c, sizeof(Battery_draw_c), "%.2f W", drawW);
+            snprintf(Battery_pct_c,  sizeof(Battery_pct_c),  "%.1f%% [%s]", charge, remainingBatteryLife);
+            if (!settings.showSideBySideBAT) {
+                if (!settings.invertBatteryDisplay)
+                    snprintf(Battery_c, sizeof(Battery_c), "%.2f W", drawW);
+                else
+                    snprintf(Battery_c, sizeof(Battery_c), "%.1f%% [%s]", charge, remainingBatteryLife);
+            } else {
+                if (!settings.invertBatteryDisplay)
+                    snprintf(Battery_c, sizeof(Battery_c), "%.2f W%.1f%% [%s]", drawW, charge, remainingBatteryLife);
+                else
+                    snprintf(Battery_c, sizeof(Battery_c), "%.1f%% [%s]%.2f W", charge, remainingBatteryLife, drawW);
+            }
         }
 
 
@@ -370,7 +377,28 @@ public:
                     if (key == "CPU") {
                         //dimensions = renderer->drawString("[100%,100%,100%,100%]@4444.4", false, 0, 0, fontsize, renderer->a(0x0000));
                         const bool cpuSplit = settings.showCPUTemp && !settings.showSideBySideCPUTemp && settings.realVolts;
-                        if (!settings.realVolts) {
+                        const bool cpuFullSplit = settings.showFullCPU && !settings.showSideBySideFullCPU;
+                        if (cpuFullSplit) {
+                            const uint32_t bw = renderer->getTextDimensions("[100%,100%,100%,100%]", false, fontsize).first;
+                            const uint32_t dw = renderer->getTextDimensions(ult::DIVIDER_SYMBOL, false, fontsize).first;
+                            // Stacked when SBS-cpu-temp is OFF and both volt+temp exist (mirrors CPU_SVOLT/STEMP):
+                            // center=brackets, right-col=max(volt,temp). Otherwise inline after brackets.
+                            const bool cpuFullStacked = settings.showCPUTemp && !settings.showSideBySideCPUTemp && settings.realVolts;
+                            if (cpuFullStacked) {
+                                uint32_t rightColW = 0;
+                                if (settings.realVolts)
+                                    rightColW = std::max(rightColW, (uint32_t)renderer->getTextDimensions("444 mV", false, fontsize).first);
+                                if (settings.showCPUTemp)
+                                    rightColW = std::max(rightColW, (uint32_t)renderer->getTextDimensions("88°C", false, fontsize).first);
+                                width = bw + (rightColW > 0 ? dw + rightColW : 0);
+                            } else {
+                                width = bw;
+                                if (settings.realVolts)
+                                    width += dw + renderer->getTextDimensions("444 mV", false, fontsize).first;
+                                if (settings.showCPUTemp)
+                                    width += dw + renderer->getTextDimensions("88°C", false, fontsize).first;
+                            }
+                        } else if (!settings.realVolts) {
                             if (settings.showFullCPU)
                                 width = renderer->getTextDimensions("[100%,100%,100%,100%]@4444.4", false, fontsize).first;
                             else
@@ -383,7 +411,7 @@ public:
                         }
 
                             // SBS CPU temp: add divider + temp (+ optional second div+volt when voltAtEnd)
-                            if (!cpuSplit && settings.showCPUTemp && settings.showSideBySideCPUTemp) {
+                            if (!cpuFullSplit && !cpuSplit && settings.showCPUTemp && settings.showSideBySideCPUTemp) {
                                 const uint32_t div_w = renderer->getTextDimensions(ult::DIVIDER_SYMBOL, false, fontsize).first;
                                 const uint32_t temp_w = renderer->getTextDimensions("88°C", false, fontsize).first;
                                 if (settings.voltageAtEndCPU && settings.realVolts) {
@@ -418,18 +446,25 @@ public:
                                 width = renderer->getTextDimensions("100%@4444.4444 mV", false, fontsize).first;
                             }
                         } else {
+                            // Helper: data-only width for load part
+                            const uint32_t sbs_data_w = settings.showSideBySideRAMLoad
+                                ? renderer->getTextDimensions("[100% 100%]100%@4444.4", false, fontsize).first
+                                : std::max(renderer->getTextDimensions("[100% 100%]", false, fontsize).first,
+                                           renderer->getTextDimensions("100%@4444.4", false, fontsize).first);
                             if (!settings.realVolts) {
-                                width = renderer->getTextDimensions("100%[100%,100%]@4444.4", false, fontsize).first;
+                                width = sbs_data_w;
                             } else if (splitVDDQ_A) {
                                 width = settings.decimalVDD2
-                                    ? renderer->getTextDimensions("100%[100%,100%]@4444.44444.4 mV", false, fontsize).first
-                                    : renderer->getTextDimensions("100%[100%,100%]@4444.44444 mV", false, fontsize).first;
+                                    ? sbs_data_w + renderer->getTextDimensions("4444.4 mV", false, fontsize).first
+                                    : sbs_data_w + renderer->getTextDimensions("4444 mV", false, fontsize).first;
                             } else if (sideBySideVDDQ_A) {
+                                // Renderer draws "DIV + VDD2 + DIV + VDDQ" — connector between rails in both
+                                // voltAtEnd ON and OFF paths. Proxy includes both DIVIDER_SYMBOLs.
                                 width = settings.decimalVDD2
-                                    ? renderer->getTextDimensions("100%[100%,100%]@4444.44444.4 mV444 mV", false, fontsize).first
-                                    : renderer->getTextDimensions("100%[100%,100%]@4444.44444 mV444 mV", false, fontsize).first;
+                                    ? sbs_data_w + renderer->getTextDimensions(std::string(ult::DIVIDER_SYMBOL) + "4444.4 mV" + std::string(ult::DIVIDER_SYMBOL) + "444 mV", false, fontsize).first
+                                    : sbs_data_w + renderer->getTextDimensions(std::string(ult::DIVIDER_SYMBOL) + "4444 mV" + std::string(ult::DIVIDER_SYMBOL) + "444 mV", false, fontsize).first;
                             } else {
-                                width = renderer->getTextDimensions("100%[100%,100%]@4444.4444 mV", false, fontsize).first;
+                                width = sbs_data_w + renderer->getTextDimensions(std::string(ult::DIVIDER_SYMBOL) + "444 mV", false, fontsize).first;
                             }
                         }
 
@@ -446,17 +481,22 @@ public:
                                 // Split VDD2+VDDQ: check if the extended VDDQ row (with temp)
                                 // or the center row (SBS temp) overflows the VDD2 proxy width.
                                 if (!settings.showSideBySideRAMTemp) {
-                                    // non-SBS: VDDQ row has DIVIDER+vddq+DIVIDER+temp
-                                    // Use actual vddq_only_c to avoid underestimating wide values like "1100 mV"
+                                    // non-SBS: temp goes on whichever row has it (BOT in normal, TOP in voltAtEnd).
+                                    // Width must cover the wider of (DIV+vdd2+DIV+temp) and (DIV+vddq+DIV+temp).
+                                    // Use actual vdd2_only_c/vddq_only_c to avoid underestimating wide values like "1100 mV"
                                     const uint32_t sbs_dw4b = renderer->getTextDimensions(ult::DIVIDER_SYMBOL, false, fontsize).first;
+                                    const uint32_t vdd2_rw4b = vdd2_only_c[0] ? renderer->getTextDimensions(vdd2_only_c, false, fontsize).first : 0;
                                     const uint32_t vddq_rw4b = vddq_only_c[0] ? renderer->getTextDimensions(vddq_only_c, false, fontsize).first : 0;
                                     const uint32_t tmp_rw4b = mini_ram_temp_c[0] ? renderer->getTextDimensions(mini_ram_temp_c, false, fontsize).first
                                                                                   : renderer->getTextDimensions("88°C", false, fontsize).first;
                                     const uint32_t data_rw4b = !settings.showRAMLoadCPUGPU
                                         ? renderer->getTextDimensions("100%@4444.4", false, fontsize).first
-                                        : renderer->getTextDimensions("100%[100%,100%]@4444.4", false, fontsize).first;
-                                    const uint32_t vddq_row_w = data_rw4b + sbs_dw4b + vddq_rw4b + sbs_dw4b + tmp_rw4b;
-                                    width = std::max(width, vddq_row_w);
+                                        : settings.showSideBySideRAMLoad
+                                            ? renderer->getTextDimensions("[100% 100%]100%@4444.4", false, fontsize).first
+                                            : std::max(renderer->getTextDimensions("[100% 100%]", false, fontsize).first,
+                                                       renderer->getTextDimensions("100%@4444.4", false, fontsize).first);
+                                    const uint32_t volt_temp_row_w = data_rw4b + sbs_dw4b + std::max(vdd2_rw4b, vddq_rw4b) + sbs_dw4b + tmp_rw4b;
+                                    width = std::max(width, volt_temp_row_w);
                                 } else {
                                     // SBS center row width depends on VoltAtEnd:
                                     // Normal:    data + div + max(vdd2,vddq) + div + temp
@@ -466,7 +506,10 @@ public:
                                     const uint32_t sbs_dw4 = renderer->getTextDimensions(ult::DIVIDER_SYMBOL, false, fontsize).first;
                                     const uint32_t data_rw4 = !settings.showRAMLoadCPUGPU
                                         ? renderer->getTextDimensions("100%@4444.4", false, fontsize).first
-                                        : renderer->getTextDimensions("100%[100%,100%]@4444.4", false, fontsize).first;
+                                        : settings.showSideBySideRAMLoad
+                                            ? renderer->getTextDimensions("[100% 100%]100%@4444.4", false, fontsize).first
+                                            : std::max(renderer->getTextDimensions("[100% 100%]", false, fontsize).first,
+                                                       renderer->getTextDimensions("100%@4444.4", false, fontsize).first);
                                     // Total is same either way; max(vdd2,vddq)+div+temp == temp+div+max(vdd2,vddq)
                                     const uint32_t ctr_row_w = data_rw4 + sbs_dw4 + tmp_w + sbs_dw4 + std::max(vdd2_rw4, vddq_rw4);
                                     width = std::max(width, ctr_row_w);
@@ -521,13 +564,16 @@ public:
                             if (splitVDDQ_B) {
                                 // Split VDD2+VDDQ: ensure VDDQ row (or center row SBS) is covered
                                 if (!settings.showSideBySideRAMTemp) {
-                                    // non-SBS: use actual vddq_only_c to avoid "444 mV" underestimating wide values
+                                    // non-SBS: temp goes on whichever row has it (BOT in normal, TOP in voltAtEnd).
+                                    // Width must cover the wider of (DIV+vdd2+DIV+temp) and (DIV+vddq+DIV+temp).
+                                    // Use actual vdd2_only_c/vddq_only_c to avoid underestimating wide values.
                                     const uint32_t sbs_dw5 = renderer->getTextDimensions(ult::DIVIDER_SYMBOL, false, fontsize).first;
+                                    const uint32_t vdd2_rw5 = vdd2_only_c[0] ? renderer->getTextDimensions(vdd2_only_c, false, fontsize).first : 0;
                                     const uint32_t vddq_rw5 = vddq_only_c[0] ? renderer->getTextDimensions(vddq_only_c, false, fontsize).first : 0;
                                     const uint32_t tmp_rw5 = mini_ram_temp_c[0] ? renderer->getTextDimensions(mini_ram_temp_c, false, fontsize).first
                                                                                   : renderer->getTextDimensions("88°C", false, fontsize).first;
-                                    const uint32_t vddq_row_w = renderer->getTextDimensions("100%@4444.4", false, fontsize).first + sbs_dw5 + vddq_rw5 + sbs_dw5 + tmp_rw5;
-                                    width = std::max(width, vddq_row_w);
+                                    const uint32_t volt_temp_row_w = renderer->getTextDimensions("100%@4444.4", false, fontsize).first + sbs_dw5 + std::max(vdd2_rw5, vddq_rw5) + sbs_dw5 + tmp_rw5;
+                                    width = std::max(width, volt_temp_row_w);
                                 } else {
                                     // SBS center row: temp+div+max(vdd2,vddq) or max(vdd2,vddq)+div+temp — same total
                                     const uint32_t vdd2_rw5 = vdd2_only_c[0] ? renderer->getTextDimensions(vdd2_only_c, false, fontsize).first : 0;
@@ -596,8 +642,13 @@ public:
                             }
                         }
                                         } else if (key == "BAT") {
-                        //dimensions = renderer->drawString("-44.44 W100.0% [44:44]", false, 0, 0, fontsize, renderer->a(0x0000));
-                        width = renderer->getTextDimensions("-44.44 W100.0% [44:44]", false, fontsize).first;
+                        if (!settings.showSideBySideBAT) {
+                            const uint32_t draw_w = renderer->getTextDimensions("-44.44 W", false, fontsize).first;
+                            const uint32_t pct_w  = renderer->getTextDimensions("100.0% [44:44]", false, fontsize).first;
+                            width = std::max(draw_w, pct_w);
+                        } else {
+                            width = renderer->getTextDimensions("-44.44 W100.0% [44:44]", false, fontsize).first;
+                        }
                     } else if (key == "FPS") {
                         //dimensions = renderer->drawString("144.4", false, 0, 0, fontsize, renderer->a(0x0000));
                         width = renderer->getTextDimensions("144.4", false, fontsize).first;
@@ -676,8 +727,13 @@ public:
                     labelText = "";
                     
                     if (key == "CPU" && !(flags & 1)) {
-                        const bool wantCPUSplit = settings.showCPUTemp && !settings.showSideBySideCPUTemp && settings.realVolts;
-                        if (wantCPUSplit) {
+                        const bool wantCPUFullSplit = settings.showFullCPU && !settings.showSideBySideFullCPU;
+                        const bool wantCPUSplit = !wantCPUFullSplit && settings.showCPUTemp && !settings.showSideBySideCPUTemp && settings.realVolts;
+                        if (wantCPUFullSplit) {
+                            labelLines.push_back("CPU_SFULL");
+                            labelLines.push_back("CPU_SFREQ");
+                            entryCount++;
+                        } else if (wantCPUSplit) {
                             labelLines.push_back("CPU_SVOLT");
                             labelLines.push_back("CPU_STEMP");
                             entryCount++;
@@ -706,8 +762,17 @@ public:
                                                       !wantSplitVDDQ && settings.realVolts &&
                                                       ((settings.showVDDQ && isMariko && !settings.showVDD2) ||
                                                        (settings.showVDD2 && !settings.showVDDQ));
+                        const bool wantRAMLoadSplit = settings.showRAMLoad && settings.showRAMLoadCPUGPU &&
+                                                      !settings.showSideBySideRAMLoad &&
+                                                      (R_SUCCEEDED(sysclkCheck) || R_SUCCEEDED(hocclkCheck));
 
-                        if (wantSplitVDDQ) {
+                        if (wantRAMLoadSplit) {
+                            // Load split takes highest priority: [cpu% gpu%] on top, total%@freq on bottom
+                            // volt/temp are drawn inline by the RAM_SLOAD_BOT renderer
+                            labelLines.push_back("RAM_SLOAD_TOP");
+                            labelLines.push_back("RAM_SLOAD_BOT");
+                            entryCount++;
+                        } else if (wantSplitVDDQ) {
                             labelLines.push_back("RAM_SVDD2");
                             labelLines.push_back("RAM_SVDDQ");
                             entryCount++;  // two rows count as one extra
@@ -748,8 +813,14 @@ public:
                         }
                         flags |= 16;
                     } else if ((key == "BAT" || key == "DRAW") && !(flags & 32)) {
-                        shouldAdd = true;
-                        labelText = "BAT";
+                        if (!settings.showSideBySideBAT) {
+                            labelLines.push_back("BAT_STOP");
+                            labelLines.push_back("BAT_SBOT");
+                            entryCount += 2;
+                        } else {
+                            shouldAdd = true;
+                            labelText = "BAT";
+                        }
                         flags |= 32;
                     } else if (key == "FPS" && !(flags & 64) && GameRunning) {
                         shouldAdd = true;
@@ -786,13 +857,9 @@ public:
                     }
                 }
                 
-                // Calculate actual entry count from Variables string
-                size_t actualEntryCount = 1; // Start with 1 for the first line
-                for (size_t i = 0; Variables[i] != '\0'; i++) {
-                    if (Variables[i] == '\n') {
-                        actualEntryCount++;
-                    }
-                }
+                // Use labelLines.size() (just computed above) — always in sync with current settings,
+                // unlike Variables[] which is written by update() and may lag behind needsRecalc.
+                const size_t actualEntryCount = labelLines.size();
                 
                 // Use the actual entry count for height calculation
                 cachedHeight = ((fontsize + settings.spacing) * actualEntryCount) + (fontsize / 3) + settings.spacing + topPadding + bottomPadding;
@@ -806,7 +873,8 @@ public:
                     cachedHeight -= settings.spacing / 2;
                 // CPU/GPU temp split contributes one compressed row per split
                 {
-                    const bool wantCPUSplit = settings.showCPUTemp && !settings.showSideBySideCPUTemp && settings.realVolts;
+                    const bool wantCPUFullSplit = settings.showFullCPU && !settings.showSideBySideFullCPU;
+                    const bool wantCPUSplit = !wantCPUFullSplit && settings.showCPUTemp && !settings.showSideBySideCPUTemp && settings.realVolts;
                     const bool wantGPUSplit = settings.showGPUTemp && !settings.showSideBySideGPUTemp && settings.realVolts;
                     const bool wantRAMTempSplit = settings.showRAMTemp && !settings.showSideBySideRAMTemp &&
                                                   settings.realVolts &&
@@ -814,15 +882,35 @@ public:
                                                    (settings.showVDD2 && !settings.showVDDQ));
 
                     const bool wantVDDQSplit = !settings.showSideBySideVDDQ && settings.realVolts && settings.showVDD2 && settings.showVDDQ && isMariko;
+                    // RAM load split takes highest priority — when active, suppress VDDQ and ramTemp height deductions for RAM
+                    const bool wantRAMLoadSplit_h = settings.showRAMLoad && settings.showRAMLoadCPUGPU &&
+                                                    !settings.showSideBySideRAMLoad;
                     for (const auto& k : showKeys) {
-                        if (k == "CPU" && wantCPUSplit) { cachedHeight -= settings.spacing / 2; break; }
+                        if (k == "CPU" && (wantCPUSplit || wantCPUFullSplit)) { cachedHeight -= settings.spacing / 2; break; }
                     }
                     for (const auto& k : showKeys) {
                         if (k == "GPU" && wantGPUSplit) { cachedHeight -= settings.spacing / 2; break; }
                     }
-                    if (!wantVDDQSplit) {
+                    if (!wantRAMLoadSplit_h && !wantVDDQSplit) {
                         for (const auto& k : showKeys) {
                             if (k == "RAM" && wantRAMTempSplit) { cachedHeight -= settings.spacing / 2; break; }
+                        }
+                    }
+                    // BAT split: two-row block reduces height by spacing/2
+                    if (!settings.showSideBySideBAT) {
+                        for (const auto& k : showKeys) {
+                            if (k == "BAT" || k == "DRAW") { cachedHeight -= settings.spacing / 2; break; }
+                        }
+                    }
+                    // RAM load split: two-row block reduces height by spacing/2 (only once — suppress VDDQ deduction when active)
+                    if (wantRAMLoadSplit_h) {
+                        for (const auto& k : showKeys) {
+                            if (k == "RAM") {
+                                // Undo VDDQ deduction if it was already applied above
+                                if (wantVDDQSplit) cachedHeight += settings.spacing / 2;
+                                cachedHeight -= settings.spacing / 2;
+                                break;
+                            }
                         }
                     }
                 }
@@ -933,6 +1021,9 @@ public:
             static int cpuSplitVoltColX = 0; // shared between CPU_SVOLT and CPU_STEMP
             static int gpuSplitVoltColX = 0; // shared between GPU_SVOLT and GPU_STEMP
             static int ramTempVoltColX = 0;  // shared between RAM_SVDDQ_ONLY and RAM_STEMP
+            static int ramLoadVoltColX = 0;  // shared between RAM_SLOAD_TOP and RAM_SLOAD_BOT
+            static int ramLoadTopBaseY = 0;  // RAM_SLOAD_TOP baseY, used by BOT to compute center-Y
+            static int cpuFullSplitBracketsW = 0; // brackets pixel width for CPU_SFULL/CPU_SFREQ alignment
             static std::vector<std::string> _variableLines;
             if (!delayUpdate)
                 _variableLines = variableLines;
@@ -961,7 +1052,10 @@ public:
                      labelLines[labelIndex] == "RAM_SVDD2" || labelLines[labelIndex] == "RAM_SVDDQ" ||
                      labelLines[labelIndex] == "CPU_SVOLT" || labelLines[labelIndex] == "CPU_STEMP" ||
                      labelLines[labelIndex] == "GPU_SVOLT" || labelLines[labelIndex] == "GPU_STEMP" ||
-                     labelLines[labelIndex] == "RAM_SVDDQ_ONLY" || labelLines[labelIndex] == "RAM_STEMP"));
+                     labelLines[labelIndex] == "CPU_SFULL" || labelLines[labelIndex] == "CPU_SFREQ" ||
+                     labelLines[labelIndex] == "RAM_SVDDQ_ONLY" || labelLines[labelIndex] == "RAM_STEMP" ||
+                     labelLines[labelIndex] == "BAT_STOP" || labelLines[labelIndex] == "BAT_SBOT" ||
+                     labelLines[labelIndex] == "RAM_SLOAD_TOP" || labelLines[labelIndex] == "RAM_SLOAD_BOT"));
                 if (!isTmpHocRow && settings.showLabels && !labelLines[labelIndex].empty()) {
                     labelWidth = renderer->getTextDimensions(labelLines[labelIndex], false, fontsize).first;
                     labelCenterX = cachedBaseX + (margin / 2) - (labelWidth / 2);
@@ -976,527 +1070,374 @@ public:
                     : (cachedBaseX + (fontsize / 3) + leftPadding + _frameOffsetX + clippingOffsetX);
                 const int baseY = currentY + frameOffsetY + clippingOffsetY;
                 
-                if (settings.useDynamicColors) {
-                    if (labelIndex < labelLines.size() && labelLines[labelIndex] == "SOC") {
-                        // SOC temperature rendering with gradient
-                        const size_t degreesPos = currentLine.find("°");
-                        if (degreesPos != std::string::npos) {
-                            // Find the 'C' after the degrees symbol
-                            const size_t cPos = currentLine.find("C", degreesPos);
-                            if (cPos != std::string::npos) {
-                                const size_t tempEnd = cPos + 1; // Include the 'C'
-                                
-                                // Extract temperature value and apply gradient
-                                const int temp = atoi(currentLine.c_str());
-                                const tsl::Color tempColor = tsl::GradientColor((float)temp);
-                                
-                                // Split into temperature part and remaining part
-                                const std::string tempPart = currentLine.substr(0, tempEnd);
-                                const std::string restPart = currentLine.substr(tempEnd);
-                                
-                                // Render temperature with gradient color
-                                int currentX = baseX;
-                                renderer->drawString(tempPart, false, currentX, baseY, fontsize, tempColor);
-                                
-                                // Render remaining text with normal color
-                                if (!restPart.empty()) {
-                                    currentX += renderer->getTextDimensions(tempPart, false, fontsize).first;
-                                    renderer->drawStringWithColoredSections(restPart, false, specialChars, currentX, baseY, fontsize, settings.textColor, settings.separatorColor);
-                                }
-                            } else {
-                                // Fallback: no C found after degrees, render normally
-                                renderer->drawStringWithColoredSections(currentLine, false, specialChars, baseX, baseY, fontsize, settings.textColor, settings.separatorColor);
-                            }
-                        } else {
-                            // Fallback: no degrees symbol found, render normally
-                            renderer->drawStringWithColoredSections(currentLine, false, specialChars, baseX, baseY, fontsize, settings.textColor, settings.separatorColor);
-                        }
-                        
-                    } else if (labelIndex < labelLines.size() && labelLines[labelIndex] == "TMP") {
-                        // TMP multiple temperatures rendering with gradients
-                        int currentX = baseX;
-                        size_t pos = 0;
-                        bool parseSuccess = true;
-                        
-                        // Parse up to 3 temperatures in the format "XX°C XX°C XX°C (XX%)"
-                        for (int tempCount = 0; tempCount < 3 && parseSuccess && pos < currentLine.length(); tempCount++) {
-                            // Find start of current temperature (skip any leading spaces)
-                            while (pos < currentLine.length() && currentLine[pos] == ' ') {
-                                renderer->drawString(" ", false, currentX, baseY, fontsize, settings.textColor);
-                                currentX += renderer->getTextDimensions(" ", false, fontsize).first;
-                                pos++;
-                            }
-                            
-                            if (pos >= currentLine.length()) break;
-                            
-                            // Find degrees symbol
-                            const size_t degreesPos = currentLine.find("°", pos);
-                            if (degreesPos == std::string::npos) {
-                                parseSuccess = false;
-                                break;
-                            }
-                            
-                            // Find 'C' after degrees symbol
-                            const size_t cPos = currentLine.find("C", degreesPos);
-                            if (cPos == std::string::npos) {
-                                parseSuccess = false;
-                                break;
-                            }
-                            
+                if (labelIndex < labelLines.size() && labelLines[labelIndex] == "SOC") {
+                    // SOC temperature rendering with gradient
+                    const size_t degreesPos = currentLine.find("°");
+                    if (degreesPos != std::string::npos) {
+                        // Find the 'C' after the degrees symbol
+                        const size_t cPos = currentLine.find("C", degreesPos);
+                        if (cPos != std::string::npos) {
                             const size_t tempEnd = cPos + 1; // Include the 'C'
                             
-                            // Extract and render temperature with gradient
-                            const std::string tempPart = currentLine.substr(pos, tempEnd - pos);
-                            const int temp = atoi(tempPart.c_str());
+                            // Extract temperature value and apply gradient
+                            const int temp = atoi(currentLine.c_str());
                             const tsl::Color tempColor = tsl::GradientColor((float)temp);
                             
-                            renderer->drawString(tempPart, false, currentX, baseY, fontsize, tempColor);
-                            currentX += renderer->getTextDimensions(tempPart, false, fontsize).first;
+                            // Split into temperature part and remaining part
+                            const std::string tempPart = currentLine.substr(0, tempEnd);
+                            const std::string restPart = currentLine.substr(tempEnd);
                             
-                            pos = tempEnd;
-                        }
-                        
-                        // Render remaining: div1(sep) + fan(cat) [+ div2(sep) + voltage(sep)]
-                        if (pos < currentLine.length()) {
-                            std::string restPart = currentLine.substr(pos);
-                            const size_t divLen = ult::DIVIDER_SYMBOL.length();
-                            const size_t div1Pos = restPart.find(ult::DIVIDER_SYMBOL);
-                            if (div1Pos != std::string::npos) {
-                                // Draw first divider (before fan) in separatorColor
-                                currentX += renderer->drawString(restPart.substr(0, div1Pos + divLen), false, currentX, baseY, fontsize, settings.separatorColor).first;
-                                const std::string afterDiv1 = restPart.substr(div1Pos + divLen);
-                                const size_t div2Pos = afterDiv1.find(ult::DIVIDER_SYMBOL);
-                                if (div2Pos != std::string::npos) {
-                                    // Fan part before second divider: fan icon in catColor
-                                    static const std::vector<std::string> tmpFanIconChars = {""};
-                                    currentX += renderer->drawStringWithColoredSections(afterDiv1.substr(0, div2Pos), false, tmpFanIconChars,
-                                        currentX, baseY, fontsize, settings.textColor, settings.catColor).first;
-                                    // Second divider (fan -> voltage) in separatorColor
-                                    currentX += renderer->drawString(ult::DIVIDER_SYMBOL, false, currentX, baseY, fontsize, settings.separatorColor).first;
-                                    // Voltage in separatorColor
-                                    const std::string voltPart = afterDiv1.substr(div2Pos + divLen);
-                                    if (!voltPart.empty())
-                                        renderer->drawStringWithColoredSections(voltPart, false, specialChars, currentX, baseY, fontsize, settings.textColor, settings.separatorColor);
-                                } else {
-                                    // Fan only (no voltage), fan icon in catColor
-                                    if (!afterDiv1.empty()) {
-                                        static const std::vector<std::string> tmpFanOnlyChars = {""};
-                                        renderer->drawStringWithColoredSections(afterDiv1, false, tmpFanOnlyChars,
-                                            currentX, baseY, fontsize, settings.textColor, settings.catColor);
-                                    }
-                                }
-                            } else {
+                            // Render temperature with gradient color
+                            int currentX = baseX;
+                            renderer->drawString(tempPart, false, currentX, baseY, fontsize, tempColor);
+                            
+                            // Render remaining text with normal color
+                            if (!restPart.empty()) {
+                                currentX += renderer->getTextDimensions(tempPart, false, fontsize).first;
                                 renderer->drawStringWithColoredSections(restPart, false, specialChars, currentX, baseY, fontsize, settings.textColor, settings.separatorColor);
                             }
+                        } else {
+                            // Fallback: no C found after degrees, render normally
+                            renderer->drawStringWithColoredSections(currentLine, false, specialChars, baseX, baseY, fontsize, settings.textColor, settings.separatorColor);
+                        }
+                    } else {
+                        // Fallback: no degrees symbol found, render normally
+                        renderer->drawStringWithColoredSections(currentLine, false, specialChars, baseX, baseY, fontsize, settings.textColor, settings.separatorColor);
+                    }
+                    
+                } else if (labelIndex < labelLines.size() && labelLines[labelIndex] == "TMP") {
+                    // TMP multiple temperatures rendering with gradients
+                    int currentX = baseX;
+                    size_t pos = 0;
+                    bool parseSuccess = true;
+                    
+                    // Parse up to 3 temperatures in the format "XX°C XX°C XX°C (XX%)"
+                    for (int tempCount = 0; tempCount < 3 && parseSuccess && pos < currentLine.length(); tempCount++) {
+                        // Find start of current temperature (skip any leading spaces)
+                        while (pos < currentLine.length() && currentLine[pos] == ' ') {
+                            renderer->drawString(" ", false, currentX, baseY, fontsize, settings.textColor);
+                            currentX += renderer->getTextDimensions(" ", false, fontsize).first;
+                            pos++;
                         }
                         
-                        // If parsing failed, fall back to normal rendering
-                        if (!parseSuccess) {
-                            renderer->drawStringWithColoredSections(currentLine, false, specialChars, baseX, baseY, fontsize, settings.textColor, settings.separatorColor);
+                        if (pos >= currentLine.length()) break;
+                        
+                        // Find degrees symbol
+                        const size_t degreesPos = currentLine.find("°", pos);
+                        if (degreesPos == std::string::npos) {
+                            parseSuccess = false;
+                            break;
                         }
-                    } else if (labelIndex < labelLines.size() && labelLines[labelIndex] == "TMP_TOP") {
-                        // HOC TMP: top row = component die temps (CPU/GPU/RAM) with gradient
-                        int currentX = baseX;
-                        size_t pos = 0;
-                        bool parseSuccess = true;
-                        for (int tempCount = 0; tempCount < 3 && parseSuccess && pos < currentLine.length(); tempCount++) {
-                            while (pos < currentLine.length() && currentLine[pos] == ' ') {
-                                renderer->drawString(" ", false, currentX, baseY, fontsize, settings.textColor);
-                                currentX += renderer->getTextDimensions(" ", false, fontsize).first;
-                                pos++;
+                        
+                        // Find 'C' after degrees symbol
+                        const size_t cPos = currentLine.find("C", degreesPos);
+                        if (cPos == std::string::npos) {
+                            parseSuccess = false;
+                            break;
+                        }
+                        
+                        const size_t tempEnd = cPos + 1; // Include the 'C'
+                        
+                        // Extract and render temperature with gradient
+                        const std::string tempPart = currentLine.substr(pos, tempEnd - pos);
+                        const int temp = atoi(tempPart.c_str());
+                        const tsl::Color tempColor = tsl::GradientColor((float)temp);
+                        
+                        renderer->drawString(tempPart, false, currentX, baseY, fontsize, tempColor);
+                        currentX += renderer->getTextDimensions(tempPart, false, fontsize).first;
+                        
+                        pos = tempEnd;
+                    }
+                    
+                    // Render remaining: div1(sep) + fan(cat) [+ div2(sep) + voltage(sep)]
+                    if (pos < currentLine.length()) {
+                        std::string restPart = currentLine.substr(pos);
+                        const size_t divLen = ult::DIVIDER_SYMBOL.length();
+                        const size_t div1Pos = restPart.find(ult::DIVIDER_SYMBOL);
+                        if (div1Pos != std::string::npos) {
+                            // Draw first divider (before fan) in separatorColor
+                            currentX += renderer->drawString(restPart.substr(0, div1Pos + divLen), false, currentX, baseY, fontsize, settings.separatorColor).first;
+                            const std::string afterDiv1 = restPart.substr(div1Pos + divLen);
+                            const size_t div2Pos = afterDiv1.find(ult::DIVIDER_SYMBOL);
+                            if (div2Pos != std::string::npos) {
+                                // Fan part before second divider: fan icon in catColor
+                                static const std::vector<std::string> tmpFanIconChars = {""};
+                                currentX += renderer->drawStringWithColoredSections(afterDiv1.substr(0, div2Pos), false, tmpFanIconChars,
+                                    currentX, baseY, fontsize, settings.textColor, settings.catColor).first;
+                                // Second divider (fan -> voltage) in separatorColor
+                                currentX += renderer->drawString(ult::DIVIDER_SYMBOL, false, currentX, baseY, fontsize, settings.separatorColor).first;
+                                // Voltage in separatorColor
+                                const std::string voltPart = afterDiv1.substr(div2Pos + divLen);
+                                if (!voltPart.empty())
+                                    renderer->drawStringWithColoredSections(voltPart, false, specialChars, currentX, baseY, fontsize, settings.textColor, settings.separatorColor);
+                            } else {
+                                // Fan only (no voltage), fan icon in catColor
+                                if (!afterDiv1.empty()) {
+                                    static const std::vector<std::string> tmpFanOnlyChars = {""};
+                                    renderer->drawStringWithColoredSections(afterDiv1, false, tmpFanOnlyChars,
+                                        currentX, baseY, fontsize, settings.textColor, settings.catColor);
+                                }
                             }
-                            if (pos >= currentLine.length()) break;
-                            const size_t degreesPos = currentLine.find("\u00B0", pos);
-                            if (degreesPos == std::string::npos) { parseSuccess = false; break; }
-                            const size_t cPos = currentLine.find("C", degreesPos);
-                            if (cPos == std::string::npos) { parseSuccess = false; break; }
-                            const std::string tempPart = currentLine.substr(pos, cPos + 1 - pos);
-                            const int temp = atoi(tempPart.c_str());
-                            renderer->drawString(tempPart, false, currentX, baseY, fontsize,
-                                settings.useDynamicColors ? tsl::GradientColor((float)temp, tsl::DEFAULT_TEMP_RANGE_HIGH) : settings.textColor);
-                            currentX += renderer->getTextDimensions(tempPart, false, fontsize).first;
-                            pos = cPos + 1;
+                        } else {
+                            renderer->drawStringWithColoredSections(restPart, false, specialChars, currentX, baseY, fontsize, settings.textColor, settings.separatorColor);
                         }
-                        if (!parseSuccess) {
-                            renderer->drawStringWithColoredSections(currentLine, false, specialChars, baseX, baseY, fontsize, settings.textColor, settings.separatorColor);
+                    }
+                    
+                    // If parsing failed, fall back to normal rendering
+                    if (!parseSuccess) {
+                        renderer->drawStringWithColoredSections(currentLine, false, specialChars, baseX, baseY, fontsize, settings.textColor, settings.separatorColor);
+                    }
+                } else if (labelIndex < labelLines.size() && labelLines[labelIndex] == "TMP_TOP") {
+                    // HOC TMP: top row = component die temps (CPU/GPU/RAM) with gradient
+                    int currentX = baseX;
+                    size_t pos = 0;
+                    bool parseSuccess = true;
+                    for (int tempCount = 0; tempCount < 3 && parseSuccess && pos < currentLine.length(); tempCount++) {
+                        while (pos < currentLine.length() && currentLine[pos] == ' ') {
+                            renderer->drawString(" ", false, currentX, baseY, fontsize, settings.textColor);
+                            currentX += renderer->getTextDimensions(" ", false, fontsize).first;
+                            pos++;
                         }
-                        // Draw "TMP" label and fan speed centered between the two rows
-                        // Rows use half inter-row spacing, so center is at (fontsize + spacing/2) / 2
-                        const int centerY = (int)currentY + ((int)fontsize + (int)settings.spacing / 2) / 2;
-                        if (settings.showLabels) {
-                            const std::string tmpLbl = "TMP";
-                            const uint32_t tmpLblW = renderer->getTextDimensions(tmpLbl, false, fontsize).first;
-                            const uint32_t tmpLblX = cachedBaseX + (margin / 2) - (tmpLblW / 2);
-                            renderer->drawString(tmpLbl, false, tmpLblX + _frameOffsetX + clippingOffsetX,
-                                centerY + frameOffsetY + clippingOffsetY, fontsize, settings.catColor);
-                        }
-                        //if (settings.showFanPercentage) {
-                        //    const int fanDuty = safeFanDuty((int)Rotation_Duty);
-                        //    char fanStr[24];
-                        //    snprintf(fanStr, sizeof(fanStr), "%sX %d%%", ult::DIVIDER_SYMBOL.c_str(), fanDuty);
-                        //    // Draw fan at the X where it would naturally fall after the SOC/PCB/Skin temps
-                        //    const int fanX = baseX + (int)renderer->getTextDimensions(std::string(skin_temperature_c), false, fontsize).first;
-                        //    renderer->drawStringWithColoredSections(std::string(fanStr), false, specialChars,
-                        //        fanX, centerY + frameOffsetY + clippingOffsetY, fontsize,
-                        //        settings.textColor, settings.separatorColor);
-                        //}
+                        if (pos >= currentLine.length()) break;
+                        const size_t degreesPos = currentLine.find("\u00B0", pos);
+                        if (degreesPos == std::string::npos) { parseSuccess = false; break; }
+                        const size_t cPos = currentLine.find("C", degreesPos);
+                        if (cPos == std::string::npos) { parseSuccess = false; break; }
+                        const std::string tempPart = currentLine.substr(pos, cPos + 1 - pos);
+                        const int temp = atoi(tempPart.c_str());
+                        renderer->drawString(tempPart, false, currentX, baseY, fontsize,
+                            settings.useDynamicColors ? tsl::GradientColor((float)temp, tsl::DEFAULT_TEMP_RANGE_HIGH) : settings.textColor);
+                        currentX += renderer->getTextDimensions(tempPart, false, fontsize).first;
+                        pos = cPos + 1;
+                    }
+                    if (!parseSuccess) {
+                        renderer->drawStringWithColoredSections(currentLine, false, specialChars, baseX, baseY, fontsize, settings.textColor, settings.separatorColor);
+                    }
+                    // Draw "TMP" label and fan speed centered between the two rows
+                    // Rows use half inter-row spacing, so center is at (fontsize + spacing/2) / 2
+                    const int centerY = (int)currentY + ((int)fontsize + (int)settings.spacing / 2) / 2;
+                    if (settings.showLabels) {
+                        const std::string tmpLbl = "TMP";
+                        const uint32_t tmpLblW = renderer->getTextDimensions(tmpLbl, false, fontsize).first;
+                        const uint32_t tmpLblX = cachedBaseX + (margin / 2) - (tmpLblW / 2);
+                        renderer->drawString(tmpLbl, false, tmpLblX + _frameOffsetX + clippingOffsetX,
+                            centerY + frameOffsetY + clippingOffsetY, fontsize, settings.catColor);
+                    }
+                    //if (settings.showFanPercentage) {
+                    //    const int fanDuty = safeFanDuty((int)Rotation_Duty);
+                    //    char fanStr[24];
+                    //    snprintf(fanStr, sizeof(fanStr), "%sX %d%%", ult::DIVIDER_SYMBOL.c_str(), fanDuty);
+                    //    // Draw fan at the X where it would naturally fall after the SOC/PCB/Skin temps
+                    //    const int fanX = baseX + (int)renderer->getTextDimensions(std::string(skin_temperature_c), false, fontsize).first;
+                    //    renderer->drawStringWithColoredSections(std::string(fanStr), false, specialChars,
+                    //        fanX, centerY + frameOffsetY + clippingOffsetY, fontsize,
+                    //        settings.textColor, settings.separatorColor);
+                    //}
 
-                        // Fan and voltage are both drawn centered between the two rows
-                        if (settings.showFanPercentage || (settings.realVolts && settings.showSOCVoltage && MINI_SOC_volt_c[0])) {
-                            const int fanY = centerY + frameOffsetY + clippingOffsetY;
-                            // Anchor starts right after the SOC/PCB/Skin temp text
-                            const int fanX = baseX + (int)renderer->getTextDimensions(std::string(skin_temperature_c), false, fontsize).first;
-                            int afterContentX = fanX;
-                            if (settings.showFanPercentage) {
-                                const int fanDuty = safeFanDuty((int)Rotation_Duty);
-                                const int afterDivX = fanX + renderer->drawString(ult::DIVIDER_SYMBOL, false, fanX, fanY, fontsize, settings.separatorColor).first;
-                                char fanPctStr[24];
-                                snprintf(fanPctStr, sizeof(fanPctStr), " %d%%", fanDuty);
-                                static const std::vector<std::string> fanIconChars = {""};
-                                renderer->drawStringWithColoredSections(std::string(fanPctStr), false, fanIconChars,
-                                    afterDivX, fanY, fontsize, settings.textColor, settings.catColor);
-                                afterContentX = afterDivX + (int)renderer->getTextDimensions(std::string(fanPctStr), false, fontsize).first;
-                            }
-                            if (settings.realVolts && settings.showSOCVoltage && MINI_SOC_volt_c[0]) {
-                                const int voltDivX = afterContentX + (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, afterContentX, fanY, fontsize, settings.separatorColor).first;
-                                renderer->drawStringWithColoredSections(std::string(MINI_SOC_volt_c), false, specialChars, voltDivX, fanY, fontsize, settings.textColor, settings.separatorColor);
-                            }
-                        }
-
-                    } else if (labelIndex < labelLines.size() && labelLines[labelIndex] == "TMP_BOT") {
-                        // HOC TMP: bottom row = SOC/PCB/Skin temps, shifted up by spacing/2
-                        const int botY = baseY - (int)settings.spacing / 2;
-                        int currentX = baseX;
-                        size_t pos = 0;
-                        bool parseSuccess = true;
-                        for (int tempCount = 0; tempCount < 3 && parseSuccess && pos < currentLine.length(); tempCount++) {
-                            while (pos < currentLine.length() && currentLine[pos] == ' ') {
-                                renderer->drawString(" ", false, currentX, botY, fontsize, settings.textColor);
-                                currentX += renderer->getTextDimensions(" ", false, fontsize).first;
-                                pos++;
-                            }
-                            if (pos >= currentLine.length()) break;
-                            const size_t degreesPos = currentLine.find("\u00B0", pos);
-                            if (degreesPos == std::string::npos) { parseSuccess = false; break; }
-                            const size_t cPos = currentLine.find("C", degreesPos);
-                            if (cPos == std::string::npos) { parseSuccess = false; break; }
-                            const std::string tempPart = currentLine.substr(pos, cPos + 1 - pos);
-                            const int temp = atoi(tempPart.c_str());
-                            renderer->drawString(tempPart, false, currentX, botY, fontsize,
-                                settings.useDynamicColors ? tsl::GradientColor((float)temp) : settings.textColor);
-                            currentX += renderer->getTextDimensions(tempPart, false, fontsize).first;
-                            pos = cPos + 1;
-                        }
-                        if (!parseSuccess) {
-                            renderer->drawStringWithColoredSections(currentLine, false, specialChars, baseX, botY, fontsize, settings.textColor, settings.separatorColor);
-                            currentX = baseX + (int)renderer->getTextDimensions(currentLine, false, fontsize).first;
-                        }
-                                        // Compensate: loop will add full spacing, but visually we drew spacing/2 less,
-                        // so pull currentY back by spacing/2 so the next row gap stays normal.
-                        currentY -= (int)settings.spacing / 2;
-                    } else if (labelIndex < labelLines.size() && labelLines[labelIndex] == "TMP_COMP") {
-                        // Component temps only: single row with HIGH gradient
-                        int currentX = baseX;
-                        size_t pos = 0;
-                        bool parseSuccess = true;
-                        for (int tempCount = 0; tempCount < 3 && parseSuccess && pos < currentLine.length(); tempCount++) {
-                            while (pos < currentLine.length() && currentLine[pos] == ' ') {
-                                renderer->drawString(" ", false, currentX, baseY, fontsize, settings.textColor);
-                                currentX += renderer->getTextDimensions(" ", false, fontsize).first;
-                                pos++;
-                            }
-                            if (pos >= currentLine.length()) break;
-                            const size_t degreesPos = currentLine.find("\u00B0", pos);
-                            if (degreesPos == std::string::npos) { parseSuccess = false; break; }
-                            const size_t cPos = currentLine.find("C", degreesPos);
-                            if (cPos == std::string::npos) { parseSuccess = false; break; }
-                            const std::string tempPart = currentLine.substr(pos, cPos + 1 - pos);
-                            const int temp = atoi(tempPart.c_str());
-                            renderer->drawString(tempPart, false, currentX, baseY, fontsize,
-                                settings.useDynamicColors ? tsl::GradientColor((float)temp, tsl::DEFAULT_TEMP_RANGE_HIGH) : settings.textColor);
-                            currentX += renderer->getTextDimensions(tempPart, false, fontsize).first;
-                            pos = cPos + 1;
-                        }
-                        if (!parseSuccess) {
-                            renderer->drawStringWithColoredSections(currentLine, false, specialChars, baseX, baseY, fontsize, settings.textColor, settings.separatorColor);
-                            // Update currentX so fan is positioned after the fallback-drawn string
-                            currentX = baseX + (int)renderer->getTextDimensions(currentLine, false, fontsize).first;
-                        }
-                        // Draw "TMP" label at normal Y (baseY already has offsets)
-                        if (settings.showLabels) {
-                            const std::string tmpLbl = "TMP";
-                            const uint32_t tmpLblW = renderer->getTextDimensions(tmpLbl, false, fontsize).first;
-                            const uint32_t tmpLblX = cachedBaseX + (margin / 2) - (tmpLblW / 2);
-                            renderer->drawString(tmpLbl, false, tmpLblX + _frameOffsetX + clippingOffsetX,
-                                baseY, fontsize, settings.catColor);
-                        }
-                        // Draw fan percentage inline after the temps (if enabled)
-                        int afterFanX = currentX; // tracks X after fan draw (or last temp if no fan)
+                    // Fan and voltage are both drawn centered between the two rows
+                    if (settings.showFanPercentage || (settings.realVolts && settings.showSOCVoltage && MINI_SOC_volt_c[0])) {
+                        const int fanY = centerY + frameOffsetY + clippingOffsetY;
+                        // Anchor starts right after the SOC/PCB/Skin temp text
+                        const int fanX = baseX + (int)renderer->getTextDimensions(std::string(skin_temperature_c), false, fontsize).first;
+                        int afterContentX = fanX;
                         if (settings.showFanPercentage) {
                             const int fanDuty = safeFanDuty((int)Rotation_Duty);
-                            const int fanY = baseY;
-                            const int afterDivX = currentX + renderer->drawString(
-                                ult::DIVIDER_SYMBOL, false, currentX, fanY, fontsize, settings.separatorColor).first;
+                            const int afterDivX = fanX + renderer->drawString(ult::DIVIDER_SYMBOL, false, fanX, fanY, fontsize, settings.separatorColor).first;
                             char fanPctStr[24];
                             snprintf(fanPctStr, sizeof(fanPctStr), " %d%%", fanDuty);
-                            static const std::vector<std::string> compFanIconChars = {""};
-                            renderer->drawStringWithColoredSections(std::string(fanPctStr), false, compFanIconChars,
+                            static const std::vector<std::string> fanIconChars = {""};
+                            renderer->drawStringWithColoredSections(std::string(fanPctStr), false, fanIconChars,
                                 afterDivX, fanY, fontsize, settings.textColor, settings.catColor);
-                            afterFanX = afterDivX + (int)renderer->getTextDimensions(std::string(fanPctStr), false, fontsize).first;
+                            afterContentX = afterDivX + (int)renderer->getTextDimensions(std::string(fanPctStr), false, fontsize).first;
                         }
-                        // Draw SOC voltage after fan (or directly after temps if fan is off)
                         if (settings.realVolts && settings.showSOCVoltage && MINI_SOC_volt_c[0]) {
-                            const int voltDivX = afterFanX + (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, afterFanX, baseY, fontsize, settings.separatorColor).first;
-                            renderer->drawStringWithColoredSections(std::string(MINI_SOC_volt_c), false, specialChars, voltDivX, baseY, fontsize, settings.textColor, settings.separatorColor);
+                            const int voltDivX = afterContentX + (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, afterContentX, fanY, fontsize, settings.separatorColor).first;
+                            renderer->drawStringWithColoredSections(std::string(MINI_SOC_volt_c), false, specialChars, voltDivX, fanY, fontsize, settings.textColor, settings.separatorColor);
                         }
-                    } else if (labelIndex < labelLines.size() && labelLines[labelIndex] == "RAM_SVDD2") {
-                        // Split VDD2/VDDQ row 1.
-                        // Usage drawn at centre (between rows), VDD2 at baseY (top), mirroring TMP_SFAN single-group.
-                        const int ramCenterY = baseY + ((int)fontsize + (int)settings.spacing / 2) / 2;
-                        int currentX = baseX;
-                        // Usage at centre Y
-                        renderer->drawStringWithColoredSections(currentLine, false, specialChars,
-                            currentX, ramCenterY, fontsize, settings.textColor, settings.separatorColor);
-                        currentX += (int)renderer->getTextDimensions(currentLine, false, fontsize).first;
-                        ramSplitVoltColX = currentX;
-                        // "RAM" label at centre Y
-                        if (settings.showLabels) {
-                            const std::string ramLbl = "RAM";
-                            const uint32_t ramLblW = renderer->getTextDimensions(ramLbl, false, fontsize).first;
-                            const uint32_t ramLblX = cachedBaseX + (margin / 2) - (ramLblW / 2);
-                            renderer->drawString(ramLbl, false, ramLblX + _frameOffsetX + clippingOffsetX,
-                                ramCenterY, fontsize, settings.catColor);
+                    }
+
+                } else if (labelIndex < labelLines.size() && labelLines[labelIndex] == "TMP_BOT") {
+                    // HOC TMP: bottom row = SOC/PCB/Skin temps, shifted up by spacing/2
+                    const int botY = baseY - (int)settings.spacing / 2;
+                    int currentX = baseX;
+                    size_t pos = 0;
+                    bool parseSuccess = true;
+                    for (int tempCount = 0; tempCount < 3 && parseSuccess && pos < currentLine.length(); tempCount++) {
+                        while (pos < currentLine.length() && currentLine[pos] == ' ') {
+                            renderer->drawString(" ", false, currentX, botY, fontsize, settings.textColor);
+                            currentX += renderer->getTextDimensions(" ", false, fontsize).first;
+                            pos++;
                         }
-                        // Centre connector divider at ramCenterY
-                        renderer->drawString(ult::DIVIDER_SYMBOL, false, ramSplitVoltColX,
-                            ramCenterY, fontsize, settings.separatorColor);
-                        // SBS RAM temp + VoltAtEnd logic for RAM_SVDD2 (top row):
-                        // Normal SBS:    temp after max(vdd2,vddq) at center
-                        // VoltAtEnd+SBS: left-connector IS divider before temp; temp at center;
-                        //                right-fork connector after temp; VDD2/VDDQ start there
-                        // VoltAtEnd+!SBS: draw temp+DIV before VDD2 on top row (baseY)
-                        int vdd2StartX = ramSplitVoltColX; // X where VDD2 volt column starts
-                        if (settings.showRAMTemp && mini_ram_temp_c[0]) {
-                            const uint32_t sbs_dw = (int)renderer->getTextDimensions(ult::DIVIDER_SYMBOL, false, fontsize).first;
+                        if (pos >= currentLine.length()) break;
+                        const size_t degreesPos = currentLine.find("\u00B0", pos);
+                        if (degreesPos == std::string::npos) { parseSuccess = false; break; }
+                        const size_t cPos = currentLine.find("C", degreesPos);
+                        if (cPos == std::string::npos) { parseSuccess = false; break; }
+                        const std::string tempPart = currentLine.substr(pos, cPos + 1 - pos);
+                        const int temp = atoi(tempPart.c_str());
+                        renderer->drawString(tempPart, false, currentX, botY, fontsize,
+                            settings.useDynamicColors ? tsl::GradientColor((float)temp) : settings.textColor);
+                        currentX += renderer->getTextDimensions(tempPart, false, fontsize).first;
+                        pos = cPos + 1;
+                    }
+                    if (!parseSuccess) {
+                        renderer->drawStringWithColoredSections(currentLine, false, specialChars, baseX, botY, fontsize, settings.textColor, settings.separatorColor);
+                        currentX = baseX + (int)renderer->getTextDimensions(currentLine, false, fontsize).first;
+                    }
+                                    // Compensate: loop will add full spacing, but visually we drew spacing/2 less,
+                    // so pull currentY back by spacing/2 so the next row gap stays normal.
+                    currentY -= (int)settings.spacing / 2;
+                } else if (labelIndex < labelLines.size() && labelLines[labelIndex] == "TMP_COMP") {
+                    // Component temps only: single row with HIGH gradient
+                    int currentX = baseX;
+                    size_t pos = 0;
+                    bool parseSuccess = true;
+                    for (int tempCount = 0; tempCount < 3 && parseSuccess && pos < currentLine.length(); tempCount++) {
+                        while (pos < currentLine.length() && currentLine[pos] == ' ') {
+                            renderer->drawString(" ", false, currentX, baseY, fontsize, settings.textColor);
+                            currentX += renderer->getTextDimensions(" ", false, fontsize).first;
+                            pos++;
+                        }
+                        if (pos >= currentLine.length()) break;
+                        const size_t degreesPos = currentLine.find("\u00B0", pos);
+                        if (degreesPos == std::string::npos) { parseSuccess = false; break; }
+                        const size_t cPos = currentLine.find("C", degreesPos);
+                        if (cPos == std::string::npos) { parseSuccess = false; break; }
+                        const std::string tempPart = currentLine.substr(pos, cPos + 1 - pos);
+                        const int temp = atoi(tempPart.c_str());
+                        renderer->drawString(tempPart, false, currentX, baseY, fontsize,
+                            settings.useDynamicColors ? tsl::GradientColor((float)temp, tsl::DEFAULT_TEMP_RANGE_HIGH) : settings.textColor);
+                        currentX += renderer->getTextDimensions(tempPart, false, fontsize).first;
+                        pos = cPos + 1;
+                    }
+                    if (!parseSuccess) {
+                        renderer->drawStringWithColoredSections(currentLine, false, specialChars, baseX, baseY, fontsize, settings.textColor, settings.separatorColor);
+                        // Update currentX so fan is positioned after the fallback-drawn string
+                        currentX = baseX + (int)renderer->getTextDimensions(currentLine, false, fontsize).first;
+                    }
+                    // Draw "TMP" label at normal Y (baseY already has offsets)
+                    if (settings.showLabels) {
+                        const std::string tmpLbl = "TMP";
+                        const uint32_t tmpLblW = renderer->getTextDimensions(tmpLbl, false, fontsize).first;
+                        const uint32_t tmpLblX = cachedBaseX + (margin / 2) - (tmpLblW / 2);
+                        renderer->drawString(tmpLbl, false, tmpLblX + _frameOffsetX + clippingOffsetX,
+                            baseY, fontsize, settings.catColor);
+                    }
+                    // Draw fan percentage inline after the temps (if enabled)
+                    int afterFanX = currentX; // tracks X after fan draw (or last temp if no fan)
+                    if (settings.showFanPercentage) {
+                        const int fanDuty = safeFanDuty((int)Rotation_Duty);
+                        const int fanY = baseY;
+                        const int afterDivX = currentX + renderer->drawString(
+                            ult::DIVIDER_SYMBOL, false, currentX, fanY, fontsize, settings.separatorColor).first;
+                        char fanPctStr[24];
+                        snprintf(fanPctStr, sizeof(fanPctStr), " %d%%", fanDuty);
+                        static const std::vector<std::string> compFanIconChars = {""};
+                        renderer->drawStringWithColoredSections(std::string(fanPctStr), false, compFanIconChars,
+                            afterDivX, fanY, fontsize, settings.textColor, settings.catColor);
+                        afterFanX = afterDivX + (int)renderer->getTextDimensions(std::string(fanPctStr), false, fontsize).first;
+                    }
+                    // Draw SOC voltage after fan (or directly after temps if fan is off)
+                    if (settings.realVolts && settings.showSOCVoltage && MINI_SOC_volt_c[0]) {
+                        const int voltDivX = afterFanX + (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, afterFanX, baseY, fontsize, settings.separatorColor).first;
+                        renderer->drawStringWithColoredSections(std::string(MINI_SOC_volt_c), false, specialChars, voltDivX, baseY, fontsize, settings.textColor, settings.separatorColor);
+                    }
+                } else if (labelIndex < labelLines.size() && labelLines[labelIndex] == "RAM_SLOAD_TOP") {
+                    // RAM load split row 1: [cpu% gpu%] at baseY. "RAM" label centered between rows.
+                    // Right side mirrors the non-loadsplit layout: rSplitVDDQ stacks VDD2 here / VDDQ on BOT;
+                    // rSplitTemp puts volt or temp on top depending on voltageAtEndRAM; otherwise nothing on top.
+                    const int ramLoadCtrY = baseY + ((int)fontsize + (int)settings.spacing / 2) / 2;
+                    ramLoadTopBaseY = baseY;  // store TOP baseY so BOT can compute center-Y consistently
+                    if (settings.showLabels) {
+                        const std::string ramLbl = "RAM";
+                        const uint32_t ramLblW = renderer->getTextDimensions(ramLbl, false, fontsize).first;
+                        const uint32_t ramLblX = cachedBaseX + (margin / 2) - (ramLblW / 2);
+                        renderer->drawString(ramLbl, false, ramLblX + _frameOffsetX + clippingOffsetX,
+                            ramLoadCtrY, fontsize, settings.catColor);
+                    }
+                    // Draw [cpu% gpu%] at baseY
+                    renderer->drawString(currentLine, false, baseX, baseY, fontsize, settings.textColor);
+
+                    // Compute shared volt column X = baseX + max(topRowW, botRowW)
+                    const uint32_t topW = renderer->getTextDimensions(currentLine, false, fontsize).first;
+                    const uint32_t botW = MINI_RAM_load_bot_c[0]
+                        ? renderer->getTextDimensions(std::string(MINI_RAM_load_bot_c), false, fontsize).first
+                        : 0;
+                    ramLoadVoltColX = baseX + (int)std::max(topW, botW);
+
+                    // Determine right-side mode (mirrors label-building conditions)
+                    const bool rSplitVDDQ = !settings.showSideBySideVDDQ && settings.realVolts &&
+                                            settings.showVDD2 && settings.showVDDQ && isMariko;
+                    const bool rSplitTemp = settings.showRAMTemp && !settings.showSideBySideRAMTemp &&
+                                            !rSplitVDDQ && settings.realVolts &&
+                                            ((settings.showVDDQ && isMariko && !settings.showVDD2) ||
+                                             (settings.showVDD2 && !settings.showVDDQ));
+
+                    if (rSplitVDDQ) {
+                        // Stacked VDD2/VDDQ. Mirror SVDD2 top-row logic.
+                        // Centre connector divider at ramLoadCtrY, linking the TOP-row DIV (before VDD2)
+                        // and the BOT-row DIV (before VDDQ) into a continuous fork.
+                        renderer->drawString(ult::DIVIDER_SYMBOL, false, ramLoadVoltColX,
+                            ramLoadCtrY, fontsize, settings.separatorColor);
+                        const uint32_t sbs_dw = renderer->getTextDimensions(ult::DIVIDER_SYMBOL, false, fontsize).first;
+                        if (settings.showRAMTemp && mini_ram_temp_c[0] && settings.voltageAtEndRAM &&
+                            settings.showSideBySideRAMTemp) {
+                            // VoltAtEnd + SBS temp: temp at center Y BEFORE the volts in its own column.
+                            // Layout mirrors SVDD2 lines 1599-1608:
+                            //   center connector | temp | right-fork connector | DIV + VDD2 (top) / DIV + VDDQ (bot)
+                            // Shift ramLoadVoltColX past the temp column so BOT's VDDQ aligns with TOP's VDD2.
                             const int rtv = atoi(mini_ram_temp_c);
-                            if (settings.showSideBySideRAMTemp) {
-                                if (settings.voltageAtEndRAM) {
-                                    // VoltAtEnd+SBS: temp at center starting at ramSplitVoltColX+sbs_dw
-                                    // (left connector already drawn is the divider before temp)
-                                    int cx = ramSplitVoltColX + sbs_dw;
-                                    renderer->drawString(std::string(mini_ram_temp_c), false, cx, ramCenterY, fontsize,
-                                        settings.useDynamicColors ? tsl::GradientColor((float)rtv, tsl::DEFAULT_TEMP_RANGE_HIGH) : settings.textColor);
-                                    cx += (int)renderer->getTextDimensions(std::string(mini_ram_temp_c), false, fontsize).first;
-                                    // Right-fork connector before volt column
-                                    renderer->drawString(ult::DIVIDER_SYMBOL, false, cx, ramCenterY, fontsize, settings.separatorColor);
-                                    vdd2StartX = cx; // VDD2/VDDQ start at the right-fork connector X
-                                } else {
-                                    // Normal SBS: temp after max(vdd2,vddq)
-                                    const uint32_t vdd2_rw = vdd2_only_c[0] ? (int)renderer->getTextDimensions(vdd2_only_c, false, fontsize).first : 0;
-                                    const uint32_t vddq_rw = vddq_only_c[0] ? (int)renderer->getTextDimensions(vddq_only_c, false, fontsize).first : 0;
-                                    int cx = ramSplitVoltColX + sbs_dw + std::max(vdd2_rw, vddq_rw);
-                                    cx += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, cx, ramCenterY, fontsize, settings.separatorColor).first;
-                                    renderer->drawString(std::string(mini_ram_temp_c), false, cx, ramCenterY, fontsize,
-                                        settings.useDynamicColors ? tsl::GradientColor((float)rtv, tsl::DEFAULT_TEMP_RANGE_HIGH) : settings.textColor);
-                                }
-                            } else if (settings.voltageAtEndRAM) {
-                                // VoltAtEnd+!SBS: draw temp+DIVIDER before VDD2 on the top row (baseY)
-                                // This is handled here so RAM_SVDDQ doesn't draw it (we block that below via ramSplitVoltColX update)
-                                if (vdd2_only_c[0]) {
-                                    int rx = ramSplitVoltColX + sbs_dw;
-                                    renderer->drawString(std::string(mini_ram_temp_c), false, rx, baseY, fontsize,
-                                        settings.useDynamicColors ? tsl::GradientColor((float)rtv, tsl::DEFAULT_TEMP_RANGE_HIGH) : settings.textColor);
-                                    rx += (int)renderer->getTextDimensions(std::string(mini_ram_temp_c), false, fontsize).first;
-                                    rx += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, rx, baseY, fontsize, settings.separatorColor).first;
-                                    renderer->drawStringWithColoredSections(std::string(vdd2_only_c), false,
-                                        specialChars, rx, baseY, fontsize, settings.textColor, settings.separatorColor);
-                                }
-                                // Skip the normal VDD2 draw below by setting vdd2StartX sentinel
-                                vdd2StartX = -1;
-                            }
-                        }
-                        // Update shared column X so RAM_SVDDQ aligns with VDD2
-                        if (settings.voltageAtEndRAM && settings.showRAMTemp && settings.showSideBySideRAMTemp)
-                            ramSplitVoltColX = vdd2StartX;
-                        // VDD2 at top row (baseY) — skip if VoltAtEnd+!SBS (already drawn above)
-                        if (vdd2_only_c[0] && vdd2StartX != -1 && !(settings.voltageAtEndRAM && settings.showRAMTemp && mini_ram_temp_c[0] && !settings.showSideBySideRAMTemp)) {
-                            int rx = vdd2StartX;
-                            rx += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, rx, baseY,
-                                fontsize, settings.separatorColor).first;
-                            renderer->drawStringWithColoredSections(std::string(vdd2_only_c), false,
-                                specialChars, rx, baseY, fontsize, settings.textColor, settings.separatorColor);
-                        }
-                    } else if (labelIndex < labelLines.size() && labelLines[labelIndex] == "RAM_SVDDQ") {
-                        // Split VDD2/VDDQ row 2: VDDQ at the volt column; uses spacing/2 compression.
-                        const int svddqY = baseY - (int)settings.spacing / 2;
-                        if (vddq_only_c[0]) {
-                            int rx = ramSplitVoltColX;
-                            rx += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, rx, svddqY,
-                                fontsize, settings.separatorColor).first;
-                            renderer->drawStringWithColoredSections(std::string(vddq_only_c), false,
-                                specialChars, rx, svddqY, fontsize, settings.textColor, settings.separatorColor);
-                            // non-SBS: RAM temp appended after VDDQ at bottom row (skip when VoltAtEnd — temp is drawn on top row instead)
-                            if (settings.showRAMTemp && !settings.showSideBySideRAMTemp && !settings.voltageAtEndRAM && mini_ram_temp_c[0]) {
-                                rx += (int)renderer->getTextDimensions(std::string(vddq_only_c), false, fontsize).first;
-                                rx += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, rx, svddqY,
+                            int cx = ramLoadVoltColX + (int)sbs_dw;
+                            renderer->drawString(std::string(mini_ram_temp_c), false, cx, ramLoadCtrY, fontsize,
+                                settings.useDynamicColors ? tsl::GradientColor((float)rtv, tsl::DEFAULT_TEMP_RANGE_HIGH) : settings.textColor);
+                            cx += (int)renderer->getTextDimensions(std::string(mini_ram_temp_c), false, fontsize).first;
+                            // Right-fork connector at center Y, before the new volt column.
+                            renderer->drawString(ult::DIVIDER_SYMBOL, false, cx, ramLoadCtrY, fontsize, settings.separatorColor);
+                            ramLoadVoltColX = cx;  // VDD2/VDDQ start at the right-fork connector X
+                            // Draw VDD2 at the new column on baseY
+                            if (vdd2_only_c[0]) {
+                                int rx = ramLoadVoltColX;
+                                rx += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, rx, baseY,
                                     fontsize, settings.separatorColor).first;
+                                renderer->drawStringWithColoredSections(std::string(vdd2_only_c), false,
+                                    specialChars, rx, baseY, fontsize, settings.textColor, settings.separatorColor);
+                            }
+                        } else if (settings.showRAMTemp && mini_ram_temp_c[0] && settings.voltageAtEndRAM &&
+                            !settings.showSideBySideRAMTemp) {
+                            // VoltAtEnd + non-SBS temp: DIV+temp+DIV+VDD2 on TOP row (mirroring SVDD2 lines 1618-1631
+                            // but with an explicit left DIVIDER before temp so it appears in its own column).
+                            // BOT row will then draw VDDQ only (no temp) at ramLoadVoltColX.
+                            if (vdd2_only_c[0]) {
                                 const int rtv = atoi(mini_ram_temp_c);
-                                renderer->drawString(std::string(mini_ram_temp_c), false, rx, svddqY, fontsize,
-                                    settings.useDynamicColors
-                                        ? tsl::GradientColor((float)rtv, tsl::DEFAULT_TEMP_RANGE_HIGH)
-                                        : settings.textColor);
-
-                            }
-                        }
-                        currentY -= (int)settings.spacing / 2;
-
-                    } else if (labelIndex < labelLines.size() && labelLines[labelIndex] == "CPU_SVOLT") {
-                        // CPU split row 1: data centered; normal=volt at top, voltAtEnd=temp at top.
-                        const int cpuCenterY = baseY + ((int)fontsize + (int)settings.spacing / 2) / 2;
-                        int currentX = baseX;
-                        renderer->drawStringWithColoredSections(currentLine, false, specialChars,
-                            currentX, cpuCenterY, fontsize, settings.textColor, settings.separatorColor);
-                        currentX += (int)renderer->getTextDimensions(currentLine, false, fontsize).first;
-                        cpuSplitVoltColX = currentX;
-                        if (settings.showLabels) {
-                            const std::string cpuLbl = "CPU";
-                            const uint32_t cpuLblW = renderer->getTextDimensions(cpuLbl, false, fontsize).first;
-                            const uint32_t cpuLblX = cachedBaseX + (margin / 2) - (cpuLblW / 2);
-                            renderer->drawString(cpuLbl, false, cpuLblX + _frameOffsetX + clippingOffsetX,
-                                cpuCenterY, fontsize, settings.catColor);
-                        }
-                        renderer->drawString(ult::DIVIDER_SYMBOL, false, cpuSplitVoltColX,
-                            cpuCenterY, fontsize, settings.separatorColor);
-                        if (settings.voltageAtEndCPU) {
-                            // VoltAtEnd: temp at top row
-                            if (mini_cpu_temp_c[0]) {
-                                int rx = cpuSplitVoltColX;
-                                rx += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, rx, baseY,
-                                    fontsize, settings.separatorColor).first;
-                                const int tv = atoi(mini_cpu_temp_c);
-                                renderer->drawString(std::string(mini_cpu_temp_c), false, rx, baseY, fontsize,
-                                    settings.useDynamicColors ? tsl::GradientColor((float)tv, tsl::DEFAULT_TEMP_RANGE_HIGH) : settings.textColor);
+                                int rx = ramLoadVoltColX;
+                                rx += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, rx, baseY, fontsize, settings.separatorColor).first;
+                                renderer->drawString(std::string(mini_ram_temp_c), false, rx, baseY, fontsize,
+                                    settings.useDynamicColors ? tsl::GradientColor((float)rtv, tsl::DEFAULT_TEMP_RANGE_HIGH) : settings.textColor);
+                                rx += (int)renderer->getTextDimensions(std::string(mini_ram_temp_c), false, fontsize).first;
+                                rx += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, rx, baseY, fontsize, settings.separatorColor).first;
+                                renderer->drawStringWithColoredSections(std::string(vdd2_only_c), false,
+                                    specialChars, rx, baseY, fontsize, settings.textColor, settings.separatorColor);
                             }
                         } else {
-                            // Normal: volt at top row
-                            if (settings.realVolts && MINI_CPU_volt_c[0]) {
-                                int rx = cpuSplitVoltColX;
+                            // Default rSplitVDDQ TOP: VDD2 at ramLoadVoltColX on baseY
+                            if (vdd2_only_c[0]) {
+                                int rx = ramLoadVoltColX;
                                 rx += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, rx, baseY,
                                     fontsize, settings.separatorColor).first;
-                                renderer->drawStringWithColoredSections(std::string(MINI_CPU_volt_c), false,
+                                renderer->drawStringWithColoredSections(std::string(vdd2_only_c), false,
                                     specialChars, rx, baseY, fontsize, settings.textColor, settings.separatorColor);
                             }
                         }
-
-                    } else if (labelIndex < labelLines.size() && labelLines[labelIndex] == "CPU_STEMP") {
-                        // CPU split row 2: normal=temp at bottom; voltAtEnd=volt at bottom.
-                        const int stempY = baseY - (int)settings.spacing / 2;
-                        int rx = cpuSplitVoltColX ? cpuSplitVoltColX : baseX;
-                        if (settings.voltageAtEndCPU) {
-                            if (settings.realVolts && MINI_CPU_volt_c[0]) {
-                                rx += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, rx, stempY,
-                                    fontsize, settings.separatorColor).first;
-                                renderer->drawStringWithColoredSections(std::string(MINI_CPU_volt_c), false,
-                                    specialChars, rx, stempY, fontsize, settings.textColor, settings.separatorColor);
-                            }
-                        } else {
-                            if (mini_cpu_temp_c[0]) {
-                                rx += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, rx, stempY,
-                                    fontsize, settings.separatorColor).first;
-                                const int tv = atoi(mini_cpu_temp_c);
-                                renderer->drawString(std::string(mini_cpu_temp_c), false, rx, stempY, fontsize,
-                                    settings.useDynamicColors
-                                        ? tsl::GradientColor((float)tv, tsl::DEFAULT_TEMP_RANGE_HIGH)
-                                        : settings.textColor);
-                            }
-                        }
-                        currentY -= (int)settings.spacing / 2;
-
-                    } else if (labelIndex < labelLines.size() && labelLines[labelIndex] == "GPU_SVOLT") {
-                        // GPU split row 1: normal=volt at top; voltAtEnd=temp at top.
-                        const int gpuCenterY = baseY + ((int)fontsize + (int)settings.spacing / 2) / 2;
-                        int currentX = baseX;
-                        renderer->drawStringWithColoredSections(currentLine, false, specialChars,
-                            currentX, gpuCenterY, fontsize, settings.textColor, settings.separatorColor);
-                        currentX += (int)renderer->getTextDimensions(currentLine, false, fontsize).first;
-                        gpuSplitVoltColX = currentX;
-                        if (settings.showLabels) {
-                            const std::string gpuLbl = "GPU";
-                            const uint32_t gpuLblW = renderer->getTextDimensions(gpuLbl, false, fontsize).first;
-                            const uint32_t gpuLblX = cachedBaseX + (margin / 2) - (gpuLblW / 2);
-                            renderer->drawString(gpuLbl, false, gpuLblX + _frameOffsetX + clippingOffsetX,
-                                gpuCenterY, fontsize, settings.catColor);
-                        }
-                        renderer->drawString(ult::DIVIDER_SYMBOL, false, gpuSplitVoltColX,
-                            gpuCenterY, fontsize, settings.separatorColor);
-                        if (settings.voltageAtEndGPU) {
-                            if (mini_gpu_temp_c[0]) {
-                                int rx = gpuSplitVoltColX;
-                                rx += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, rx, baseY,
-                                    fontsize, settings.separatorColor).first;
-                                const int tv = atoi(mini_gpu_temp_c);
-                                renderer->drawString(std::string(mini_gpu_temp_c), false, rx, baseY, fontsize,
-                                    settings.useDynamicColors ? tsl::GradientColor((float)tv, tsl::DEFAULT_TEMP_RANGE_HIGH) : settings.textColor);
-                            }
-                        } else {
-                            if (settings.realVolts && MINI_GPU_volt_c[0]) {
-                                int rx = gpuSplitVoltColX;
-                                rx += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, rx, baseY,
-                                    fontsize, settings.separatorColor).first;
-                                renderer->drawStringWithColoredSections(std::string(MINI_GPU_volt_c), false,
-                                    specialChars, rx, baseY, fontsize, settings.textColor, settings.separatorColor);
-                            }
-                        }
-
-                    } else if (labelIndex < labelLines.size() && labelLines[labelIndex] == "GPU_STEMP") {
-                        // GPU split row 2: normal=temp at bottom; voltAtEnd=volt at bottom.
-                        const int stempY = baseY - (int)settings.spacing / 2;
-                        int rx = gpuSplitVoltColX ? gpuSplitVoltColX : baseX;
-                        if (settings.voltageAtEndGPU) {
-                            if (settings.realVolts && MINI_GPU_volt_c[0]) {
-                                rx += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, rx, stempY,
-                                    fontsize, settings.separatorColor).first;
-                                renderer->drawStringWithColoredSections(std::string(MINI_GPU_volt_c), false,
-                                    specialChars, rx, stempY, fontsize, settings.textColor, settings.separatorColor);
-                            }
-                        } else {
-                            if (mini_gpu_temp_c[0]) {
-                                rx += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, rx, stempY,
-                                    fontsize, settings.separatorColor).first;
-                                const int tv = atoi(mini_gpu_temp_c);
-                                renderer->drawString(std::string(mini_gpu_temp_c), false, rx, stempY, fontsize,
-                                    settings.useDynamicColors
-                                        ? tsl::GradientColor((float)tv, tsl::DEFAULT_TEMP_RANGE_HIGH)
-                                        : settings.textColor);
-                            }
-                        }
-                        currentY -= (int)settings.spacing / 2;
-
-                    } else if (labelIndex < labelLines.size() && labelLines[labelIndex] == "RAM_SVDDQ_ONLY") {
-                        // RAM temp split row 1 (single volt rail): data centered, volt at top (baseY).
-                        const int ramTCenterY = baseY + ((int)fontsize + (int)settings.spacing / 2) / 2;
-                        int currentX = baseX;
-                        // RAM data at center Y
-                        renderer->drawStringWithColoredSections(currentLine, false, specialChars,
-                            currentX, ramTCenterY, fontsize, settings.textColor, settings.separatorColor);
-                        currentX += (int)renderer->getTextDimensions(currentLine, false, fontsize).first;
-                        ramTempVoltColX = currentX;
-                        // RAM label centered (if showLabels)
-                        if (settings.showLabels) {
-                            const std::string ramLbl = "RAM";
-                            const uint32_t ramLblW = renderer->getTextDimensions(ramLbl, false, fontsize).first;
-                            const uint32_t ramLblX = cachedBaseX + (margin / 2) - (ramLblW / 2);
-                            renderer->drawString(ramLbl, false, ramLblX + _frameOffsetX + clippingOffsetX,
-                                ramTCenterY, fontsize, settings.catColor);
-                        }
-                        // Centre connector divider
-                        renderer->drawString(ult::DIVIDER_SYMBOL, false, ramTempVoltColX,
-                            ramTCenterY, fontsize, settings.separatorColor);
-                        const char* ramSplitTopVolt = vddq_only_c[0] ? vddq_only_c : vdd2_only_c;
+                    } else if (rSplitTemp) {
+                        // Single rail + non-SBS temp: mirror SVDDQ_ONLY top row.
+                        // Centre connector divider at ramLoadCtrY (links TOP DIV and BOT DIV).
+                        renderer->drawString(ult::DIVIDER_SYMBOL, false, ramLoadVoltColX,
+                            ramLoadCtrY, fontsize, settings.separatorColor);
+                        const char* rTopVolt = vddq_only_c[0] ? vddq_only_c : vdd2_only_c;
                         if (settings.voltageAtEndRAM) {
-                            // VoltAtEnd: temp at top row
+                            // VoltAtEnd: temp at top
                             if (mini_ram_temp_c[0]) {
-                                int rx = ramTempVoltColX;
+                                int rx = ramLoadVoltColX;
                                 rx += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, rx, baseY,
                                     fontsize, settings.separatorColor).first;
                                 const int tv = atoi(mini_ram_temp_c);
@@ -1504,59 +1445,675 @@ public:
                                     settings.useDynamicColors ? tsl::GradientColor((float)tv, tsl::DEFAULT_TEMP_RANGE_HIGH) : settings.textColor);
                             }
                         } else {
-                            // Normal: volt at top row
-                            if (ramSplitTopVolt[0]) {
-                                int rx = ramTempVoltColX;
+                            // Normal: volt at top
+                            if (rTopVolt[0]) {
+                                int rx = ramLoadVoltColX;
                                 rx += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, rx, baseY,
                                     fontsize, settings.separatorColor).first;
-                                renderer->drawStringWithColoredSections(std::string(ramSplitTopVolt), false,
+                                renderer->drawStringWithColoredSections(std::string(rTopVolt), false,
                                     specialChars, rx, baseY, fontsize, settings.textColor, settings.separatorColor);
                             }
                         }
+                    }
+                    // else: inline mode — TOP row draws nothing extra; BOT row handles all volt/temp.
 
-                    } else if (labelIndex < labelLines.size() && labelLines[labelIndex] == "RAM_STEMP") {
-                        // RAM temp split row 2: normal=temp at bottom; voltAtEnd=volt at bottom.
-                        const int stempY = baseY - (int)settings.spacing / 2;
-                        int rx = ramTempVoltColX ? ramTempVoltColX : baseX;
-                        const char* rts2Volt = vddq_only_c[0] ? vddq_only_c : vdd2_only_c;
-                        if (settings.voltageAtEndRAM) {
-                            if (rts2Volt[0]) {
-                                rx += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, rx, stempY,
+                } else if (labelIndex < labelLines.size() && labelLines[labelIndex] == "RAM_SLOAD_BOT") {
+                    // RAM load split row 2: total%@freq at baseX, then right-side at ramLoadVoltColX.
+                    const int ramLoadBotY = baseY - (int)settings.spacing / 2;
+                    // Center Y is computed from TOP's baseY (stored by RAM_SLOAD_TOP) so it matches
+                    // TOP's center connector position exactly. Using BOT's baseY directly would point
+                    // BELOW the bot row instead of between the two rows.
+                    const int ramLoadCtrY = ramLoadTopBaseY + ((int)fontsize + (int)settings.spacing / 2) / 2;
+                    if (MINI_RAM_load_bot_c[0]) {
+                        renderer->drawString(MINI_RAM_load_bot_c, false, baseX, ramLoadBotY, fontsize, settings.textColor);
+                    }
+                    // Use shared column X (computed by RAM_SLOAD_TOP); fall back to baseX if unset
+                    int afterBotX = ramLoadVoltColX ? ramLoadVoltColX : baseX;
+
+                    // Same right-side mode determination as TOP
+                    const bool rSplitVDDQ = !settings.showSideBySideVDDQ && settings.realVolts &&
+                                            settings.showVDD2 && settings.showVDDQ && isMariko;
+                    const bool rSplitTemp = settings.showRAMTemp && !settings.showSideBySideRAMTemp &&
+                                            !rSplitVDDQ && settings.realVolts &&
+                                            ((settings.showVDDQ && isMariko && !settings.showVDD2) ||
+                                             (settings.showVDD2 && !settings.showVDDQ));
+
+                    if (rSplitVDDQ) {
+                        // BOT row: VDDQ at ramLoadVoltColX. Temp placement mirrors SVDDQ:
+                        //  - SBS temp ON: temp at ramLoadCtrY after max(vdd2,vddq) (or voltAtEnd center variant)
+                        //  - SBS temp OFF + !voltAtEnd: temp inline after VDDQ on BOT
+                        //  - SBS temp OFF + voltAtEnd: temp was drawn on TOP row (skip here)
+                        const uint32_t sbs_dw = renderer->getTextDimensions(ult::DIVIDER_SYMBOL, false, fontsize).first;
+                        if (vddq_only_c[0]) {
+                            int rx = afterBotX;
+                            rx += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, rx, ramLoadBotY,
+                                fontsize, settings.separatorColor).first;
+                            renderer->drawStringWithColoredSections(std::string(vddq_only_c), false,
+                                specialChars, rx, ramLoadBotY, fontsize, settings.textColor, settings.separatorColor);
+                            // Non-SBS temp appended after VDDQ at BOT (skip when voltAtEnd — temp on TOP)
+                            if (settings.showRAMTemp && !settings.showSideBySideRAMTemp &&
+                                !settings.voltageAtEndRAM && mini_ram_temp_c[0]) {
+                                rx += (int)renderer->getTextDimensions(std::string(vddq_only_c), false, fontsize).first;
+                                rx += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, rx, ramLoadBotY,
                                     fontsize, settings.separatorColor).first;
-                                renderer->drawStringWithColoredSections(std::string(rts2Volt), false,
-                                    specialChars, rx, stempY, fontsize, settings.textColor, settings.separatorColor);
-                            }
-                        } else {
-                            if (mini_ram_temp_c[0]) {
-                                rx += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, rx, stempY,
-                                    fontsize, settings.separatorColor).first;
-                                const int tv = atoi(mini_ram_temp_c);
-                                renderer->drawString(std::string(mini_ram_temp_c), false, rx, stempY, fontsize,
-                                    settings.useDynamicColors
-                                        ? tsl::GradientColor((float)tv, tsl::DEFAULT_TEMP_RANGE_HIGH)
-                                        : settings.textColor);
+                                const int rtv = atoi(mini_ram_temp_c);
+                                renderer->drawString(std::string(mini_ram_temp_c), false, rx, ramLoadBotY, fontsize,
+                                    settings.useDynamicColors ? tsl::GradientColor((float)rtv, tsl::DEFAULT_TEMP_RANGE_HIGH) : settings.textColor);
                             }
                         }
-                        currentY -= (int)settings.spacing / 2;
+                        // SBS temp: temp drawn at center Y between the two rows.
+                        // Normal SBS:    temp after max(vdd2,vddq) at ramLoadCtrY
+                        // VoltAtEnd+SBS: temp was already drawn at center Y BEFORE the volts in TOP row
+                        //                (which also shifted ramLoadVoltColX) — skip here.
+                        if (settings.showRAMTemp && settings.showSideBySideRAMTemp && mini_ram_temp_c[0] &&
+                            !settings.voltageAtEndRAM) {
+                            const uint32_t vdd2_rw = vdd2_only_c[0]
+                                ? renderer->getTextDimensions(std::string(vdd2_only_c), false, fontsize).first : 0;
+                            const uint32_t vddq_rw = vddq_only_c[0]
+                                ? renderer->getTextDimensions(std::string(vddq_only_c), false, fontsize).first : 0;
+                            const int rtv = atoi(mini_ram_temp_c);
+                            int cx = afterBotX + (int)sbs_dw + (int)std::max(vdd2_rw, vddq_rw);
+                            cx += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, cx, ramLoadCtrY,
+                                fontsize, settings.separatorColor).first;
+                            renderer->drawString(std::string(mini_ram_temp_c), false, cx, ramLoadCtrY, fontsize,
+                                settings.useDynamicColors ? tsl::GradientColor((float)rtv, tsl::DEFAULT_TEMP_RANGE_HIGH) : settings.textColor);
+                        }
+                    } else if (rSplitTemp) {
+                        // Single rail + non-SBS temp: mirror STEMP bot row.
+                        const char* rBotVolt = vddq_only_c[0] ? vddq_only_c : vdd2_only_c;
+                        if (settings.voltageAtEndRAM) {
+                            // VoltAtEnd: volt at bottom
+                            if (rBotVolt[0]) {
+                                int rx = afterBotX;
+                                rx += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, rx, ramLoadBotY,
+                                    fontsize, settings.separatorColor).first;
+                                renderer->drawStringWithColoredSections(std::string(rBotVolt), false,
+                                    specialChars, rx, ramLoadBotY, fontsize, settings.textColor, settings.separatorColor);
+                            }
+                        } else {
+                            // Normal: temp at bottom
+                            if (mini_ram_temp_c[0]) {
+                                int rx = afterBotX;
+                                rx += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, rx, ramLoadBotY,
+                                    fontsize, settings.separatorColor).first;
+                                const int tv = atoi(mini_ram_temp_c);
+                                renderer->drawString(std::string(mini_ram_temp_c), false, rx, ramLoadBotY, fontsize,
+                                    settings.useDynamicColors ? tsl::GradientColor((float)tv, tsl::DEFAULT_TEMP_RANGE_HIGH) : settings.textColor);
+                            }
+                        }
+                    } else {
+                        // Inline mode: draw all volt/temp at ramLoadCtrY (centered between rows,
+                        // inline with the "RAM" label) starting at ramLoadVoltColX.
+                        const int yInline = ramLoadCtrY;
+                        // Volt inline before temp (when voltageAtEnd is OFF)
+                        if (!settings.voltageAtEndRAM && settings.realVolts && (vdd2_only_c[0] || vddq_only_c[0])) {
+                            if (vdd2_only_c[0] && vddq_only_c[0]) {
+                                // DIV + VDD2 + DIV + VDDQ (matches the SBS visualization with connector between rails)
+                                afterBotX += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, afterBotX, yInline, fontsize, settings.separatorColor).first;
+                                renderer->drawStringWithColoredSections(std::string(vdd2_only_c), false, specialChars,
+                                    afterBotX, yInline, fontsize, settings.textColor, settings.separatorColor);
+                                afterBotX += (int)renderer->getTextDimensions(std::string(vdd2_only_c), false, fontsize).first;
+                                afterBotX += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, afterBotX, yInline, fontsize, settings.separatorColor).first;
+                                renderer->drawStringWithColoredSections(std::string(vddq_only_c), false, specialChars,
+                                    afterBotX, yInline, fontsize, settings.textColor, settings.separatorColor);
+                                afterBotX += (int)renderer->getTextDimensions(std::string(vddq_only_c), false, fontsize).first;
+                            } else {
+                                const char* voltStr = vddq_only_c[0] ? vddq_only_c : vdd2_only_c;
+                                afterBotX += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, afterBotX, yInline, fontsize, settings.separatorColor).first;
+                                renderer->drawStringWithColoredSections(std::string(voltStr), false, specialChars,
+                                    afterBotX, yInline, fontsize, settings.textColor, settings.separatorColor);
+                                afterBotX += (int)renderer->getTextDimensions(std::string(voltStr), false, fontsize).first;
+                            }
+                        }
+                        // Temp inline
+                        if (settings.showRAMTemp && mini_ram_temp_c[0]) {
+                            afterBotX += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, afterBotX, yInline, fontsize, settings.separatorColor).first;
+                            const int rtv = atoi(mini_ram_temp_c);
+                            renderer->drawString(std::string(mini_ram_temp_c), false, afterBotX, yInline, fontsize,
+                                settings.useDynamicColors ? tsl::GradientColor((float)rtv, tsl::DEFAULT_TEMP_RANGE_HIGH) : settings.textColor);
+                            afterBotX += (int)renderer->getTextDimensions(std::string(mini_ram_temp_c), false, fontsize).first;
+                        }
+                        // Volt at end (when voltageAtEnd is ON)
+                        if (settings.voltageAtEndRAM && settings.realVolts && (vdd2_only_c[0] || vddq_only_c[0])) {
+                            if (vdd2_only_c[0] && vddq_only_c[0]) {
+                                // Match default RAM renderer voltAtEnd path: DIV + VDD2 + DIV + VDDQ
+                                afterBotX += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, afterBotX, yInline, fontsize, settings.separatorColor).first;
+                                renderer->drawStringWithColoredSections(std::string(vdd2_only_c), false, specialChars,
+                                    afterBotX, yInline, fontsize, settings.textColor, settings.separatorColor);
+                                afterBotX += (int)renderer->getTextDimensions(std::string(vdd2_only_c), false, fontsize).first;
+                                afterBotX += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, afterBotX, yInline, fontsize, settings.separatorColor).first;
+                                renderer->drawStringWithColoredSections(std::string(vddq_only_c), false, specialChars,
+                                    afterBotX, yInline, fontsize, settings.textColor, settings.separatorColor);
+                            } else {
+                                const char* voltStr = vddq_only_c[0] ? vddq_only_c : vdd2_only_c;
+                                afterBotX += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, afterBotX, yInline, fontsize, settings.separatorColor).first;
+                                renderer->drawStringWithColoredSections(std::string(voltStr), false, specialChars,
+                                    afterBotX, yInline, fontsize, settings.textColor, settings.separatorColor);
+                            }
+                        }
+                    }
+                    currentY -= (int)settings.spacing / 2;
 
-                    } else if (labelIndex < labelLines.size() && labelLines[labelIndex] == "TMP_SFAN") {
-                        // Split fan row: temps + fan on row 1; "TMP" label drawn manually.
-                        // HOC split: temps at baseY (top row), label centered between both rows.
-                        // Single-group split: temps+label centered in the 2-row block; fan at baseY (top row).
-                        const bool sfanIsHoc = settings.showComponentTemps && settings.showSocPcbSkinTemps;
-                        const bool sfanHighGrad = settings.showComponentTemps;
-                        const int sfanTempY = sfanIsHoc
-                            ? baseY
-                            : (baseY + ((int)fontsize + (int)settings.spacing / 2) / 2);
-                        const int sfanLabelY = sfanIsHoc
-                            ? (baseY + ((int)fontsize + (int)settings.spacing / 2) / 2)
-                            : sfanTempY;
+                } else if (labelIndex < labelLines.size() && labelLines[labelIndex] == "RAM_SVDD2") {
+                    // Split VDD2/VDDQ row 1.
+                    // Usage drawn at centre (between rows), VDD2 at baseY (top), mirroring TMP_SFAN single-group.
+                    const int ramCenterY = baseY + ((int)fontsize + (int)settings.spacing / 2) / 2;
+                    int currentX = baseX;
+                    // Usage at centre Y
+                    renderer->drawStringWithColoredSections(currentLine, false, specialChars,
+                        currentX, ramCenterY, fontsize, settings.textColor, settings.separatorColor);
+                    currentX += (int)renderer->getTextDimensions(currentLine, false, fontsize).first;
+                    ramSplitVoltColX = currentX;
+                    // "RAM" label at centre Y
+                    if (settings.showLabels) {
+                        const std::string ramLbl = "RAM";
+                        const uint32_t ramLblW = renderer->getTextDimensions(ramLbl, false, fontsize).first;
+                        const uint32_t ramLblX = cachedBaseX + (margin / 2) - (ramLblW / 2);
+                        renderer->drawString(ramLbl, false, ramLblX + _frameOffsetX + clippingOffsetX,
+                            ramCenterY, fontsize, settings.catColor);
+                    }
+                    // Centre connector divider at ramCenterY
+                    renderer->drawString(ult::DIVIDER_SYMBOL, false, ramSplitVoltColX,
+                        ramCenterY, fontsize, settings.separatorColor);
+                    // SBS RAM temp + VoltAtEnd logic for RAM_SVDD2 (top row):
+                    // Normal SBS:    temp after max(vdd2,vddq) at center
+                    // VoltAtEnd+SBS: left-connector IS divider before temp; temp at center;
+                    //                right-fork connector after temp; VDD2/VDDQ start there
+                    // VoltAtEnd+!SBS: draw temp+DIV before VDD2 on top row (baseY)
+                    int vdd2StartX = ramSplitVoltColX; // X where VDD2 volt column starts
+                    if (settings.showRAMTemp && mini_ram_temp_c[0]) {
+                        const uint32_t sbs_dw = (int)renderer->getTextDimensions(ult::DIVIDER_SYMBOL, false, fontsize).first;
+                        const int rtv = atoi(mini_ram_temp_c);
+                        if (settings.showSideBySideRAMTemp) {
+                            if (settings.voltageAtEndRAM) {
+                                // VoltAtEnd+SBS: temp at center starting at ramSplitVoltColX+sbs_dw
+                                // (left connector already drawn is the divider before temp)
+                                int cx = ramSplitVoltColX + sbs_dw;
+                                renderer->drawString(std::string(mini_ram_temp_c), false, cx, ramCenterY, fontsize,
+                                    settings.useDynamicColors ? tsl::GradientColor((float)rtv, tsl::DEFAULT_TEMP_RANGE_HIGH) : settings.textColor);
+                                cx += (int)renderer->getTextDimensions(std::string(mini_ram_temp_c), false, fontsize).first;
+                                // Right-fork connector before volt column
+                                renderer->drawString(ult::DIVIDER_SYMBOL, false, cx, ramCenterY, fontsize, settings.separatorColor);
+                                vdd2StartX = cx; // VDD2/VDDQ start at the right-fork connector X
+                            } else {
+                                // Normal SBS: temp after max(vdd2,vddq)
+                                const uint32_t vdd2_rw = vdd2_only_c[0] ? (int)renderer->getTextDimensions(vdd2_only_c, false, fontsize).first : 0;
+                                const uint32_t vddq_rw = vddq_only_c[0] ? (int)renderer->getTextDimensions(vddq_only_c, false, fontsize).first : 0;
+                                int cx = ramSplitVoltColX + sbs_dw + std::max(vdd2_rw, vddq_rw);
+                                cx += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, cx, ramCenterY, fontsize, settings.separatorColor).first;
+                                renderer->drawString(std::string(mini_ram_temp_c), false, cx, ramCenterY, fontsize,
+                                    settings.useDynamicColors ? tsl::GradientColor((float)rtv, tsl::DEFAULT_TEMP_RANGE_HIGH) : settings.textColor);
+                            }
+                        } else if (settings.voltageAtEndRAM) {
+                            // VoltAtEnd+!SBS: draw temp+DIVIDER before VDD2 on the top row (baseY)
+                            // This is handled here so RAM_SVDDQ doesn't draw it (we block that below via ramSplitVoltColX update)
+                            if (vdd2_only_c[0]) {
+                                int rx = ramSplitVoltColX + sbs_dw;
+                                renderer->drawString(std::string(mini_ram_temp_c), false, rx, baseY, fontsize,
+                                    settings.useDynamicColors ? tsl::GradientColor((float)rtv, tsl::DEFAULT_TEMP_RANGE_HIGH) : settings.textColor);
+                                rx += (int)renderer->getTextDimensions(std::string(mini_ram_temp_c), false, fontsize).first;
+                                rx += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, rx, baseY, fontsize, settings.separatorColor).first;
+                                renderer->drawStringWithColoredSections(std::string(vdd2_only_c), false,
+                                    specialChars, rx, baseY, fontsize, settings.textColor, settings.separatorColor);
+                            }
+                            // Skip the normal VDD2 draw below by setting vdd2StartX sentinel
+                            vdd2StartX = -1;
+                        }
+                    }
+                    // Update shared column X so RAM_SVDDQ aligns with VDD2
+                    if (settings.voltageAtEndRAM && settings.showRAMTemp && settings.showSideBySideRAMTemp)
+                        ramSplitVoltColX = vdd2StartX;
+                    // VDD2 at top row (baseY) — skip if VoltAtEnd+!SBS (already drawn above)
+                    if (vdd2_only_c[0] && vdd2StartX != -1 && !(settings.voltageAtEndRAM && settings.showRAMTemp && mini_ram_temp_c[0] && !settings.showSideBySideRAMTemp)) {
+                        int rx = vdd2StartX;
+                        rx += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, rx, baseY,
+                            fontsize, settings.separatorColor).first;
+                        renderer->drawStringWithColoredSections(std::string(vdd2_only_c), false,
+                            specialChars, rx, baseY, fontsize, settings.textColor, settings.separatorColor);
+                    }
+                } else if (labelIndex < labelLines.size() && labelLines[labelIndex] == "RAM_SVDDQ") {
+                    // Split VDD2/VDDQ row 2: VDDQ at the volt column; uses spacing/2 compression.
+                    const int svddqY = baseY - (int)settings.spacing / 2;
+                    if (vddq_only_c[0]) {
+                        int rx = ramSplitVoltColX;
+                        rx += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, rx, svddqY,
+                            fontsize, settings.separatorColor).first;
+                        renderer->drawStringWithColoredSections(std::string(vddq_only_c), false,
+                            specialChars, rx, svddqY, fontsize, settings.textColor, settings.separatorColor);
+                        // non-SBS: RAM temp appended after VDDQ at bottom row (skip when VoltAtEnd — temp is drawn on top row instead)
+                        if (settings.showRAMTemp && !settings.showSideBySideRAMTemp && !settings.voltageAtEndRAM && mini_ram_temp_c[0]) {
+                            rx += (int)renderer->getTextDimensions(std::string(vddq_only_c), false, fontsize).first;
+                            rx += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, rx, svddqY,
+                                fontsize, settings.separatorColor).first;
+                            const int rtv = atoi(mini_ram_temp_c);
+                            renderer->drawString(std::string(mini_ram_temp_c), false, rx, svddqY, fontsize,
+                                settings.useDynamicColors
+                                    ? tsl::GradientColor((float)rtv, tsl::DEFAULT_TEMP_RANGE_HIGH)
+                                    : settings.textColor);
+
+                        }
+                    }
+                    currentY -= (int)settings.spacing / 2;
+
+                } else if (labelIndex < labelLines.size() && labelLines[labelIndex] == "CPU_SVOLT") {
+                    // CPU split row 1: data centered; normal=volt at top, voltAtEnd=temp at top.
+                    const int cpuCenterY = baseY + ((int)fontsize + (int)settings.spacing / 2) / 2;
+                    int currentX = baseX;
+                    renderer->drawStringWithColoredSections(currentLine, false, specialChars,
+                        currentX, cpuCenterY, fontsize, settings.textColor, settings.separatorColor);
+                    currentX += (int)renderer->getTextDimensions(currentLine, false, fontsize).first;
+                    cpuSplitVoltColX = currentX;
+                    if (settings.showLabels) {
+                        const std::string cpuLbl = "CPU";
+                        const uint32_t cpuLblW = renderer->getTextDimensions(cpuLbl, false, fontsize).first;
+                        const uint32_t cpuLblX = cachedBaseX + (margin / 2) - (cpuLblW / 2);
+                        renderer->drawString(cpuLbl, false, cpuLblX + _frameOffsetX + clippingOffsetX,
+                            cpuCenterY, fontsize, settings.catColor);
+                    }
+                    renderer->drawString(ult::DIVIDER_SYMBOL, false, cpuSplitVoltColX,
+                        cpuCenterY, fontsize, settings.separatorColor);
+                    if (settings.voltageAtEndCPU) {
+                        // VoltAtEnd: temp at top row
+                        if (mini_cpu_temp_c[0]) {
+                            int rx = cpuSplitVoltColX;
+                            rx += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, rx, baseY,
+                                fontsize, settings.separatorColor).first;
+                            const int tv = atoi(mini_cpu_temp_c);
+                            renderer->drawString(std::string(mini_cpu_temp_c), false, rx, baseY, fontsize,
+                                settings.useDynamicColors ? tsl::GradientColor((float)tv, tsl::DEFAULT_TEMP_RANGE_HIGH) : settings.textColor);
+                        }
+                    } else {
+                        // Normal: volt at top row
+                        if (settings.realVolts && MINI_CPU_volt_c[0]) {
+                            int rx = cpuSplitVoltColX;
+                            rx += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, rx, baseY,
+                                fontsize, settings.separatorColor).first;
+                            renderer->drawStringWithColoredSections(std::string(MINI_CPU_volt_c), false,
+                                specialChars, rx, baseY, fontsize, settings.textColor, settings.separatorColor);
+                        }
+                    }
+
+                } else if (labelIndex < labelLines.size() && labelLines[labelIndex] == "CPU_STEMP") {
+                    // CPU split row 2: normal=temp at bottom; voltAtEnd=volt at bottom.
+                    const int stempY = baseY - (int)settings.spacing / 2;
+                    int rx = cpuSplitVoltColX ? cpuSplitVoltColX : baseX;
+                    if (settings.voltageAtEndCPU) {
+                        if (settings.realVolts && MINI_CPU_volt_c[0]) {
+                            rx += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, rx, stempY,
+                                fontsize, settings.separatorColor).first;
+                            renderer->drawStringWithColoredSections(std::string(MINI_CPU_volt_c), false,
+                                specialChars, rx, stempY, fontsize, settings.textColor, settings.separatorColor);
+                        }
+                    } else {
+                        if (mini_cpu_temp_c[0]) {
+                            rx += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, rx, stempY,
+                                fontsize, settings.separatorColor).first;
+                            const int tv = atoi(mini_cpu_temp_c);
+                            renderer->drawString(std::string(mini_cpu_temp_c), false, rx, stempY, fontsize,
+                                settings.useDynamicColors
+                                    ? tsl::GradientColor((float)tv, tsl::DEFAULT_TEMP_RANGE_HIGH)
+                                    : settings.textColor);
+                        }
+                    }
+                    currentY -= (int)settings.spacing / 2;
+
+                } else if (labelIndex < labelLines.size() && labelLines[labelIndex] == "CPU_SFULL") {
+                    // Full CPU freq split — row 1.
+                    // cpuFullStacked=true (SBS-cpu-temp OFF + realVolts + showCPUTemp):
+                    //   mirrors CPU_SVOLT exactly — brackets on center row, volt (or temp if voltAtEnd) at baseY top.
+                    // cpuFullStacked=false: brackets on baseY (top), volt+temp inline after brackets.
+                    const bool cpuFullStacked = settings.showCPUTemp && !settings.showSideBySideCPUTemp && settings.realVolts;
+                    const int cpuFullCenterY = baseY + ((int)fontsize + (int)settings.spacing / 2) / 2;
+                    cpuFullSplitBracketsW = (int)renderer->getTextDimensions(currentLine, false, fontsize).first;
+                    const std::string cpuLbl = "CPU";
+                    const uint32_t cpuLblW = renderer->getTextDimensions(cpuLbl, false, fontsize).first;
+                    const uint32_t cpuLblX = cachedBaseX + (margin / 2) - (cpuLblW / 2);
+                    if (cpuFullStacked) {
+                        // ── Stacked mode: brackets on TOP row (baseY), volt inline after brackets.
+                        // CPU_SFREQ (bottom row) draws @freq right-aligned + temp right of volt column.
                         int currentX = baseX;
+                        renderer->drawStringWithColoredSections(currentLine, false, specialChars,
+                            currentX, baseY, fontsize, settings.textColor, settings.separatorColor);
+                        currentX += cpuFullSplitBracketsW; // advance to right edge of brackets
+                        // Center connector divider — connects top-row | and bottom-row | into one vertical bar
+                        renderer->drawString(ult::DIVIDER_SYMBOL, false, currentX, cpuFullCenterY,
+                            fontsize, settings.separatorColor);
+                        if (settings.showLabels)
+                            renderer->drawString(cpuLbl, false, cpuLblX + _frameOffsetX + clippingOffsetX,
+                                cpuFullCenterY, fontsize, settings.catColor);
+                        // Draw volt (normal) or temp (voltAtEnd) inline after brackets on top row
+                        if (settings.voltageAtEndCPU) {
+                            if (mini_cpu_temp_c[0]) {
+                                int rx = currentX;
+                                rx += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, rx, baseY,
+                                    fontsize, settings.separatorColor).first;
+                                const int tv = atoi(mini_cpu_temp_c);
+                                renderer->drawString(std::string(mini_cpu_temp_c), false, rx, baseY, fontsize,
+                                    settings.useDynamicColors ? tsl::GradientColor((float)tv, tsl::DEFAULT_TEMP_RANGE_HIGH) : settings.textColor);
+                            }
+                        } else {
+                            if (settings.realVolts && MINI_CPU_volt_c[0]) {
+                                int rx = currentX;
+                                rx += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, rx, baseY,
+                                    fontsize, settings.separatorColor).first;
+                                renderer->drawStringWithColoredSections(std::string(MINI_CPU_volt_c), false,
+                                    specialChars, rx, baseY, fontsize, settings.textColor, settings.separatorColor);
+                            }
+                        }
+                    } else {
+                        // ── Inline mode: brackets on baseY (top row), volt+temp on cpuFullCenterY (center row) ──
+                        // Brackets drawn at top, center connector divider marks the column,
+                        // volt/temp drawn at cpuFullCenterY (same row as CPU label), freq on bottom via CPU_SFREQ.
+                        renderer->drawStringWithColoredSections(currentLine, false, specialChars,
+                            baseX, baseY, fontsize, settings.textColor, settings.separatorColor);
+                        // Center connector divider at right edge of brackets
+                        const int voltColX = baseX + cpuFullSplitBracketsW;
+                        renderer->drawString(ult::DIVIDER_SYMBOL, false, voltColX, cpuFullCenterY,
+                            fontsize, settings.separatorColor);
+                        if (settings.showLabels)
+                            renderer->drawString(cpuLbl, false, cpuLblX + _frameOffsetX + clippingOffsetX,
+                                cpuFullCenterY, fontsize, settings.catColor);
+                        // Volt/temp on center row (cpuFullCenterY), right of volt column
+                        int rx = voltColX;
+                        if (settings.voltageAtEndCPU) {
+                            if (mini_cpu_temp_c[0]) {
+                                rx += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, rx, cpuFullCenterY,
+                                    fontsize, settings.separatorColor).first;
+                                const int tv = atoi(mini_cpu_temp_c);
+                                const std::string tempStr(mini_cpu_temp_c);
+                                renderer->drawString(tempStr, false, rx, cpuFullCenterY, fontsize,
+                                    settings.useDynamicColors ? tsl::GradientColor((float)tv, tsl::DEFAULT_TEMP_RANGE_HIGH) : settings.textColor);
+                                rx += (int)renderer->getTextDimensions(tempStr, false, fontsize).first;
+                            }
+                            if (settings.realVolts && MINI_CPU_volt_c[0]) {
+                                rx += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, rx, cpuFullCenterY,
+                                    fontsize, settings.separatorColor).first;
+                                renderer->drawStringWithColoredSections(std::string(MINI_CPU_volt_c), false,
+                                    specialChars, rx, cpuFullCenterY, fontsize, settings.textColor, settings.separatorColor);
+                            }
+                        } else {
+                            if (settings.realVolts && MINI_CPU_volt_c[0]) {
+                                rx += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, rx, cpuFullCenterY,
+                                    fontsize, settings.separatorColor).first;
+                                renderer->drawStringWithColoredSections(std::string(MINI_CPU_volt_c), false,
+                                    specialChars, rx, cpuFullCenterY, fontsize, settings.textColor, settings.separatorColor);
+                                rx += (int)renderer->getTextDimensions(std::string(MINI_CPU_volt_c), false, fontsize).first;
+                            }
+                            if (mini_cpu_temp_c[0]) {
+                                rx += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, rx, cpuFullCenterY,
+                                    fontsize, settings.separatorColor).first;
+                                const int tv = atoi(mini_cpu_temp_c);
+                                renderer->drawString(std::string(mini_cpu_temp_c), false, rx, cpuFullCenterY, fontsize,
+                                    settings.useDynamicColors ? tsl::GradientColor((float)tv, tsl::DEFAULT_TEMP_RANGE_HIGH) : settings.textColor);
+                            }
+                        }
+                    }
+
+                } else if (labelIndex < labelLines.size() && labelLines[labelIndex] == "CPU_SFREQ") {
+                    // Full CPU freq split — row 2.
+                    // Freq right-aligned so right edge lines up with ']' of brackets above.
+                    // In stacked mode (SBS-cpu-temp OFF): also draws the bottom volt/temp to the right of the volt column.
+                    const bool cpuFullStacked = settings.showCPUTemp && !settings.showSideBySideCPUTemp && settings.realVolts;
+                    const int freqY = baseY - (int)settings.spacing / 2;
+                    const int freqW = currentLine.empty() ? 0 : (int)renderer->getTextDimensions(currentLine, false, fontsize).first;
+                    // Right edge of brackets = baseX + cpuFullSplitBracketsW
+                    const int freqX = baseX + cpuFullSplitBracketsW - freqW;
+                    renderer->drawStringWithColoredSections(currentLine, false, specialChars,
+                        (uint32_t)std::max(baseX, freqX), freqY, fontsize,
+                        settings.textColor, settings.separatorColor);
+                    // Stacked mode: draw bottom-row volt/temp to the right of the volt column (mirrors CPU_STEMP)
+                    if (cpuFullStacked) {
+                        int rx = baseX + cpuFullSplitBracketsW; // = cpuFullSplitVoltColX
+                        if (settings.voltageAtEndCPU) {
+                            // voltAtEnd: volt on bottom row
+                            if (settings.realVolts && MINI_CPU_volt_c[0]) {
+                                rx += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, rx, freqY,
+                                    fontsize, settings.separatorColor).first;
+                                renderer->drawStringWithColoredSections(std::string(MINI_CPU_volt_c), false,
+                                    specialChars, rx, freqY, fontsize, settings.textColor, settings.separatorColor);
+                            }
+                        } else {
+                            // Normal: temp on bottom row
+                            if (mini_cpu_temp_c[0]) {
+                                rx += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, rx, freqY,
+                                    fontsize, settings.separatorColor).first;
+                                const int tv = atoi(mini_cpu_temp_c);
+                                renderer->drawString(std::string(mini_cpu_temp_c), false, rx, freqY, fontsize,
+                                    settings.useDynamicColors ? tsl::GradientColor((float)tv, tsl::DEFAULT_TEMP_RANGE_HIGH) : settings.textColor);
+                            }
+                        }
+                    }
+                    currentY -= (int)settings.spacing / 2;
+
+                } else if (labelIndex < labelLines.size() && labelLines[labelIndex] == "GPU_SVOLT") {
+                    // GPU split row 1: normal=volt at top; voltAtEnd=temp at top.
+                    const int gpuCenterY = baseY + ((int)fontsize + (int)settings.spacing / 2) / 2;
+                    int currentX = baseX;
+                    renderer->drawStringWithColoredSections(currentLine, false, specialChars,
+                        currentX, gpuCenterY, fontsize, settings.textColor, settings.separatorColor);
+                    currentX += (int)renderer->getTextDimensions(currentLine, false, fontsize).first;
+                    gpuSplitVoltColX = currentX;
+                    if (settings.showLabels) {
+                        const std::string gpuLbl = "GPU";
+                        const uint32_t gpuLblW = renderer->getTextDimensions(gpuLbl, false, fontsize).first;
+                        const uint32_t gpuLblX = cachedBaseX + (margin / 2) - (gpuLblW / 2);
+                        renderer->drawString(gpuLbl, false, gpuLblX + _frameOffsetX + clippingOffsetX,
+                            gpuCenterY, fontsize, settings.catColor);
+                    }
+                    renderer->drawString(ult::DIVIDER_SYMBOL, false, gpuSplitVoltColX,
+                        gpuCenterY, fontsize, settings.separatorColor);
+                    if (settings.voltageAtEndGPU) {
+                        if (mini_gpu_temp_c[0]) {
+                            int rx = gpuSplitVoltColX;
+                            rx += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, rx, baseY,
+                                fontsize, settings.separatorColor).first;
+                            const int tv = atoi(mini_gpu_temp_c);
+                            renderer->drawString(std::string(mini_gpu_temp_c), false, rx, baseY, fontsize,
+                                settings.useDynamicColors ? tsl::GradientColor((float)tv, tsl::DEFAULT_TEMP_RANGE_HIGH) : settings.textColor);
+                        }
+                    } else {
+                        if (settings.realVolts && MINI_GPU_volt_c[0]) {
+                            int rx = gpuSplitVoltColX;
+                            rx += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, rx, baseY,
+                                fontsize, settings.separatorColor).first;
+                            renderer->drawStringWithColoredSections(std::string(MINI_GPU_volt_c), false,
+                                specialChars, rx, baseY, fontsize, settings.textColor, settings.separatorColor);
+                        }
+                    }
+
+                } else if (labelIndex < labelLines.size() && labelLines[labelIndex] == "GPU_STEMP") {
+                    // GPU split row 2: normal=temp at bottom; voltAtEnd=volt at bottom.
+                    const int stempY = baseY - (int)settings.spacing / 2;
+                    int rx = gpuSplitVoltColX ? gpuSplitVoltColX : baseX;
+                    if (settings.voltageAtEndGPU) {
+                        if (settings.realVolts && MINI_GPU_volt_c[0]) {
+                            rx += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, rx, stempY,
+                                fontsize, settings.separatorColor).first;
+                            renderer->drawStringWithColoredSections(std::string(MINI_GPU_volt_c), false,
+                                specialChars, rx, stempY, fontsize, settings.textColor, settings.separatorColor);
+                        }
+                    } else {
+                        if (mini_gpu_temp_c[0]) {
+                            rx += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, rx, stempY,
+                                fontsize, settings.separatorColor).first;
+                            const int tv = atoi(mini_gpu_temp_c);
+                            renderer->drawString(std::string(mini_gpu_temp_c), false, rx, stempY, fontsize,
+                                settings.useDynamicColors
+                                    ? tsl::GradientColor((float)tv, tsl::DEFAULT_TEMP_RANGE_HIGH)
+                                    : settings.textColor);
+                        }
+                    }
+                    currentY -= (int)settings.spacing / 2;
+
+                } else if (labelIndex < labelLines.size() && labelLines[labelIndex] == "RAM_SVDDQ_ONLY") {
+                    // RAM temp split row 1 (single volt rail): data centered, volt at top (baseY).
+                    const int ramTCenterY = baseY + ((int)fontsize + (int)settings.spacing / 2) / 2;
+                    int currentX = baseX;
+                    // RAM data at center Y
+                    renderer->drawStringWithColoredSections(currentLine, false, specialChars,
+                        currentX, ramTCenterY, fontsize, settings.textColor, settings.separatorColor);
+                    currentX += (int)renderer->getTextDimensions(currentLine, false, fontsize).first;
+                    ramTempVoltColX = currentX;
+                    // RAM label centered (if showLabels)
+                    if (settings.showLabels) {
+                        const std::string ramLbl = "RAM";
+                        const uint32_t ramLblW = renderer->getTextDimensions(ramLbl, false, fontsize).first;
+                        const uint32_t ramLblX = cachedBaseX + (margin / 2) - (ramLblW / 2);
+                        renderer->drawString(ramLbl, false, ramLblX + _frameOffsetX + clippingOffsetX,
+                            ramTCenterY, fontsize, settings.catColor);
+                    }
+                    // Centre connector divider
+                    renderer->drawString(ult::DIVIDER_SYMBOL, false, ramTempVoltColX,
+                        ramTCenterY, fontsize, settings.separatorColor);
+                    const char* ramSplitTopVolt = vddq_only_c[0] ? vddq_only_c : vdd2_only_c;
+                    if (settings.voltageAtEndRAM) {
+                        // VoltAtEnd: temp at top row
+                        if (mini_ram_temp_c[0]) {
+                            int rx = ramTempVoltColX;
+                            rx += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, rx, baseY,
+                                fontsize, settings.separatorColor).first;
+                            const int tv = atoi(mini_ram_temp_c);
+                            renderer->drawString(std::string(mini_ram_temp_c), false, rx, baseY, fontsize,
+                                settings.useDynamicColors ? tsl::GradientColor((float)tv, tsl::DEFAULT_TEMP_RANGE_HIGH) : settings.textColor);
+                        }
+                    } else {
+                        // Normal: volt at top row
+                        if (ramSplitTopVolt[0]) {
+                            int rx = ramTempVoltColX;
+                            rx += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, rx, baseY,
+                                fontsize, settings.separatorColor).first;
+                            renderer->drawStringWithColoredSections(std::string(ramSplitTopVolt), false,
+                                specialChars, rx, baseY, fontsize, settings.textColor, settings.separatorColor);
+                        }
+                    }
+
+                } else if (labelIndex < labelLines.size() && labelLines[labelIndex] == "RAM_STEMP") {
+                    // RAM temp split row 2: normal=temp at bottom; voltAtEnd=volt at bottom.
+                    const int stempY = baseY - (int)settings.spacing / 2;
+                    int rx = ramTempVoltColX ? ramTempVoltColX : baseX;
+                    const char* rts2Volt = vddq_only_c[0] ? vddq_only_c : vdd2_only_c;
+                    if (settings.voltageAtEndRAM) {
+                        if (rts2Volt[0]) {
+                            rx += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, rx, stempY,
+                                fontsize, settings.separatorColor).first;
+                            renderer->drawStringWithColoredSections(std::string(rts2Volt), false,
+                                specialChars, rx, stempY, fontsize, settings.textColor, settings.separatorColor);
+                        }
+                    } else {
+                        if (mini_ram_temp_c[0]) {
+                            rx += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, rx, stempY,
+                                fontsize, settings.separatorColor).first;
+                            const int tv = atoi(mini_ram_temp_c);
+                            renderer->drawString(std::string(mini_ram_temp_c), false, rx, stempY, fontsize,
+                                settings.useDynamicColors
+                                    ? tsl::GradientColor((float)tv, tsl::DEFAULT_TEMP_RANGE_HIGH)
+                                    : settings.textColor);
+                        }
+                    }
+                    currentY -= (int)settings.spacing / 2;
+
+                } else if (labelIndex < labelLines.size() && labelLines[labelIndex] == "BAT_STOP") {
+                    // BAT split row 1: top row. "BAT" label centered between both rows.
+                    const int batCenterY = baseY + ((int)fontsize + (int)settings.spacing / 2) / 2;
+                    if (settings.showLabels) {
+                        const std::string batLbl = "BAT";
+                        const uint32_t batLblW = renderer->getTextDimensions(batLbl, false, fontsize).first;
+                        const uint32_t batLblX = cachedBaseX + (margin / 2) - (batLblW / 2);
+                        renderer->drawString(batLbl, false, batLblX + _frameOffsetX + clippingOffsetX,
+                            batCenterY, fontsize, settings.catColor);
+                    }
+                    renderer->drawString(currentLine, false, baseX, baseY, fontsize, settings.textColor);
+
+                } else if (labelIndex < labelLines.size() && labelLines[labelIndex] == "BAT_SBOT") {
+                    // BAT split row 2: bottom row, same X as top row.
+                    const int batBotY = baseY - (int)settings.spacing / 2;
+                    renderer->drawString(currentLine, false, baseX, batBotY, fontsize, settings.textColor);
+                    currentY -= (int)settings.spacing / 2;
+
+                } else if (labelIndex < labelLines.size() && labelLines[labelIndex] == "TMP_SFAN") {
+                    // Split fan row: temps + fan on row 1; "TMP" label drawn manually.
+                    // HOC split: temps at baseY (top row), label centered between both rows.
+                    // Single-group split: temps+label centered in the 2-row block; fan at baseY (top row).
+                    const bool sfanIsHoc = settings.showComponentTemps && settings.showSocPcbSkinTemps;
+                    const bool sfanHighGrad = settings.showComponentTemps;
+                    const int sfanTempY = sfanIsHoc
+                        ? baseY
+                        : (baseY + ((int)fontsize + (int)settings.spacing / 2) / 2);
+                    const int sfanLabelY = sfanIsHoc
+                        ? (baseY + ((int)fontsize + (int)settings.spacing / 2) / 2)
+                        : sfanTempY;
+                    int currentX = baseX;
+                    size_t pos = 0;
+                    bool parseSuccess = true;
+                    for (int tempCount = 0; tempCount < 3 && parseSuccess && pos < currentLine.length(); tempCount++) {
+                        while (pos < currentLine.length() && currentLine[pos] == ' ') {
+                            renderer->drawString(" ", false, currentX, sfanTempY, fontsize, settings.textColor);
+                            currentX += renderer->getTextDimensions(" ", false, fontsize).first;
+                            pos++;
+                        }
+                        if (pos >= currentLine.length()) break;
+                        const size_t degreesPos = currentLine.find("\u00B0", pos);
+                        if (degreesPos == std::string::npos) { parseSuccess = false; break; }
+                        const size_t cPos = currentLine.find("C", degreesPos);
+                        if (cPos == std::string::npos) { parseSuccess = false; break; }
+                        const std::string tempPart = currentLine.substr(pos, cPos + 1 - pos);
+                        const int temp = atoi(tempPart.c_str());
+                        renderer->drawString(tempPart, false, currentX, sfanTempY, fontsize,
+                            settings.useDynamicColors
+                                ? (sfanHighGrad
+                                    ? tsl::GradientColor((float)temp, tsl::DEFAULT_TEMP_RANGE_HIGH)
+                                    : tsl::GradientColor((float)temp))
+                                : settings.textColor);
+                        currentX += renderer->getTextDimensions(tempPart, false, fontsize).first;
+                        pos = cPos + 1;
+                    }
+                    if (!parseSuccess) {
+                        renderer->drawStringWithColoredSections(currentLine, false, specialChars, baseX, sfanTempY, fontsize, settings.textColor, settings.separatorColor);
+                        currentX = baseX + (int)renderer->getTextDimensions(currentLine, false, fontsize).first;
+                    }
+                    // Draw "TMP" label centered (isTmpHocRow skips generic label draw)
+                    if (settings.showLabels) {
+                        const std::string tmpLbl = "TMP";
+                        const uint32_t tmpLblW = renderer->getTextDimensions(tmpLbl, false, fontsize).first;
+                        const uint32_t tmpLblX = cachedBaseX + (margin / 2) - (tmpLblW / 2);
+                        renderer->drawString(tmpLbl, false, tmpLblX + _frameOffsetX + clippingOffsetX,
+                            sfanLabelY, fontsize, settings.catColor);
+                    }
+                    // Record where the fan column starts (used by TMP_SVOLT for single-group volt X alignment)
+                    sfanFanColX = currentX;
+                    sfanBaseY = baseY;  // store top-row Y for TMP_SVOLT volt-swap
+
+                    // Connect center divider
+                    renderer->drawString(ult::DIVIDER_SYMBOL, false, sfanFanColX,
+                        sfanIsHoc ? sfanLabelY : sfanTempY, fontsize, settings.separatorColor);
+
+                    // Draw fan: voltAtEnd OFF=bottom row Y (swapped), voltAtEnd ON=baseY (top, normal)
+                    if (settings.showFanPercentage) {
+                        const int fanDuty = safeFanDuty((int)Rotation_Duty);
+                        const int fanDrawY = settings.voltageAtEndTMP
+                            ? baseY
+                            : (baseY + (int)fontsize + (int)settings.spacing / 2);
+                        const int afterDivX = currentX + renderer->drawString(
+                            ult::DIVIDER_SYMBOL, false, currentX, fanDrawY, fontsize, settings.separatorColor).first;
+                        char fanPctStr[24];
+                        snprintf(fanPctStr, sizeof(fanPctStr), " %d%%", fanDuty);
+                        static const std::vector<std::string> sfanIconChars = {""};
+                        renderer->drawStringWithColoredSections(std::string(fanPctStr), false, sfanIconChars,
+                            afterDivX, fanDrawY, fontsize, settings.textColor, settings.catColor);
+                    }
+                } else if (labelIndex < labelLines.size() && labelLines[labelIndex] == "TMP_SVOLT") {
+                    // Split volt row: row 2 draws optional SOC/PCB/Skin temps then SOC voltage.
+                    // HOC split (hasTemps): mirrors TMP_BOT with spacing/2 compression.
+                    // Single-group (!hasTemps): volt drawn at sfanFanColX (same X column as fan above).
+                    const bool hasTemps = currentLine.find("\u00B0") != std::string::npos;
+                    const int svoltY = baseY - (int)settings.spacing / 2;
+                    int currentX = hasTemps ? baseX : sfanFanColX;
+                    if (hasTemps) {
                         size_t pos = 0;
                         bool parseSuccess = true;
                         for (int tempCount = 0; tempCount < 3 && parseSuccess && pos < currentLine.length(); tempCount++) {
                             while (pos < currentLine.length() && currentLine[pos] == ' ') {
-                                renderer->drawString(" ", false, currentX, sfanTempY, fontsize, settings.textColor);
+                                renderer->drawString(" ", false, currentX, svoltY, fontsize, settings.textColor);
                                 currentX += renderer->getTextDimensions(" ", false, fontsize).first;
                                 pos++;
                             }
@@ -1567,166 +2124,59 @@ public:
                             if (cPos == std::string::npos) { parseSuccess = false; break; }
                             const std::string tempPart = currentLine.substr(pos, cPos + 1 - pos);
                             const int temp = atoi(tempPart.c_str());
-                            renderer->drawString(tempPart, false, currentX, sfanTempY, fontsize,
+                            renderer->drawString(tempPart, false, currentX, svoltY, fontsize,
                                 settings.useDynamicColors
-                                    ? (sfanHighGrad
-                                        ? tsl::GradientColor((float)temp, tsl::DEFAULT_TEMP_RANGE_HIGH)
-                                        : tsl::GradientColor((float)temp))
+                                    ? tsl::GradientColor((float)temp)
                                     : settings.textColor);
                             currentX += renderer->getTextDimensions(tempPart, false, fontsize).first;
                             pos = cPos + 1;
                         }
                         if (!parseSuccess) {
-                            renderer->drawStringWithColoredSections(currentLine, false, specialChars, baseX, sfanTempY, fontsize, settings.textColor, settings.separatorColor);
+                            renderer->drawStringWithColoredSections(currentLine, false, specialChars, baseX, svoltY, fontsize, settings.textColor, settings.separatorColor);
                             currentX = baseX + (int)renderer->getTextDimensions(currentLine, false, fontsize).first;
                         }
-                        // Draw "TMP" label centered (isTmpHocRow skips generic label draw)
-                        if (settings.showLabels) {
-                            const std::string tmpLbl = "TMP";
-                            const uint32_t tmpLblW = renderer->getTextDimensions(tmpLbl, false, fontsize).first;
-                            const uint32_t tmpLblX = cachedBaseX + (margin / 2) - (tmpLblW / 2);
-                            renderer->drawString(tmpLbl, false, tmpLblX + _frameOffsetX + clippingOffsetX,
-                                sfanLabelY, fontsize, settings.catColor);
-                        }
-                        // Record where the fan column starts (used by TMP_SVOLT for single-group volt X alignment)
-                        sfanFanColX = currentX;
-                        sfanBaseY = baseY;  // store top-row Y for TMP_SVOLT volt-swap
-
-                        // Connect center divider
-                        renderer->drawString(ult::DIVIDER_SYMBOL, false, sfanFanColX,
-                            sfanIsHoc ? sfanLabelY : sfanTempY, fontsize, settings.separatorColor);
-
-                        // Draw fan: voltAtEnd OFF=bottom row Y (swapped), voltAtEnd ON=baseY (top, normal)
-                        if (settings.showFanPercentage) {
-                            const int fanDuty = safeFanDuty((int)Rotation_Duty);
-                            const int fanDrawY = settings.voltageAtEndTMP
-                                ? baseY
-                                : (baseY + (int)fontsize + (int)settings.spacing / 2);
-                            const int afterDivX = currentX + renderer->drawString(
-                                ult::DIVIDER_SYMBOL, false, currentX, fanDrawY, fontsize, settings.separatorColor).first;
-                            char fanPctStr[24];
-                            snprintf(fanPctStr, sizeof(fanPctStr), " %d%%", fanDuty);
-                            static const std::vector<std::string> sfanIconChars = {""};
-                            renderer->drawStringWithColoredSections(std::string(fanPctStr), false, sfanIconChars,
-                                afterDivX, fanDrawY, fontsize, settings.textColor, settings.catColor);
-                        }
-                    } else if (labelIndex < labelLines.size() && labelLines[labelIndex] == "TMP_SVOLT") {
-                        // Split volt row: row 2 draws optional SOC/PCB/Skin temps then SOC voltage.
-                        // HOC split (hasTemps): mirrors TMP_BOT with spacing/2 compression.
-                        // Single-group (!hasTemps): volt drawn at sfanFanColX (same X column as fan above).
-                        const bool hasTemps = currentLine.find("\u00B0") != std::string::npos;
-                        const int svoltY = baseY - (int)settings.spacing / 2;
-                        int currentX = hasTemps ? baseX : sfanFanColX;
-                        if (hasTemps) {
-                            size_t pos = 0;
-                            bool parseSuccess = true;
-                            for (int tempCount = 0; tempCount < 3 && parseSuccess && pos < currentLine.length(); tempCount++) {
-                                while (pos < currentLine.length() && currentLine[pos] == ' ') {
-                                    renderer->drawString(" ", false, currentX, svoltY, fontsize, settings.textColor);
-                                    currentX += renderer->getTextDimensions(" ", false, fontsize).first;
-                                    pos++;
-                                }
-                                if (pos >= currentLine.length()) break;
-                                const size_t degreesPos = currentLine.find("\u00B0", pos);
-                                if (degreesPos == std::string::npos) { parseSuccess = false; break; }
-                                const size_t cPos = currentLine.find("C", degreesPos);
-                                if (cPos == std::string::npos) { parseSuccess = false; break; }
-                                const std::string tempPart = currentLine.substr(pos, cPos + 1 - pos);
-                                const int temp = atoi(tempPart.c_str());
-                                renderer->drawString(tempPart, false, currentX, svoltY, fontsize,
-                                    settings.useDynamicColors
-                                        ? tsl::GradientColor((float)temp)
-                                        : settings.textColor);
-                                currentX += renderer->getTextDimensions(tempPart, false, fontsize).first;
-                                pos = cPos + 1;
-                            }
-                            if (!parseSuccess) {
-                                renderer->drawStringWithColoredSections(currentLine, false, specialChars, baseX, svoltY, fontsize, settings.textColor, settings.separatorColor);
-                                currentX = baseX + (int)renderer->getTextDimensions(currentLine, false, fontsize).first;
-                            }
-                        }
-                        // Draw SOC voltage: voltAtEnd ON=svoltY (bottom, normal), voltAtEnd OFF=sfanBaseY (top, swapped)
-                        if (settings.realVolts && settings.showSOCVoltage && MINI_SOC_volt_c[0]) {
-                            const int voltDrawY = settings.voltageAtEndTMP ? svoltY : sfanBaseY;
-                            const int voltDivX = currentX + (int)renderer->drawString(
-                                ult::DIVIDER_SYMBOL, false, currentX, voltDrawY, fontsize, settings.separatorColor).first;
-                            renderer->drawStringWithColoredSections(std::string(MINI_SOC_volt_c), false, specialChars,
-                                voltDivX, voltDrawY, fontsize, settings.textColor, settings.separatorColor);
-                        }
-                        // Both HOC and single-group split use spacing/2 compression: compensate currentY
-                        currentY -= (int)settings.spacing / 2;
-                    } else if (labelIndex < labelLines.size() && labelLines[labelIndex] == "MEM") {
-                        // MEM memory rendering with gradient color
-                        // Extract numeric value for color determination
-                        float sysValue = 0.0f;
-                        sscanf(currentLine.c_str(), "%f", &sysValue);
-                        
-                        // Determine unit from string
-                        const bool isGB = (currentLine.find("GB") != std::string::npos);
-                        const float sysValueMB = isGB ? (sysValue * 1024.0f) : sysValue;
-                        
-                        // Apply same color scheme as in drawMemoryWidget
-                        tsl::Color sysColor = settings.textColor;
-                        if (sysValueMB >= 9.0f) {
-                            sysColor = settings.useDynamicColors ? tsl::healthyRamTextColor : settings.textColor;
-                        } else if (sysValueMB >= 3.0f) {
-                            sysColor = settings.useDynamicColors ? tsl::neutralRamTextColor : settings.textColor;
-                        } else {
-                            sysColor = settings.useDynamicColors ? tsl::badRamTextColor : settings.textColor;
-                        }
-                        
-                        // Draw the memory value with color on the left
-                        int currentX = baseX;
-                        renderer->drawStringWithColoredSections(currentLine, false, specialChars, currentX, baseY, fontsize, sysColor, settings.separatorColor);
-                        currentX += renderer->getTextDimensions(currentLine, false, fontsize).first;
-                        
-                        // Draw separator " | "
-                        renderer->drawString(ult::DIVIDER_SYMBOL, false, currentX, baseY, fontsize, settings.separatorColor);
-                        currentX += renderer->getTextDimensions(ult::DIVIDER_SYMBOL, false, fontsize).first;
-                        
-                        // Draw "System" on the right
-                        renderer->drawString("System", false, currentX, baseY, fontsize, settings.textColor);
-                    } else {
-                        // Normal rendering for all other line types (CPU, GPU, RAM, BAT, FPS, RES, DTC)
-                        renderer->drawStringWithColoredSections(currentLine, false, specialChars, baseX, baseY, fontsize, settings.textColor, settings.separatorColor);
-                        int afterX = baseX + (int)renderer->getTextDimensions(currentLine, false, fontsize).first;
-                        if (labelIndex < labelLines.size() && labelLines[labelIndex] == "CPU" &&
-                            settings.showCPUTemp && settings.showSideBySideCPUTemp && mini_cpu_temp_c[0]) {
-                            afterX += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, afterX, baseY, fontsize, settings.separatorColor).first;
-                            const int tv = atoi(mini_cpu_temp_c);
-                            renderer->drawString(std::string(mini_cpu_temp_c), false, afterX, baseY, fontsize,
-                                settings.useDynamicColors ? tsl::GradientColor((float)tv, tsl::DEFAULT_TEMP_RANGE_HIGH) : settings.textColor);
-                            afterX += (int)renderer->getTextDimensions(std::string(mini_cpu_temp_c), false, fontsize).first;
-                            if (settings.voltageAtEndCPU && settings.realVolts && MINI_CPU_volt_c[0]) {
-                                afterX += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, afterX, baseY, fontsize, settings.separatorColor).first;
-                                renderer->drawStringWithColoredSections(std::string(MINI_CPU_volt_c), false, specialChars, afterX, baseY, fontsize, settings.textColor, settings.separatorColor);
-                            }
-                        }
-                        if (labelIndex < labelLines.size() && labelLines[labelIndex] == "GPU" &&
-                            settings.showGPUTemp && settings.showSideBySideGPUTemp && mini_gpu_temp_c[0]) {
-                            afterX += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, afterX, baseY, fontsize, settings.separatorColor).first;
-                            const int tv = atoi(mini_gpu_temp_c);
-                            renderer->drawString(std::string(mini_gpu_temp_c), false, afterX, baseY, fontsize,
-                                settings.useDynamicColors ? tsl::GradientColor((float)tv, tsl::DEFAULT_TEMP_RANGE_HIGH) : settings.textColor);
-                            afterX += (int)renderer->getTextDimensions(std::string(mini_gpu_temp_c), false, fontsize).first;
-                            if (settings.voltageAtEndGPU && settings.realVolts && MINI_GPU_volt_c[0]) {
-                                afterX += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, afterX, baseY, fontsize, settings.separatorColor).first;
-                                renderer->drawStringWithColoredSections(std::string(MINI_GPU_volt_c), false, specialChars, afterX, baseY, fontsize, settings.textColor, settings.separatorColor);
-                            }
-                        }
-                        if (labelIndex < labelLines.size() && labelLines[labelIndex] == "RAM" &&
-                            settings.showRAMTemp && mini_ram_temp_c[0]) {
-                            afterX += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, afterX, baseY, fontsize, settings.separatorColor).first;
-                            const int tv = atoi(mini_ram_temp_c);
-                            renderer->drawString(std::string(mini_ram_temp_c), false, afterX, baseY, fontsize,
-                                settings.useDynamicColors ? tsl::GradientColor((float)tv, tsl::DEFAULT_TEMP_RANGE_HIGH) : settings.textColor);
-                            afterX += (int)renderer->getTextDimensions(std::string(mini_ram_temp_c), false, fontsize).first;
-                            if (settings.voltageAtEndRAM && settings.realVolts && (vdd2_only_c[0] || vddq_only_c[0])) {
-                                afterX += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, afterX, baseY, fontsize, settings.separatorColor).first;
-                                renderer->drawStringWithColoredSections(vddq_only_c[0] ? std::string(vddq_only_c) : std::string(vdd2_only_c), false, specialChars, afterX, baseY, fontsize, settings.textColor, settings.separatorColor);
-                            }
-                        }
                     }
+                    // Draw SOC voltage: voltAtEnd ON=svoltY (bottom, normal), voltAtEnd OFF=sfanBaseY (top, swapped)
+                    if (settings.realVolts && settings.showSOCVoltage && MINI_SOC_volt_c[0]) {
+                        const int voltDrawY = settings.voltageAtEndTMP ? svoltY : sfanBaseY;
+                        const int voltDivX = currentX + (int)renderer->drawString(
+                            ult::DIVIDER_SYMBOL, false, currentX, voltDrawY, fontsize, settings.separatorColor).first;
+                        renderer->drawStringWithColoredSections(std::string(MINI_SOC_volt_c), false, specialChars,
+                            voltDivX, voltDrawY, fontsize, settings.textColor, settings.separatorColor);
+                    }
+                    // Both HOC and single-group split use spacing/2 compression: compensate currentY
+                    currentY -= (int)settings.spacing / 2;
+                } else if (labelIndex < labelLines.size() && labelLines[labelIndex] == "MEM") {
+                    // MEM memory rendering with gradient color
+                    // Extract numeric value for color determination
+                    float sysValue = 0.0f;
+                    sscanf(currentLine.c_str(), "%f", &sysValue);
+                    
+                    // Determine unit from string
+                    const bool isGB = (currentLine.find("GB") != std::string::npos);
+                    const float sysValueMB = isGB ? (sysValue * 1024.0f) : sysValue;
+                    
+                    // Apply same color scheme as in drawMemoryWidget
+                    tsl::Color sysColor = settings.textColor;
+                    if (sysValueMB >= 9.0f) {
+                        sysColor = settings.useDynamicColors ? tsl::healthyRamTextColor : settings.textColor;
+                    } else if (sysValueMB >= 3.0f) {
+                        sysColor = settings.useDynamicColors ? tsl::neutralRamTextColor : settings.textColor;
+                    } else {
+                        sysColor = settings.useDynamicColors ? tsl::badRamTextColor : settings.textColor;
+                    }
+                    
+                    // Draw the memory value with color on the left
+                    int currentX = baseX;
+                    renderer->drawStringWithColoredSections(currentLine, false, specialChars, currentX, baseY, fontsize, sysColor, settings.separatorColor);
+                    currentX += renderer->getTextDimensions(currentLine, false, fontsize).first;
+                    
+                    // Draw separator " | "
+                    renderer->drawString(ult::DIVIDER_SYMBOL, false, currentX, baseY, fontsize, settings.separatorColor);
+                    currentX += renderer->getTextDimensions(ult::DIVIDER_SYMBOL, false, fontsize).first;
+                    
+                    // Draw "System" on the right
+                    renderer->drawString("System", false, currentX, baseY, fontsize, settings.textColor);
                 } else {
                     // Normal rendering for all other line types (CPU, GPU, RAM, BAT, FPS, RES, DTC)
                     renderer->drawStringWithColoredSections(currentLine, false, specialChars, baseX, baseY, fontsize, settings.textColor, settings.separatorColor);
@@ -1764,7 +2214,15 @@ public:
                         afterX += (int)renderer->getTextDimensions(std::string(mini_ram_temp_c), false, fontsize).first;
                         if (settings.voltageAtEndRAM && settings.realVolts && (vdd2_only_c[0] || vddq_only_c[0])) {
                             afterX += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, afterX, baseY, fontsize, settings.separatorColor).first;
-                            renderer->drawStringWithColoredSections(vddq_only_c[0] ? std::string(vddq_only_c) : std::string(vdd2_only_c), false, specialChars, afterX, baseY, fontsize, settings.textColor, settings.separatorColor);
+                            if (vdd2_only_c[0] && vddq_only_c[0]) {
+                                // Both rails present: draw VDD2 divider VDDQ
+                                renderer->drawStringWithColoredSections(std::string(vdd2_only_c), false, specialChars, afterX, baseY, fontsize, settings.textColor, settings.separatorColor);
+                                afterX += (int)renderer->getTextDimensions(std::string(vdd2_only_c), false, fontsize).first;
+                                afterX += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, afterX, baseY, fontsize, settings.separatorColor).first;
+                                renderer->drawStringWithColoredSections(std::string(vddq_only_c), false, specialChars, afterX, baseY, fontsize, settings.textColor, settings.separatorColor);
+                            } else {
+                                renderer->drawStringWithColoredSections(vddq_only_c[0] ? std::string(vddq_only_c) : std::string(vdd2_only_c), false, specialChars, afterX, baseY, fontsize, settings.textColor, settings.separatorColor);
+                            }
                         }
                     }
                 }
@@ -1837,6 +2295,8 @@ public:
         MINI_SOC_volt_c[0] = '\0';  // reset each frame
         MINI_CPU_volt_c[0] = '\0';  // reset each frame
         MINI_GPU_volt_c[0] = '\0';  // reset each frame
+        MINI_CPU_freq_c[0] = '\0';  // reset each frame (freq split mode)
+        MINI_RAM_load_bot_c[0] = '\0'; // reset each frame
 
         // Only process CPU if needed
         if (isActive("CPU")) {
@@ -1862,16 +2322,28 @@ public:
             formatMiniUsage(MINI_CPU_Usage3, sizeof(MINI_CPU_Usage3), idle3);
     
             if (settings.showFullCPU) {
-                if (settings.realFrequencies && realCPU_Hz) {
-                    snprintf(MINI_CPU_compressed_c, sizeof(MINI_CPU_compressed_c), 
-                        "[%s,%s,%s,%s]@%hu.%hhu", 
-                        MINI_CPU_Usage0, MINI_CPU_Usage1, MINI_CPU_Usage2, MINI_CPU_Usage3, 
-                        realCPU_Hz / 1000000, (realCPU_Hz / 100000) % 10);
+                const uint16_t _cpuHz = (settings.realFrequencies && realCPU_Hz) ? realCPU_Hz / 1000000 : CPU_Hz / 1000000;
+                const uint8_t  _cpuHz10 = (settings.realFrequencies && realCPU_Hz) ? (realCPU_Hz / 100000) % 10 : (CPU_Hz / 100000) % 10;
+                if (settings.showSideBySideFullCPU) {
+                    // Inline mode (default): [23%,29%,0%,32%]@1000.0
+                    snprintf(MINI_CPU_compressed_c, sizeof(MINI_CPU_compressed_c),
+                        "[%s %s %s %s]@%hu.%hhu",
+                        MINI_CPU_Usage0, MINI_CPU_Usage1, MINI_CPU_Usage2, MINI_CPU_Usage3,
+                        _cpuHz, _cpuHz10);
+                    // MINI_CPU_freq_c already reset to '\0' above
                 } else {
-                    snprintf(MINI_CPU_compressed_c, sizeof(MINI_CPU_compressed_c), 
-                        "[%s,%s,%s,%s]@%hu.%hhu", 
-                        MINI_CPU_Usage0, MINI_CPU_Usage1, MINI_CPU_Usage2, MINI_CPU_Usage3, 
-                        CPU_Hz / 1000000, (CPU_Hz / 100000) % 10);
+                    // Split mode: brackets on top row, max%@freq on bottom row
+                    snprintf(MINI_CPU_compressed_c, sizeof(MINI_CPU_compressed_c),
+                        "[%s %s %s %s]",
+                        MINI_CPU_Usage0, MINI_CPU_Usage1, MINI_CPU_Usage2, MINI_CPU_Usage3);
+                    double _u0 = 0, _u1 = 0, _u2 = 0, _u3 = 0;
+                    sscanf(MINI_CPU_Usage0, "%lf%%", &_u0);
+                    sscanf(MINI_CPU_Usage1, "%lf%%", &_u1);
+                    sscanf(MINI_CPU_Usage2, "%lf%%", &_u2);
+                    sscanf(MINI_CPU_Usage3, "%lf%%", &_u3);
+                    const double _maxU = std::max({_u0, _u1, _u2, _u3});
+                    snprintf(MINI_CPU_freq_c, sizeof(MINI_CPU_freq_c),
+                        "%.0f%%@%hu.%hhu", _maxU, _cpuHz, _cpuHz10);
                 }
             } else {
                 double usage0 = 0, usage1 = 0, usage2 = 0, usage3 = 0;
@@ -1959,18 +2431,21 @@ public:
                     if (settings.showRAMLoadCPUGPU) {
                         unsigned ramCpuLoadInt = ramLoad[SysClkRamLoad_Cpu] / 10;
                         int RAM_GPU_Load = ramLoad[SysClkRamLoad_All] - ramLoad[SysClkRamLoad_Cpu];
-                        unsigned ramGpuLoadInt = RAM_GPU_Load / 10;
-                        
-                        if (settings.realFrequencies && realRAM_Hz) {
+                        unsigned ramGpuLoadInt = (unsigned)(RAM_GPU_Load > 0 ? RAM_GPU_Load / 10 : 0);
+                        const uint32_t useHz = (settings.realFrequencies && realRAM_Hz) ? realRAM_Hz : (uint32_t)RAM_Hz;
+                        const unsigned ramMHz   = useHz / 1000000;
+                        const unsigned ramMHz10 = (useHz / 100000) % 10;
+                        if (settings.showSideBySideRAMLoad) {
+                            // SBS: [cpu% gpu%]total%@freq on one line
                             snprintf(MINI_RAM_var_compressed_c, sizeof(MINI_RAM_var_compressed_c),
-                                     "%u%%[%u%%,%u%%]@%hu.%hhu",
-                                     ramLoadInt, ramCpuLoadInt, ramGpuLoadInt,
-                                     realRAM_Hz / 1000000, (realRAM_Hz / 100000) % 10);
+                                     "[%u%% %u%%]%u%%@%u.%u",
+                                     ramCpuLoadInt, ramGpuLoadInt, ramLoadInt, ramMHz, ramMHz10);
                         } else {
+                            // Split: [cpu% gpu%] top, total%@freq bottom
                             snprintf(MINI_RAM_var_compressed_c, sizeof(MINI_RAM_var_compressed_c),
-                                     "%u%%[%u%%,%u%%]@%hu.%hhu",
-                                     ramLoadInt, ramCpuLoadInt, ramGpuLoadInt,
-                                     RAM_Hz / 1000000, (RAM_Hz / 100000) % 10);
+                                     "[%u%% %u%%]", ramCpuLoadInt, ramGpuLoadInt);
+                            snprintf(MINI_RAM_load_bot_c, sizeof(MINI_RAM_load_bot_c),
+                                     "%u%%@%u.%u", ramLoadInt, ramMHz, ramMHz10);
                         }
                     } else {
                         if (settings.realFrequencies && realRAM_Hz) {
@@ -2231,18 +2706,21 @@ public:
                 strcpy(remainingBatteryLife, "--:--");
             }
             
-            if (!settings.invertBatteryDisplay) {
-                snprintf(Battery_c, sizeof(Battery_c),
-                         "%.2f W%.1f%% [%s]",
-                         drawW,
-                         (float)_batteryChargeInfoFields.RawBatteryCharge / 1000.0f,
-                         remainingBatteryLife);
-            } else {
-                snprintf(Battery_c, sizeof(Battery_c),
-                         "%.1f%% [%s]%.2f W",
-                         (float)_batteryChargeInfoFields.RawBatteryCharge / 1000.0f,
-                         remainingBatteryLife,
-                         drawW);
+            {
+                const float charge = (float)_batteryChargeInfoFields.RawBatteryCharge / 1000.0f;
+                snprintf(Battery_draw_c, sizeof(Battery_draw_c), "%.2f W", drawW);
+                snprintf(Battery_pct_c,  sizeof(Battery_pct_c),  "%.1f%% [%s]", charge, remainingBatteryLife);
+                if (!settings.showSideBySideBAT) {
+                    if (!settings.invertBatteryDisplay)
+                        snprintf(Battery_c, sizeof(Battery_c), "%.2f W", drawW);
+                    else
+                        snprintf(Battery_c, sizeof(Battery_c), "%.1f%% [%s]", charge, remainingBatteryLife);
+                } else {
+                    if (!settings.invertBatteryDisplay)
+                        snprintf(Battery_c, sizeof(Battery_c), "%.2f W%.1f%% [%s]", drawW, charge, remainingBatteryLife);
+                    else
+                        snprintf(Battery_c, sizeof(Battery_c), "%.1f%% [%s]%.2f W", charge, remainingBatteryLife, drawW);
+                }
             }
             
             mutexUnlock(&mutex_BatteryChecker);
@@ -2255,8 +2733,14 @@ public:
         for (const auto& key : showKeys) {
             if (key == "CPU" && !(flags & 1)) {
                 if (Temp[0]) strcat(Temp, "\n");
-                const bool cpuSplit_v = settings.showCPUTemp && !settings.showSideBySideCPUTemp && settings.realVolts;
-                if (cpuSplit_v) {
+                const bool cpuFullSplit_v = settings.showFullCPU && !settings.showSideBySideFullCPU;
+                const bool cpuSplit_v = !cpuFullSplit_v && settings.showCPUTemp && !settings.showSideBySideCPUTemp && settings.realVolts;
+                if (cpuFullSplit_v) {
+                    // Two rows: brackets (top) then freq (bottom, right-aligned to bracket right edge)
+                    strcat(Temp, MINI_CPU_compressed_c);
+                    strcat(Temp, "\n");
+                    strcat(Temp, MINI_CPU_freq_c);
+                } else if (cpuSplit_v) {
                     strcat(Temp, MINI_CPU_compressed_c);
                     strcat(Temp, "\n");
                     strcat(Temp, " ");
@@ -2296,8 +2780,16 @@ public:
                                             !splitVDDQ_t && settings.realVolts &&
                                             ((settings.showVDDQ && isMariko && !settings.showVDD2) ||
                                              (settings.showVDD2 && !settings.showVDDQ));
+                const bool ramLoadSplit_t = settings.showRAMLoad && settings.showRAMLoadCPUGPU &&
+                                            !settings.showSideBySideRAMLoad &&
+                                            (R_SUCCEEDED(sysclkCheck) || R_SUCCEEDED(hocclkCheck));
 
-                if (splitVDDQ_t) {
+                if (ramLoadSplit_t) {
+                    // Row 1: [cpu% gpu%]; Row 2: placeholder (MINI_RAM_load_bot_c drawn directly by renderer)
+                    strcat(Temp, MINI_RAM_var_compressed_c);
+                    strcat(Temp, "\n");
+                    strcat(Temp, " ");
+                } else if (splitVDDQ_t) {
                     // Row 1: usage only (VDD2 drawn by renderer)
                     strcat(Temp, MINI_RAM_var_compressed_c);
                     strcat(Temp, "\n");
@@ -2368,13 +2860,24 @@ public:
             }
             else if ((key == "BAT" || key == "DRAW") && !(flags & 32)) {
                 if (Temp[0]) strcat(Temp, "\n");
-                strcat(Temp, Battery_c);
+                if (!settings.showSideBySideBAT) {
+                    // Split: top row = Battery_c (draw or pct per invert), bottom = the other
+                    const char* botStr = settings.invertBatteryDisplay ? Battery_draw_c : Battery_pct_c;
+                    strcat(Temp, Battery_c);
+                    strcat(Temp, "\n");
+                    strcat(Temp, botStr);
+                } else {
+                    strcat(Temp, Battery_c);
+                }
                 flags |= 32;
             }
             else if (key == "FPS" && !(flags & 64) && GameRunning) {
                 if (Temp[0]) strcat(Temp, "\n");
                 char Temp_s[24];
-                snprintf(Temp_s, sizeof(Temp_s), "%2.1f [%2.1f - %2.1f]", FPSavg, FPSmin, FPSmax);
+                if (settings.useIntegerFPS)
+                    snprintf(Temp_s, sizeof(Temp_s), "%d [%d - %d]", (int)round(FPSavg), (int)round(FPSmin), (int)round(FPSmax));
+                else
+                    snprintf(Temp_s, sizeof(Temp_s), "%2.1f [%2.1f - %2.1f]", FPSavg, FPSmin, FPSmax);
                 strcat(Temp, Temp_s);
                 flags |= 64;
             }

@@ -482,13 +482,19 @@ public:
         stats temp = {0, false};
         static uint64_t lastFrame = 0;
         
-        snprintf(FPSavg_c, sizeof FPSavg_c, "%2.1f",  FPSavg);
+        if (settings.useIntegerFPS)
+            snprintf(FPSavg_c, sizeof FPSavg_c, "%d", (int)round(FPSavg));
+        else
+            snprintf(FPSavg_c, sizeof FPSavg_c, "%2.1f",  FPSavg);
         const uint8_t SaltySharedDisplayRefreshRate = *(uint8_t*)((uintptr_t)shmemGetAddr(&_sharedmemory) + 1);
         if (SaltySharedDisplayRefreshRate) 
             refreshRate = SaltySharedDisplayRefreshRate;
         else refreshRate = 60;
         if (FPSavg < 254) {
-            snprintf(FPSavg_c, sizeof(FPSavg_c), "%.1f", useOldFPSavg ? FPSavg_old : FPSavg);
+            if (settings.useIntegerFPS)
+                snprintf(FPSavg_c, sizeof(FPSavg_c), "%d", (int)round(useOldFPSavg ? FPSavg_old : FPSavg));
+            else
+                snprintf(FPSavg_c, sizeof(FPSavg_c), "%.1f", useOldFPSavg ? FPSavg_old : FPSavg);
 
             if (lastFrame == lastFrameNumber) return;
             else lastFrame = lastFrameNumber;

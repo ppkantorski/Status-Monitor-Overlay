@@ -478,11 +478,17 @@ public:
             });
             list->addItem(showInfo);
 
-            auto* dynamicColors = new tsl::elm::ToggleListItem("Use Dynamic Colors", getCurrentUseDynamicColors());
+            auto* dynamicColors = new tsl::elm::ToggleListItem("Dynamic Temp Colors", getCurrentUseDynamicColors());
             dynamicColors->setStateChangedListener([this](bool state) {
                 ult::setIniFileValue(configIniPath, "fps-graph", "use_dynamic_colors", state ? "true" : "false");
             });
             list->addItem(dynamicColors);
+
+            auto* integerFPSGraph = new tsl::elm::ToggleListItem("Integer FPS", getCurrentUseIntegerFPS("fps-graph"));
+            integerFPSGraph->setStateChangedListener([this](bool state) {
+                ult::setIniFileValue(configIniPath, "fps-graph", "integer_fps", state ? "true" : "false");
+            });
+            list->addItem(integerFPSGraph);
             
         } else if (isFullMode) {
             // Full mode
@@ -531,7 +537,7 @@ public:
             });
             list->addItem(showRDSD);
 
-            auto* dynamicColors2 = new tsl::elm::ToggleListItem("Use Dynamic Colors", getCurrentUseDynamicColors());
+            auto* dynamicColors2 = new tsl::elm::ToggleListItem("Dynamic Temp Colors", getCurrentUseDynamicColors());
             dynamicColors2->setStateChangedListener([this](bool state) {
                 ult::setIniFileValue(configIniPath, "fps-graph", "use_dynamic_colors", state ? "true" : "false");
             });
@@ -569,6 +575,12 @@ public:
             });
             list->addItem(realVolts);
             
+            auto* dynamicColors = new tsl::elm::ToggleListItem("Dynamic Temp Colors", getCurrentUseDynamicColors());
+            dynamicColors->setStateChangedListener([this, section](bool state) {
+                ult::setIniFileValue(configIniPath, section, "use_dynamic_colors", state ? "true" : "false");
+            });
+            list->addItem(dynamicColors);
+
             list->addItem(new tsl::elm::CategoryHeader("CPU"));
 
             auto* showFullCPU = new tsl::elm::ToggleListItem("Full CPU", getCurrentShowFullCPU());
@@ -576,6 +588,12 @@ public:
                 ult::setIniFileValue(configIniPath, section, "show_full_cpu", state ? "true" : "false");
             });
             list->addItem(showFullCPU);
+
+            auto* sideBySideFullCPU = new tsl::elm::ToggleListItem("Side By Side Full CPU", getCurrentShowSideBySideFullCPU());
+            sideBySideFullCPU->setStateChangedListener([this, section](bool state) {
+                ult::setIniFileValue(configIniPath, section, "show_side_by_side_full_cpu", state ? "true" : "false");
+            });
+            list->addItem(sideBySideFullCPU);
 
             auto* cpuTemp = new tsl::elm::ToggleListItem("CPU Temp", getCurrentShowCPUTemp());
             cpuTemp->setStateChangedListener([this, section](bool state) {
@@ -617,12 +635,18 @@ public:
 
             list->addItem(new tsl::elm::CategoryHeader("RAM"));
 
-            if (isMiniMode) {
+            if (isMiniMode || isMicroMode) {
                 auto* ramLoadCPUGPU = new tsl::elm::ToggleListItem("RAM Load CPU/GPU", getCurrentShowRAMLoadCPUGPU());
                 ramLoadCPUGPU->setStateChangedListener([this, section](bool state) {
                     ult::setIniFileValue(configIniPath, section, "show_RAM_load_CPU_GPU", state ? "true" : "false");
                 });
                 list->addItem(ramLoadCPUGPU);
+
+                auto* sideBySideRAMLoad = new tsl::elm::ToggleListItem("Side By Side RAM Load", getCurrentShowSideBySideRAMLoad(section));
+                sideBySideRAMLoad->setStateChangedListener([this, section](bool state) {
+                    ult::setIniFileValue(configIniPath, section, "show_side_by_side_ram_load", state ? "true" : "false");
+                });
+                list->addItem(sideBySideRAMLoad);
             }
 
             if (isMariko) {
@@ -667,12 +691,6 @@ public:
             list->addItem(voltAtEndRAM);
             
             list->addItem(new tsl::elm::CategoryHeader("TMP"));
-
-            auto* dynamicColors = new tsl::elm::ToggleListItem("Use Dynamic Colors", getCurrentUseDynamicColors());
-            dynamicColors->setStateChangedListener([this, section](bool state) {
-                ult::setIniFileValue(configIniPath, section, "use_dynamic_colors", state ? "true" : "false");
-            });
-            list->addItem(dynamicColors);
 
             if (isMiniMode || isMicroMode) {
                 // CPU/GPU/RAM die temps toggle
@@ -744,12 +762,27 @@ public:
             list->addItem(showFullRes);
 
             if (isMiniMode || isMicroMode) {
+                list->addItem(new tsl::elm::CategoryHeader("FPS"));
+                auto* integerFPS = new tsl::elm::ToggleListItem("Integer FPS", getCurrentUseIntegerFPS(section));
+                integerFPS->setStateChangedListener([this, section](bool state) {
+                    ult::setIniFileValue(configIniPath, section, "integer_fps", state ? "true" : "false");
+                });
+                list->addItem(integerFPS);
+            }
+
+            if (isMiniMode || isMicroMode) {
                 list->addItem(new tsl::elm::CategoryHeader("BAT"));
                 auto* invertBatteryDisplay = new tsl::elm::ToggleListItem("Invert Battery Display", getCurrentInvertBatteryDisplay());
                 invertBatteryDisplay->setStateChangedListener([this, section](bool state) {
                     ult::setIniFileValue(configIniPath, section, "invert_battery_display", state ? "true" : "false");
                 });
                 list->addItem(invertBatteryDisplay);
+
+                auto* sideBySideBAT = new tsl::elm::ToggleListItem("Side By Side", getCurrentShowSideBySideBAT(section));
+                sideBySideBAT->setStateChangedListener([this, section](bool state) {
+                    ult::setIniFileValue(configIniPath, section, "show_side_by_side_bat", state ? "true" : "false");
+                });
+                list->addItem(sideBySideBAT);
             }
             
             list->addItem(new tsl::elm::CategoryHeader("DTC"));
@@ -777,9 +810,9 @@ public:
             });
             list->addItem(disableScreenshots);
 
-            auto* integerCounter = new tsl::elm::ToggleListItem("Use Integer Counter", getCurrentUseIntegerCounter("fps-counter"));
+            auto* integerCounter = new tsl::elm::ToggleListItem("Integer FPS", getCurrentUseIntegerFPS("fps-counter"));
             integerCounter->setStateChangedListener([this](bool state) {
-                ult::setIniFileValue(configIniPath, "fps-counter", "use_integer_counter", state ? "true" : "false");
+                ult::setIniFileValue(configIniPath, "fps-counter", "integer_fps", state ? "true" : "false");
             });
             list->addItem(integerCounter);
         }
@@ -791,7 +824,7 @@ public:
             jumpItemExactMatch = false;
         }
 
-        tsl::elm::OverlayFrame* rootFrame = new tsl::elm::OverlayFrame("Status Monitor", "Configuration");
+        tsl::elm::OverlayFrame* rootFrame = new tsl::elm::OverlayFrame("Status Monitor", modeName+" "+ult::DIVIDER_SYMBOL+" Configuration");
         rootFrame->setContent(list);
         return rootFrame;
     }
@@ -843,6 +876,14 @@ private:
         if (value.empty()) return false;
         convertToUpper(value);
         return value == "TRUE";
+    }
+
+    bool getCurrentShowSideBySideFullCPU() {
+        const std::string section = isMiniMode ? "mini" : "micro";
+        std::string value = ult::parseValueFromIniSection(configIniPath, section, "show_side_by_side_full_cpu");
+        if (value.empty()) return true;  // Default: true (inline, existing behavior)
+        convertToUpper(value);
+        return value != "FALSE";
     }
 
     bool getCurrentShowVDDQ() {
@@ -963,6 +1004,13 @@ private:
         convertToUpper(value);
         return value != "FALSE";
     }
+
+    bool getCurrentShowSideBySideRAMLoad(const std::string& section) {
+        std::string value = ult::parseValueFromIniSection(configIniPath, section, "show_side_by_side_ram_load");
+        if (value.empty()) return true; // Default: true (inline SBS)
+        convertToUpper(value);
+        return value != "FALSE";
+    }
     bool getCurrentShowComponentTemps() {
         const std::string section = isMiniMode ? "mini" : "micro";
         std::string value = ult::parseValueFromIniSection(configIniPath, section, "show_component_temps");
@@ -994,6 +1042,13 @@ private:
         convertToUpper(value);
         return value != "FALSE";
     }
+
+    bool getCurrentShowSideBySideBAT(const std::string& section) {
+        std::string value = ult::parseValueFromIniSection(configIniPath, section, "show_side_by_side_bat");
+        if (value.empty()) return true; // Default: true (inline)
+        convertToUpper(value);
+        return value != "FALSE";
+    }
     
     bool getCurrentUseDTCSymbol() {
         const std::string section = isMiniMode ? "mini" : "micro";
@@ -1011,11 +1066,11 @@ private:
         return value == "TRUE";
     }
 
-    bool getCurrentUseIntegerCounter(const std::string& section) {
-        std::string value = ult::parseValueFromIniSection(configIniPath, section, "use_integer_counter");
-        if (value.empty()) return false;  // Default is false (screenshots enabled)
+    bool getCurrentUseIntegerFPS(const std::string& section) {
+        std::string value = ult::parseValueFromIniSection(configIniPath, section, "integer_fps");
+        if (value.empty()) return false;
         convertToUpper(value);
-        return value != "FALSE";  // True if not explicitly "FALSE"
+        return value != "FALSE";
     }
 
     bool getCurrentDisableScreenshots(const std::string& section) {
@@ -1142,7 +1197,7 @@ public:
         
         list->jumpToItem("", ult::CHECKMARK_SYMBOL, false);
 
-        tsl::elm::OverlayFrame* rootFrame = new tsl::elm::OverlayFrame("Status Monitor", "Configuration");
+        tsl::elm::OverlayFrame* rootFrame = new tsl::elm::OverlayFrame("Status Monitor", modeName+" "+ult::DIVIDER_SYMBOL+" Configuration");
         rootFrame->setContent(list);
         return rootFrame;
     }
@@ -1259,7 +1314,7 @@ public:
 
         list->jumpToItem("", ult::CHECKMARK_SYMBOL, false);
 
-        tsl::elm::OverlayFrame* rootFrame = new tsl::elm::OverlayFrame("Status Monitor", "Configuration");
+        tsl::elm::OverlayFrame* rootFrame = new tsl::elm::OverlayFrame("Status Monitor", modeName+" "+ult::DIVIDER_SYMBOL+" Configuration");
         rootFrame->setContent(list);
         return rootFrame;
     }
@@ -1343,7 +1398,7 @@ public:
         
         list->jumpToItem("", ult::CHECKMARK_SYMBOL, false);
 
-        tsl::elm::OverlayFrame* rootFrame = new tsl::elm::OverlayFrame("Status Monitor", "Configuration");
+        tsl::elm::OverlayFrame* rootFrame = new tsl::elm::OverlayFrame("Status Monitor", modeName+" "+ult::DIVIDER_SYMBOL+" Configuration");
         rootFrame->setContent(list);
         return rootFrame;
     }
@@ -1398,7 +1453,7 @@ public:
             list->addItem(item);
         }
         list->jumpToItem("", ult::CHECKMARK_SYMBOL, false);
-        auto* rootFrame = new tsl::elm::OverlayFrame("Status Monitor", "Configuration");
+        auto* rootFrame = new tsl::elm::OverlayFrame("Status Monitor", "Micro "+ult::DIVIDER_SYMBOL+" Configuration");
         rootFrame->setContent(list);
         return rootFrame;
     }
@@ -1452,7 +1507,7 @@ public:
             list->addItem(item);
         }
         list->jumpToItem("", ult::CHECKMARK_SYMBOL, false);
-        auto* rootFrame = new tsl::elm::OverlayFrame("Status Monitor", "Configuration");
+        auto* rootFrame = new tsl::elm::OverlayFrame("Status Monitor", "Micro "+ult::DIVIDER_SYMBOL+" Configuration");
         rootFrame->setContent(list);
         return rootFrame;
     }
@@ -1538,7 +1593,7 @@ public:
         
         list->jumpToItem("", ult::CHECKMARK_SYMBOL, false);
         
-        tsl::elm::OverlayFrame* rootFrame = new tsl::elm::OverlayFrame("Status Monitor", "Font Sizes");
+        tsl::elm::OverlayFrame* rootFrame = new tsl::elm::OverlayFrame("Status Monitor", modeName+" "+ult::DIVIDER_SYMBOL+" Configuration "+ult::DIVIDER_SYMBOL+" Font Sizes");
         rootFrame->setContent(list);
         return rootFrame;
     }
@@ -1612,7 +1667,7 @@ public:
         });
         list->addItem(dockedItem);
         
-        tsl::elm::OverlayFrame* rootFrame = new tsl::elm::OverlayFrame("Status Monitor", "Configuration");
+        tsl::elm::OverlayFrame* rootFrame = new tsl::elm::OverlayFrame("Status Monitor", modeName+" "+ult::DIVIDER_SYMBOL+" Configuration");
         rootFrame->setContent(list);
         list->jumpToItem(jumpItemName, jumpItemValue, jumpItemExactMatch);
         {
@@ -1823,7 +1878,7 @@ public:
         }
         list->jumpToItem("", _jumpItemValue, false);
         
-        tsl::elm::OverlayFrame* rootFrame = new tsl::elm::OverlayFrame("Status Monitor", "Colors");
+        tsl::elm::OverlayFrame* rootFrame = new tsl::elm::OverlayFrame("Status Monitor", modeName+" "+ult::DIVIDER_SYMBOL+" Configuration "+ult::DIVIDER_SYMBOL+" Colors");
         rootFrame->setContent(list);
         return rootFrame;
     }
@@ -2249,7 +2304,7 @@ public:
         }
         
         //list->disableCaching();
-        tsl::elm::OverlayFrame* rootFrame = new tsl::elm::OverlayFrame("Status Monitor", "Configuration");
+        tsl::elm::OverlayFrame* rootFrame = new tsl::elm::OverlayFrame("Status Monitor", modeName+" "+ult::DIVIDER_SYMBOL+" Configuration");
         rootFrame->setContent(list);
         return rootFrame;
     }
@@ -2441,7 +2496,7 @@ public:
             jumpItemExactMatch = false;
         }
         
-        tsl::elm::OverlayFrame* rootFrame = new tsl::elm::OverlayFrame("Status Monitor", "Configuration");
+        tsl::elm::OverlayFrame* rootFrame = new tsl::elm::OverlayFrame("Status Monitor", modeName+" "+ult::DIVIDER_SYMBOL+" Configuration");
         rootFrame->setContent(list);
         return rootFrame;
     }

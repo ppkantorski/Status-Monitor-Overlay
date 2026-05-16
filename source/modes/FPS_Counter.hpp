@@ -347,7 +347,7 @@ public:
         else if (performanceMode == ApmPerformanceMode_Boost) {
             fontsize = settings.dockedFontSize;
         }
-        if (settings.useIntegerCounter) {
+        if (settings.useIntegerFPS) {
             snprintf(FPSavg_c, sizeof FPSavg_c, "%d", (int)round(useOldFPSavg ? FPSavg_old : FPSavg));
         } else {
             snprintf(FPSavg_c, sizeof FPSavg_c, "%2.1f", useOldFPSavg ? FPSavg_old : FPSavg);

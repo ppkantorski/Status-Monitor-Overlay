@@ -1718,6 +1718,7 @@ struct MiniSettings {
     bool realVolts;
     bool showLabels;
     bool showFullCPU;
+    bool showSideBySideFullCPU; // true = [brackets]@freq inline (default); false = brackets top, freq bottom
     bool showFullResolution;
     bool showFanPercentage;
     bool showSOCVoltage;
@@ -1739,6 +1740,7 @@ struct MiniSettings {
     bool decimalVDD2;
     bool showDTC;
     bool useDTCSymbol;
+    bool useIntegerFPS;
     std::string dtcFormat;
     size_t handheldFontSize;
     size_t dockedFontSize;
@@ -1751,9 +1753,11 @@ struct MiniSettings {
     std::string show;
     bool showRAMLoad;
     bool showRAMLoadCPUGPU;
+    bool showSideBySideRAMLoad; // true = [cpu% gpu%]total%@freq inline; false = split rows
     bool showComponentTemps;    // HOC: show CPU/GPU/RAM die temps row
     bool showSocPcbSkinTemps;   // show SOC/PCB/Skin temps row (default: true)
     bool invertBatteryDisplay;
+    bool showSideBySideBAT;   // true = draw+pct inline (default); false = draw on top, pct on bottom (or vice versa)
     bool disableScreenshots;
     //int setPos;
     int frameOffsetX;
@@ -1766,6 +1770,7 @@ struct MicroSettings {
     bool realFrequencies;
     bool realVolts; 
     bool showFullCPU;
+    bool showSideBySideFullCPU; // true = [brackets]@freq inline (default); false = brackets top, freq bottom
     bool showFullResolution;
     bool showSOCVoltage;
     bool showSideBySideFanSOC;  // true = fan+volt inline (default); false = fan row1, volt row2
@@ -1786,8 +1791,10 @@ struct MicroSettings {
     bool decimalVDD2;
     bool showDTC;
     bool useDTCSymbol;
+    bool useIntegerFPS;
     std::string dtcFormat;
     bool invertBatteryDisplay;
+    bool showSideBySideBAT;   // true = draw+pct inline (default); false = draw on top, pct on bottom
     size_t handheldFontSize;
     size_t dockedFontSize;
     uint8_t alignTo;
@@ -1797,6 +1804,8 @@ struct MicroSettings {
     uint16_t textColor;
     std::string show;
     bool showRAMLoad;
+    bool showRAMLoadCPUGPU;      // show CPU/GPU load breakdown
+    bool showSideBySideRAMLoad; // true = [cpu% gpu%]total%@freq inline; false = split rows
     bool showComponentTemps;    // show CPU/GPU/RAM die temps (default: false)
     bool showSocPcbSkinTemps;   // show SOC/PCB/Skin temps (default: true)
     bool showSideBySideTemps;   // show both temp groups on one line with divider (default: false)
@@ -1814,7 +1823,7 @@ struct FpsCounterSettings {
     uint16_t focusBackgroundColor;
     uint16_t textColor;
     //int setPos;
-    bool useIntegerCounter;
+    bool useIntegerFPS;
     bool disableScreenshots;
     int frameOffsetX;
     int frameOffsetY;
@@ -1838,6 +1847,7 @@ struct FpsGraphSettings {
     uint16_t catColor;
     //int setPos;
     bool useDynamicColors;
+    bool useIntegerFPS;
     bool disableScreenshots;
     int frameOffsetX;
     int frameOffsetY;
@@ -1864,6 +1874,7 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
     settings->realFrequencies = true;
     settings->realVolts = true;
     settings->showFullCPU = false;
+    settings->showSideBySideFullCPU = true;
     settings->showFullResolution = true;
     settings->showFanPercentage = true;
     settings->useDynamicColors = true;
@@ -1886,6 +1897,7 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
     settings->decimalVDD2 = false;
     settings->showDTC = true;
     settings->useDTCSymbol = true;
+    settings->useIntegerFPS = false;
     settings->dtcFormat = "%a, %b %d%I:%M %p";
     settings->handheldFontSize = 15;
     settings->dockedFontSize = 15;
@@ -1899,9 +1911,11 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
     settings->showLabels = true;
     settings->showRAMLoad = true;
     settings->showRAMLoadCPUGPU = false;
+    settings->showSideBySideRAMLoad = true;
     settings->showComponentTemps = true;
     settings->showSocPcbSkinTemps = true;
     settings->invertBatteryDisplay = true;
+    settings->showSideBySideBAT = true;
     settings->refreshRate = 3;
     settings->disableScreenshots = false;
     //settings->setPos = 0;
@@ -2021,6 +2035,13 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
         key = it->second;
         convertToUpper(key);
         settings->showFullCPU = !(key == "FALSE");
+    }
+
+    it = section.find("show_side_by_side_full_cpu");
+    if (it != section.end()) {
+        key = it->second;
+        convertToUpper(key);
+        settings->showSideBySideFullCPU = !(key == "FALSE");
     }
 
     it = section.find("show_full_res");
@@ -2144,6 +2165,13 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
         settings->useDTCSymbol = !(key == "FALSE");
     }
 
+    it = section.find("integer_fps");
+    if (it != section.end()) {
+        key = it->second;
+        convertToUpper(key);
+        settings->useIntegerFPS = (key != "FALSE");
+    }
+
     it = section.find("dtc_format");
     if (it != section.end()) {
         key = it->second;
@@ -2174,6 +2202,13 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
         settings->showRAMLoadCPUGPU = (key != "FALSE");
     }
 
+    it = section.find("show_side_by_side_ram_load");
+    if (it != section.end()) {
+        key = it->second;
+        convertToUpper(key);
+        settings->showSideBySideRAMLoad = !(key == "FALSE");
+    }
+
     // Process CPU/GPU/RAM component temps flag (HOC only)
     it = section.find("show_component_temps");
     if (it != section.end()) {
@@ -2199,6 +2234,13 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
         key = it->second;
         convertToUpper(key);
         settings->invertBatteryDisplay = (key != "FALSE");
+    }
+
+    it = section.find("show_side_by_side_bat");
+    if (it != section.end()) {
+        key = it->second;
+        convertToUpper(key);
+        settings->showSideBySideBAT = !(key == "FALSE");
     }
 
     // Process disable screenshots
@@ -2253,6 +2295,7 @@ ALWAYS_INLINE void GetConfigSettings(MicroSettings* settings) {
     settings->realFrequencies = true;
     settings->realVolts = true;
     settings->showFullCPU = false;
+    settings->showSideBySideFullCPU = true;
     settings->showFullResolution = false;
     settings->showSOCVoltage = true;
     settings->showSideBySideFanSOC = false;  // default: fan+volt side-by-side
@@ -2273,8 +2316,10 @@ ALWAYS_INLINE void GetConfigSettings(MicroSettings* settings) {
     settings->decimalVDD2 = false;
     settings->showDTC = true;
     settings->useDTCSymbol = true;
+    settings->useIntegerFPS = false;
     settings->dtcFormat = "%H:%M";
     settings->invertBatteryDisplay = false;
+    settings->showSideBySideBAT = true;
     settings->handheldFontSize = 15;
     settings->dockedFontSize = 15;
     settings->alignTo = 1; // CENTER
@@ -2284,6 +2329,8 @@ ALWAYS_INLINE void GetConfigSettings(MicroSettings* settings) {
     convertStrToRGBA4444("#FFFF", &(settings->textColor));
     settings->show = "FPS+CPU+GPU+RAM+TMP+BAT+DTC";
     settings->showRAMLoad = true;
+    settings->showRAMLoadCPUGPU = false;
+    settings->showSideBySideRAMLoad = true;
     settings->showComponentTemps = true;
     settings->showSocPcbSkinTemps = true;
     settings->showSideBySideTemps = false;
@@ -2343,6 +2390,13 @@ ALWAYS_INLINE void GetConfigSettings(MicroSettings* settings) {
         key = it->second;
         convertToUpper(key);
         settings->showFullCPU = (key == "TRUE");
+    }
+
+    it = section.find("show_side_by_side_full_cpu");
+    if (it != section.end()) {
+        key = it->second;
+        convertToUpper(key);
+        settings->showSideBySideFullCPU = !(key == "FALSE");
     }
     
     it = section.find("show_full_res");
@@ -2466,6 +2520,13 @@ ALWAYS_INLINE void GetConfigSettings(MicroSettings* settings) {
         settings->useDTCSymbol = !(key == "FALSE");
     }
 
+    it = section.find("integer_fps");
+    if (it != section.end()) {
+        key = it->second;
+        convertToUpper(key);
+        settings->useIntegerFPS = (key != "FALSE");
+    }
+
     it = section.find("dtc_format");
     if (it != section.end()) {
         key = it->second;
@@ -2478,6 +2539,13 @@ ALWAYS_INLINE void GetConfigSettings(MicroSettings* settings) {
         key = it->second;
         convertToUpper(key);
         settings->invertBatteryDisplay = (key != "FALSE");
+    }
+
+    it = section.find("show_side_by_side_bat");
+    if (it != section.end()) {
+        key = it->second;
+        convertToUpper(key);
+        settings->showSideBySideBAT = !(key == "FALSE");
     }
     
     // Process font sizes with shared bounds
@@ -2569,6 +2637,20 @@ ALWAYS_INLINE void GetConfigSettings(MicroSettings* settings) {
         settings->disableScreenshots = (key != "FALSE");
     }
 
+    it = section.find("show_RAM_load_CPU_GPU");
+    if (it != section.end()) {
+        key = it->second;
+        convertToUpper(key);
+        settings->showRAMLoadCPUGPU = (key != "FALSE");
+    }
+
+    it = section.find("show_side_by_side_ram_load");
+    if (it != section.end()) {
+        key = it->second;
+        convertToUpper(key);
+        settings->showSideBySideRAMLoad = !(key == "FALSE");
+    }
+
     // Process component temps flag (also used in Micro)
     it = section.find("show_component_temps");
     if (it != section.end()) {
@@ -2618,7 +2700,7 @@ ALWAYS_INLINE void GetConfigSettings(FpsCounterSettings* settings) {
     convertStrToRGBA4444("#8CFF", &(settings->textColor));
     //settings->setPos = 0;
     settings->refreshRate = 5;
-    settings->useIntegerCounter = false;
+    settings->useIntegerFPS = false;
     settings->disableScreenshots = false;
 
     settings->frameOffsetX = 10;
@@ -2710,11 +2792,11 @@ ALWAYS_INLINE void GetConfigSettings(FpsCounterSettings* settings) {
     //    }
     //}
 
-    it = section.find("use_integer_counter");
+    it = section.find("integer_fps");
     if (it != section.end()) {
         key = it->second;
         convertToUpper(key);
-        settings->useIntegerCounter = (key != "FALSE");
+        settings->useIntegerFPS = (key != "FALSE");
     }
 
     // Process disable screenshots
@@ -2761,6 +2843,7 @@ ALWAYS_INLINE void GetConfigSettings(FpsGraphSettings* settings) {
 
     settings->refreshRate = 5;
     settings->useDynamicColors = true;
+    settings->useIntegerFPS = false;
     settings->disableScreenshots = false;
 
     settings->frameOffsetX = 6;
@@ -2828,6 +2911,13 @@ ALWAYS_INLINE void GetConfigSettings(FpsGraphSettings* settings) {
         key = it->second;
         convertToUpper(key);
         settings->useDynamicColors = (key == "TRUE");
+    }
+
+    it = section.find("integer_fps");
+    if (it != section.end()) {
+        key = it->second;
+        convertToUpper(key);
+        settings->useIntegerFPS = (key != "FALSE");
     }
 
     // Process disable screenshots

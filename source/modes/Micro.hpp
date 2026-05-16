@@ -4,7 +4,9 @@ class MicroOverlay : public tsl::Gui {
 private:
     char GPU_Load_c[32];
     char RAM_var_compressed_c[128];
+    char RAM_load_bot_c[32] = "";
     char CPU_compressed_c[160];
+    char CPU_freq_c[16];          // freq part for full CPU split mode e.g. "@1000.0"
     char CPU_Usage0[32];
     char CPU_Usage1[32];
     char CPU_Usage2[32];
@@ -19,6 +21,8 @@ private:
     char ram_temp_c[16];          // RAM die temp string e.g. "45°C"
     char FPS_var_compressed_c[64];
     char Battery_c[32];
+    char Battery_draw_c[16] = "";
+    char Battery_pct_c[32] = "";
     char CPU_volt_c[16];
     char GPU_volt_c[16];
     char RAM_volt_c[32];
@@ -45,6 +49,9 @@ private:
     bool tmpIsSplit = false; // true when fan on row 1, SOC volt on row 2 (showSideBySideFanSOC=false)
     bool ramIsSplit = false; // true when VDD2 on row 1, VDDQ on row 2 (showSideBySideVDDQ=false, Mariko only)
     bool cpuIsSplit = false; // true when CPU volt on row 1, CPU temp on row 2
+    bool cpuFullIsSplit = false; // true when Full CPU brackets on top row, freq on bottom row
+    bool batIsSplit     = false; // true when BAT draw/pct stack vertically
+    bool ramLoadIsSplit = false; // true when RAM CPU/GPU load stacks above total@freq
     bool gpuIsSplit = false; // true when GPU volt on row 1, GPU temp on row 2
     bool ramTempSplit = false; // true when VDDQ on row 1, RAM temp on row 2 (VDDQ-only Mariko)
     
@@ -200,18 +207,21 @@ public:
             strcpy(remainingBatteryLife, "--:--");
         }
         
-        if (!settings.invertBatteryDisplay) {
-            snprintf(Battery_c, sizeof(Battery_c),
-                     "%.2f W%.1f%% [%s]",
-                     drawW,
-                     (float)_batteryChargeInfoFields.RawBatteryCharge / 1000.0f,
-                     remainingBatteryLife);
-        } else {
-            snprintf(Battery_c, sizeof(Battery_c),
-                     "%.1f%% [%s]%.2f W",
-                     (float)_batteryChargeInfoFields.RawBatteryCharge / 1000.0f,
-                     remainingBatteryLife,
-                     drawW);
+        {
+            const float charge = (float)_batteryChargeInfoFields.RawBatteryCharge / 1000.0f;
+            snprintf(Battery_draw_c, sizeof(Battery_draw_c), "%.2f W", drawW);
+            snprintf(Battery_pct_c,  sizeof(Battery_pct_c),  "%.1f%% [%s]", charge, remainingBatteryLife);
+            if (!settings.showSideBySideBAT) {
+                if (!settings.invertBatteryDisplay)
+                    snprintf(Battery_c, sizeof(Battery_c), "%.2f W", drawW);
+                else
+                    snprintf(Battery_c, sizeof(Battery_c), "%.1f%% [%s]", charge, remainingBatteryLife);
+            } else {
+                if (!settings.invertBatteryDisplay)
+                    snprintf(Battery_c, sizeof(Battery_c), "%.2f W%.1f%% [%s]", drawW, charge, remainingBatteryLife);
+                else
+                    snprintf(Battery_c, sizeof(Battery_c), "%.1f%% [%s]%.2f W", charge, remainingBatteryLife, drawW);
+            }
         }
 
         
@@ -252,7 +262,8 @@ public:
                         if (!(seen_flags & 1)) {
                             const bool cpuSplit    = settings.showCPUTemp && !settings.showSideBySideCPUTemp && settings.realVolts;
                             const bool cpuSBSDefer = settings.voltageAtEndCPU && settings.showCPUTemp && settings.showSideBySideCPUTemp && settings.realVolts;
-                            renderItems.push_back({0, "CPU", CPU_compressed_c, CPU_volt_c, settings.realVolts && !cpuSplit && !cpuSBSDefer});
+                            const bool cpuFreqSplit = settings.showFullCPU && !settings.showSideBySideFullCPU;
+                            renderItems.push_back({0, "CPU", CPU_compressed_c, CPU_volt_c, settings.realVolts && !cpuSplit && !cpuSBSDefer && !cpuFreqSplit});
                             seen_flags |= 1;
                         }
                         break;
@@ -341,11 +352,13 @@ public:
         bool hasCpu = false;
         bool hasGpu = false;
         bool hasRam = false;
+        bool hasBat = false;
         for (const auto& item : renderItems) {
             if (item.type == 4) hasTmp = true;
             if (item.type == 0) hasCpu = true;
             if (item.type == 1) hasGpu = true;
             if (item.type == 2) hasRam = true;
+            if (item.type == 6) hasBat = true;
         }
         tmpIsSplit = hasTmp &&
                      !settings.showSideBySideFanSOC &&
@@ -363,6 +376,11 @@ public:
 
         // CPU die temp split: volt on top row, CPU temp on bottom row
         cpuIsSplit = hasCpu && settings.showCPUTemp && !settings.showSideBySideCPUTemp && settings.realVolts;
+        // Full CPU freq split: brackets on top row, freq on bottom row (right-aligned)
+        cpuFullIsSplit = hasCpu && settings.showFullCPU && !settings.showSideBySideFullCPU;
+        // BAT side-by-side off: power draw on top row, pct+estimate on bottom row
+        batIsSplit = hasBat && !settings.showSideBySideBAT;
+        ramLoadIsSplit = hasRam && settings.showRAMLoad && settings.showRAMLoadCPUGPU && !settings.showSideBySideRAMLoad;
         // GPU die temp split: volt on top row, GPU temp on bottom row
         gpuIsSplit = hasGpu && settings.showGPUTemp && !settings.showSideBySideGPUTemp && settings.realVolts;
         // RAM temp split: VDDQ-only Mariko → VDDQ top row, RAM temp bottom row
@@ -413,7 +431,7 @@ public:
             prepareRenderItems();
             calculateLayoutMetrics(renderer);
             {
-                const int32_t gridExtraHeight = (tmpIsGrid || tmpIsSplit || ramIsSplit || cpuIsSplit || gpuIsSplit || ramTempSplit) ? ((int32_t)cachedMargin + gridGap) : 0;
+                const int32_t gridExtraHeight = (tmpIsGrid || tmpIsSplit || ramIsSplit || cpuIsSplit || gpuIsSplit || ramTempSplit || cpuFullIsSplit || batIsSplit || ramLoadIsSplit) ? ((int32_t)cachedMargin + gridGap) : 0;
                 const int32_t vPad = (int32_t)settings.verticalPadding;
                 // Visual text height = ascent + |descent|  (excludes lineGap)
                 const int32_t textVisualH = cachedAscent + cachedDescentAbs;
@@ -434,7 +452,7 @@ public:
             for (auto& item : renderItems) {
                 //if (item.type == 6) { // BAT
                 //    battery_item = &item;
-                if (item.type == 5 && (!GameRunning || (strcmp(FPS_var_compressed_c, "254.0") == 0))) {
+                if (item.type == 5 && (!GameRunning || (strcmp(FPS_var_compressed_c, "254.0") == 0) || (strcmp(FPS_var_compressed_c, "254") == 0))) {
                     // Skip FPS if no game running
                     continue;
                 } else if (item.type == 7 && (!GameRunning || !m_resolutionOutput[0].width)) {
@@ -570,13 +588,45 @@ public:
                         item_layout.total_width = item_layout.label_width + layout.label_data_gap +
                                                   item_layout.data_width + sep_width + std::max(volt_w, temp_w);
                     }
+
+                    // Full CPU freq split: brackets on top row, freq right-aligned on bottom row.
+                    // data_width = brackets_w; freq must fit within it (or extend it if wider).
+                    if (cpuFullIsSplit && item.type == 0) {
+                        const uint32_t freq_w = CPU_freq_c[0] ? renderer->getTextDimensions(CPU_freq_c, false, fontsize).first : 0;
+                        const uint32_t dw = renderer->getTextDimensions(ult::DIVIDER_SYMBOL, false, fontsize).first;
+                        if (cpuIsSplit) {
+                            // Stacked (SBS CPU Temp OFF + realVolts): volt/temp share the right column.
+                            // cpuIsSplit block already computed the right column as dw+max(volt_w,temp_w);
+                            // we just need to also consider freq_w vs brackets_w for the left column.
+                            const uint32_t volt_w = CPU_volt_c[0] ? renderer->getTextDimensions(CPU_volt_c, false, fontsize).first : 0;
+                            const uint32_t temp_w = cpu_temp_c[0] ? renderer->getTextDimensions(cpu_temp_c, false, fontsize).first : 0;
+                            item_layout.total_width = item_layout.label_width + layout.label_data_gap +
+                                                      std::max(item_layout.data_width, freq_w) + dw + std::max(volt_w, temp_w);
+                        } else {
+                            // Inline volt/temp at singleItemY (SBS CPU Temp ON, or no temp/volt)
+                            uint32_t secondary_w = 0;
+                            if (settings.voltageAtEndCPU) {
+                                if (cpu_temp_c[0])
+                                    secondary_w += dw + renderer->getTextDimensions(cpu_temp_c, false, fontsize).first;
+                                if (settings.realVolts && CPU_volt_c[0])
+                                    secondary_w += dw + renderer->getTextDimensions(CPU_volt_c, false, fontsize).first;
+                            } else {
+                                if (settings.realVolts && CPU_volt_c[0])
+                                    secondary_w += dw + renderer->getTextDimensions(CPU_volt_c, false, fontsize).first;
+                                if (cpu_temp_c[0])
+                                    secondary_w += dw + renderer->getTextDimensions(cpu_temp_c, false, fontsize).first;
+                            }
+                            item_layout.total_width = item_layout.label_width + layout.label_data_gap +
+                                                      std::max(item_layout.data_width, freq_w) + secondary_w;
+                        }
+                    }
                 }
 
                 // For SBS temp modes, add the extra temp width.
                 // When voltageAtEnd ON, has_voltage=false so we must also include the full sep+volt.
                 {
                     const uint32_t div_w = renderer->getTextDimensions(ult::DIVIDER_SYMBOL, false, fontsize).first;
-                    if (!cpuIsSplit && item.type == 0 && settings.showCPUTemp && settings.showSideBySideCPUTemp && cpu_temp_c[0]) {
+                    if (!cpuIsSplit && !cpuFullIsSplit && item.type == 0 && settings.showCPUTemp && settings.showSideBySideCPUTemp && cpu_temp_c[0]) {
                         const uint32_t temp_w = renderer->getTextDimensions(cpu_temp_c, false, fontsize).first;
                         if (settings.voltageAtEndCPU && settings.realVolts) {
                             const uint32_t volt_w = CPU_volt_c[0] ? renderer->getTextDimensions(CPU_volt_c, false, fontsize).first : 0;
@@ -605,6 +655,22 @@ public:
                     }
                 }
                 
+                // RAM load split: width = label + gap + max(brackets_w, total@freq_w)
+                if (ramLoadIsSplit && item.type == 2) {
+                    const uint32_t top_w = RAM_var_compressed_c[0] ? renderer->getTextDimensions(RAM_var_compressed_c, false, fontsize).first : 0;
+                    const uint32_t bot_w = RAM_load_bot_c[0] ? renderer->getTextDimensions(RAM_load_bot_c, false, fontsize).first : 0;
+                    const uint32_t corrected = std::max(top_w, bot_w);
+                    item_layout.total_width += corrected - item_layout.data_width;
+                    item_layout.data_width = corrected;
+                }
+
+                // BAT split: width = label + gap + max(draw_w, pct_w)
+                if (batIsSplit && item.type == 6) {
+                    const uint32_t draw_w = Battery_draw_c[0] ? renderer->getTextDimensions(Battery_draw_c, false, fontsize).first : 0;
+                    const uint32_t pct_w  = Battery_pct_c[0]  ? renderer->getTextDimensions(Battery_pct_c,  false, fontsize).first : 0;
+                    item_layout.total_width = item_layout.label_width + layout.label_data_gap + std::max(draw_w, pct_w);
+                }
+
                 item_layouts.push_back(item_layout);
                 total_main_width += item_layout.total_width;
             }
@@ -744,11 +810,11 @@ public:
             // \u2500\u2500 Grid-mode Y coordinates \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
             // When tmpIsGrid: bar is taller; other items centered in expanded bar;
             // TMP renders as two rows (componentTemps_c top, skin_temperature_c bottom).
-            const int32_t gridExtraH  = (tmpIsGrid || tmpIsSplit || ramIsSplit || cpuIsSplit || gpuIsSplit || ramTempSplit) ? ((int32_t)cachedMargin + gridGap) : 0;
+            const int32_t gridExtraH  = (tmpIsGrid || tmpIsSplit || ramIsSplit || cpuIsSplit || gpuIsSplit || ramTempSplit || cpuFullIsSplit || batIsSplit || ramLoadIsSplit) ? ((int32_t)cachedMargin + gridGap) : 0;
             const int32_t halfExtra   = gridExtraH / 2;
             // Y for non-TMP items — centered in expanded bar (grid or split)
             const int32_t singleItemY = (int32_t)base_y + (int32_t)cachedMargin +
-                                        ((tmpIsGrid || tmpIsSplit || ramIsSplit || cpuIsSplit || gpuIsSplit || ramTempSplit) ? (settings.setPosBottom ? -halfExtra : halfExtra) : 0);
+                                        ((tmpIsGrid || tmpIsSplit || ramIsSplit || cpuIsSplit || gpuIsSplit || ramTempSplit || cpuFullIsSplit || batIsSplit || ramLoadIsSplit) ? (settings.setPosBottom ? -halfExtra : halfExtra) : 0);
             // Y for the two TMP rows (used by both grid mode and split fan/volt mode)
             const int32_t gridTopY = (int32_t)base_y + (int32_t)cachedMargin +
                                      (settings.setPosBottom ? -(int32_t)gridExtraH : 0);
@@ -769,303 +835,299 @@ public:
                 current_x += item_layout.label_width + layout.label_data_gap;
 
                 // Draw data
-                if (settings.useDynamicColors) {
-                    if (item.type == 3) { // SOC temperature
-                        std::string dataStr(item.data_ptr);
-                        const size_t degreesPos = dataStr.find("°");
-                        if (degreesPos != std::string::npos) {
-                            const size_t cPos = dataStr.find("C", degreesPos);
-                            if (cPos != std::string::npos) {
-                                const std::string tempPart = dataStr.substr(0, cPos + 1);
-                                const std::string restPart = dataStr.substr(cPos + 1);
-                                const int temp = atoi(item.data_ptr);
-                                renderer->drawString(tempPart, false, current_x, singleItemY, fontsize, tsl::GradientColor((float)temp));
-                                if (!restPart.empty()) {
-                                    const uint32_t tpw = renderer->getTextDimensions(tempPart, false, fontsize).first;
-                                    uint32_t ax = current_x + tpw;
-                                    const size_t dv = restPart.find(ult::DIVIDER_SYMBOL);
-                                    if (dv != std::string::npos) {
-                                        const size_t dl = ult::DIVIDER_SYMBOL.length();
-                                        ax += renderer->drawString(restPart.substr(0, dv + dl), false, ax, singleItemY, fontsize, (settings.separatorColor)).first;
-                                        const std::string ad = restPart.substr(dv + dl);
-                                        if (!ad.empty()) {
-                                            static const std::vector<std::string> fic = {""};
-                                            renderer->drawStringWithColoredSections(ad, false, fic, ax, singleItemY, fontsize, textColorA, catColorA);
-                                        }
-                                    } else {
-                                        renderer->drawStringWithColoredSections(restPart, false, specialChars, ax, singleItemY, fontsize, textColorA, (settings.separatorColor));
+                if (item.type == 3) { // SOC temperature
+                    std::string dataStr(item.data_ptr);
+                    const size_t degreesPos = dataStr.find("°");
+                    if (degreesPos != std::string::npos) {
+                        const size_t cPos = dataStr.find("C", degreesPos);
+                        if (cPos != std::string::npos) {
+                            const std::string tempPart = dataStr.substr(0, cPos + 1);
+                            const std::string restPart = dataStr.substr(cPos + 1);
+                            const int temp = atoi(item.data_ptr);
+                            renderer->drawString(tempPart, false, current_x, singleItemY, fontsize, (settings.useDynamicColors ? tsl::GradientColor((float)temp) : textColorA));
+                            if (!restPart.empty()) {
+                                const uint32_t tpw = renderer->getTextDimensions(tempPart, false, fontsize).first;
+                                uint32_t ax = current_x + tpw;
+                                const size_t dv = restPart.find(ult::DIVIDER_SYMBOL);
+                                if (dv != std::string::npos) {
+                                    const size_t dl = ult::DIVIDER_SYMBOL.length();
+                                    ax += renderer->drawString(restPart.substr(0, dv + dl), false, ax, singleItemY, fontsize, (settings.separatorColor)).first;
+                                    const std::string ad = restPart.substr(dv + dl);
+                                    if (!ad.empty()) {
+                                        static const std::vector<std::string> fic = {""};
+                                        renderer->drawStringWithColoredSections(ad, false, fic, ax, singleItemY, fontsize, textColorA, catColorA);
                                     }
+                                } else {
+                                    renderer->drawStringWithColoredSections(restPart, false, specialChars, ax, singleItemY, fontsize, textColorA, (settings.separatorColor));
                                 }
-                            } else {
-                                renderer->drawStringWithColoredSections(item.data_ptr, false, specialChars, current_x, singleItemY, fontsize, textColorA, (settings.separatorColor));
                             }
                         } else {
                             renderer->drawStringWithColoredSections(item.data_ptr, false, specialChars, current_x, singleItemY, fontsize, textColorA, (settings.separatorColor));
                         }
+                    } else {
+                        renderer->drawStringWithColoredSections(item.data_ptr, false, specialChars, current_x, singleItemY, fontsize, textColorA, (settings.separatorColor));
+                    }
 
-                    } else if (item.type == 4) { // TMP
-                        if (tmpIsSplit) {
-                            // SPLIT MODE: fan on top row, SOC voltage on bottom row.
-                            // HOC split (splitBotTemps_c set): temps fill both rows, fan top, volt bottom.
-                            // Single-group (!splitBotTemps_c[0]): temps at singleItemY (centered),
-                            //   fan at tmpFanY and volt at tmpVoltY, both starting at the fan column X.
-                            const bool splitIsHoc = splitBotTemps_c[0] != 0;
-                            // Temp groups never swap — component temps always top, SOC temps always bottom.
-                            const int32_t tmpFanY  = gridTopY;  // component temps + fan column row
-                            const int32_t tmpVoltY = gridBotY;  // SOC/PCB/skin temps + volt column row
-                            // Only fan and voltage swap when voltageAtEndTMP is OFF
-                            const int32_t fanDrawY  = settings.voltageAtEndTMP ? gridTopY : gridBotY;
-                            const int32_t voltDrawY = settings.voltageAtEndTMP ? gridBotY : gridTopY;
-                            uint32_t fanColX = current_x; // X where fan/volt column starts (set after temps)
-                            // Top row: parse temps + fan
-                            {
-                                std::string topStr(skin_temperature_c);
-                                uint32_t rx = current_x;
-                                size_t rpos = 0;
-                                bool rOK = true;
-                                const bool topIsComp = settings.showComponentTemps;
-                                bool pastTopDiv = false;
-                                // Temps draw at tmpFanY (HOC) or singleItemY (single-group)
-                                const int32_t tempDrawY = splitIsHoc ? tmpFanY : singleItemY;
-                                for (int tc = 0; tc < 6 && rOK && rpos < topStr.length(); tc++) {
-                                    while (rpos < topStr.length() && topStr[rpos] == ' ') {
-                                        renderer->drawString(" ", false, rx, tempDrawY, fontsize, textColorA);
-                                        rx += renderer->getTextDimensions(" ", false, fontsize).first;
-                                        rpos++;
-                                    }
-                                    if (rpos >= topStr.length()) break;
-                                    const size_t nxtDiv = topStr.find(ult::DIVIDER_SYMBOL, rpos);
-                                    const size_t nxtDeg = topStr.find("°", rpos);
-                                    if (nxtDiv != std::string::npos && (nxtDeg == std::string::npos || nxtDiv < nxtDeg)) {
-                                        const size_t dl = ult::DIVIDER_SYMBOL.length();
-                                        const size_t afterDiv = nxtDiv + dl;
-                                        const size_t degAfterDiv = topStr.find("°", afterDiv);
-                                        if (degAfterDiv != std::string::npos) {
-                                            rx += renderer->drawString(topStr.substr(nxtDiv, dl), false, rx, tempDrawY, fontsize, (settings.separatorColor)).first;
-                                            rpos = afterDiv;
-                                            pastTopDiv = true;
-                                            tc--;
-                                            continue;
-                                        } else {
-                                            break; // fan divider: stop temp parsing
-                                        }
-                                    }
-                                    if (nxtDeg == std::string::npos) break;
-                                    const size_t cp = topStr.find("C", nxtDeg);
-                                    if (cp == std::string::npos) { rOK = false; break; }
-                                    const std::string tp = topStr.substr(rpos, cp + 1 - rpos);
-                                    const int tv = atoi(tp.c_str());
-                                    const bool useHigh = topIsComp && (!settings.showSideBySideTemps || !pastTopDiv);
-                                    renderer->drawStringWithColoredSections(tp, false, specialChars, rx, tempDrawY, fontsize,
-                                        useHigh ? tsl::GradientColor((float)tv, tsl::DEFAULT_TEMP_RANGE_HIGH)
-                                                : tsl::GradientColor((float)tv),
-                                        (settings.separatorColor));
-                                    rx += renderer->getTextDimensions(tp, false, fontsize).first;
-                                    rpos = cp + 1;
+                } else if (item.type == 4) { // TMP
+                    if (tmpIsSplit) {
+                        // SPLIT MODE: fan on top row, SOC voltage on bottom row.
+                        // HOC split (splitBotTemps_c set): temps fill both rows, fan top, volt bottom.
+                        // Single-group (!splitBotTemps_c[0]): temps at singleItemY (centered),
+                        //   fan at tmpFanY and volt at tmpVoltY, both starting at the fan column X.
+                        const bool splitIsHoc = splitBotTemps_c[0] != 0;
+                        // Temp groups never swap — component temps always top, SOC temps always bottom.
+                        const int32_t tmpFanY  = gridTopY;  // component temps + fan column row
+                        const int32_t tmpVoltY = gridBotY;  // SOC/PCB/skin temps + volt column row
+                        // Only fan and voltage swap when voltageAtEndTMP is OFF
+                        const int32_t fanDrawY  = settings.voltageAtEndTMP ? gridTopY : gridBotY;
+                        const int32_t voltDrawY = settings.voltageAtEndTMP ? gridBotY : gridTopY;
+                        uint32_t fanColX = current_x; // X where fan/volt column starts (set after temps)
+                        // Top row: parse temps + fan
+                        {
+                            std::string topStr(skin_temperature_c);
+                            uint32_t rx = current_x;
+                            size_t rpos = 0;
+                            bool rOK = true;
+                            const bool topIsComp = settings.showComponentTemps;
+                            bool pastTopDiv = false;
+                            // Temps draw at tmpFanY (HOC) or singleItemY (single-group)
+                            const int32_t tempDrawY = splitIsHoc ? tmpFanY : singleItemY;
+                            for (int tc = 0; tc < 6 && rOK && rpos < topStr.length(); tc++) {
+                                while (rpos < topStr.length() && topStr[rpos] == ' ') {
+                                    renderer->drawString(" ", false, rx, tempDrawY, fontsize, textColorA);
+                                    rx += renderer->getTextDimensions(" ", false, fontsize).first;
+                                    rpos++;
                                 }
-                                fanColX = rx; // mark where fan column starts
-                                // Draw remaining text (DIVIDER + fan icon + duty%) at fanDrawY
-                                if (rpos < topStr.length()) {
-                                    const std::string rest = topStr.substr(rpos);
-                                    const size_t dv = rest.find(ult::DIVIDER_SYMBOL);
-                                    if (dv != std::string::npos) {
-                                        const size_t dl = ult::DIVIDER_SYMBOL.length();
-                                        rx += renderer->drawString(rest.substr(0, dv + dl), false, rx, fanDrawY, fontsize, (settings.separatorColor)).first;
-                                        const std::string afterFanDiv = rest.substr(dv + dl);
-                                        if (!afterFanDiv.empty()) {
-                                            static const std::vector<std::string> splitFic = {""};
-                                            renderer->drawStringWithColoredSections(afterFanDiv, false, splitFic,
-                                                rx, fanDrawY, fontsize, textColorA, catColorA);
-                                        }
-                                    }
-                                }
-                                if (!rOK) {
-                                    renderer->drawStringWithColoredSections(skin_temperature_c, false, specialChars, current_x, tempDrawY, fontsize, textColorA, (settings.separatorColor));
-                                    fanColX = current_x + renderer->getTextDimensions(skin_temperature_c, false, fontsize).first;
-                                }
-                            }
-                            // Center connector divider (between fan and volt column)
-                            if (SOC_volt_c[0])
-                                renderer->drawString(ult::DIVIDER_SYMBOL, false, fanColX, singleItemY, fontsize, (settings.separatorColor));
-                            // Bottom row: optional HOC temps + SOC voltage
-                            {
-                                // Single-group: volt starts at fanColX; HOC: volt starts after bot temps
-                                uint32_t rx = splitIsHoc ? current_x : fanColX;
-                                if (splitIsHoc) {
-                                    std::string botStr(splitBotTemps_c);
-                                    size_t rpos = 0;
-                                    bool rOK = true;
-                                    for (int tc = 0; tc < 3 && rOK && rpos < botStr.length(); tc++) {
-                                        while (rpos < botStr.length() && botStr[rpos] == ' ') {
-                                            renderer->drawString(" ", false, rx, tmpVoltY, fontsize, textColorA);
-                                            rx += renderer->getTextDimensions(" ", false, fontsize).first;
-                                            rpos++;
-                                        }
-                                        if (rpos >= botStr.length()) break;
-                                        const size_t dp = botStr.find("°", rpos);
-                                        if (dp == std::string::npos) { rOK = false; break; }
-                                        const size_t cp = botStr.find("C", dp);
-                                        if (cp == std::string::npos) { rOK = false; break; }
-                                        const std::string tp = botStr.substr(rpos, cp + 1 - rpos);
-                                        const int tv = atoi(tp.c_str());
-                                        renderer->drawStringWithColoredSections(tp, false, specialChars, rx, tmpVoltY, fontsize,
-                                            tsl::GradientColor((float)tv), (settings.separatorColor));
-                                        rx += renderer->getTextDimensions(tp, false, fontsize).first;
-                                        rpos = cp + 1;
-                                    }
-                                    if (!rOK) {
-                                        renderer->drawStringWithColoredSections(splitBotTemps_c, false, specialChars, current_x, tmpVoltY, fontsize, textColorA, (settings.separatorColor));
-                                        rx = current_x + renderer->getTextDimensions(splitBotTemps_c, false, fontsize).first;
-                                    }
-                                }
-                                // Draw SOC voltage
-                                if (SOC_volt_c[0]) {
-                                    rx += renderer->drawString(ult::DIVIDER_SYMBOL, false, rx, voltDrawY, fontsize, (settings.separatorColor)).first;
-                                    renderer->drawStringWithColoredSections(SOC_volt_c, false, specialChars,
-                                        rx, voltDrawY, fontsize, textColorA, (settings.separatorColor));
-                                }
-                            }
-                        } else if (tmpIsGrid) {
-                            // —— GRID MODE: two rows ——
-                            // Top row: CPU/GPU/RAM die temps with HIGH gradient
-                            {
-                                std::string rowStr(componentTemps_c);
-                                uint32_t rx = current_x;
-                                size_t rpos = 0;
-                                bool rOK = true;
-                                for (int tc = 0; tc < 3 && rOK && rpos < rowStr.length(); tc++) {
-                                    while (rpos < rowStr.length() && rowStr[rpos] == ' ') {
-                                        renderer->drawString(" ", false, rx, gridTopY, fontsize, textColorA);
-                                        rx += renderer->getTextDimensions(" ", false, fontsize).first;
-                                        rpos++;
-                                    }
-                                    if (rpos >= rowStr.length()) break;
-                                    const size_t dp = rowStr.find("°", rpos);
-                                    if (dp == std::string::npos) { rOK = false; break; }
-                                    const size_t cp = rowStr.find("C", dp);
-                                    if (cp == std::string::npos) { rOK = false; break; }
-                                    const std::string tp = rowStr.substr(rpos, cp + 1 - rpos);
-                                    const int tv = atoi(tp.c_str());
-                                    renderer->drawStringWithColoredSections(tp, false, specialChars, rx, gridTopY, fontsize,
-                                        tsl::GradientColor((float)tv, tsl::DEFAULT_TEMP_RANGE_HIGH), (settings.separatorColor));
-                                    rx += renderer->getTextDimensions(tp, false, fontsize).first;
-                                    rpos = cp + 1;
-                                }
-                                if (!rOK) renderer->drawStringWithColoredSections(componentTemps_c, false, specialChars, current_x, gridTopY, fontsize, textColorA, (settings.separatorColor));
-                            }
-                            // Bottom row: SOC/PCB/Skin + fan with standard gradient
-                            {
-                                std::string rowStr(skin_temperature_c);
-                                uint32_t rx = current_x;
-                                size_t rpos = 0;
-                                bool rOK = true;
-                                for (int tc = 0; tc < 3 && rOK && rpos < rowStr.length(); tc++) {
-                                    while (rpos < rowStr.length() && rowStr[rpos] == ' ') {
-                                        renderer->drawString(" ", false, rx, gridBotY, fontsize, textColorA);
-                                        rx += renderer->getTextDimensions(" ", false, fontsize).first;
-                                        rpos++;
-                                    }
-                                    if (rpos >= rowStr.length()) break;
-                                    const size_t dp = rowStr.find("°", rpos);
-                                    if (dp == std::string::npos) { rOK = false; break; }
-                                    const size_t cp = rowStr.find("C", dp);
-                                    if (cp == std::string::npos) { rOK = false; break; }
-                                    const std::string tp = rowStr.substr(rpos, cp + 1 - rpos);
-                                    const int tv = atoi(tp.c_str());
-                                    renderer->drawStringWithColoredSections(tp, false, specialChars, rx, gridBotY, fontsize,
-                                        tsl::GradientColor((float)tv), (settings.separatorColor));
-                                    rx += renderer->getTextDimensions(tp, false, fontsize).first;
-                                    rpos = cp + 1;
-                                }
-                                if (rpos < rowStr.length()) {
-                                    const std::string rest = rowStr.substr(rpos);
-                                    const size_t dv = rest.find(ult::DIVIDER_SYMBOL);
-                                    if (dv != std::string::npos) {
-                                        const size_t dl = ult::DIVIDER_SYMBOL.length();
-                                        rx += renderer->drawString(rest.substr(0, dv + dl), false, rx, singleItemY, fontsize, (settings.separatorColor)).first;
-                                        const std::string ad = rest.substr(dv + dl);
-                                        if (!ad.empty()) {
-                                            static const std::vector<std::string> fic2 = {""};
-                                            renderer->drawStringWithColoredSections(ad, false, fic2, rx, singleItemY, fontsize, textColorA, catColorA);
-                                        }
+                                if (rpos >= topStr.length()) break;
+                                const size_t nxtDiv = topStr.find(ult::DIVIDER_SYMBOL, rpos);
+                                const size_t nxtDeg = topStr.find("°", rpos);
+                                if (nxtDiv != std::string::npos && (nxtDeg == std::string::npos || nxtDiv < nxtDeg)) {
+                                    const size_t dl = ult::DIVIDER_SYMBOL.length();
+                                    const size_t afterDiv = nxtDiv + dl;
+                                    const size_t degAfterDiv = topStr.find("°", afterDiv);
+                                    if (degAfterDiv != std::string::npos) {
+                                        rx += renderer->drawString(topStr.substr(nxtDiv, dl), false, rx, tempDrawY, fontsize, (settings.separatorColor)).first;
+                                        rpos = afterDiv;
+                                        pastTopDiv = true;
+                                        tc--;
+                                        continue;
                                     } else {
-                                        renderer->drawStringWithColoredSections(rest, false, specialChars, rx, singleItemY, fontsize, textColorA, (settings.separatorColor));
+                                        break; // fan divider: stop temp parsing
                                     }
                                 }
-                                if (!rOK) renderer->drawStringWithColoredSections(skin_temperature_c, false, specialChars, current_x, gridBotY, fontsize, textColorA, (settings.separatorColor));
+                                if (nxtDeg == std::string::npos) break;
+                                const size_t cp = topStr.find("C", nxtDeg);
+                                if (cp == std::string::npos) { rOK = false; break; }
+                                const std::string tp = topStr.substr(rpos, cp + 1 - rpos);
+                                const int tv = atoi(tp.c_str());
+                                const bool useHigh = topIsComp && (!settings.showSideBySideTemps || !pastTopDiv);
+                                renderer->drawStringWithColoredSections(tp, false, specialChars, rx, tempDrawY, fontsize,
+                                    settings.useDynamicColors ? (useHigh ? tsl::GradientColor((float)tv, tsl::DEFAULT_TEMP_RANGE_HIGH)
+                                                                         : tsl::GradientColor((float)tv)) : textColorA,
+                                    (settings.separatorColor));
+                                rx += renderer->getTextDimensions(tp, false, fontsize).first;
+                                rpos = cp + 1;
                             }
-                        } else {
-                            // —— SINGLE-ROW MODE (SBS, comp-only, or soc-only) ——
-                            // When only component temps: use HIGH gradient; otherwise standard
-                            const bool compOnly = settings.showComponentTemps && !settings.showSocPcbSkinTemps;
-                            std::string dataStr(item.data_ptr);
-                            uint32_t renderX = current_x;
-                            size_t pos = 0;
-                            bool parseSuccess = true;
-                            // For SBS mode (divider present) parse up to 6 temps, switching gradient at divider
-                            bool pastDivider = false;
-                            for (int tempCount = 0; tempCount < 6 && parseSuccess && pos < dataStr.length(); tempCount++) {
-                                while (pos < dataStr.length() && dataStr[pos] == ' ') {
-                                    renderer->drawString(" ", false, renderX, singleItemY, fontsize, textColorA);
-                                    renderX += renderer->getTextDimensions(" ", false, fontsize).first;
-                                    pos++;
-                                }
-                                if (pos >= dataStr.length()) break;
-                                // Check for divider before a temp (SBS mode)
-                                const size_t nextDivPos = dataStr.find(ult::DIVIDER_SYMBOL, pos);
-                                const size_t nextDegPos = dataStr.find("°", pos);
-                                if (nextDivPos != std::string::npos && nextDegPos != std::string::npos && nextDivPos < nextDegPos) {
-                                    // Draw divider and switch gradient
+                            fanColX = rx; // mark where fan column starts
+                            // Draw remaining text (DIVIDER + fan icon + duty%) at fanDrawY
+                            if (rpos < topStr.length()) {
+                                const std::string rest = topStr.substr(rpos);
+                                const size_t dv = rest.find(ult::DIVIDER_SYMBOL);
+                                if (dv != std::string::npos) {
                                     const size_t dl = ult::DIVIDER_SYMBOL.length();
-                                    renderX += renderer->drawString(dataStr.substr(nextDivPos, dl), false, renderX, singleItemY, fontsize, (settings.separatorColor)).first;
-                                    pos = nextDivPos + dl;
-                                    pastDivider = true;
-                                    continue;
-                                }
-                                const size_t degreesPos = nextDegPos;
-                                if (degreesPos == std::string::npos) { parseSuccess = false; break; }
-                                const size_t cPos = dataStr.find("C", degreesPos);
-                                if (cPos == std::string::npos) { parseSuccess = false; break; }
-                                const std::string tempPart = dataStr.substr(pos, cPos + 1 - pos);
-                                const int temp = atoi(tempPart.c_str());
-                                // HIGH gradient for component temps (before divider in SBS, or compOnly)
-                                const bool useHigh = compOnly || (settings.showSideBySideTemps && !pastDivider && settings.showComponentTemps);
-                                const tsl::Color tempColor = useHigh ?
-                                    tsl::GradientColor((float)temp, tsl::DEFAULT_TEMP_RANGE_HIGH) :
-                                    tsl::GradientColor((float)temp);
-                                renderer->drawStringWithColoredSections(tempPart, false, specialChars, renderX, singleItemY, fontsize, tempColor, (settings.separatorColor));
-                                renderX += renderer->getTextDimensions(tempPart, false, fontsize).first;
-                                pos = cPos + 1;
-                            }
-                            // Render any remaining text (fan%, etc.) - only if we drew at least one temp
-                            if (pos < dataStr.length() && (parseSuccess || renderX > current_x)) {
-                                const std::string restPart = dataStr.substr(pos);
-                                const size_t divPos2 = restPart.find(ult::DIVIDER_SYMBOL);
-                                if (divPos2 != std::string::npos) {
-                                    const size_t dl = ult::DIVIDER_SYMBOL.length();
-                                    renderX += renderer->drawString(restPart.substr(0, divPos2 + dl), false, renderX, singleItemY, fontsize, (settings.separatorColor)).first;
-                                    const std::string afterDiv = restPart.substr(divPos2 + dl);
-                                    if (!afterDiv.empty()) {
-                                        static const std::vector<std::string> fic3 = {""};
-                                        renderer->drawStringWithColoredSections(afterDiv, false, fic3, renderX, singleItemY, fontsize, textColorA, catColorA);
+                                    rx += renderer->drawString(rest.substr(0, dv + dl), false, rx, fanDrawY, fontsize, (settings.separatorColor)).first;
+                                    const std::string afterFanDiv = rest.substr(dv + dl);
+                                    if (!afterFanDiv.empty()) {
+                                        static const std::vector<std::string> splitFic = {""};
+                                        renderer->drawStringWithColoredSections(afterFanDiv, false, splitFic,
+                                            rx, fanDrawY, fontsize, textColorA, catColorA);
                                     }
-                                } else {
-                                    renderer->drawStringWithColoredSections(restPart, false, specialChars, renderX, singleItemY, fontsize, textColorA, (settings.separatorColor));
                                 }
                             }
-                            if (!parseSuccess && renderX == current_x) {
-                                // Full fallback only if nothing was successfully drawn
-                                renderer->drawStringWithColoredSections(item.data_ptr, false, specialChars, current_x, singleItemY, fontsize, textColorA, (settings.separatorColor));
+                            if (!rOK) {
+                                renderer->drawStringWithColoredSections(skin_temperature_c, false, specialChars, current_x, tempDrawY, fontsize, textColorA, (settings.separatorColor));
+                                fanColX = current_x + renderer->getTextDimensions(skin_temperature_c, false, fontsize).first;
                             }
                         }
-
+                        // Center connector divider (between fan and volt column)
+                        if (SOC_volt_c[0])
+                            renderer->drawString(ult::DIVIDER_SYMBOL, false, fanColX, singleItemY, fontsize, (settings.separatorColor));
+                        // Bottom row: optional HOC temps + SOC voltage
+                        {
+                            // Single-group: volt starts at fanColX; HOC: volt starts after bot temps
+                            uint32_t rx = splitIsHoc ? current_x : fanColX;
+                            if (splitIsHoc) {
+                                std::string botStr(splitBotTemps_c);
+                                size_t rpos = 0;
+                                bool rOK = true;
+                                for (int tc = 0; tc < 3 && rOK && rpos < botStr.length(); tc++) {
+                                    while (rpos < botStr.length() && botStr[rpos] == ' ') {
+                                        renderer->drawString(" ", false, rx, tmpVoltY, fontsize, textColorA);
+                                        rx += renderer->getTextDimensions(" ", false, fontsize).first;
+                                        rpos++;
+                                    }
+                                    if (rpos >= botStr.length()) break;
+                                    const size_t dp = botStr.find("°", rpos);
+                                    if (dp == std::string::npos) { rOK = false; break; }
+                                    const size_t cp = botStr.find("C", dp);
+                                    if (cp == std::string::npos) { rOK = false; break; }
+                                    const std::string tp = botStr.substr(rpos, cp + 1 - rpos);
+                                    const int tv = atoi(tp.c_str());
+                                    renderer->drawStringWithColoredSections(tp, false, specialChars, rx, tmpVoltY, fontsize,
+                                        settings.useDynamicColors ? tsl::GradientColor((float)tv) : textColorA, (settings.separatorColor));
+                                    rx += renderer->getTextDimensions(tp, false, fontsize).first;
+                                    rpos = cp + 1;
+                                }
+                                if (!rOK) {
+                                    renderer->drawStringWithColoredSections(splitBotTemps_c, false, specialChars, current_x, tmpVoltY, fontsize, textColorA, (settings.separatorColor));
+                                    rx = current_x + renderer->getTextDimensions(splitBotTemps_c, false, fontsize).first;
+                                }
+                            }
+                            // Draw SOC voltage
+                            if (SOC_volt_c[0]) {
+                                rx += renderer->drawString(ult::DIVIDER_SYMBOL, false, rx, voltDrawY, fontsize, (settings.separatorColor)).first;
+                                renderer->drawStringWithColoredSections(SOC_volt_c, false, specialChars,
+                                    rx, voltDrawY, fontsize, textColorA, (settings.separatorColor));
+                            }
+                        }
+                    } else if (tmpIsGrid) {
+                        // —— GRID MODE: two rows ——
+                        // Top row: CPU/GPU/RAM die temps with HIGH gradient
+                        {
+                            std::string rowStr(componentTemps_c);
+                            uint32_t rx = current_x;
+                            size_t rpos = 0;
+                            bool rOK = true;
+                            for (int tc = 0; tc < 3 && rOK && rpos < rowStr.length(); tc++) {
+                                while (rpos < rowStr.length() && rowStr[rpos] == ' ') {
+                                    renderer->drawString(" ", false, rx, gridTopY, fontsize, textColorA);
+                                    rx += renderer->getTextDimensions(" ", false, fontsize).first;
+                                    rpos++;
+                                }
+                                if (rpos >= rowStr.length()) break;
+                                const size_t dp = rowStr.find("°", rpos);
+                                if (dp == std::string::npos) { rOK = false; break; }
+                                const size_t cp = rowStr.find("C", dp);
+                                if (cp == std::string::npos) { rOK = false; break; }
+                                const std::string tp = rowStr.substr(rpos, cp + 1 - rpos);
+                                const int tv = atoi(tp.c_str());
+                                renderer->drawStringWithColoredSections(tp, false, specialChars, rx, gridTopY, fontsize,
+                                    settings.useDynamicColors ? tsl::GradientColor((float)tv, tsl::DEFAULT_TEMP_RANGE_HIGH) : textColorA, (settings.separatorColor));
+                                rx += renderer->getTextDimensions(tp, false, fontsize).first;
+                                rpos = cp + 1;
+                            }
+                            if (!rOK) renderer->drawStringWithColoredSections(componentTemps_c, false, specialChars, current_x, gridTopY, fontsize, textColorA, (settings.separatorColor));
+                        }
+                        // Bottom row: SOC/PCB/Skin + fan with standard gradient
+                        {
+                            std::string rowStr(skin_temperature_c);
+                            uint32_t rx = current_x;
+                            size_t rpos = 0;
+                            bool rOK = true;
+                            for (int tc = 0; tc < 3 && rOK && rpos < rowStr.length(); tc++) {
+                                while (rpos < rowStr.length() && rowStr[rpos] == ' ') {
+                                    renderer->drawString(" ", false, rx, gridBotY, fontsize, textColorA);
+                                    rx += renderer->getTextDimensions(" ", false, fontsize).first;
+                                    rpos++;
+                                }
+                                if (rpos >= rowStr.length()) break;
+                                const size_t dp = rowStr.find("°", rpos);
+                                if (dp == std::string::npos) { rOK = false; break; }
+                                const size_t cp = rowStr.find("C", dp);
+                                if (cp == std::string::npos) { rOK = false; break; }
+                                const std::string tp = rowStr.substr(rpos, cp + 1 - rpos);
+                                const int tv = atoi(tp.c_str());
+                                renderer->drawStringWithColoredSections(tp, false, specialChars, rx, gridBotY, fontsize,
+                                    settings.useDynamicColors ? tsl::GradientColor((float)tv) : textColorA, (settings.separatorColor));
+                                rx += renderer->getTextDimensions(tp, false, fontsize).first;
+                                rpos = cp + 1;
+                            }
+                            if (rpos < rowStr.length()) {
+                                const std::string rest = rowStr.substr(rpos);
+                                const size_t dv = rest.find(ult::DIVIDER_SYMBOL);
+                                if (dv != std::string::npos) {
+                                    const size_t dl = ult::DIVIDER_SYMBOL.length();
+                                    rx += renderer->drawString(rest.substr(0, dv + dl), false, rx, singleItemY, fontsize, (settings.separatorColor)).first;
+                                    const std::string ad = rest.substr(dv + dl);
+                                    if (!ad.empty()) {
+                                        static const std::vector<std::string> fic2 = {""};
+                                        renderer->drawStringWithColoredSections(ad, false, fic2, rx, singleItemY, fontsize, textColorA, catColorA);
+                                    }
+                                } else {
+                                    renderer->drawStringWithColoredSections(rest, false, specialChars, rx, singleItemY, fontsize, textColorA, (settings.separatorColor));
+                                }
+                            }
+                            if (!rOK) renderer->drawStringWithColoredSections(skin_temperature_c, false, specialChars, current_x, gridBotY, fontsize, textColorA, (settings.separatorColor));
+                        }
                     } else {
-                        // Normal rendering for all other item types
-                        renderer->drawStringWithColoredSections(item.data_ptr, false, specialChars, current_x, singleItemY, fontsize, textColorA, (settings.separatorColor));
+                        // —— SINGLE-ROW MODE (SBS, comp-only, or soc-only) ——
+                        // When only component temps: use HIGH gradient; otherwise standard
+                        const bool compOnly = settings.showComponentTemps && !settings.showSocPcbSkinTemps;
+                        std::string dataStr(item.data_ptr);
+                        uint32_t renderX = current_x;
+                        size_t pos = 0;
+                        bool parseSuccess = true;
+                        // For SBS mode (divider present) parse up to 6 temps, switching gradient at divider
+                        bool pastDivider = false;
+                        for (int tempCount = 0; tempCount < 6 && parseSuccess && pos < dataStr.length(); tempCount++) {
+                            while (pos < dataStr.length() && dataStr[pos] == ' ') {
+                                renderer->drawString(" ", false, renderX, singleItemY, fontsize, textColorA);
+                                renderX += renderer->getTextDimensions(" ", false, fontsize).first;
+                                pos++;
+                            }
+                            if (pos >= dataStr.length()) break;
+                            // Check for divider before a temp (SBS mode)
+                            const size_t nextDivPos = dataStr.find(ult::DIVIDER_SYMBOL, pos);
+                            const size_t nextDegPos = dataStr.find("°", pos);
+                            if (nextDivPos != std::string::npos && nextDegPos != std::string::npos && nextDivPos < nextDegPos) {
+                                // Draw divider and switch gradient
+                                const size_t dl = ult::DIVIDER_SYMBOL.length();
+                                renderX += renderer->drawString(dataStr.substr(nextDivPos, dl), false, renderX, singleItemY, fontsize, (settings.separatorColor)).first;
+                                pos = nextDivPos + dl;
+                                pastDivider = true;
+                                continue;
+                            }
+                            const size_t degreesPos = nextDegPos;
+                            if (degreesPos == std::string::npos) { parseSuccess = false; break; }
+                            const size_t cPos = dataStr.find("C", degreesPos);
+                            if (cPos == std::string::npos) { parseSuccess = false; break; }
+                            const std::string tempPart = dataStr.substr(pos, cPos + 1 - pos);
+                            const int temp = atoi(tempPart.c_str());
+                            // HIGH gradient for component temps (before divider in SBS, or compOnly)
+                            const bool useHigh = compOnly || (settings.showSideBySideTemps && !pastDivider && settings.showComponentTemps);
+                            const tsl::Color tempColor = useHigh ?
+                                tsl::GradientColor((float)temp, tsl::DEFAULT_TEMP_RANGE_HIGH) :
+                                tsl::GradientColor((float)temp);
+                            renderer->drawStringWithColoredSections(tempPart, false, specialChars, renderX, singleItemY, fontsize, settings.useDynamicColors ? tempColor : textColorA, (settings.separatorColor));
+                            renderX += renderer->getTextDimensions(tempPart, false, fontsize).first;
+                            pos = cPos + 1;
+                        }
+                        // Render any remaining text (fan%, etc.) - only if we drew at least one temp
+                        if (pos < dataStr.length() && (parseSuccess || renderX > current_x)) {
+                            const std::string restPart = dataStr.substr(pos);
+                            const size_t divPos2 = restPart.find(ult::DIVIDER_SYMBOL);
+                            if (divPos2 != std::string::npos) {
+                                const size_t dl = ult::DIVIDER_SYMBOL.length();
+                                renderX += renderer->drawString(restPart.substr(0, divPos2 + dl), false, renderX, singleItemY, fontsize, (settings.separatorColor)).first;
+                                const std::string afterDiv = restPart.substr(divPos2 + dl);
+                                if (!afterDiv.empty()) {
+                                    static const std::vector<std::string> fic3 = {""};
+                                    renderer->drawStringWithColoredSections(afterDiv, false, fic3, renderX, singleItemY, fontsize, textColorA, catColorA);
+                                }
+                            } else {
+                                renderer->drawStringWithColoredSections(restPart, false, specialChars, renderX, singleItemY, fontsize, textColorA, (settings.separatorColor));
+                            }
+                        }
+                        if (!parseSuccess && renderX == current_x) {
+                            // Full fallback only if nothing was successfully drawn
+                            renderer->drawStringWithColoredSections(item.data_ptr, false, specialChars, current_x, singleItemY, fontsize, textColorA, (settings.separatorColor));
+                        }
                     }
                 } else {
                     // Dynamic colors off: normal rendering
-                    renderer->drawStringWithColoredSections(item.data_ptr, false, specialChars, current_x, singleItemY, fontsize, textColorA, (settings.separatorColor));
+                    // cpuFullIsSplit: brackets go on the top row, not the center row
+                    const int32_t dataY = (cpuFullIsSplit && item.type == 0) ? gridTopY : (batIsSplit && item.type == 6) ? gridTopY : (ramLoadIsSplit && item.type == 2) ? gridTopY : singleItemY;
+                    renderer->drawStringWithColoredSections(item.data_ptr, false, specialChars, current_x, dataY, fontsize, textColorA, (settings.separatorColor));
                 }
                 current_x += item_layout.data_width;
 
@@ -1183,6 +1245,61 @@ public:
                     }
                 }
 
+                // Full CPU freq split: draw center connector + inline volt/temp at singleItemY (when !cpuIsSplit),
+                // and @freq on bottom row right-aligned to brackets right edge.
+                if (cpuFullIsSplit && item.type == 0) {
+                    // item_positions[i] is the start X of this item; data starts at label_w + gap
+                    const int32_t bracketsRightX = (int32_t)(item_positions[i]
+                                                   + item_layout.label_width
+                                                   + layout.label_data_gap
+                                                   + item_layout.data_width);
+                    // Center connector + inline volt/temp (only when cpuIsSplit is NOT handling stacked case)
+                    if (!cpuIsSplit) {
+                        // Center connector divider connecting top-row and bottom-row dividers
+                        renderer->drawString(ult::DIVIDER_SYMBOL, false, (uint32_t)bracketsRightX,
+                            singleItemY, fontsize, (settings.separatorColor));
+                        // Inline volt/temp at singleItemY, right of center connector
+                        uint32_t rx = (uint32_t)bracketsRightX;
+                        if (settings.voltageAtEndCPU) {
+                            if (cpu_temp_c[0]) {
+                                rx += renderer->drawString(ult::DIVIDER_SYMBOL, false, rx, singleItemY,
+                                    fontsize, (settings.separatorColor)).first;
+                                const int tv = atoi(cpu_temp_c);
+                                rx += renderer->drawString(cpu_temp_c, false, rx, singleItemY, fontsize,
+                                    settings.useDynamicColors ? tsl::GradientColor((float)tv, tsl::DEFAULT_TEMP_RANGE_HIGH) : textColorA).first;
+                            }
+                            if (settings.realVolts && CPU_volt_c[0]) {
+                                rx += renderer->drawString(ult::DIVIDER_SYMBOL, false, rx, singleItemY,
+                                    fontsize, (settings.separatorColor)).first;
+                                renderer->drawStringWithColoredSections(CPU_volt_c, false, specialChars, rx,
+                                    singleItemY, fontsize, textColorA, (settings.separatorColor));
+                            }
+                        } else {
+                            if (settings.realVolts && CPU_volt_c[0]) {
+                                rx += renderer->drawString(ult::DIVIDER_SYMBOL, false, rx, singleItemY,
+                                    fontsize, (settings.separatorColor)).first;
+                                renderer->drawStringWithColoredSections(CPU_volt_c, false, specialChars, rx,
+                                    singleItemY, fontsize, textColorA, (settings.separatorColor));
+                                rx += renderer->getTextDimensions(CPU_volt_c, false, fontsize).first;
+                            }
+                            if (cpu_temp_c[0]) {
+                                rx += renderer->drawString(ult::DIVIDER_SYMBOL, false, rx, singleItemY,
+                                    fontsize, (settings.separatorColor)).first;
+                                const int tv = atoi(cpu_temp_c);
+                                renderer->drawString(cpu_temp_c, false, rx, singleItemY, fontsize,
+                                    settings.useDynamicColors ? tsl::GradientColor((float)tv, tsl::DEFAULT_TEMP_RANGE_HIGH) : textColorA);
+                            }
+                        }
+                    }
+                    // Draw @freq on bottom row, right-aligned so its right edge equals brackets right edge
+                    if (CPU_freq_c[0]) {
+                        const uint32_t freqW = renderer->getTextDimensions(CPU_freq_c, false, fontsize).first;
+                        const int32_t freqX = bracketsRightX - (int32_t)freqW;
+                        renderer->drawString(CPU_freq_c, false, (uint32_t)std::max((int32_t)0, freqX),
+                            gridBotY, fontsize, textColorA);
+                    }
+                }
+
                 // GPU split: volt/temp on top/bottom rows; swapped when voltageAtEndGPU
                 if (gpuIsSplit && item.type == 1) {
                     const uint32_t voltColX = current_x;
@@ -1225,7 +1342,7 @@ public:
                 }
 
                 // SBS CPU temp: normal = DIV+temp after volt; voltAtEnd = sep+DIV+temp+volt (volt drawn last)
-                if (!cpuIsSplit && item.type == 0 && settings.showCPUTemp && settings.showSideBySideCPUTemp && cpu_temp_c[0]) {
+                if (!cpuIsSplit && !cpuFullIsSplit && item.type == 0 && settings.showCPUTemp && settings.showSideBySideCPUTemp && cpu_temp_c[0]) {
                     const int tv = atoi(cpu_temp_c);
                     if (settings.voltageAtEndCPU && settings.realVolts && CPU_volt_c[0]) {
                         // has_voltage=false; reordered: DIV + temp + DIV + volt
@@ -1242,6 +1359,20 @@ public:
                         renderer->drawString(cpu_temp_c, false, rx, singleItemY, fontsize,
                             settings.useDynamicColors ? tsl::GradientColor((float)tv, tsl::DEFAULT_TEMP_RANGE_HIGH) : textColorA);
                     }
+                }
+
+                // BAT split: draw on top row, pct on bottom row (or swapped when invertBatteryDisplay)
+                // current_x has already advanced past data_width; step back to the data column start.
+                if (batIsSplit && item.type == 6) {
+                    const char* botStr = settings.invertBatteryDisplay ? Battery_draw_c : Battery_pct_c;
+                    const uint32_t dataStartX = current_x - item_layout.data_width;
+                    renderer->drawString(botStr, false, dataStartX, gridBotY, fontsize, textColorA);
+                }
+
+                // RAM load split: draw total@freq on bottom row, same X as brackets
+                if (ramLoadIsSplit && item.type == 2 && RAM_load_bot_c[0]) {
+                    const uint32_t dataStartX = current_x - item_layout.data_width;
+                    renderer->drawString(RAM_load_bot_c, false, dataStartX, gridBotY, fontsize, textColorA);
                 }
 
                 // SBS GPU temp: normal = DIV+temp after volt; voltAtEnd = sep+DIV+temp+volt
@@ -1283,7 +1414,7 @@ public:
                             settings.useDynamicColors ? tsl::GradientColor((float)tv, tsl::DEFAULT_TEMP_RANGE_HIGH) : textColorA);
                     }
                 }
-                        }
+            }
         });
         
         tsl::elm::HeaderOverlayFrame* rootFrame = new tsl::elm::HeaderOverlayFrame("", "");
@@ -1372,10 +1503,27 @@ public:
         const uint32_t cpuFreq = settings.realFrequencies && realCPU_Hz ? realCPU_Hz : CPU_Hz;
         
         if (settings.showFullCPU) {
-            snprintf(CPU_compressed_c, sizeof(CPU_compressed_c), 
-                "[%s,%s,%s,%s]%s%u.%u", 
-                CPU_Usage0, CPU_Usage1, CPU_Usage2, CPU_Usage3, 
-                cpuDiff, cpuFreq / 1000000, (cpuFreq / 100000) % 10);
+            if (settings.showSideBySideFullCPU) {
+                // Existing inline mode: [23%,29%,0%,32%]@1000.0
+                snprintf(CPU_compressed_c, sizeof(CPU_compressed_c),
+                    "[%s %s %s %s]%s%u.%u",
+                    CPU_Usage0, CPU_Usage1, CPU_Usage2, CPU_Usage3,
+                    cpuDiff, cpuFreq / 1000000, (cpuFreq / 100000) % 10);
+                CPU_freq_c[0] = '\0';
+            } else {
+                // Split mode: brackets on top row, max%@freq on bottom row
+                snprintf(CPU_compressed_c, sizeof(CPU_compressed_c),
+                    "[%s %s %s %s]",
+                    CPU_Usage0, CPU_Usage1, CPU_Usage2, CPU_Usage3);
+                const double _u0 = strtod(CPU_Usage0, nullptr);
+                const double _u1 = strtod(CPU_Usage1, nullptr);
+                const double _u2 = strtod(CPU_Usage2, nullptr);
+                const double _u3 = strtod(CPU_Usage3, nullptr);
+                const double _maxU = std::max({_u0, _u1, _u2, _u3});
+                snprintf(CPU_freq_c, sizeof(CPU_freq_c),
+                    "%.0f%%%s%u.%u",
+                    _maxU, cpuDiff, cpuFreq / 1000000, (cpuFreq / 100000) % 10);
+            }
         } else {
             // Find max CPU usage across all cores
             const auto extractUsage = [](const char* usage_str) -> double {
@@ -1392,6 +1540,7 @@ public:
             snprintf(CPU_compressed_c, sizeof(CPU_compressed_c), 
                 "%.0f%%%s%u.%u", 
                 maxUsage, cpuDiff, cpuFreq / 1000000, (cpuFreq / 100000) % 10);
+            CPU_freq_c[0] = '\0';
         }
             
         //if (settings.realVolts) {
@@ -1441,11 +1590,10 @@ public:
         } else {
             // User wants percentage display
             if (R_SUCCEEDED(sysclkCheck) || R_SUCCEEDED(hocclkCheck)) {
-                // Use IPC RAM load if available (sys-clk-hoc or hoc-clk)
+                // Use IPC RAM load if available
                 snprintf(MICRO_RAM_all_c, sizeof(MICRO_RAM_all_c), "%hu%%",
                          ramLoad[SysClkRamLoad_All] / 10);
             } else {
-                // Calculate percentage manually when sys-clk isn't available
                 const uint64_t RAM_Total_all = RAM_Total_application_u + RAM_Total_applet_u + RAM_Total_system_u + RAM_Total_systemunsafe_u;
                 const uint64_t RAM_Used_all = RAM_Used_application_u + RAM_Used_applet_u + RAM_Used_system_u + RAM_Used_systemunsafe_u;
                 const unsigned ramLoadPercent = (RAM_Total_all > 0) ? (unsigned)((RAM_Used_all * 100) / RAM_Total_all) : 0;
@@ -1460,9 +1608,31 @@ public:
         }
         
         const uint32_t ramFreq = settings.realFrequencies && realRAM_Hz ? realRAM_Hz : RAM_Hz;
-        snprintf(RAM_var_compressed_c, sizeof(RAM_var_compressed_c), 
-            "%s%s%u.%u", MICRO_RAM_all_c, ramDiff, 
-            ramFreq / 1000000, (ramFreq / 100000) % 10);
+        const unsigned ramMHz   = ramFreq / 1000000;
+        const unsigned ramMHz10 = (ramFreq / 100000) % 10;
+
+        RAM_load_bot_c[0] = '\0';
+        if (settings.showRAMLoad && settings.showRAMLoadCPUGPU &&
+            (R_SUCCEEDED(sysclkCheck) || R_SUCCEEDED(hocclkCheck))) {
+            const unsigned cpuL = ramLoad[SysClkRamLoad_Cpu] / 10;
+            const int gpuRaw = ramLoad[SysClkRamLoad_All] - ramLoad[SysClkRamLoad_Cpu];
+            const unsigned gpuL = (unsigned)(gpuRaw > 0 ? gpuRaw / 10 : 0);
+            const unsigned totL = ramLoad[SysClkRamLoad_All] / 10;
+            if (settings.showSideBySideRAMLoad) {
+                // SBS: [cpu% gpu%]total%@freq on one line
+                snprintf(RAM_var_compressed_c, sizeof(RAM_var_compressed_c),
+                    "[%u%% %u%%]%u%%%s%u.%u", cpuL, gpuL, totL, ramDiff, ramMHz, ramMHz10);
+            } else {
+                // Split: brackets top, total@freq bottom
+                snprintf(RAM_var_compressed_c, sizeof(RAM_var_compressed_c),
+                    "[%u%% %u%%]", cpuL, gpuL);
+                snprintf(RAM_load_bot_c, sizeof(RAM_load_bot_c),
+                    "%u%%%s%u.%u", totL, ramDiff, ramMHz, ramMHz10);
+            }
+        } else {
+            snprintf(RAM_var_compressed_c, sizeof(RAM_var_compressed_c),
+                "%s%s%u.%u", MICRO_RAM_all_c, ramDiff, ramMHz, ramMHz10);
+        }
             
         //if (settings.realVolts) {
         //    uint32_t vdd2 = realRAM_mV / 10000;
@@ -1533,18 +1703,21 @@ public:
             strcpy(remainingBatteryLife, "--:--");
         }
 
-        if (!settings.invertBatteryDisplay) {
-            snprintf(Battery_c, sizeof Battery_c,
-                     "%.2f W%.1f%% [%s]",
-                     drawW,
-                     (float)_batteryChargeInfoFields.RawBatteryCharge / 1000.0f,
-                     remainingBatteryLife);
-        } else {
-            snprintf(Battery_c, sizeof Battery_c,
-                     "%.1f%% [%s]%.2f W",
-                     (float)_batteryChargeInfoFields.RawBatteryCharge / 1000.0f,
-                     remainingBatteryLife,
-                     drawW);
+        {
+            const float charge = (float)_batteryChargeInfoFields.RawBatteryCharge / 1000.0f;
+            snprintf(Battery_draw_c, sizeof(Battery_draw_c), "%.2f W", drawW);
+            snprintf(Battery_pct_c,  sizeof(Battery_pct_c),  "%.1f%% [%s]", charge, remainingBatteryLife);
+            if (!settings.showSideBySideBAT) {
+                if (!settings.invertBatteryDisplay)
+                    snprintf(Battery_c, sizeof Battery_c, "%.2f W", drawW);
+                else
+                    snprintf(Battery_c, sizeof Battery_c, "%.1f%% [%s]", charge, remainingBatteryLife);
+            } else {
+                if (!settings.invertBatteryDisplay)
+                    snprintf(Battery_c, sizeof Battery_c, "%.2f W%.1f%% [%s]", drawW, charge, remainingBatteryLife);
+                else
+                    snprintf(Battery_c, sizeof Battery_c, "%.1f%% [%s]%.2f W", charge, remainingBatteryLife, drawW);
+            }
         }
 
         mutexUnlock(&mutex_BatteryChecker);
@@ -1805,7 +1978,10 @@ public:
         }
 
         // FPS
-        snprintf(FPS_var_compressed_c, sizeof FPS_var_compressed_c, "%2.1f", useOldFPSavg ? FPSavg_old : FPSavg);
+        if (settings.useIntegerFPS)
+            snprintf(FPS_var_compressed_c, sizeof FPS_var_compressed_c, "%d", (int)round(useOldFPSavg ? FPSavg_old : FPSavg));
+        else
+            snprintf(FPS_var_compressed_c, sizeof FPS_var_compressed_c, "%2.1f", useOldFPSavg ? FPSavg_old : FPSavg);
 
 
         // Read Speed
