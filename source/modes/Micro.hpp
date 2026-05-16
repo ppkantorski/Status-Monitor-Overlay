@@ -14,8 +14,8 @@ private:
     char CPU_UsageM[32];
     char soc_temperature_c[32];
     char skin_temperature_c[64];  // expanded: holds combined SBS string too
-    char componentTemps_c[64];    // dual-row TMP: CPU/GPU/RAM die temps
-    char splitBotTemps_c[64];     // split mode: bottom row temps (SOC/PCB/Skin for dual-row, empty for single-group)
+    char componentTemps_c[64];    // HOC: CPU/GPU/RAM die temps
+    char splitBotTemps_c[64];     // split mode: bottom row temps (SOC/PCB/Skin for HOC, empty for single-group)
     char cpu_temp_c[16];          // CPU die temp string e.g. "52°C"
     char gpu_temp_c[16];          // GPU die temp string e.g. "48°C"
     char ram_temp_c[16];          // RAM die temp string e.g. "45°C"
@@ -46,8 +46,8 @@ private:
     bool showFPS = false;
     uint64_t systemtickfrequency_impl = systemtickfrequency;
     bool tmpIsGrid = false;  // true when TMP shown as 2-row grid (both groups, no SBS, no split)
-    bool tmpIsSplit = false; // true when fan on row 1, SOC volt on row 2 (showSideBySideFanSOC=false)
-    bool ramIsSplit = false; // true when VDD2 on row 1, VDDQ on row 2 (showSideBySideVDDQ=false, Mariko only)
+    bool tmpIsSplit = false; // true when fan on row 1, SOC volt on row 2 (showStackedFanSOC=true)
+    bool ramIsSplit = false; // true when VDD2 on row 1, VDDQ on row 2 (showStackedVDDQ=true, Mariko only)
     bool cpuIsSplit = false; // true when CPU volt on row 1, CPU temp on row 2
     bool cpuFullIsSplit = false; // true when Full CPU brackets on top row, freq on bottom row
     bool batIsSplit     = false; // true when BAT draw/pct stack vertically
@@ -211,7 +211,7 @@ public:
             const float charge = (float)_batteryChargeInfoFields.RawBatteryCharge / 1000.0f;
             snprintf(Battery_draw_c, sizeof(Battery_draw_c), "%.2f W", drawW);
             snprintf(Battery_pct_c,  sizeof(Battery_pct_c),  "%.1f%% [%s]", charge, remainingBatteryLife);
-            if (!settings.showSideBySideBAT) {
+            if (settings.showStackedBAT) {
                 if (!settings.invertBatteryDisplay)
                     snprintf(Battery_c, sizeof(Battery_c), "%.2f W", drawW);
                 else
@@ -260,17 +260,17 @@ public:
                 switch (key3) {
                     case 0x435055: // "CPU"
                         if (!(seen_flags & 1)) {
-                            const bool cpuSplit    = settings.showCPUTemp && !settings.showSideBySideCPUTemp && settings.realVolts;
-                            const bool cpuSBSDefer = settings.voltageAtEndCPU && settings.showCPUTemp && settings.showSideBySideCPUTemp && settings.realVolts;
-                            const bool cpuFreqSplit = settings.showFullCPU && !settings.showSideBySideFullCPU;
+                            const bool cpuSplit    = settings.showCPUTemp && settings.showStackedCPUTemp && settings.realVolts;
+                            const bool cpuSBSDefer = settings.voltageAtEndCPU && settings.showCPUTemp && !settings.showStackedCPUTemp && settings.realVolts;
+                            const bool cpuFreqSplit = settings.showFullCPU && settings.showStackedFullCPU;
                             renderItems.push_back({0, "CPU", CPU_compressed_c, CPU_volt_c, settings.realVolts && !cpuSplit && !cpuSBSDefer && !cpuFreqSplit});
                             seen_flags |= 1;
                         }
                         break;
                     case 0x475055: // "GPU"
                         if (!(seen_flags & 2)) {
-                            const bool gpuSplit    = settings.showGPUTemp && !settings.showSideBySideGPUTemp && settings.realVolts;
-                            const bool gpuSBSDefer = settings.voltageAtEndGPU && settings.showGPUTemp && settings.showSideBySideGPUTemp && settings.realVolts;
+                            const bool gpuSplit    = settings.showGPUTemp && settings.showStackedGPUTemp && settings.realVolts;
+                            const bool gpuSBSDefer = settings.voltageAtEndGPU && settings.showGPUTemp && !settings.showStackedGPUTemp && settings.realVolts;
                             renderItems.push_back({1, "GPU", GPU_Load_c, GPU_volt_c, settings.realVolts && !gpuSplit && !gpuSBSDefer});
                             seen_flags |= 2;
                         }
@@ -278,11 +278,11 @@ public:
                     case 0x52414D: // "RAM"
                         if (!(seen_flags & 4)) {
                             // In split VDD2/VDDQ mode, voltage is drawn by the renderer
-                            const bool splitRAMVolt = !settings.showSideBySideVDDQ &&
+                            const bool splitRAMVolt = settings.showStackedVDDQ &&
                                                       settings.realVolts && settings.showVDD2 &&
                                                       settings.showVDDQ && isMariko;
                             // ramTempSplit: VDDQ-only Mariko with RAM temp split (volt drawn by renderer)
-                            const bool ramTempSplitCond = settings.showRAMTemp && !settings.showSideBySideRAMTemp &&
+                            const bool ramTempSplitCond = settings.showRAMTemp && settings.showStackedRAMTemp &&
                                                           !splitRAMVolt && settings.realVolts &&
                                                           ((settings.showVDDQ && isMariko && !settings.showVDD2) ||
                                                            (settings.showVDD2 && !settings.showVDDQ));
@@ -302,7 +302,7 @@ public:
                     case 0x544D50: // "TMP"
                         if (!(seen_flags & 16)) {
                             // In split mode volt is drawn by the renderer, not via has_voltage
-                            const bool splitFanSOC = !settings.showSideBySideFanSOC &&
+                            const bool splitFanSOC = settings.showStackedFanSOC &&
                                                      settings.realVolts && settings.showSOCVoltage;
                             renderItems.push_back({4, "TMP", skin_temperature_c, SOC_volt_c,
                                 settings.realVolts && settings.showSOCVoltage && !splitFanSOC});
@@ -361,30 +361,30 @@ public:
             if (item.type == 6) hasBat = true;
         }
         tmpIsSplit = hasTmp &&
-                     !settings.showSideBySideFanSOC &&
+                     settings.showStackedFanSOC &&
                      settings.realVolts && settings.showSOCVoltage;
         tmpIsGrid = hasTmp &&
                     settings.showComponentTemps &&
                     settings.showSocPcbSkinTemps &&
-                    !settings.showSideBySideTemps &&
+                    settings.showStackedTemps &&
                     !tmpIsSplit;  // split takes priority over grid
 
         ramIsSplit = hasRam &&
-                     !settings.showSideBySideVDDQ &&
+                     settings.showStackedVDDQ &&
                      settings.realVolts && settings.showVDD2 &&
                      settings.showVDDQ && isMariko;
 
         // CPU die temp split: volt on top row, CPU temp on bottom row
-        cpuIsSplit = hasCpu && settings.showCPUTemp && !settings.showSideBySideCPUTemp && settings.realVolts;
+        cpuIsSplit = hasCpu && settings.showCPUTemp && settings.showStackedCPUTemp && settings.realVolts;
         // Full CPU freq split: brackets on top row, freq on bottom row (right-aligned)
-        cpuFullIsSplit = hasCpu && settings.showFullCPU && !settings.showSideBySideFullCPU;
-        // BAT side-by-side off: power draw on top row, pct+estimate on bottom row
-        batIsSplit = hasBat && !settings.showSideBySideBAT;
-        ramLoadIsSplit = hasRam && settings.showRAMLoad && settings.showRAMLoadCPUGPU && !settings.showSideBySideRAMLoad;
+        cpuFullIsSplit = hasCpu && settings.showFullCPU && settings.showStackedFullCPU;
+        // BAT stacked: power draw on top row, pct+estimate on bottom row
+        batIsSplit = hasBat && settings.showStackedBAT;
+        ramLoadIsSplit = hasRam && settings.showRAMLoad && settings.showRAMLoadCPUGPU && settings.showStackedRAMLoad;
         // GPU die temp split: volt on top row, GPU temp on bottom row
-        gpuIsSplit = hasGpu && settings.showGPUTemp && !settings.showSideBySideGPUTemp && settings.realVolts;
+        gpuIsSplit = hasGpu && settings.showGPUTemp && settings.showStackedGPUTemp && settings.realVolts;
         // RAM temp split: VDDQ-only Mariko → VDDQ top row, RAM temp bottom row
-        ramTempSplit = hasRam && settings.showRAMTemp && !settings.showSideBySideRAMTemp && !ramIsSplit &&
+        ramTempSplit = hasRam && settings.showRAMTemp && settings.showStackedRAMTemp && !ramIsSplit &&
                        settings.realVolts &&
                        ((settings.showVDDQ && isMariko && !settings.showVDD2) ||
                         (settings.showVDD2 && !settings.showVDDQ));
@@ -538,7 +538,7 @@ public:
                         if (settings.showRAMTemp && ram_temp_c[0]) {
                             const uint32_t div_w = renderer->getTextDimensions(ult::DIVIDER_SYMBOL, false, fontsize).first;
                             const uint32_t temp_w = renderer->getTextDimensions(ram_temp_c, false, fontsize).first;
-                            if (settings.showSideBySideRAMTemp) {
+                            if (!settings.showStackedRAMTemp) {
                                 if (settings.voltageAtEndRAM) {
                                     // VoltAtEnd+SBS: temp first, then voltages to the right
                                     // Width from voltColX = div_w + temp_w + div_w + max(vdd2_w, vddq_w_base)
@@ -626,7 +626,7 @@ public:
                 // When voltageAtEnd ON, has_voltage=false so we must also include the full sep+volt.
                 {
                     const uint32_t div_w = renderer->getTextDimensions(ult::DIVIDER_SYMBOL, false, fontsize).first;
-                    if (!cpuIsSplit && !cpuFullIsSplit && item.type == 0 && settings.showCPUTemp && settings.showSideBySideCPUTemp && cpu_temp_c[0]) {
+                    if (!cpuIsSplit && !cpuFullIsSplit && item.type == 0 && settings.showCPUTemp && !settings.showStackedCPUTemp && cpu_temp_c[0]) {
                         const uint32_t temp_w = renderer->getTextDimensions(cpu_temp_c, false, fontsize).first;
                         if (settings.voltageAtEndCPU && settings.realVolts) {
                             const uint32_t volt_w = CPU_volt_c[0] ? renderer->getTextDimensions(CPU_volt_c, false, fontsize).first : 0;
@@ -635,7 +635,7 @@ public:
                             item_layout.total_width += div_w + temp_w;
                         }
                     }
-                    if (!gpuIsSplit && item.type == 1 && settings.showGPUTemp && settings.showSideBySideGPUTemp && gpu_temp_c[0]) {
+                    if (!gpuIsSplit && item.type == 1 && settings.showGPUTemp && !settings.showStackedGPUTemp && gpu_temp_c[0]) {
                         const uint32_t temp_w = renderer->getTextDimensions(gpu_temp_c, false, fontsize).first;
                         if (settings.voltageAtEndGPU && settings.realVolts) {
                             const uint32_t volt_w = GPU_volt_c[0] ? renderer->getTextDimensions(GPU_volt_c, false, fontsize).first : 0;
@@ -871,10 +871,10 @@ public:
                 } else if (item.type == 4) { // TMP
                     if (tmpIsSplit) {
                         // SPLIT MODE: fan on top row, SOC voltage on bottom row.
-                        // Dual-row split (splitBotTemps_c set): temps fill both rows, fan top, volt bottom.
+                        // HOC split (splitBotTemps_c set): temps fill both rows, fan top, volt bottom.
                         // Single-group (!splitBotTemps_c[0]): temps at singleItemY (centered),
                         //   fan at tmpFanY and volt at tmpVoltY, both starting at the fan column X.
-                        const bool splitIsDual = splitBotTemps_c[0] != 0;  // dual-row: both component and board temps visible
+                        const bool splitIsHoc = splitBotTemps_c[0] != 0;
                         // Temp groups never swap — component temps always top, SOC temps always bottom.
                         const int32_t tmpFanY  = gridTopY;  // component temps + fan column row
                         const int32_t tmpVoltY = gridBotY;  // SOC/PCB/skin temps + volt column row
@@ -890,8 +890,8 @@ public:
                             bool rOK = true;
                             const bool topIsComp = settings.showComponentTemps;
                             bool pastTopDiv = false;
-                            // Temps draw at tmpFanY (dual-row) or singleItemY (single-group)
-                            const int32_t tempDrawY = splitIsDual ? tmpFanY : singleItemY;
+                            // Temps draw at tmpFanY (HOC) or singleItemY (single-group)
+                            const int32_t tempDrawY = splitIsHoc ? tmpFanY : singleItemY;
                             for (int tc = 0; tc < 6 && rOK && rpos < topStr.length(); tc++) {
                                 while (rpos < topStr.length() && topStr[rpos] == ' ') {
                                     renderer->drawString(" ", false, rx, tempDrawY, fontsize, textColorA);
@@ -920,7 +920,7 @@ public:
                                 if (cp == std::string::npos) { rOK = false; break; }
                                 const std::string tp = topStr.substr(rpos, cp + 1 - rpos);
                                 const int tv = atoi(tp.c_str());
-                                const bool useHigh = topIsComp && (!settings.showSideBySideTemps || !pastTopDiv);
+                                const bool useHigh = topIsComp && (settings.showStackedTemps || !pastTopDiv);
                                 renderer->drawStringWithColoredSections(tp, false, specialChars, rx, tempDrawY, fontsize,
                                     settings.useDynamicColors ? (useHigh ? tsl::GradientColor((float)tv, tsl::DEFAULT_TEMP_RANGE_HIGH)
                                                                          : tsl::GradientColor((float)tv)) : textColorA,
@@ -950,19 +950,19 @@ public:
                             }
                         }
                         // Center connector divider (between fan and volt column)
-                        // Dual-row: 2 rows of temp on left -> 3-tall stack at fanColX
-                        if (splitIsDual) {
+                        // HOC: 2 rows of temp on left -> 3-tall stack at fanColX
+                        if (splitIsHoc) {
                             renderer->drawString(ult::DIVIDER_SYMBOL, false, fanColX, gridTopY,    fontsize, (settings.separatorColor));
                             renderer->drawString(ult::DIVIDER_SYMBOL, false, fanColX, singleItemY, fontsize, (settings.separatorColor));
                             renderer->drawString(ult::DIVIDER_SYMBOL, false, fanColX, gridBotY,    fontsize, (settings.separatorColor));
                         } else if (SOC_volt_c[0]) {
                             renderer->drawString(ult::DIVIDER_SYMBOL, false, fanColX, singleItemY, fontsize, (settings.separatorColor));
                         }
-                        // Bottom row: optional dual-row temps + SOC voltage
+                        // Bottom row: optional HOC temps + SOC voltage
                         {
-                            // Single-group: volt starts at fanColX; dual-row: volt starts after bot temps
-                            uint32_t rx = splitIsDual ? current_x : fanColX;
-                            if (splitIsDual) {
+                            // Single-group: volt starts at fanColX; HOC: volt starts after bot temps
+                            uint32_t rx = splitIsHoc ? current_x : fanColX;
+                            if (splitIsHoc) {
                                 std::string botStr(splitBotTemps_c);
                                 size_t rpos = 0;
                                 bool rOK = true;
@@ -1105,7 +1105,7 @@ public:
                             const std::string tempPart = dataStr.substr(pos, cPos + 1 - pos);
                             const int temp = atoi(tempPart.c_str());
                             // HIGH gradient for component temps (before divider in SBS, or compOnly)
-                            const bool useHigh = compOnly || (settings.showSideBySideTemps && !pastDivider && settings.showComponentTemps);
+                            const bool useHigh = compOnly || (!settings.showStackedTemps && !pastDivider && settings.showComponentTemps);
                             const tsl::Color tempColor = useHigh ?
                                 tsl::GradientColor((float)temp, tsl::DEFAULT_TEMP_RANGE_HIGH) :
                                 tsl::GradientColor((float)temp);
@@ -1138,7 +1138,11 @@ public:
                     // Dynamic colors off: normal rendering
                     // cpuFullIsSplit: brackets go on the top row, not the center row
                     const int32_t dataY = (cpuFullIsSplit && item.type == 0) ? gridTopY : (batIsSplit && item.type == 6) ? gridTopY : (ramLoadIsSplit && item.type == 2) ? gridTopY : singleItemY;
-                    renderer->drawStringWithColoredSections(item.data_ptr, false, specialChars, current_x, dataY, fontsize, textColorA, (settings.separatorColor));
+                    // ramLoadIsSplit top row: right-align [cpu% gpu%] so its right edge matches total@freq
+                    const uint32_t drawX = (ramLoadIsSplit && item.type == 2 && RAM_load_bot_c[0])
+                        ? current_x + item_layout.data_width - renderer->getTextDimensions(item.data_ptr, false, fontsize).first
+                        : current_x;
+                    renderer->drawStringWithColoredSections(item.data_ptr, false, specialChars, drawX, dataY, fontsize, textColorA, (settings.separatorColor));
                 }
                 current_x += item_layout.data_width;
                 // Save the start of the data column before voltage may advance current_x.
@@ -1173,7 +1177,7 @@ public:
                             uint32_t rx = voltColX;
                             rx += renderer->drawString(ult::DIVIDER_SYMBOL, false, rx, gridBotY, fontsize, (settings.separatorColor)).first;
                             renderer->drawStringWithColoredSections(vddq_only_c, false, specialChars, rx, gridBotY, fontsize, textColorA, (settings.separatorColor));
-                            if (settings.showRAMTemp && !settings.showSideBySideRAMTemp && ram_temp_c[0]) {
+                            if (settings.showRAMTemp && settings.showStackedRAMTemp && ram_temp_c[0]) {
                                 rx += renderer->getTextDimensions(vddq_only_c, false, fontsize).first;
                                 rx += renderer->drawString(ult::DIVIDER_SYMBOL, false, rx, gridBotY, fontsize, (settings.separatorColor)).first;
                                 const int rtv = atoi(ram_temp_c);
@@ -1181,7 +1185,7 @@ public:
                                     settings.useDynamicColors ? tsl::GradientColor((float)rtv, tsl::DEFAULT_TEMP_RANGE_HIGH) : textColorA);
                             }
                         }
-                        if (settings.showRAMTemp && settings.showSideBySideRAMTemp && ram_temp_c[0]) {
+                        if (settings.showRAMTemp && !settings.showStackedRAMTemp && ram_temp_c[0]) {
                             const uint32_t vdd2_rw = vdd2_only_c[0] ? renderer->getTextDimensions(vdd2_only_c, false, fontsize).first : 0;
                             const uint32_t vddq_rw = vddq_only_c[0] ? renderer->getTextDimensions(vddq_only_c, false, fontsize).first : 0;
                             uint32_t cx = voltColX + rdiv_w + std::max(vdd2_rw, vddq_rw);
@@ -1193,7 +1197,7 @@ public:
                         }
                     } else {
                         // ── VoltAtEnd ON ──
-                        if (!settings.showSideBySideRAMTemp && ram_temp_c[0]) {
+                        if (settings.showStackedRAMTemp && ram_temp_c[0]) {
                             // SBS off: temp+DIV+VDD2 on top row, VDDQ on bottom row
                             if (vdd2_only_c[0]) {
                                 uint32_t rx = voltColX;
@@ -1224,7 +1228,7 @@ public:
                                 renderer->drawString(ult::DIVIDER_SYMBOL, false, voltColX, gridBotY, fontsize, (settings.separatorColor));
                             }
                             uint32_t voltStartX = voltColX + rdiv_w; // right after left connector; temp starts here
-                            if (settings.showRAMTemp && settings.showSideBySideRAMTemp && ram_temp_c[0]) {
+                            if (settings.showRAMTemp && !settings.showStackedRAMTemp && ram_temp_c[0]) {
                                 // Temp at center row; right-fork is 3-tall before the volt column
                                 const int rtv = atoi(ram_temp_c);
                                 renderer->drawString(ram_temp_c, false, voltStartX, singleItemY, fontsize,
@@ -1375,7 +1379,7 @@ public:
                 }
 
                 // SBS CPU temp: normal = DIV+temp after volt; voltAtEnd = sep+DIV+temp+volt (volt drawn last)
-                if (!cpuIsSplit && !cpuFullIsSplit && item.type == 0 && settings.showCPUTemp && settings.showSideBySideCPUTemp && cpu_temp_c[0]) {
+                if (!cpuIsSplit && !cpuFullIsSplit && item.type == 0 && settings.showCPUTemp && !settings.showStackedCPUTemp && cpu_temp_c[0]) {
                     const int tv = atoi(cpu_temp_c);
                     if (settings.voltageAtEndCPU && settings.realVolts && CPU_volt_c[0]) {
                         // has_voltage=false; reordered: DIV + temp + DIV + volt
@@ -1429,7 +1433,7 @@ public:
                 }
 
                 // SBS GPU temp: normal = DIV+temp after volt; voltAtEnd = sep+DIV+temp+volt
-                if (!gpuIsSplit && item.type == 1 && settings.showGPUTemp && settings.showSideBySideGPUTemp && gpu_temp_c[0]) {
+                if (!gpuIsSplit && item.type == 1 && settings.showGPUTemp && !settings.showStackedGPUTemp && gpu_temp_c[0]) {
                     const int tv = atoi(gpu_temp_c);
                     if (settings.voltageAtEndGPU && settings.realVolts && GPU_volt_c[0]) {
                         // reordered: DIV + temp + DIV + volt
@@ -1556,7 +1560,7 @@ public:
         const uint32_t cpuFreq = settings.realFrequencies && realCPU_Hz ? realCPU_Hz : CPU_Hz;
         
         if (settings.showFullCPU) {
-            if (settings.showSideBySideFullCPU) {
+            if (!settings.showStackedFullCPU) {
                 // Existing inline mode: [23%,29%,0%,32%]@1000.0
                 snprintf(CPU_compressed_c, sizeof(CPU_compressed_c),
                     "[%s %s %s %s]%s%u.%u",
@@ -1671,7 +1675,7 @@ public:
             const int gpuRaw = ramLoad[SysClkRamLoad_All] - ramLoad[SysClkRamLoad_Cpu];
             const unsigned gpuL = (unsigned)(gpuRaw > 0 ? gpuRaw / 10 : 0);
             const unsigned totL = ramLoad[SysClkRamLoad_All] / 10;
-            if (settings.showSideBySideRAMLoad) {
+            if (!settings.showStackedRAMLoad) {
                 // SBS: [cpu% gpu%]total%@freq on one line
                 snprintf(RAM_var_compressed_c, sizeof(RAM_var_compressed_c),
                     "[%u%% %u%%]%u%%%s%u.%u", cpuL, gpuL, totL, ramDiff, ramMHz, ramMHz10);
@@ -1760,7 +1764,7 @@ public:
             const float charge = (float)_batteryChargeInfoFields.RawBatteryCharge / 1000.0f;
             snprintf(Battery_draw_c, sizeof(Battery_draw_c), "%.2f W", drawW);
             snprintf(Battery_pct_c,  sizeof(Battery_pct_c),  "%.1f%% [%s]", charge, remainingBatteryLife);
-            if (!settings.showSideBySideBAT) {
+            if (settings.showStackedBAT) {
                 if (!settings.invertBatteryDisplay)
                     snprintf(Battery_c, sizeof Battery_c, "%.2f W", drawW);
                 else
@@ -1822,12 +1826,12 @@ public:
             ram_temp_c[0] = '\0';
 
         // SOC/PCB/Skin row string for item.data_ptr (non-split modes):
-        //  - Split         (!showSideBySideFanSOC): top=temps+fan, bot=temps only
+        //  - Split         (!showStackedFanSOC): top=temps+fan, bot=temps only
         //  - Side-By-Side  (both on, SBS on):       compTemps +  + SOC/PCB/Skin+fan
         //  - Grid          (both on, SBS off):       SOC/PCB/Skin+fan  (compTemps read from member)
         //  - Comp-only     (comp on, soc off):       CPU/GPU/RAM+fan
         //  - Soc-only      (default):                SOC/PCB/Skin+fan
-        const bool splitFanSOC = !settings.showSideBySideFanSOC &&
+        const bool splitFanSOC = settings.showStackedFanSOC &&
                                   settings.realVolts && settings.showSOCVoltage;
         if (splitFanSOC) {
             // Split mode: top row = temps + DIVIDER + fan%, bottom row = temps only (or empty)
@@ -1858,7 +1862,7 @@ public:
                 skin_temperature_c[sizeof(skin_temperature_c) - 1] = '\0';
                 splitBotTemps_c[0] = '\0'; // empty bottom row
             }
-        } else if (settings.showComponentTemps && settings.showSocPcbSkinTemps && settings.showSideBySideTemps) {
+        } else if (settings.showComponentTemps && settings.showSocPcbSkinTemps && !settings.showStackedTemps) {
             // Side-by-side: "CPU GPU RAM  SOC PCB Skin fan"
             char socPcbSkin_c[48];
             snprintf(socPcbSkin_c, sizeof socPcbSkin_c,

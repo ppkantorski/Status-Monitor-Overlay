@@ -10,7 +10,7 @@ private:
     char Battery_pct_c[32] = "";
     char soc_temperature_c[64] = "";
     char skin_temperature_c[64] = "";
-    char componentTemps_c[64] = "";  // dual-row TMP component die temps: "CPU°C GPU°C RAM°C"
+    char componentTemps_c[64] = "";  // HOC component die temps: "CPU°C GPU°C RAM°C"
     char MINI_SOC_volt_c[16] = "";   // SOC voltage string, e.g. "1234 mV"
     char MINI_CPU_volt_c[16] = "";   // CPU voltage string, e.g. "1100 mV"
     char MINI_CPU_freq_c[16] = "";   // freq part for full CPU split mode e.g. "@1000.0"
@@ -143,7 +143,7 @@ public:
             const float charge = (float)_batteryChargeInfoFields.RawBatteryCharge / 1000.0f;
             snprintf(Battery_draw_c, sizeof(Battery_draw_c), "%.2f W", drawW);
             snprintf(Battery_pct_c,  sizeof(Battery_pct_c),  "%.1f%% [%s]", charge, remainingBatteryLife);
-            if (!settings.showSideBySideBAT) {
+            if (settings.showStackedBAT) {
                 if (!settings.invertBatteryDisplay)
                     snprintf(Battery_c, sizeof(Battery_c), "%.2f W", drawW);
                 else
@@ -376,14 +376,14 @@ public:
                 for (const auto& key : showKeys) {
                     if (key == "CPU") {
                         //dimensions = renderer->drawString("[100%,100%,100%,100%]@4444.4", false, 0, 0, fontsize, renderer->a(0x0000));
-                        const bool cpuSplit = settings.showCPUTemp && !settings.showSideBySideCPUTemp && settings.realVolts;
-                        const bool cpuFullSplit = settings.showFullCPU && !settings.showSideBySideFullCPU;
+                        const bool cpuSplit = settings.showCPUTemp && settings.showStackedCPUTemp && settings.realVolts;
+                        const bool cpuFullSplit = settings.showFullCPU && settings.showStackedFullCPU;
                         if (cpuFullSplit) {
                             const uint32_t bw = renderer->getTextDimensions("[100%,100%,100%,100%]", false, fontsize).first;
                             const uint32_t dw = renderer->getTextDimensions(ult::DIVIDER_SYMBOL, false, fontsize).first;
-                            // Stacked when SBS-cpu-temp is OFF and both volt+temp exist (mirrors CPU_SVOLT/STEMP):
+                            // Stacked when CPU-temp is inline=OFF and both volt+temp exist (mirrors CPU_SVOLT/STEMP):
                             // center=brackets, right-col=max(volt,temp). Otherwise inline after brackets.
-                            const bool cpuFullStacked = settings.showCPUTemp && !settings.showSideBySideCPUTemp && settings.realVolts;
+                            const bool cpuFullStacked = settings.showCPUTemp && settings.showStackedCPUTemp && settings.realVolts;
                             if (cpuFullStacked) {
                                 uint32_t rightColW = 0;
                                 if (settings.realVolts)
@@ -411,7 +411,7 @@ public:
                         }
 
                             // SBS CPU temp: add divider + temp (+ optional second div+volt when voltAtEnd)
-                            if (!cpuFullSplit && !cpuSplit && settings.showCPUTemp && settings.showSideBySideCPUTemp) {
+                            if (!cpuFullSplit && !cpuSplit && settings.showCPUTemp && !settings.showStackedCPUTemp) {
                                 const uint32_t div_w = renderer->getTextDimensions(ult::DIVIDER_SYMBOL, false, fontsize).first;
                                 const uint32_t temp_w = renderer->getTextDimensions("88°C", false, fontsize).first;
                                 if (settings.voltageAtEndCPU && settings.realVolts) {
@@ -425,10 +425,10 @@ public:
                     } else if (key == "GPU" || (key == "RAM" && settings.showRAMLoad && (R_SUCCEEDED(sysclkCheck) || R_SUCCEEDED(hocclkCheck)))) {
                         //dimensions = renderer->drawString("100.0%@4444.4", false, 0, 0, fontsize, renderer->a(0x0000));
                         // Split VDD2/VDDQ: width = row1 (VDD2 only), always wider than row2
-                        const bool splitVDDQ_A = key == "RAM" && !settings.showSideBySideVDDQ &&
+                        const bool splitVDDQ_A = key == "RAM" && settings.showStackedVDDQ &&
                                                  settings.realVolts && settings.showVDD2 &&
                                                  settings.showVDDQ && isMariko;
-                        const bool sideBySideVDDQ_A = key == "RAM" && settings.showSideBySideVDDQ &&
+                        const bool stackedVDDQ_A = key == "RAM" && !settings.showStackedVDDQ &&
                                                       settings.realVolts && settings.showVDD2 &&
                                                       settings.showVDDQ && isMariko;
                         if (!settings.showRAMLoadCPUGPU) {
@@ -438,7 +438,7 @@ public:
                                 width = settings.decimalVDD2
                                     ? renderer->getTextDimensions("100%@4444.44444.4 mV", false, fontsize).first
                                     : renderer->getTextDimensions("100%@4444.44444 mV", false, fontsize).first;
-                            } else if (sideBySideVDDQ_A) {
+                            } else if (stackedVDDQ_A) {
                                 width = settings.decimalVDD2
                                     ? renderer->getTextDimensions("100%@4444.44444.4 mV444 mV", false, fontsize).first
                                     : renderer->getTextDimensions("100%@4444.44444 mV444 mV", false, fontsize).first;
@@ -447,7 +447,7 @@ public:
                             }
                         } else {
                             // Helper: data-only width for load part
-                            const uint32_t sbs_data_w = settings.showSideBySideRAMLoad
+                            const uint32_t sbs_data_w = !settings.showStackedRAMLoad
                                 ? renderer->getTextDimensions("[100% 100%]100%@4444.4", false, fontsize).first
                                 : std::max(renderer->getTextDimensions("[100% 100%]", false, fontsize).first,
                                            renderer->getTextDimensions("100%@4444.4", false, fontsize).first);
@@ -457,7 +457,7 @@ public:
                                 width = settings.decimalVDD2
                                     ? sbs_data_w + renderer->getTextDimensions("4444.4 mV", false, fontsize).first
                                     : sbs_data_w + renderer->getTextDimensions("4444 mV", false, fontsize).first;
-                            } else if (sideBySideVDDQ_A) {
+                            } else if (stackedVDDQ_A) {
                                 // Renderer draws "DIV + VDD2 + DIV + VDDQ" — connector between rails in both
                                 // voltAtEnd ON and OFF paths. Proxy includes both DIVIDER_SYMBOLs.
                                 width = settings.decimalVDD2
@@ -469,7 +469,7 @@ public:
                         }
 
                          // SBS GPU temp: add divider + temp + "GPU" label (GPU key only)
-                        if (key == "GPU" && settings.showGPUTemp && settings.showSideBySideGPUTemp) {
+                        if (key == "GPU" && settings.showGPUTemp && !settings.showStackedGPUTemp) {
                             const uint32_t div_w = renderer->getTextDimensions(ult::DIVIDER_SYMBOL, false, fontsize).first;
                             width += div_w + renderer->getTextDimensions("88°C", false, fontsize).first;
                         }
@@ -480,7 +480,7 @@ public:
                             if (splitVDDQ_A) {
                                 // Split VDD2+VDDQ: check if the extended VDDQ row (with temp)
                                 // or the center row (SBS temp) overflows the VDD2 proxy width.
-                                if (!settings.showSideBySideRAMTemp) {
+                                if (settings.showStackedRAMTemp) {
                                     // non-SBS: temp goes on whichever row has it (BOT in normal, TOP in voltAtEnd).
                                     // Width must cover the wider of (DIV+vdd2+DIV+temp) and (DIV+vddq+DIV+temp).
                                     // Use actual vdd2_only_c/vddq_only_c to avoid underestimating wide values like "1100 mV"
@@ -491,7 +491,7 @@ public:
                                                                                   : renderer->getTextDimensions("88°C", false, fontsize).first;
                                     const uint32_t data_rw4b = !settings.showRAMLoadCPUGPU
                                         ? renderer->getTextDimensions("100%@4444.4", false, fontsize).first
-                                        : settings.showSideBySideRAMLoad
+                                        : !settings.showStackedRAMLoad
                                             ? renderer->getTextDimensions("[100% 100%]100%@4444.4", false, fontsize).first
                                             : std::max(renderer->getTextDimensions("[100% 100%]", false, fontsize).first,
                                                        renderer->getTextDimensions("100%@4444.4", false, fontsize).first);
@@ -506,7 +506,7 @@ public:
                                     const uint32_t sbs_dw4 = renderer->getTextDimensions(ult::DIVIDER_SYMBOL, false, fontsize).first;
                                     const uint32_t data_rw4 = !settings.showRAMLoadCPUGPU
                                         ? renderer->getTextDimensions("100%@4444.4", false, fontsize).first
-                                        : settings.showSideBySideRAMLoad
+                                        : !settings.showStackedRAMLoad
                                             ? renderer->getTextDimensions("[100% 100%]100%@4444.4", false, fontsize).first
                                             : std::max(renderer->getTextDimensions("[100% 100%]", false, fontsize).first,
                                                        renderer->getTextDimensions("100%@4444.4", false, fontsize).first);
@@ -517,7 +517,7 @@ public:
                             } else {
                                 // Not split VDD2+VDDQ: inline temp appended to volt
                                 // Skip if this is a ramTempSplit case (handled by proxy already)
-                                const bool rts_w = !settings.showSideBySideRAMTemp && settings.realVolts &&
+                                const bool rts_w = settings.showStackedRAMTemp && settings.realVolts &&
                                                    ((settings.showVDDQ && isMariko && !settings.showVDD2) ||
                                                     (settings.showVDD2 && !settings.showVDDQ));
 
@@ -528,7 +528,7 @@ public:
                         }
                     } else if (key == "RAM" && (!settings.showRAMLoad || (R_FAILED(sysclkCheck) && R_FAILED(hocclkCheck)))) {
                         //dimensions = renderer->drawString("44444444MB@4444.4", false, 0, 0, fontsize, renderer->a(0x0000));
-                        const bool splitVDDQ_B = !settings.showSideBySideVDDQ &&
+                        const bool splitVDDQ_B = settings.showStackedVDDQ &&
                                                  settings.realVolts && settings.showVDD2 &&
                                                  settings.showVDDQ && isMariko;
                         if (!settings.realVolts) {
@@ -563,7 +563,7 @@ public:
                             const uint32_t tmp_wB = renderer->getTextDimensions("88°C", false, fontsize).first;
                             if (splitVDDQ_B) {
                                 // Split VDD2+VDDQ: ensure VDDQ row (or center row SBS) is covered
-                                if (!settings.showSideBySideRAMTemp) {
+                                if (settings.showStackedRAMTemp) {
                                     // non-SBS: temp goes on whichever row has it (BOT in normal, TOP in voltAtEnd).
                                     // Width must cover the wider of (DIV+vdd2+DIV+temp) and (DIV+vddq+DIV+temp).
                                     // Use actual vdd2_only_c/vddq_only_c to avoid underestimating wide values.
@@ -584,7 +584,7 @@ public:
                                     width = std::max(width, ctr_row_w);
                                 }
                             } else {
-                                const bool rts_wB = !settings.showSideBySideRAMTemp && settings.realVolts &&
+                                const bool rts_wB = settings.showStackedRAMTemp && settings.realVolts &&
                                                     ((settings.showVDDQ && isMariko && !settings.showVDD2) ||
                                                      (settings.showVDD2 && !settings.showVDDQ));
 
@@ -618,7 +618,7 @@ public:
                                 width = renderer->getTextDimensions("88\u00B0C 88\u00B0C 88\u00B0C 100%", false, fontsize).first;
                             else
                                 width = renderer->getTextDimensions("88\u00B0C 88\u00B0C 88\u00B0C", false, fontsize).first;
-                        } else if (!settings.showSideBySideFanSOC &&
+                        } else if (settings.showStackedFanSOC &&
                                    settings.showFanPercentage &&
                                    settings.showSOCVoltage) {
                             // Split mode: fan on row 1, SOC volt on row 2 — width = max of both rows
@@ -642,7 +642,7 @@ public:
                             }
                         }
                                         } else if (key == "BAT") {
-                        if (!settings.showSideBySideBAT) {
+                        if (settings.showStackedBAT) {
                             const uint32_t draw_w = renderer->getTextDimensions("-44.44 W", false, fontsize).first;
                             const uint32_t pct_w  = renderer->getTextDimensions("100.0% [44:44]", false, fontsize).first;
                             width = std::max(draw_w, pct_w);
@@ -727,8 +727,8 @@ public:
                     labelText = "";
                     
                     if (key == "CPU" && !(flags & 1)) {
-                        const bool wantCPUFullSplit = settings.showFullCPU && !settings.showSideBySideFullCPU;
-                        const bool wantCPUSplit = !wantCPUFullSplit && settings.showCPUTemp && !settings.showSideBySideCPUTemp && settings.realVolts;
+                        const bool wantCPUFullSplit = settings.showFullCPU && settings.showStackedFullCPU;
+                        const bool wantCPUSplit = !wantCPUFullSplit && settings.showCPUTemp && settings.showStackedCPUTemp && settings.realVolts;
                         if (wantCPUFullSplit) {
                             labelLines.push_back("CPU_SFULL");
                             labelLines.push_back("CPU_SFREQ");
@@ -743,7 +743,7 @@ public:
                         }
                         flags |= 1;
                     } else if (key == "GPU" && !(flags & 2)) {
-                        const bool wantGPUSplit = settings.showGPUTemp && !settings.showSideBySideGPUTemp && settings.realVolts;
+                        const bool wantGPUSplit = settings.showGPUTemp && settings.showStackedGPUTemp && settings.realVolts;
                         if (wantGPUSplit) {
                             labelLines.push_back("GPU_SVOLT");
                             labelLines.push_back("GPU_STEMP");
@@ -754,16 +754,16 @@ public:
                         }
                         flags |= 2;
                     } else if (key == "RAM" && !(flags & 4)) {
-                        const bool wantSplitVDDQ = !settings.showSideBySideVDDQ &&
+                        const bool wantSplitVDDQ = settings.showStackedVDDQ &&
                                                    settings.realVolts && settings.showVDD2 &&
                                                    settings.showVDDQ && isMariko;
                         // ramTempSplit: single volt rail (VDDQ-only Mariko, or VDD2-only any platform), RAM temp non-SBS
-                        const bool wantRAMTempSplit = settings.showRAMTemp && !settings.showSideBySideRAMTemp &&
+                        const bool wantRAMTempSplit = settings.showRAMTemp && settings.showStackedRAMTemp &&
                                                       !wantSplitVDDQ && settings.realVolts &&
                                                       ((settings.showVDDQ && isMariko && !settings.showVDD2) ||
                                                        (settings.showVDD2 && !settings.showVDDQ));
                         const bool wantRAMLoadSplit = settings.showRAMLoad && settings.showRAMLoadCPUGPU &&
-                                                      !settings.showSideBySideRAMLoad &&
+                                                      settings.showStackedRAMLoad &&
                                                       (R_SUCCEEDED(sysclkCheck) || R_SUCCEEDED(hocclkCheck));
 
                         if (wantRAMLoadSplit) {
@@ -791,7 +791,7 @@ public:
                         flags |= 8;
                     } else if (key == "TMP" && !(flags & 16)) {
                         // Split mode: fan on row 1, SOC volt on row 2 (requires both fan AND volt active)
-                        const bool wantSplit = !settings.showSideBySideFanSOC &&
+                        const bool wantSplit = settings.showStackedFanSOC &&
                                                settings.showFanPercentage &&
                                                settings.realVolts && settings.showSOCVoltage;
                         if (wantSplit) {
@@ -799,7 +799,7 @@ public:
                             labelLines.push_back("TMP_SFAN");
                             labelLines.push_back("TMP_SVOLT");
                         } else if (settings.showComponentTemps && settings.showSocPcbSkinTemps) {
-                            // Dual-row mode: TMP expands to two rows
+                            // HOC mode: TMP expands to two rows
                             labelLines.push_back("TMP_TOP");
                             labelLines.push_back("TMP_BOT");
                         } else if (settings.showComponentTemps) {
@@ -813,7 +813,7 @@ public:
                         }
                         flags |= 16;
                     } else if ((key == "BAT" || key == "DRAW") && !(flags & 32)) {
-                        if (!settings.showSideBySideBAT) {
+                        if (settings.showStackedBAT) {
                             labelLines.push_back("BAT_STOP");
                             labelLines.push_back("BAT_SBOT");
                             entryCount += 2;
@@ -863,28 +863,28 @@ public:
                 
                 // Use the actual entry count for height calculation
                 cachedHeight = ((fontsize + settings.spacing) * actualEntryCount) + settings.spacing + topPadding + bottomPadding;
-                // Two-row blocks (dual-row TMP, TMP split, RAM split) use half inter-row spacing, trim box height
+                // Two-row blocks (HOC, TMP split, RAM split) use half inter-row spacing, trim box height
                 if ((settings.showComponentTemps && settings.showSocPcbSkinTemps) ||
-                    (!settings.showSideBySideFanSOC && settings.showFanPercentage &&
+                    (settings.showStackedFanSOC && settings.showFanPercentage &&
                      settings.realVolts && settings.showSOCVoltage))
                     cachedHeight -= settings.spacing / 2;
-                if (!settings.showSideBySideVDDQ && settings.realVolts &&
+                if (settings.showStackedVDDQ && settings.realVolts &&
                     settings.showVDD2 && settings.showVDDQ && isMariko)
                     cachedHeight -= settings.spacing / 2;
                 // CPU/GPU temp split contributes one compressed row per split
                 {
-                    const bool wantCPUFullSplit = settings.showFullCPU && !settings.showSideBySideFullCPU;
-                    const bool wantCPUSplit = !wantCPUFullSplit && settings.showCPUTemp && !settings.showSideBySideCPUTemp && settings.realVolts;
-                    const bool wantGPUSplit = settings.showGPUTemp && !settings.showSideBySideGPUTemp && settings.realVolts;
-                    const bool wantRAMTempSplit = settings.showRAMTemp && !settings.showSideBySideRAMTemp &&
+                    const bool wantCPUFullSplit = settings.showFullCPU && settings.showStackedFullCPU;
+                    const bool wantCPUSplit = !wantCPUFullSplit && settings.showCPUTemp && settings.showStackedCPUTemp && settings.realVolts;
+                    const bool wantGPUSplit = settings.showGPUTemp && settings.showStackedGPUTemp && settings.realVolts;
+                    const bool wantRAMTempSplit = settings.showRAMTemp && settings.showStackedRAMTemp &&
                                                   settings.realVolts &&
                                                   ((settings.showVDDQ && isMariko && !settings.showVDD2) ||
                                                    (settings.showVDD2 && !settings.showVDDQ));
 
-                    const bool wantVDDQSplit = !settings.showSideBySideVDDQ && settings.realVolts && settings.showVDD2 && settings.showVDDQ && isMariko;
+                    const bool wantVDDQSplit = settings.showStackedVDDQ && settings.realVolts && settings.showVDD2 && settings.showVDDQ && isMariko;
                     // RAM load split takes highest priority — when active, suppress VDDQ and ramTemp height deductions for RAM
                     const bool wantRAMLoadSplit_h = settings.showRAMLoad && settings.showRAMLoadCPUGPU &&
-                                                    !settings.showSideBySideRAMLoad;
+                                                    settings.showStackedRAMLoad;
                     for (const auto& k : showKeys) {
                         if (k == "CPU" && (wantCPUSplit || wantCPUFullSplit)) { cachedHeight -= settings.spacing / 2; break; }
                     }
@@ -897,7 +897,7 @@ public:
                         }
                     }
                     // BAT split: two-row block reduces height by spacing/2
-                    if (!settings.showSideBySideBAT) {
+                    if (settings.showStackedBAT) {
                         for (const auto& k : showKeys) {
                             if (k == "BAT" || k == "DRAW") { cachedHeight -= settings.spacing / 2; break; }
                         }
@@ -1045,7 +1045,7 @@ public:
 
                 // Draw label (centered in label region)
                 // TMP_TOP/TMP_BOT/TMP_COMP/TMP_SFAN/TMP_SVOLT: skip default label draw (we draw "TMP" manually in the data section)
-                const bool isTmpDualRow = (labelIndex < labelLines.size() &&
+                const bool isTmpHocRow = (labelIndex < labelLines.size() &&
                     (labelLines[labelIndex] == "TMP_TOP" || labelLines[labelIndex] == "TMP_BOT" ||
                      labelLines[labelIndex] == "TMP_COMP" ||
                      labelLines[labelIndex] == "TMP_SFAN" || labelLines[labelIndex] == "TMP_SVOLT" ||
@@ -1056,7 +1056,7 @@ public:
                      labelLines[labelIndex] == "RAM_SVDDQ_ONLY" || labelLines[labelIndex] == "RAM_STEMP" ||
                      labelLines[labelIndex] == "BAT_STOP" || labelLines[labelIndex] == "BAT_SBOT" ||
                      labelLines[labelIndex] == "RAM_SLOAD_TOP" || labelLines[labelIndex] == "RAM_SLOAD_BOT"));
-                if (!isTmpDualRow && settings.showLabels && !labelLines[labelIndex].empty()) {
+                if (!isTmpHocRow && settings.showLabels && !labelLines[labelIndex].empty()) {
                     labelWidth = renderer->getTextDimensions(labelLines[labelIndex], false, fontsize).first;
                     labelCenterX = cachedBaseX + (margin / 2) - (labelWidth / 2);
                     renderer->drawString(labelLines[labelIndex], false, labelCenterX + _frameOffsetX + clippingOffsetX, currentY + frameOffsetY + clippingOffsetY, fontsize, settings.catColor);
@@ -1188,7 +1188,7 @@ public:
                         renderer->drawStringWithColoredSections(currentLine, false, specialChars, baseX, baseY, fontsize, settings.textColor, settings.separatorColor);
                     }
                 } else if (labelIndex < labelLines.size() && labelLines[labelIndex] == "TMP_TOP") {
-                    // Dual-row TMP: top row = component die temps (CPU/GPU/RAM) with gradient
+                    // HOC TMP: top row = component die temps (CPU/GPU/RAM) with gradient
                     int currentX = baseX;
                     size_t pos = 0;
                     bool parseSuccess = true;
@@ -1264,7 +1264,7 @@ public:
                     }
 
                 } else if (labelIndex < labelLines.size() && labelLines[labelIndex] == "TMP_BOT") {
-                    // Dual-row TMP: bottom row = SOC/PCB/Skin temps, shifted up by spacing/2
+                    // HOC TMP: bottom row = SOC/PCB/Skin temps, shifted up by spacing/2
                     const int botY = baseY - (int)settings.spacing / 2;
                     int currentX = baseX;
                     size_t pos = 0;
@@ -1362,20 +1362,21 @@ public:
                         renderer->drawString(ramLbl, false, ramLblX + _frameOffsetX + clippingOffsetX,
                             ramLoadCtrY, fontsize, settings.catColor);
                     }
-                    // Draw [cpu% gpu%] at baseY
-                    renderer->drawString(currentLine, false, baseX, baseY, fontsize, settings.textColor);
-
-                    // Compute shared volt column X = baseX + max(topRowW, botRowW)
+                    // Compute widths first so we can right-align the top row
                     const uint32_t topW = renderer->getTextDimensions(currentLine, false, fontsize).first;
                     const uint32_t botW = MINI_RAM_load_bot_c[0]
                         ? renderer->getTextDimensions(std::string(MINI_RAM_load_bot_c), false, fontsize).first
                         : 0;
                     ramLoadVoltColX = baseX + (int)std::max(topW, botW);
 
+                    // Draw [cpu% gpu%] right-aligned so its right edge matches total@freq
+                    const int topDrawX = baseX + (int)std::max(topW, botW) - (int)topW;
+                    renderer->drawString(currentLine, false, topDrawX, baseY, fontsize, settings.textColor);
+
                     // Determine right-side mode (mirrors label-building conditions)
-                    const bool rSplitVDDQ = !settings.showSideBySideVDDQ && settings.realVolts &&
+                    const bool rSplitVDDQ = settings.showStackedVDDQ && settings.realVolts &&
                                             settings.showVDD2 && settings.showVDDQ && isMariko;
-                    const bool rSplitTemp = settings.showRAMTemp && !settings.showSideBySideRAMTemp &&
+                    const bool rSplitTemp = settings.showRAMTemp && settings.showStackedRAMTemp &&
                                             !rSplitVDDQ && settings.realVolts &&
                                             ((settings.showVDDQ && isMariko && !settings.showVDD2) ||
                                              (settings.showVDD2 && !settings.showVDDQ));
@@ -1388,7 +1389,7 @@ public:
                             ramLoadCtrY, fontsize, settings.separatorColor);
                         const uint32_t sbs_dw = renderer->getTextDimensions(ult::DIVIDER_SYMBOL, false, fontsize).first;
                         if (settings.showRAMTemp && mini_ram_temp_c[0] && settings.voltageAtEndRAM &&
-                            settings.showSideBySideRAMTemp) {
+                            !settings.showStackedRAMTemp) {
                             // VoltAtEnd + SBS temp: temp at center Y BEFORE the volts in its own column.
                             // Layout mirrors SVDD2 lines 1599-1608:
                             //   center connector | temp | right-fork connector | DIV + VDD2 (top) / DIV + VDDQ (bot)
@@ -1415,7 +1416,7 @@ public:
                                     specialChars, rx, baseY, fontsize, settings.textColor, settings.separatorColor);
                             }
                         } else if (settings.showRAMTemp && mini_ram_temp_c[0] && settings.voltageAtEndRAM &&
-                            !settings.showSideBySideRAMTemp) {
+                            settings.showStackedRAMTemp) {
                             // VoltAtEnd + non-SBS temp: DIV+temp+DIV+VDD2 on TOP row (mirroring SVDD2 lines 1618-1631
                             // but with an explicit left DIVIDER before temp so it appears in its own column).
                             // BOT row will then draw VDDQ only (no temp) at ramLoadVoltColX.
@@ -1483,9 +1484,9 @@ public:
                     int afterBotX = ramLoadVoltColX ? ramLoadVoltColX : baseX;
 
                     // Same right-side mode determination as TOP
-                    const bool rSplitVDDQ = !settings.showSideBySideVDDQ && settings.realVolts &&
+                    const bool rSplitVDDQ = settings.showStackedVDDQ && settings.realVolts &&
                                             settings.showVDD2 && settings.showVDDQ && isMariko;
-                    const bool rSplitTemp = settings.showRAMTemp && !settings.showSideBySideRAMTemp &&
+                    const bool rSplitTemp = settings.showRAMTemp && settings.showStackedRAMTemp &&
                                             !rSplitVDDQ && settings.realVolts &&
                                             ((settings.showVDDQ && isMariko && !settings.showVDD2) ||
                                              (settings.showVDD2 && !settings.showVDDQ));
@@ -1503,7 +1504,7 @@ public:
                             renderer->drawStringWithColoredSections(std::string(vddq_only_c), false,
                                 specialChars, rx, ramLoadBotY, fontsize, settings.textColor, settings.separatorColor);
                             // Non-SBS temp appended after VDDQ at BOT (skip when voltAtEnd — temp on TOP)
-                            if (settings.showRAMTemp && !settings.showSideBySideRAMTemp &&
+                            if (settings.showRAMTemp && settings.showStackedRAMTemp &&
                                 !settings.voltageAtEndRAM && mini_ram_temp_c[0]) {
                                 rx += (int)renderer->getTextDimensions(std::string(vddq_only_c), false, fontsize).first;
                                 rx += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, rx, ramLoadBotY,
@@ -1517,7 +1518,7 @@ public:
                         // Normal SBS:    temp after max(vdd2,vddq) at ramLoadCtrY
                         // VoltAtEnd+SBS: temp was already drawn at center Y BEFORE the volts in TOP row
                         //                (which also shifted ramLoadVoltColX) — skip here.
-                        if (settings.showRAMTemp && settings.showSideBySideRAMTemp && mini_ram_temp_c[0] &&
+                        if (settings.showRAMTemp && !settings.showStackedRAMTemp && mini_ram_temp_c[0] &&
                             !settings.voltageAtEndRAM) {
                             const uint32_t vdd2_rw = vdd2_only_c[0]
                                 ? renderer->getTextDimensions(std::string(vdd2_only_c), false, fontsize).first : 0;
@@ -1656,7 +1657,7 @@ public:
                     if (settings.showRAMTemp && mini_ram_temp_c[0]) {
                         const uint32_t sbs_dw = (int)renderer->getTextDimensions(ult::DIVIDER_SYMBOL, false, fontsize).first;
                         const int rtv = atoi(mini_ram_temp_c);
-                        if (settings.showSideBySideRAMTemp) {
+                        if (!settings.showStackedRAMTemp) {
                             if (settings.voltageAtEndRAM) {
                                 // VoltAtEnd+SBS: temp at center starting at ramSplitVoltColX+sbs_dw
                                 // (left connector already drawn is the divider before temp)
@@ -1693,10 +1694,10 @@ public:
                         }
                     }
                     // Update shared column X so RAM_SVDDQ aligns with VDD2
-                    if (settings.voltageAtEndRAM && settings.showRAMTemp && settings.showSideBySideRAMTemp)
+                    if (settings.voltageAtEndRAM && settings.showRAMTemp && !settings.showStackedRAMTemp)
                         ramSplitVoltColX = vdd2StartX;
                     // VDD2 at top row (baseY) — skip if VoltAtEnd+!SBS (already drawn above)
-                    if (vdd2_only_c[0] && vdd2StartX != -1 && !(settings.voltageAtEndRAM && settings.showRAMTemp && mini_ram_temp_c[0] && !settings.showSideBySideRAMTemp)) {
+                    if (vdd2_only_c[0] && vdd2StartX != -1 && !(settings.voltageAtEndRAM && settings.showRAMTemp && mini_ram_temp_c[0] && settings.showStackedRAMTemp)) {
                         int rx = vdd2StartX;
                         rx += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, rx, baseY,
                             fontsize, settings.separatorColor).first;
@@ -1713,7 +1714,7 @@ public:
                         renderer->drawStringWithColoredSections(std::string(vddq_only_c), false,
                             specialChars, rx, svddqY, fontsize, settings.textColor, settings.separatorColor);
                         // non-SBS: RAM temp appended after VDDQ at bottom row (skip when VoltAtEnd — temp is drawn on top row instead)
-                        if (settings.showRAMTemp && !settings.showSideBySideRAMTemp && !settings.voltageAtEndRAM && mini_ram_temp_c[0]) {
+                        if (settings.showRAMTemp && settings.showStackedRAMTemp && !settings.voltageAtEndRAM && mini_ram_temp_c[0]) {
                             rx += (int)renderer->getTextDimensions(std::string(vddq_only_c), false, fontsize).first;
                             rx += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, rx, svddqY,
                                 fontsize, settings.separatorColor).first;
@@ -1794,7 +1795,7 @@ public:
                     // cpuFullStacked=true (SBS-cpu-temp OFF + realVolts + showCPUTemp):
                     //   mirrors CPU_SVOLT exactly — brackets on center row, volt (or temp if voltAtEnd) at baseY top.
                     // cpuFullStacked=false: brackets on baseY (top), volt+temp inline after brackets.
-                    const bool cpuFullStacked = settings.showCPUTemp && !settings.showSideBySideCPUTemp && settings.realVolts;
+                    const bool cpuFullStacked = settings.showCPUTemp && settings.showStackedCPUTemp && settings.realVolts;
                     const int cpuFullCenterY = baseY + ((int)fontsize + (int)settings.spacing / 2) / 2;
                     cpuFullSplitBracketsW = (int)renderer->getTextDimensions(currentLine, false, fontsize).first;
                     const std::string cpuLbl = "CPU";
@@ -1896,7 +1897,7 @@ public:
                     // Full CPU freq split — row 2.
                     // Freq right-aligned so right edge lines up with ']' of brackets above.
                     // In stacked mode (SBS-cpu-temp OFF): also draws the bottom volt/temp to the right of the volt column.
-                    const bool cpuFullStacked = settings.showCPUTemp && !settings.showSideBySideCPUTemp && settings.realVolts;
+                    const bool cpuFullStacked = settings.showCPUTemp && settings.showStackedCPUTemp && settings.realVolts;
                     const int freqY = baseY - (int)settings.spacing / 2;
                     const int freqW = currentLine.empty() ? 0 : (int)renderer->getTextDimensions(currentLine, false, fontsize).first;
                     // Right edge of brackets = baseX + cpuFullSplitBracketsW
@@ -2075,14 +2076,14 @@ public:
 
                 } else if (labelIndex < labelLines.size() && labelLines[labelIndex] == "TMP_SFAN") {
                     // Split fan row: temps + fan on row 1; "TMP" label drawn manually.
-                    // Dual-row split: temps at baseY (top row), label centered between both rows.
+                    // HOC split: temps at baseY (top row), label centered between both rows.
                     // Single-group split: temps+label centered in the 2-row block; fan at baseY (top row).
-                    const bool sfanIsDual = settings.showComponentTemps && settings.showSocPcbSkinTemps;
+                    const bool sfanIsHoc = settings.showComponentTemps && settings.showSocPcbSkinTemps;
                     const bool sfanHighGrad = settings.showComponentTemps;
-                    const int sfanTempY = sfanIsDual
+                    const int sfanTempY = sfanIsHoc
                         ? baseY
                         : (baseY + ((int)fontsize + (int)settings.spacing / 2) / 2);
-                    const int sfanLabelY = sfanIsDual
+                    const int sfanLabelY = sfanIsHoc
                         ? (baseY + ((int)fontsize + (int)settings.spacing / 2) / 2)
                         : sfanTempY;
                     int currentX = baseX;
@@ -2114,7 +2115,7 @@ public:
                         renderer->drawStringWithColoredSections(currentLine, false, specialChars, baseX, sfanTempY, fontsize, settings.textColor, settings.separatorColor);
                         currentX = baseX + (int)renderer->getTextDimensions(currentLine, false, fontsize).first;
                     }
-                    // Draw "TMP" label centered (isTmpDualRow skips generic label draw)
+                    // Draw "TMP" label centered (isTmpHocRow skips generic label draw)
                     if (settings.showLabels) {
                         const std::string tmpLbl = "TMP";
                         const uint32_t tmpLblW = renderer->getTextDimensions(tmpLbl, false, fontsize).first;
@@ -2128,7 +2129,7 @@ public:
 
                     // Connect center divider
                     renderer->drawString(ult::DIVIDER_SYMBOL, false, sfanFanColX,
-                        sfanIsDual ? sfanLabelY : sfanTempY, fontsize, settings.separatorColor);
+                        sfanIsHoc ? sfanLabelY : sfanTempY, fontsize, settings.separatorColor);
 
                     // Draw fan: voltAtEnd OFF=bottom row Y (swapped), voltAtEnd ON=baseY (top, normal)
                     if (settings.showFanPercentage) {
@@ -2146,7 +2147,7 @@ public:
                     }
                 } else if (labelIndex < labelLines.size() && labelLines[labelIndex] == "TMP_SVOLT") {
                     // Split volt row: row 2 draws optional SOC/PCB/Skin temps then SOC voltage.
-                    // Dual-row split (hasTemps): mirrors TMP_BOT with spacing/2 compression.
+                    // HOC split (hasTemps): mirrors TMP_BOT with spacing/2 compression.
                     // Single-group (!hasTemps): volt drawn at sfanFanColX (same X column as fan above).
                     const bool hasTemps = currentLine.find("\u00B0") != std::string::npos;
                     const int svoltY = baseY - (int)settings.spacing / 2;
@@ -2187,7 +2188,7 @@ public:
                         renderer->drawStringWithColoredSections(std::string(MINI_SOC_volt_c), false, specialChars,
                             voltDivX, voltDrawY, fontsize, settings.textColor, settings.separatorColor);
                     }
-                    // Both dual-row and single-group split use spacing/2 compression: compensate currentY
+                    // Both HOC and single-group split use spacing/2 compression: compensate currentY
                     currentY -= (int)settings.spacing / 2;
                 } else if (labelIndex < labelLines.size() && labelLines[labelIndex] == "MEM") {
                     // MEM memory rendering with gradient color
@@ -2225,7 +2226,7 @@ public:
                     renderer->drawStringWithColoredSections(currentLine, false, specialChars, baseX, baseY, fontsize, settings.textColor, settings.separatorColor);
                     int afterX = baseX + (int)renderer->getTextDimensions(currentLine, false, fontsize).first;
                     if (labelIndex < labelLines.size() && labelLines[labelIndex] == "CPU" &&
-                        settings.showCPUTemp && settings.showSideBySideCPUTemp && mini_cpu_temp_c[0]) {
+                        settings.showCPUTemp && !settings.showStackedCPUTemp && mini_cpu_temp_c[0]) {
                         afterX += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, afterX, baseY, fontsize, settings.separatorColor).first;
                         const int tv = atoi(mini_cpu_temp_c);
                         renderer->drawString(std::string(mini_cpu_temp_c), false, afterX, baseY, fontsize,
@@ -2237,7 +2238,7 @@ public:
                         }
                     }
                     if (labelIndex < labelLines.size() && labelLines[labelIndex] == "GPU" &&
-                        settings.showGPUTemp && settings.showSideBySideGPUTemp && mini_gpu_temp_c[0]) {
+                        settings.showGPUTemp && !settings.showStackedGPUTemp && mini_gpu_temp_c[0]) {
                         afterX += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, afterX, baseY, fontsize, settings.separatorColor).first;
                         const int tv = atoi(mini_gpu_temp_c);
                         renderer->drawString(std::string(mini_gpu_temp_c), false, afterX, baseY, fontsize,
@@ -2367,7 +2368,7 @@ public:
             if (settings.showFullCPU) {
                 const uint16_t _cpuHz = (settings.realFrequencies && realCPU_Hz) ? realCPU_Hz / 1000000 : CPU_Hz / 1000000;
                 const uint8_t  _cpuHz10 = (settings.realFrequencies && realCPU_Hz) ? (realCPU_Hz / 100000) % 10 : (CPU_Hz / 100000) % 10;
-                if (settings.showSideBySideFullCPU) {
+                if (!settings.showStackedFullCPU) {
                     // Inline mode (default): [23%,29%,0%,32%]@1000.0
                     snprintf(MINI_CPU_compressed_c, sizeof(MINI_CPU_compressed_c),
                         "[%s %s %s %s]@%hu.%hhu",
@@ -2478,7 +2479,7 @@ public:
                         const uint32_t useHz = (settings.realFrequencies && realRAM_Hz) ? realRAM_Hz : (uint32_t)RAM_Hz;
                         const unsigned ramMHz   = useHz / 1000000;
                         const unsigned ramMHz10 = (useHz / 100000) % 10;
-                        if (settings.showSideBySideRAMLoad) {
+                        if (!settings.showStackedRAMLoad) {
                             // SBS: [cpu% gpu%]total%@freq on one line
                             snprintf(MINI_RAM_var_compressed_c, sizeof(MINI_RAM_var_compressed_c),
                                      "[%u%% %u%%]%u%%@%u.%u",
@@ -2619,7 +2620,7 @@ public:
     
             if (isActive("TMP")) {
                 if (settings.showComponentTemps && settings.showSocPcbSkinTemps) {
-                    // Dual-row mode: top row = die temps, bottom row = board temps (fan shown centered)
+                    // HOC mode: top row = die temps, bottom row = board temps (fan shown centered)
                     snprintf(componentTemps_c, sizeof(componentTemps_c),
                         "%d\u00B0C %d\u00B0C %d\u00B0C",
                         (int)(componentCPU_mC / 1000),
@@ -2642,7 +2643,7 @@ public:
                     // Only SOC/PCB/Skin temps (default single-row, or split row 1)
                     componentTemps_c[0] = '\0';
                     // In split mode the fan is drawn by the renderer; strip it from the data string
-                    const bool splitFanSOC = !settings.showSideBySideFanSOC &&
+                    const bool splitFanSOC = settings.showStackedFanSOC &&
                                              settings.showFanPercentage &&
                                              settings.realVolts && settings.showSOCVoltage;
                     if (!splitFanSOC && settings.showFanPercentage) {
@@ -2753,7 +2754,7 @@ public:
                 const float charge = (float)_batteryChargeInfoFields.RawBatteryCharge / 1000.0f;
                 snprintf(Battery_draw_c, sizeof(Battery_draw_c), "%.2f W", drawW);
                 snprintf(Battery_pct_c,  sizeof(Battery_pct_c),  "%.1f%% [%s]", charge, remainingBatteryLife);
-                if (!settings.showSideBySideBAT) {
+                if (settings.showStackedBAT) {
                     if (!settings.invertBatteryDisplay)
                         snprintf(Battery_c, sizeof(Battery_c), "%.2f W", drawW);
                     else
@@ -2776,8 +2777,8 @@ public:
         for (const auto& key : showKeys) {
             if (key == "CPU" && !(flags & 1)) {
                 if (Temp[0]) strcat(Temp, "\n");
-                const bool cpuFullSplit_v = settings.showFullCPU && !settings.showSideBySideFullCPU;
-                const bool cpuSplit_v = !cpuFullSplit_v && settings.showCPUTemp && !settings.showSideBySideCPUTemp && settings.realVolts;
+                const bool cpuFullSplit_v = settings.showFullCPU && settings.showStackedFullCPU;
+                const bool cpuSplit_v = !cpuFullSplit_v && settings.showCPUTemp && settings.showStackedCPUTemp && settings.realVolts;
                 if (cpuFullSplit_v) {
                     // Two rows: brackets (top) then freq (bottom, right-aligned to bracket right edge)
                     strcat(Temp, MINI_CPU_compressed_c);
@@ -2799,7 +2800,7 @@ public:
             }
             else if (key == "GPU" && !(flags & 2)) {
                 if (Temp[0]) strcat(Temp, "\n");
-                const bool gpuSplit_v = settings.showGPUTemp && !settings.showSideBySideGPUTemp && settings.realVolts;
+                const bool gpuSplit_v = settings.showGPUTemp && settings.showStackedGPUTemp && settings.realVolts;
                 if (gpuSplit_v) {
                     strcat(Temp, MINI_GPU_Load_c);
                     strcat(Temp, "\n");
@@ -2816,15 +2817,15 @@ public:
             }
             else if (key == "RAM" && !(flags & 4)) {
                 if (Temp[0]) strcat(Temp, "\n");
-                const bool splitVDDQ_t = !settings.showSideBySideVDDQ &&
+                const bool splitVDDQ_t = settings.showStackedVDDQ &&
                                         settings.realVolts && settings.showVDD2 &&
                                         settings.showVDDQ && isMariko;
-                const bool ramTempSplit_t = settings.showRAMTemp && !settings.showSideBySideRAMTemp &&
+                const bool ramTempSplit_t = settings.showRAMTemp && settings.showStackedRAMTemp &&
                                             !splitVDDQ_t && settings.realVolts &&
                                             ((settings.showVDDQ && isMariko && !settings.showVDD2) ||
                                              (settings.showVDD2 && !settings.showVDDQ));
                 const bool ramLoadSplit_t = settings.showRAMLoad && settings.showRAMLoadCPUGPU &&
-                                            !settings.showSideBySideRAMLoad &&
+                                            settings.showStackedRAMLoad &&
                                             (R_SUCCEEDED(sysclkCheck) || R_SUCCEEDED(hocclkCheck));
 
                 if (ramLoadSplit_t) {
@@ -2847,7 +2848,7 @@ public:
                 } else {
                     strcat(Temp, MINI_RAM_var_compressed_c);
                     if (settings.realVolts && MINI_RAM_volt_c[0] &&
-                        !(settings.voltageAtEndRAM && settings.showRAMTemp && settings.showSideBySideRAMTemp)) {
+                        !(settings.voltageAtEndRAM && settings.showRAMTemp && !settings.showStackedRAMTemp)) {
                         strcat(Temp, "");
                         strcat(Temp, MINI_RAM_volt_c);
                     }
@@ -2867,7 +2868,7 @@ public:
             else if (key == "TMP" && !(flags & 16)) {
                 if (Temp[0]) strcat(Temp, "\n");
                 // Determine if split mode is active (fan on row 1, volt on row 2)
-                const bool splitFanSOC = !settings.showSideBySideFanSOC &&
+                const bool splitFanSOC = settings.showStackedFanSOC &&
                                          settings.showFanPercentage &&
                                          settings.realVolts && settings.showSOCVoltage;
                 if (splitFanSOC) {
@@ -2903,7 +2904,7 @@ public:
             }
             else if ((key == "BAT" || key == "DRAW") && !(flags & 32)) {
                 if (Temp[0]) strcat(Temp, "\n");
-                if (!settings.showSideBySideBAT) {
+                if (settings.showStackedBAT) {
                     // Split: top row = Battery_c (draw or pct per invert), bottom = the other
                     const char* botStr = settings.invertBatteryDisplay ? Battery_draw_c : Battery_pct_c;
                     strcat(Temp, Battery_c);

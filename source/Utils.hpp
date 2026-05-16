@@ -1718,18 +1718,18 @@ struct MiniSettings {
     bool realVolts;
     bool showLabels;
     bool showFullCPU;
-    bool showSideBySideFullCPU; // true = [brackets]@freq inline (default); false = brackets top, freq bottom
+    bool showStackedFullCPU; // true = brackets top, freq bottom (stacked); false = [brackets]@freq inline
     bool showFullResolution;
     bool showFanPercentage;
     bool showSOCVoltage;
-    bool showSideBySideFanSOC;  // true = fan+volt inline (default); false = fan row1, volt row2
-    bool showSideBySideVDDQ;   // true = VDD2+VDDQ inline (default); false = VDD2 row1, VDDQ row2 (Mariko only)
+    bool showStackedFanSOC;  // true = fan row1, volt row2 (stacked); false = fan+volt inline
+    bool showStackedVDDQ;   // true = VDD2 row1, VDDQ row2 stacked (Mariko only); false = VDD2+VDDQ inline
     bool showCPUTemp;           // show CPU die temp below CPU volt
     bool showGPUTemp;           // show GPU die temp below GPU volt
     bool showRAMTemp;           // show RAM die temp (next to VDDQ)
-    bool showSideBySideCPUTemp; // true = CPU temp inline SBS; false = split row below volt
-    bool showSideBySideGPUTemp; // true = GPU temp inline SBS; false = split row below volt
-    bool showSideBySideRAMTemp; // true = RAM temp inline SBS; false = next to VDDQ
+    bool showStackedCPUTemp; // true = split row below volt (stacked); false = CPU temp inline
+    bool showStackedGPUTemp; // true = split row below volt (stacked); false = GPU temp inline
+    bool showStackedRAMTemp; // true = stacked separate row; false = RAM temp inline
     bool voltageAtEndCPU;       // true = volt at end (below/after temp; swap positions)
     bool voltageAtEndGPU;       // true = volt at end
     bool voltageAtEndRAM;       // true = volt at end
@@ -1753,11 +1753,11 @@ struct MiniSettings {
     std::string show;
     bool showRAMLoad;
     bool showRAMLoadCPUGPU;
-    bool showSideBySideRAMLoad; // true = [cpu% gpu%]total%@freq inline; false = split rows
+    bool showStackedRAMLoad; // true = split rows (stacked); false = [cpu% gpu%]total%@freq inline
     bool showComponentTemps;    // dual-row TMP: show CPU/GPU/RAM die temps row
     bool showSocPcbSkinTemps;   // show SOC/PCB/Skin temps row (default: true)
     bool invertBatteryDisplay;
-    bool showSideBySideBAT;   // true = draw+pct inline (default); false = draw on top, pct on bottom (or vice versa)
+    bool showStackedBAT;   // true = draw on top, pct on bottom stacked; false = draw+pct inline
     bool disableScreenshots;
     //int setPos;
     int frameOffsetX;
@@ -1770,17 +1770,17 @@ struct MicroSettings {
     bool realFrequencies;
     bool realVolts; 
     bool showFullCPU;
-    bool showSideBySideFullCPU; // true = [brackets]@freq inline (default); false = brackets top, freq bottom
+    bool showStackedFullCPU; // true = brackets top, freq bottom (stacked); false = [brackets]@freq inline
     bool showFullResolution;
     bool showSOCVoltage;
-    bool showSideBySideFanSOC;  // true = fan+volt inline (default); false = fan row1, volt row2
-    bool showSideBySideVDDQ;   // true = VDD2+VDDQ inline (default); false = VDD2 row1, VDDQ row2 (Mariko only)
+    bool showStackedFanSOC;  // true = fan row1, volt row2 (stacked); false = fan+volt inline
+    bool showStackedVDDQ;   // true = VDD2 row1, VDDQ row2 stacked (Mariko only); false = VDD2+VDDQ inline
     bool showCPUTemp;           // show CPU die temp below CPU volt
     bool showGPUTemp;           // show GPU die temp below GPU volt
     bool showRAMTemp;           // show RAM die temp (next to VDDQ)
-    bool showSideBySideCPUTemp; // true = CPU temp inline SBS; false = split row below volt
-    bool showSideBySideGPUTemp; // true = GPU temp inline SBS; false = split row below volt
-    bool showSideBySideRAMTemp; // true = RAM temp inline SBS; false = next to VDDQ
+    bool showStackedCPUTemp; // true = split row below volt (stacked); false = CPU temp inline
+    bool showStackedGPUTemp; // true = split row below volt (stacked); false = GPU temp inline
+    bool showStackedRAMTemp; // true = stacked separate row; false = RAM temp inline
     bool voltageAtEndCPU;       // true = volt at end (below/after temp; swap positions)
     bool voltageAtEndGPU;       // true = volt at end
     bool voltageAtEndRAM;       // true = volt at end
@@ -1794,7 +1794,7 @@ struct MicroSettings {
     bool useIntegerFPS;
     std::string dtcFormat;
     bool invertBatteryDisplay;
-    bool showSideBySideBAT;   // true = draw+pct inline (default); false = draw on top, pct on bottom
+    bool showStackedBAT;   // true = draw on top, pct on bottom stacked; false = draw+pct inline
     size_t handheldFontSize;
     size_t dockedFontSize;
     uint8_t alignTo;
@@ -1805,10 +1805,10 @@ struct MicroSettings {
     std::string show;
     bool showRAMLoad;
     bool showRAMLoadCPUGPU;      // show CPU/GPU load breakdown
-    bool showSideBySideRAMLoad; // true = [cpu% gpu%]total%@freq inline; false = split rows
+    bool showStackedRAMLoad; // true = split rows (stacked); false = [cpu% gpu%]total%@freq inline
     bool showComponentTemps;    // show CPU/GPU/RAM die temps (default: false)
     bool showSocPcbSkinTemps;   // show SOC/PCB/Skin temps (default: true)
-    bool showSideBySideTemps;   // show both temp groups on one line with divider (default: false)
+    bool showStackedTemps;   // true = temp groups on separate rows (stacked); false = one line with divider
     bool setPosBottom;
     bool disableScreenshots;
     uint8_t horizontalPadding;  // 0-10 px, left/right gap from screen edge to text; default 8
@@ -1874,20 +1874,20 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
     settings->realFrequencies = true;
     settings->realVolts = true;
     settings->showFullCPU = false;
-    settings->showSideBySideFullCPU = true;
+    settings->showStackedFullCPU = false;
     settings->showFullResolution = true;
     settings->showFanPercentage = true;
     settings->useDynamicColors = true;
     settings->showFullCPU = false;
     settings->showSOCVoltage = true;
-    settings->showSideBySideFanSOC = false;
-    settings->showSideBySideVDDQ = false;
+    settings->showStackedFanSOC = true;
+    settings->showStackedVDDQ = true;
     settings->showCPUTemp = false;
     settings->showGPUTemp = false;
     settings->showRAMTemp = false;
-    settings->showSideBySideCPUTemp = false;
-    settings->showSideBySideGPUTemp = false;
-    settings->showSideBySideRAMTemp = false;
+    settings->showStackedCPUTemp = true;
+    settings->showStackedGPUTemp = true;
+    settings->showStackedRAMTemp = true;
     settings->voltageAtEndCPU = false;
     settings->voltageAtEndGPU = false;
     settings->voltageAtEndRAM = false;
@@ -1911,11 +1911,11 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
     settings->showLabels = true;
     settings->showRAMLoad = true;
     settings->showRAMLoadCPUGPU = false;
-    settings->showSideBySideRAMLoad = true;
+    settings->showStackedRAMLoad = false;
     settings->showComponentTemps = true;
     settings->showSocPcbSkinTemps = true;
     settings->invertBatteryDisplay = true;
-    settings->showSideBySideBAT = true;
+    settings->showStackedBAT = false;
     settings->refreshRate = 3;
     settings->disableScreenshots = false;
     //settings->setPos = 0;
@@ -2041,7 +2041,7 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
     if (it != section.end()) {
         key = it->second;
         convertToUpper(key);
-        settings->showSideBySideFullCPU = !(key == "FALSE");
+        settings->showStackedFullCPU = (key == "FALSE");
     }
 
     it = section.find("show_full_res");
@@ -2062,14 +2062,14 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
     if (it != section.end()) {
         key = it->second;
         convertToUpper(key);
-        settings->showSideBySideFanSOC = !(key == "FALSE");
+        settings->showStackedFanSOC = (key == "FALSE");
     }
 
     it = section.find("show_side_by_side_vddq");
     if (it != section.end()) {
         key = it->second;
         convertToUpper(key);
-        settings->showSideBySideVDDQ = !(key == "FALSE");
+        settings->showStackedVDDQ = (key == "FALSE");
     }
 
     it = section.find("show_cpu_temp");
@@ -2097,21 +2097,21 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
     if (it != section.end()) {
         key = it->second;
         convertToUpper(key);
-        settings->showSideBySideCPUTemp = (key == "TRUE");
+        settings->showStackedCPUTemp = !(key == "TRUE");
     }
 
     it = section.find("show_side_by_side_gpu_temp");
     if (it != section.end()) {
         key = it->second;
         convertToUpper(key);
-        settings->showSideBySideGPUTemp = (key == "TRUE");
+        settings->showStackedGPUTemp = !(key == "TRUE");
     }
 
     it = section.find("show_side_by_side_ram_temp");
     if (it != section.end()) {
         key = it->second;
         convertToUpper(key);
-        settings->showSideBySideRAMTemp = (key == "TRUE");
+        settings->showStackedRAMTemp = !(key == "TRUE");
     }
 
     it = section.find("voltage_at_end_cpu");
@@ -2206,7 +2206,7 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
     if (it != section.end()) {
         key = it->second;
         convertToUpper(key);
-        settings->showSideBySideRAMLoad = !(key == "FALSE");
+        settings->showStackedRAMLoad = (key == "FALSE");
     }
 
     // Process CPU/GPU/RAM component temps flag (dual-row TMP only)
@@ -2240,7 +2240,7 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
     if (it != section.end()) {
         key = it->second;
         convertToUpper(key);
-        settings->showSideBySideBAT = !(key == "FALSE");
+        settings->showStackedBAT = (key == "FALSE");
     }
 
     // Process disable screenshots
@@ -2295,17 +2295,17 @@ ALWAYS_INLINE void GetConfigSettings(MicroSettings* settings) {
     settings->realFrequencies = true;
     settings->realVolts = true;
     settings->showFullCPU = false;
-    settings->showSideBySideFullCPU = true;
+    settings->showStackedFullCPU = false;
     settings->showFullResolution = false;
     settings->showSOCVoltage = true;
-    settings->showSideBySideFanSOC = false;  // default: fan+volt side-by-side
-    settings->showSideBySideVDDQ = false;   // default: VDD2+VDDQ side-by-side
+    settings->showStackedFanSOC = true;  // default: fan+volt stacked
+    settings->showStackedVDDQ = true;   // default: VDD2+VDDQ stacked
     settings->showCPUTemp = false;
     settings->showGPUTemp = false;
     settings->showRAMTemp = false;
-    settings->showSideBySideCPUTemp = false;
-    settings->showSideBySideGPUTemp = false;
-    settings->showSideBySideRAMTemp = false;
+    settings->showStackedCPUTemp = true;
+    settings->showStackedGPUTemp = true;
+    settings->showStackedRAMTemp = true;
     settings->voltageAtEndCPU = false;
     settings->voltageAtEndGPU = false;
     settings->voltageAtEndRAM = false;
@@ -2319,7 +2319,7 @@ ALWAYS_INLINE void GetConfigSettings(MicroSettings* settings) {
     settings->useIntegerFPS = false;
     settings->dtcFormat = "%H:%M";
     settings->invertBatteryDisplay = false;
-    settings->showSideBySideBAT = true;
+    settings->showStackedBAT = false;
     settings->handheldFontSize = 15;
     settings->dockedFontSize = 15;
     settings->alignTo = 1; // CENTER
@@ -2330,10 +2330,10 @@ ALWAYS_INLINE void GetConfigSettings(MicroSettings* settings) {
     settings->show = "FPS+CPU+GPU+RAM+TMP+BAT+DTC";
     settings->showRAMLoad = true;
     settings->showRAMLoadCPUGPU = false;
-    settings->showSideBySideRAMLoad = true;
+    settings->showStackedRAMLoad = false;
     settings->showComponentTemps = true;
     settings->showSocPcbSkinTemps = true;
-    settings->showSideBySideTemps = false;
+    settings->showStackedTemps = true;
     settings->setPosBottom = false;
     settings->disableScreenshots = false;
     settings->refreshRate = 3;
@@ -2396,7 +2396,7 @@ ALWAYS_INLINE void GetConfigSettings(MicroSettings* settings) {
     if (it != section.end()) {
         key = it->second;
         convertToUpper(key);
-        settings->showSideBySideFullCPU = !(key == "FALSE");
+        settings->showStackedFullCPU = (key == "FALSE");
     }
     
     it = section.find("show_full_res");
@@ -2417,14 +2417,14 @@ ALWAYS_INLINE void GetConfigSettings(MicroSettings* settings) {
     if (it != section.end()) {
         key = it->second;
         convertToUpper(key);
-        settings->showSideBySideFanSOC = !(key == "FALSE");
+        settings->showStackedFanSOC = (key == "FALSE");
     }
 
     it = section.find("show_side_by_side_vddq");
     if (it != section.end()) {
         key = it->second;
         convertToUpper(key);
-        settings->showSideBySideVDDQ = !(key == "FALSE");
+        settings->showStackedVDDQ = (key == "FALSE");
     }
 
     it = section.find("show_cpu_temp");
@@ -2452,21 +2452,21 @@ ALWAYS_INLINE void GetConfigSettings(MicroSettings* settings) {
     if (it != section.end()) {
         key = it->second;
         convertToUpper(key);
-        settings->showSideBySideCPUTemp = (key == "TRUE");
+        settings->showStackedCPUTemp = !(key == "TRUE");
     }
 
     it = section.find("show_side_by_side_gpu_temp");
     if (it != section.end()) {
         key = it->second;
         convertToUpper(key);
-        settings->showSideBySideGPUTemp = (key == "TRUE");
+        settings->showStackedGPUTemp = !(key == "TRUE");
     }
 
     it = section.find("show_side_by_side_ram_temp");
     if (it != section.end()) {
         key = it->second;
         convertToUpper(key);
-        settings->showSideBySideRAMTemp = (key == "TRUE");
+        settings->showStackedRAMTemp = !(key == "TRUE");
     }
 
     it = section.find("voltage_at_end_cpu");
@@ -2545,7 +2545,7 @@ ALWAYS_INLINE void GetConfigSettings(MicroSettings* settings) {
     if (it != section.end()) {
         key = it->second;
         convertToUpper(key);
-        settings->showSideBySideBAT = !(key == "FALSE");
+        settings->showStackedBAT = (key == "FALSE");
     }
     
     // Process font sizes with shared bounds
@@ -2648,7 +2648,7 @@ ALWAYS_INLINE void GetConfigSettings(MicroSettings* settings) {
     if (it != section.end()) {
         key = it->second;
         convertToUpper(key);
-        settings->showSideBySideRAMLoad = !(key == "FALSE");
+        settings->showStackedRAMLoad = (key == "FALSE");
     }
 
     // Process component temps flag (also used in Micro)
@@ -2667,12 +2667,12 @@ ALWAYS_INLINE void GetConfigSettings(MicroSettings* settings) {
         settings->showSocPcbSkinTemps = (key != "FALSE");
     }
 
-    // Process side-by-side temps flag
+    // Process stacked temps flag
     it = section.find("show_side_by_side_temps");
     if (it != section.end()) {
         key = it->second;
         convertToUpper(key);
-        settings->showSideBySideTemps = (key != "FALSE");
+        settings->showStackedTemps = (key == "FALSE");
     }
 
     // Enforce mutual exclusivity: at least one temp group must be on

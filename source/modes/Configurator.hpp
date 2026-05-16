@@ -589,11 +589,11 @@ public:
             });
             list->addItem(showFullCPU);
 
-            auto* sideBySideFullCPU = new tsl::elm::ToggleListItem("Side By Side Full CPU", getCurrentShowSideBySideFullCPU());
-            sideBySideFullCPU->setStateChangedListener([this, section](bool state) {
-                ult::setIniFileValue(configIniPath, section, "show_side_by_side_full_cpu", state ? "true" : "false");
+            auto* stackedFullCPU = new tsl::elm::ToggleListItem("Stacked Full CPU", getCurrentShowStackedFullCPU());
+            stackedFullCPU->setStateChangedListener([this, section](bool state) {
+                ult::setIniFileValue(configIniPath, section, "show_side_by_side_full_cpu", state ? "false" : "true");
             });
-            list->addItem(sideBySideFullCPU);
+            list->addItem(stackedFullCPU);
 
             auto* cpuTemp = new tsl::elm::ToggleListItem("CPU Temp", getCurrentShowCPUTemp());
             cpuTemp->setStateChangedListener([this, section](bool state) {
@@ -601,11 +601,11 @@ public:
             });
             list->addItem(cpuTemp);
 
-            auto* sideBySideCPUTemp = new tsl::elm::ToggleListItem("Side By Side CPU Temp", getCurrentShowSideBySideCPUTemp());
-            sideBySideCPUTemp->setStateChangedListener([this, section](bool state) {
-                ult::setIniFileValue(configIniPath, section, "show_side_by_side_cpu_temp", state ? "true" : "false");
+            auto* stackedCPUTemp = new tsl::elm::ToggleListItem("Stacked CPU Temp", getCurrentShowStackedCPUTemp());
+            stackedCPUTemp->setStateChangedListener([this, section](bool state) {
+                ult::setIniFileValue(configIniPath, section, "show_side_by_side_cpu_temp", state ? "false" : "true");
             });
-            list->addItem(sideBySideCPUTemp);
+            list->addItem(stackedCPUTemp);
 
             auto* voltAtEndCPU = new tsl::elm::ToggleListItem("Voltage At End", getCurrentVoltageAtEndCPU());
             voltAtEndCPU->setStateChangedListener([this, section](bool state) {
@@ -621,11 +621,11 @@ public:
             });
             list->addItem(gpuTemp);
 
-            auto* sideBySideGPUTemp = new tsl::elm::ToggleListItem("Side By Side GPU Temp", getCurrentShowSideBySideGPUTemp());
-            sideBySideGPUTemp->setStateChangedListener([this, section](bool state) {
-                ult::setIniFileValue(configIniPath, section, "show_side_by_side_gpu_temp", state ? "true" : "false");
+            auto* stackedGPUTemp = new tsl::elm::ToggleListItem("Stacked GPU Temp", getCurrentShowStackedGPUTemp());
+            stackedGPUTemp->setStateChangedListener([this, section](bool state) {
+                ult::setIniFileValue(configIniPath, section, "show_side_by_side_gpu_temp", state ? "false" : "true");
             });
-            list->addItem(sideBySideGPUTemp);
+            list->addItem(stackedGPUTemp);
 
             auto* voltAtEndGPU = new tsl::elm::ToggleListItem("Voltage At End", getCurrentVoltageAtEndGPU());
             voltAtEndGPU->setStateChangedListener([this, section](bool state) {
@@ -642,11 +642,11 @@ public:
                 });
                 list->addItem(ramLoadCPUGPU);
 
-                auto* sideBySideRAMLoad = new tsl::elm::ToggleListItem("Side By Side RAM Load", getCurrentShowSideBySideRAMLoad(section));
-                sideBySideRAMLoad->setStateChangedListener([this, section](bool state) {
-                    ult::setIniFileValue(configIniPath, section, "show_side_by_side_ram_load", state ? "true" : "false");
+                auto* stackedRAMLoad = new tsl::elm::ToggleListItem("Stacked RAM Load", getCurrentShowStackedRAMLoad(section));
+                stackedRAMLoad->setStateChangedListener([this, section](bool state) {
+                    ult::setIniFileValue(configIniPath, section, "show_side_by_side_ram_load", state ? "false" : "true");
                 });
-                list->addItem(sideBySideRAMLoad);
+                list->addItem(stackedRAMLoad);
             }
 
             if (isMariko) {
@@ -664,12 +664,12 @@ public:
             list->addItem(showVDDQ);
 
             if (isMariko && (isMiniMode || isMicroMode)) {
-                // Side By Side VDD2/VDDQ: when off, VDD2 top row / VDDQ bottom row (Mariko only)
-                auto* sideBySideVDDQ = new tsl::elm::ToggleListItem("Side By Side VDD2/VDDQ", getCurrentShowSideBySideVDDQ());
-                sideBySideVDDQ->setStateChangedListener([this, section](bool state) {
-                    ult::setIniFileValue(configIniPath, section, "show_side_by_side_vddq", state ? "true" : "false");
+                // Stacked VDD2/VDDQ: when on, VDD2 top row / VDDQ bottom row (Mariko only)
+                auto* stackedVDDQ = new tsl::elm::ToggleListItem("Stacked VDD2/VDDQ", getCurrentShowStackedVDDQ());
+                stackedVDDQ->setStateChangedListener([this, section](bool state) {
+                    ult::setIniFileValue(configIniPath, section, "show_side_by_side_vddq", state ? "false" : "true");
                 });
-                list->addItem(sideBySideVDDQ);
+                list->addItem(stackedVDDQ);
             }
 
             auto* ramTemp = new tsl::elm::ToggleListItem("RAM Temp", getCurrentShowRAMTemp());
@@ -678,11 +678,11 @@ public:
             });
             list->addItem(ramTemp);
 
-            auto* sideBySideRAMTemp = new tsl::elm::ToggleListItem("Side By Side RAM Temp", getCurrentShowSideBySideRAMTemp());
-            sideBySideRAMTemp->setStateChangedListener([this, section](bool state) {
-                ult::setIniFileValue(configIniPath, section, "show_side_by_side_ram_temp", state ? "true" : "false");
+            auto* stackedRAMTemp = new tsl::elm::ToggleListItem("Stacked RAM Temp", getCurrentShowStackedRAMTemp());
+            stackedRAMTemp->setStateChangedListener([this, section](bool state) {
+                ult::setIniFileValue(configIniPath, section, "show_side_by_side_ram_temp", state ? "false" : "true");
             });
-            list->addItem(sideBySideRAMTemp);
+            list->addItem(stackedRAMTemp);
 
             auto* voltAtEndRAM = new tsl::elm::ToggleListItem("Voltage At End", getCurrentVoltageAtEndRAM());
             voltAtEndRAM->setStateChangedListener([this, section](bool state) {
@@ -722,12 +722,12 @@ public:
                 list->addItem(socPcbTemps);
 
                 if (isMicroMode) {
-                    // Side By Side Temps: show both groups on one line with divider (default off)
-                    auto* sideBySide = new tsl::elm::ToggleListItem("Side By Side Temps", getCurrentShowSideBySideTemps());
-                    sideBySide->setStateChangedListener([this](bool state) {
-                        ult::setIniFileValue(configIniPath, "micro", "show_side_by_side_temps", state ? "true" : "false");
+                    // Stacked Temps: show temp groups on separate rows (default on)
+                    auto* stackedTemps = new tsl::elm::ToggleListItem("Stacked Temps", getCurrentShowStackedTemps());
+                    stackedTemps->setStateChangedListener([this](bool state) {
+                        ult::setIniFileValue(configIniPath, "micro", "show_side_by_side_temps", state ? "false" : "true");
                     });
-                    list->addItem(sideBySide);
+                    list->addItem(stackedTemps);
                 }
             }
 
@@ -738,12 +738,12 @@ public:
             list->addItem(socVoltage);
 
             if (isMiniMode || isMicroMode) {
-                // Side By Side Fan/SOC: when off, fan draws on row 1 and SOC voltage on row 2
-                auto* sideBySideFanSOC = new tsl::elm::ToggleListItem("Side By Side Fan/SOC", getCurrentShowSideBySideFanSOC());
-                sideBySideFanSOC->setStateChangedListener([this, section](bool state) {
-                    ult::setIniFileValue(configIniPath, section, "show_side_by_side_fan_soc", state ? "true" : "false");
+                // Stacked Fan/SOC: when on, fan draws on row 1 and SOC voltage on row 2
+                auto* stackedFanSOC = new tsl::elm::ToggleListItem("Stacked Fan/SOC", getCurrentShowStackedFanSOC());
+                stackedFanSOC->setStateChangedListener([this, section](bool state) {
+                    ult::setIniFileValue(configIniPath, section, "show_side_by_side_fan_soc", state ? "false" : "true");
                 });
-                list->addItem(sideBySideFanSOC);
+                list->addItem(stackedFanSOC);
 
                 auto* voltAtEndTMP = new tsl::elm::ToggleListItem("Voltage At End", getCurrentVoltageAtEndTMP());
                 voltAtEndTMP->setStateChangedListener([this, section](bool state) {
@@ -778,11 +778,11 @@ public:
                 });
                 list->addItem(invertBatteryDisplay);
 
-                auto* sideBySideBAT = new tsl::elm::ToggleListItem("Side By Side", getCurrentShowSideBySideBAT(section));
-                sideBySideBAT->setStateChangedListener([this, section](bool state) {
-                    ult::setIniFileValue(configIniPath, section, "show_side_by_side_bat", state ? "true" : "false");
+                auto* stackedBAT = new tsl::elm::ToggleListItem("Stacked", getCurrentShowStackedBAT(section));
+                stackedBAT->setStateChangedListener([this, section](bool state) {
+                    ult::setIniFileValue(configIniPath, section, "show_side_by_side_bat", state ? "false" : "true");
                 });
-                list->addItem(sideBySideBAT);
+                list->addItem(stackedBAT);
             }
             
             list->addItem(new tsl::elm::CategoryHeader("DTC"));
@@ -878,12 +878,12 @@ private:
         return value == "TRUE";
     }
 
-    bool getCurrentShowSideBySideFullCPU() {
+    bool getCurrentShowStackedFullCPU() {
         const std::string section = isMiniMode ? "mini" : "micro";
         std::string value = ult::parseValueFromIniSection(configIniPath, section, "show_side_by_side_full_cpu");
-        if (value.empty()) return true;  // Default: true (inline, existing behavior)
+        if (value.empty()) return false;  // Default: false (not stacked = inline)
         convertToUpper(value);
-        return value != "FALSE";
+        return value == "FALSE";
     }
 
     bool getCurrentShowVDDQ() {
@@ -919,20 +919,20 @@ private:
         return value != "FALSE";
     }
 
-    bool getCurrentShowSideBySideFanSOC() {
+    bool getCurrentShowStackedFanSOC() {
         const std::string section = isMiniMode ? "mini" : "micro";
         std::string value = ult::parseValueFromIniSection(configIniPath, section, "show_side_by_side_fan_soc");
-        if (value.empty()) return true;  // Default: true (side-by-side, existing behavior)
+        if (value.empty()) return true;  // Default: true (stacked)
         convertToUpper(value);
-        return value != "FALSE";
+        return value == "FALSE";
     }
 
-    bool getCurrentShowSideBySideVDDQ() {
+    bool getCurrentShowStackedVDDQ() {
         const std::string section = isMiniMode ? "mini" : "micro";
         std::string value = ult::parseValueFromIniSection(configIniPath, section, "show_side_by_side_vddq");
-        if (value.empty()) return true;  // Default: true (side-by-side, existing behavior)
+        if (value.empty()) return true;  // Default: true (stacked)
         convertToUpper(value);
-        return value != "FALSE";
+        return value == "FALSE";
     }
 
     bool getCurrentShowCPUTemp() {
@@ -953,23 +953,23 @@ private:
         convertToUpper(value);
         return value == "TRUE";
     }
-    bool getCurrentShowSideBySideCPUTemp() {
+    bool getCurrentShowStackedCPUTemp() {
         const std::string sec = isMiniMode ? "mini" : "micro";
         std::string value = ult::parseValueFromIniSection(configIniPath, sec, "show_side_by_side_cpu_temp");
         convertToUpper(value);
-        return value == "TRUE";
+        return value != "TRUE";
     }
-    bool getCurrentShowSideBySideGPUTemp() {
+    bool getCurrentShowStackedGPUTemp() {
         const std::string sec = isMiniMode ? "mini" : "micro";
         std::string value = ult::parseValueFromIniSection(configIniPath, sec, "show_side_by_side_gpu_temp");
         convertToUpper(value);
-        return value == "TRUE";
+        return value != "TRUE";
     }
-    bool getCurrentShowSideBySideRAMTemp() {
+    bool getCurrentShowStackedRAMTemp() {
         const std::string sec = isMiniMode ? "mini" : "micro";
         std::string value = ult::parseValueFromIniSection(configIniPath, sec, "show_side_by_side_ram_temp");
         convertToUpper(value);
-        return value == "TRUE";
+        return value != "TRUE";
     }
 
     bool getCurrentVoltageAtEndCPU() {
@@ -1005,11 +1005,11 @@ private:
         return value != "FALSE";
     }
 
-    bool getCurrentShowSideBySideRAMLoad(const std::string& section) {
+    bool getCurrentShowStackedRAMLoad(const std::string& section) {
         std::string value = ult::parseValueFromIniSection(configIniPath, section, "show_side_by_side_ram_load");
-        if (value.empty()) return true; // Default: true (inline SBS)
+        if (value.empty()) return false; // Default: false (not stacked = inline)
         convertToUpper(value);
-        return value != "FALSE";
+        return value == "FALSE";
     }
     bool getCurrentShowComponentTemps() {
         const std::string section = isMiniMode ? "mini" : "micro";
@@ -1027,11 +1027,11 @@ private:
         return value != "FALSE";
     }
 
-    bool getCurrentShowSideBySideTemps() {
+    bool getCurrentShowStackedTemps() {
         std::string value = ult::parseValueFromIniSection(configIniPath, "micro", "show_side_by_side_temps");
-        if (value.empty()) return false;  // Default: false (off)
+        if (value.empty()) return true;  // Default: true (stacked = separate rows)
         convertToUpper(value);
-        return value != "FALSE";
+        return value == "FALSE";
     }
 
 
@@ -1043,11 +1043,11 @@ private:
         return value != "FALSE";
     }
 
-    bool getCurrentShowSideBySideBAT(const std::string& section) {
+    bool getCurrentShowStackedBAT(const std::string& section) {
         std::string value = ult::parseValueFromIniSection(configIniPath, section, "show_side_by_side_bat");
-        if (value.empty()) return true; // Default: true (inline)
+        if (value.empty()) return false; // Default: false (not stacked = inline)
         convertToUpper(value);
-        return value != "FALSE";
+        return value == "FALSE";
     }
     
     bool getCurrentUseDTCSymbol() {
