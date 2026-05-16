@@ -10,7 +10,7 @@ private:
     char Battery_pct_c[32] = "";
     char soc_temperature_c[64] = "";
     char skin_temperature_c[64] = "";
-    char componentTemps_c[64] = "";  // HOC component die temps: "CPU°C GPU°C RAM°C"
+    char componentTemps_c[64] = "";  // dual-row TMP component die temps: "CPU°C GPU°C RAM°C"
     char MINI_SOC_volt_c[16] = "";   // SOC voltage string, e.g. "1234 mV"
     char MINI_CPU_volt_c[16] = "";   // CPU voltage string, e.g. "1100 mV"
     char MINI_CPU_freq_c[16] = "";   // freq part for full CPU split mode e.g. "@1000.0"
@@ -799,7 +799,7 @@ public:
                             labelLines.push_back("TMP_SFAN");
                             labelLines.push_back("TMP_SVOLT");
                         } else if (settings.showComponentTemps && settings.showSocPcbSkinTemps) {
-                            // HOC mode: TMP expands to two rows
+                            // Dual-row mode: TMP expands to two rows
                             labelLines.push_back("TMP_TOP");
                             labelLines.push_back("TMP_BOT");
                         } else if (settings.showComponentTemps) {
@@ -863,7 +863,7 @@ public:
                 
                 // Use the actual entry count for height calculation
                 cachedHeight = ((fontsize + settings.spacing) * actualEntryCount) + settings.spacing + topPadding + bottomPadding;
-                // Two-row blocks (HOC, TMP split, RAM split) use half inter-row spacing, trim box height
+                // Two-row blocks (dual-row TMP, TMP split, RAM split) use half inter-row spacing, trim box height
                 if ((settings.showComponentTemps && settings.showSocPcbSkinTemps) ||
                     (!settings.showSideBySideFanSOC && settings.showFanPercentage &&
                      settings.realVolts && settings.showSOCVoltage))
@@ -1045,7 +1045,7 @@ public:
 
                 // Draw label (centered in label region)
                 // TMP_TOP/TMP_BOT/TMP_COMP/TMP_SFAN/TMP_SVOLT: skip default label draw (we draw "TMP" manually in the data section)
-                const bool isTmpHocRow = (labelIndex < labelLines.size() &&
+                const bool isTmpDualRow = (labelIndex < labelLines.size() &&
                     (labelLines[labelIndex] == "TMP_TOP" || labelLines[labelIndex] == "TMP_BOT" ||
                      labelLines[labelIndex] == "TMP_COMP" ||
                      labelLines[labelIndex] == "TMP_SFAN" || labelLines[labelIndex] == "TMP_SVOLT" ||
@@ -1056,7 +1056,7 @@ public:
                      labelLines[labelIndex] == "RAM_SVDDQ_ONLY" || labelLines[labelIndex] == "RAM_STEMP" ||
                      labelLines[labelIndex] == "BAT_STOP" || labelLines[labelIndex] == "BAT_SBOT" ||
                      labelLines[labelIndex] == "RAM_SLOAD_TOP" || labelLines[labelIndex] == "RAM_SLOAD_BOT"));
-                if (!isTmpHocRow && settings.showLabels && !labelLines[labelIndex].empty()) {
+                if (!isTmpDualRow && settings.showLabels && !labelLines[labelIndex].empty()) {
                     labelWidth = renderer->getTextDimensions(labelLines[labelIndex], false, fontsize).first;
                     labelCenterX = cachedBaseX + (margin / 2) - (labelWidth / 2);
                     renderer->drawString(labelLines[labelIndex], false, labelCenterX + _frameOffsetX + clippingOffsetX, currentY + frameOffsetY + clippingOffsetY, fontsize, settings.catColor);
@@ -1188,7 +1188,7 @@ public:
                         renderer->drawStringWithColoredSections(currentLine, false, specialChars, baseX, baseY, fontsize, settings.textColor, settings.separatorColor);
                     }
                 } else if (labelIndex < labelLines.size() && labelLines[labelIndex] == "TMP_TOP") {
-                    // HOC TMP: top row = component die temps (CPU/GPU/RAM) with gradient
+                    // Dual-row TMP: top row = component die temps (CPU/GPU/RAM) with gradient
                     int currentX = baseX;
                     size_t pos = 0;
                     bool parseSuccess = true;
@@ -1264,7 +1264,7 @@ public:
                     }
 
                 } else if (labelIndex < labelLines.size() && labelLines[labelIndex] == "TMP_BOT") {
-                    // HOC TMP: bottom row = SOC/PCB/Skin temps, shifted up by spacing/2
+                    // Dual-row TMP: bottom row = SOC/PCB/Skin temps, shifted up by spacing/2
                     const int botY = baseY - (int)settings.spacing / 2;
                     int currentX = baseX;
                     size_t pos = 0;
@@ -2075,14 +2075,14 @@ public:
 
                 } else if (labelIndex < labelLines.size() && labelLines[labelIndex] == "TMP_SFAN") {
                     // Split fan row: temps + fan on row 1; "TMP" label drawn manually.
-                    // HOC split: temps at baseY (top row), label centered between both rows.
+                    // Dual-row split: temps at baseY (top row), label centered between both rows.
                     // Single-group split: temps+label centered in the 2-row block; fan at baseY (top row).
-                    const bool sfanIsHoc = settings.showComponentTemps && settings.showSocPcbSkinTemps;
+                    const bool sfanIsDual = settings.showComponentTemps && settings.showSocPcbSkinTemps;
                     const bool sfanHighGrad = settings.showComponentTemps;
-                    const int sfanTempY = sfanIsHoc
+                    const int sfanTempY = sfanIsDual
                         ? baseY
                         : (baseY + ((int)fontsize + (int)settings.spacing / 2) / 2);
-                    const int sfanLabelY = sfanIsHoc
+                    const int sfanLabelY = sfanIsDual
                         ? (baseY + ((int)fontsize + (int)settings.spacing / 2) / 2)
                         : sfanTempY;
                     int currentX = baseX;
@@ -2114,7 +2114,7 @@ public:
                         renderer->drawStringWithColoredSections(currentLine, false, specialChars, baseX, sfanTempY, fontsize, settings.textColor, settings.separatorColor);
                         currentX = baseX + (int)renderer->getTextDimensions(currentLine, false, fontsize).first;
                     }
-                    // Draw "TMP" label centered (isTmpHocRow skips generic label draw)
+                    // Draw "TMP" label centered (isTmpDualRow skips generic label draw)
                     if (settings.showLabels) {
                         const std::string tmpLbl = "TMP";
                         const uint32_t tmpLblW = renderer->getTextDimensions(tmpLbl, false, fontsize).first;
@@ -2128,7 +2128,7 @@ public:
 
                     // Connect center divider
                     renderer->drawString(ult::DIVIDER_SYMBOL, false, sfanFanColX,
-                        sfanIsHoc ? sfanLabelY : sfanTempY, fontsize, settings.separatorColor);
+                        sfanIsDual ? sfanLabelY : sfanTempY, fontsize, settings.separatorColor);
 
                     // Draw fan: voltAtEnd OFF=bottom row Y (swapped), voltAtEnd ON=baseY (top, normal)
                     if (settings.showFanPercentage) {
@@ -2146,7 +2146,7 @@ public:
                     }
                 } else if (labelIndex < labelLines.size() && labelLines[labelIndex] == "TMP_SVOLT") {
                     // Split volt row: row 2 draws optional SOC/PCB/Skin temps then SOC voltage.
-                    // HOC split (hasTemps): mirrors TMP_BOT with spacing/2 compression.
+                    // Dual-row split (hasTemps): mirrors TMP_BOT with spacing/2 compression.
                     // Single-group (!hasTemps): volt drawn at sfanFanColX (same X column as fan above).
                     const bool hasTemps = currentLine.find("\u00B0") != std::string::npos;
                     const int svoltY = baseY - (int)settings.spacing / 2;
@@ -2187,7 +2187,7 @@ public:
                         renderer->drawStringWithColoredSections(std::string(MINI_SOC_volt_c), false, specialChars,
                             voltDivX, voltDrawY, fontsize, settings.textColor, settings.separatorColor);
                     }
-                    // Both HOC and single-group split use spacing/2 compression: compensate currentY
+                    // Both dual-row and single-group split use spacing/2 compression: compensate currentY
                     currentY -= (int)settings.spacing / 2;
                 } else if (labelIndex < labelLines.size() && labelLines[labelIndex] == "MEM") {
                     // MEM memory rendering with gradient color
@@ -2619,7 +2619,7 @@ public:
     
             if (isActive("TMP")) {
                 if (settings.showComponentTemps && settings.showSocPcbSkinTemps) {
-                    // HOC mode: top row = die temps, bottom row = board temps (fan shown centered)
+                    // Dual-row mode: top row = die temps, bottom row = board temps (fan shown centered)
                     snprintf(componentTemps_c, sizeof(componentTemps_c),
                         "%d\u00B0C %d\u00B0C %d\u00B0C",
                         (int)(componentCPU_mC / 1000),

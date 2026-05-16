@@ -1754,7 +1754,7 @@ struct MiniSettings {
     bool showRAMLoad;
     bool showRAMLoadCPUGPU;
     bool showSideBySideRAMLoad; // true = [cpu% gpu%]total%@freq inline; false = split rows
-    bool showComponentTemps;    // HOC: show CPU/GPU/RAM die temps row
+    bool showComponentTemps;    // dual-row TMP: show CPU/GPU/RAM die temps row
     bool showSocPcbSkinTemps;   // show SOC/PCB/Skin temps row (default: true)
     bool invertBatteryDisplay;
     bool showSideBySideBAT;   // true = draw+pct inline (default); false = draw on top, pct on bottom (or vice versa)
@@ -2209,7 +2209,7 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
         settings->showSideBySideRAMLoad = !(key == "FALSE");
     }
 
-    // Process CPU/GPU/RAM component temps flag (HOC only)
+    // Process CPU/GPU/RAM component temps flag (dual-row TMP only)
     it = section.find("show_component_temps");
     if (it != section.end()) {
         key = it->second;

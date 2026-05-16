@@ -14,8 +14,8 @@ private:
     char CPU_UsageM[32];
     char soc_temperature_c[32];
     char skin_temperature_c[64];  // expanded: holds combined SBS string too
-    char componentTemps_c[64];    // HOC: CPU/GPU/RAM die temps
-    char splitBotTemps_c[64];     // split mode: bottom row temps (SOC/PCB/Skin for HOC, empty for single-group)
+    char componentTemps_c[64];    // dual-row TMP: CPU/GPU/RAM die temps
+    char splitBotTemps_c[64];     // split mode: bottom row temps (SOC/PCB/Skin for dual-row, empty for single-group)
     char cpu_temp_c[16];          // CPU die temp string e.g. "52°C"
     char gpu_temp_c[16];          // GPU die temp string e.g. "48°C"
     char ram_temp_c[16];          // RAM die temp string e.g. "45°C"
@@ -871,10 +871,10 @@ public:
                 } else if (item.type == 4) { // TMP
                     if (tmpIsSplit) {
                         // SPLIT MODE: fan on top row, SOC voltage on bottom row.
-                        // HOC split (splitBotTemps_c set): temps fill both rows, fan top, volt bottom.
+                        // Dual-row split (splitBotTemps_c set): temps fill both rows, fan top, volt bottom.
                         // Single-group (!splitBotTemps_c[0]): temps at singleItemY (centered),
                         //   fan at tmpFanY and volt at tmpVoltY, both starting at the fan column X.
-                        const bool splitIsHoc = splitBotTemps_c[0] != 0;
+                        const bool splitIsDual = splitBotTemps_c[0] != 0;  // dual-row: both component and board temps visible
                         // Temp groups never swap — component temps always top, SOC temps always bottom.
                         const int32_t tmpFanY  = gridTopY;  // component temps + fan column row
                         const int32_t tmpVoltY = gridBotY;  // SOC/PCB/skin temps + volt column row
@@ -890,8 +890,8 @@ public:
                             bool rOK = true;
                             const bool topIsComp = settings.showComponentTemps;
                             bool pastTopDiv = false;
-                            // Temps draw at tmpFanY (HOC) or singleItemY (single-group)
-                            const int32_t tempDrawY = splitIsHoc ? tmpFanY : singleItemY;
+                            // Temps draw at tmpFanY (dual-row) or singleItemY (single-group)
+                            const int32_t tempDrawY = splitIsDual ? tmpFanY : singleItemY;
                             for (int tc = 0; tc < 6 && rOK && rpos < topStr.length(); tc++) {
                                 while (rpos < topStr.length() && topStr[rpos] == ' ') {
                                     renderer->drawString(" ", false, rx, tempDrawY, fontsize, textColorA);
@@ -950,19 +950,19 @@ public:
                             }
                         }
                         // Center connector divider (between fan and volt column)
-                        // HOC: 2 rows of temp on left -> 3-tall stack at fanColX
-                        if (splitIsHoc) {
+                        // Dual-row: 2 rows of temp on left -> 3-tall stack at fanColX
+                        if (splitIsDual) {
                             renderer->drawString(ult::DIVIDER_SYMBOL, false, fanColX, gridTopY,    fontsize, (settings.separatorColor));
                             renderer->drawString(ult::DIVIDER_SYMBOL, false, fanColX, singleItemY, fontsize, (settings.separatorColor));
                             renderer->drawString(ult::DIVIDER_SYMBOL, false, fanColX, gridBotY,    fontsize, (settings.separatorColor));
                         } else if (SOC_volt_c[0]) {
                             renderer->drawString(ult::DIVIDER_SYMBOL, false, fanColX, singleItemY, fontsize, (settings.separatorColor));
                         }
-                        // Bottom row: optional HOC temps + SOC voltage
+                        // Bottom row: optional dual-row temps + SOC voltage
                         {
-                            // Single-group: volt starts at fanColX; HOC: volt starts after bot temps
-                            uint32_t rx = splitIsHoc ? current_x : fanColX;
-                            if (splitIsHoc) {
+                            // Single-group: volt starts at fanColX; dual-row: volt starts after bot temps
+                            uint32_t rx = splitIsDual ? current_x : fanColX;
+                            if (splitIsDual) {
                                 std::string botStr(splitBotTemps_c);
                                 size_t rpos = 0;
                                 bool rOK = true;
