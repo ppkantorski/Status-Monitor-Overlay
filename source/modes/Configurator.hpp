@@ -589,6 +589,12 @@ public:
             });
             list->addItem(sideBySideCPUTemp);
 
+            auto* voltAtEndCPU = new tsl::elm::ToggleListItem("Voltage At End", getCurrentVoltageAtEndCPU());
+            voltAtEndCPU->setStateChangedListener([this, section](bool state) {
+                ult::setIniFileValue(configIniPath, section, "voltage_at_end_cpu", state ? "true" : "false");
+            });
+            list->addItem(voltAtEndCPU);
+
             list->addItem(new tsl::elm::CategoryHeader("GPU"));
 
             auto* gpuTemp = new tsl::elm::ToggleListItem("GPU Temp", getCurrentShowGPUTemp());
@@ -602,6 +608,12 @@ public:
                 ult::setIniFileValue(configIniPath, section, "show_side_by_side_gpu_temp", state ? "true" : "false");
             });
             list->addItem(sideBySideGPUTemp);
+
+            auto* voltAtEndGPU = new tsl::elm::ToggleListItem("Voltage At End", getCurrentVoltageAtEndGPU());
+            voltAtEndGPU->setStateChangedListener([this, section](bool state) {
+                ult::setIniFileValue(configIniPath, section, "voltage_at_end_gpu", state ? "true" : "false");
+            });
+            list->addItem(voltAtEndGPU);
 
             list->addItem(new tsl::elm::CategoryHeader("RAM"));
 
@@ -647,6 +659,12 @@ public:
                 ult::setIniFileValue(configIniPath, section, "show_side_by_side_ram_temp", state ? "true" : "false");
             });
             list->addItem(sideBySideRAMTemp);
+
+            auto* voltAtEndRAM = new tsl::elm::ToggleListItem("Voltage At End", getCurrentVoltageAtEndRAM());
+            voltAtEndRAM->setStateChangedListener([this, section](bool state) {
+                ult::setIniFileValue(configIniPath, section, "voltage_at_end_ram", state ? "true" : "false");
+            });
+            list->addItem(voltAtEndRAM);
             
             list->addItem(new tsl::elm::CategoryHeader("TMP"));
 
@@ -708,6 +726,12 @@ public:
                     ult::setIniFileValue(configIniPath, section, "show_side_by_side_fan_soc", state ? "true" : "false");
                 });
                 list->addItem(sideBySideFanSOC);
+
+                auto* voltAtEndTMP = new tsl::elm::ToggleListItem("Voltage At End", getCurrentVoltageAtEndTMP());
+                voltAtEndTMP->setStateChangedListener([this, section](bool state) {
+                    ult::setIniFileValue(configIniPath, section, "voltage_at_end_tmp", state ? "true" : "false");
+                });
+                list->addItem(voltAtEndTMP);
 
             }
 
@@ -903,6 +927,31 @@ private:
     bool getCurrentShowSideBySideRAMTemp() {
         const std::string sec = isMiniMode ? "mini" : "micro";
         std::string value = ult::parseValueFromIniSection(configIniPath, sec, "show_side_by_side_ram_temp");
+        convertToUpper(value);
+        return value == "TRUE";
+    }
+
+    bool getCurrentVoltageAtEndCPU() {
+        const std::string sec = isMiniMode ? "mini" : "micro";
+        std::string value = ult::parseValueFromIniSection(configIniPath, sec, "voltage_at_end_cpu");
+        convertToUpper(value);
+        return value == "TRUE";
+    }
+    bool getCurrentVoltageAtEndGPU() {
+        const std::string sec = isMiniMode ? "mini" : "micro";
+        std::string value = ult::parseValueFromIniSection(configIniPath, sec, "voltage_at_end_gpu");
+        convertToUpper(value);
+        return value == "TRUE";
+    }
+    bool getCurrentVoltageAtEndRAM() {
+        const std::string sec = isMiniMode ? "mini" : "micro";
+        std::string value = ult::parseValueFromIniSection(configIniPath, sec, "voltage_at_end_ram");
+        convertToUpper(value);
+        return value == "TRUE";
+    }
+    bool getCurrentVoltageAtEndTMP() {
+        const std::string sec = isMiniMode ? "mini" : "micro";
+        std::string value = ult::parseValueFromIniSection(configIniPath, sec, "voltage_at_end_tmp");
         convertToUpper(value);
         return value == "TRUE";
     }

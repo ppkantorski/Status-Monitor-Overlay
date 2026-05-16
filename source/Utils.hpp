@@ -1729,6 +1729,10 @@ struct MiniSettings {
     bool showSideBySideCPUTemp; // true = CPU temp inline SBS; false = split row below volt
     bool showSideBySideGPUTemp; // true = GPU temp inline SBS; false = split row below volt
     bool showSideBySideRAMTemp; // true = RAM temp inline SBS; false = next to VDDQ
+    bool voltageAtEndCPU;       // true = volt at end (below/after temp; swap positions)
+    bool voltageAtEndGPU;       // true = volt at end
+    bool voltageAtEndRAM;       // true = volt at end
+    bool voltageAtEndTMP;       // true = SOC volt at top, fan at bottom (swapped)
     bool useDynamicColors;
     bool showVDDQ;
     bool showVDD2;
@@ -1772,6 +1776,10 @@ struct MicroSettings {
     bool showSideBySideCPUTemp; // true = CPU temp inline SBS; false = split row below volt
     bool showSideBySideGPUTemp; // true = GPU temp inline SBS; false = split row below volt
     bool showSideBySideRAMTemp; // true = RAM temp inline SBS; false = next to VDDQ
+    bool voltageAtEndCPU;       // true = volt at end (below/after temp; swap positions)
+    bool voltageAtEndGPU;       // true = volt at end
+    bool voltageAtEndRAM;       // true = volt at end
+    bool voltageAtEndTMP;       // true = SOC volt at top, fan at bottom (swapped)
     bool useDynamicColors;
     bool showVDDQ;
     bool showVDD2;
@@ -1869,6 +1877,10 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
     settings->showSideBySideCPUTemp = false;
     settings->showSideBySideGPUTemp = false;
     settings->showSideBySideRAMTemp = false;
+    settings->voltageAtEndCPU = false;
+    settings->voltageAtEndGPU = false;
+    settings->voltageAtEndRAM = false;
+    settings->voltageAtEndTMP = false;
     settings->showVDDQ = true;
     settings->showVDD2 = true;
     settings->decimalVDD2 = false;
@@ -2081,6 +2093,15 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
         settings->showSideBySideRAMTemp = (key == "TRUE");
     }
 
+    it = section.find("voltage_at_end_cpu");
+    if (it != section.end()) { key = it->second; convertToUpper(key); settings->voltageAtEndCPU = (key == "TRUE"); }
+    it = section.find("voltage_at_end_gpu");
+    if (it != section.end()) { key = it->second; convertToUpper(key); settings->voltageAtEndGPU = (key == "TRUE"); }
+    it = section.find("voltage_at_end_ram");
+    if (it != section.end()) { key = it->second; convertToUpper(key); settings->voltageAtEndRAM = (key == "TRUE"); }
+    it = section.find("voltage_at_end_tmp");
+    if (it != section.end()) { key = it->second; convertToUpper(key); settings->voltageAtEndTMP = (key == "TRUE"); }
+
     it = section.find("use_dynamic_colors");
     if (it != section.end()) {
         key = it->second;
@@ -2242,6 +2263,10 @@ ALWAYS_INLINE void GetConfigSettings(MicroSettings* settings) {
     settings->showSideBySideCPUTemp = false;
     settings->showSideBySideGPUTemp = false;
     settings->showSideBySideRAMTemp = false;
+    settings->voltageAtEndCPU = false;
+    settings->voltageAtEndGPU = false;
+    settings->voltageAtEndRAM = false;
+    settings->voltageAtEndTMP = false;
     settings->useDynamicColors = true;
     settings->showVDDQ = true;
     settings->showVDD2 = true;
@@ -2389,6 +2414,15 @@ ALWAYS_INLINE void GetConfigSettings(MicroSettings* settings) {
         convertToUpper(key);
         settings->showSideBySideRAMTemp = (key == "TRUE");
     }
+
+    it = section.find("voltage_at_end_cpu");
+    if (it != section.end()) { key = it->second; convertToUpper(key); settings->voltageAtEndCPU = (key == "TRUE"); }
+    it = section.find("voltage_at_end_gpu");
+    if (it != section.end()) { key = it->second; convertToUpper(key); settings->voltageAtEndGPU = (key == "TRUE"); }
+    it = section.find("voltage_at_end_ram");
+    if (it != section.end()) { key = it->second; convertToUpper(key); settings->voltageAtEndRAM = (key == "TRUE"); }
+    it = section.find("voltage_at_end_tmp");
+    if (it != section.end()) { key = it->second; convertToUpper(key); settings->voltageAtEndTMP = (key == "TRUE"); }
 
     it = section.find("use_dynamic_colors");
     if (it != section.end()) {
