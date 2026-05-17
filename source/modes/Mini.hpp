@@ -380,52 +380,66 @@ public:
                 for (const auto& key : showKeys) {
                     if (key == "CPU") {
                         //dimensions = renderer->drawString("[100%,100%,100%,100%]@4444.4", false, 0, 0, fontsize, renderer->a(0x0000));
-                        const bool cpuSplit = settings.showCPUTemp && settings.showStackedCPUTemp && settings.realVolts;
+                        const bool cpuSplit     = settings.showCPUTemp && settings.showStackedCPUTemp && settings.realVolts;
                         const bool cpuFullSplit = settings.showFullCPU && settings.showStackedFullCPU;
+                        // Common sub-widths used across multiple branches.
+                        const uint32_t dw      = renderer->getTextDimensions(ult::DIVIDER_SYMBOL, false, fontsize).first;
+                        const uint32_t volt_w  = settings.realVolts ? renderer->getTextDimensions("444 mV", false, fontsize).first : 0;
+                        const uint32_t temp_w  = settings.showCPUTemp ? renderer->getTextDimensions("88°C", false, fontsize).first : 0;
                         if (cpuFullSplit) {
-                            const uint32_t bw = renderer->getTextDimensions("[100% 100% 44% 100%]", false, fontsize).first;
-                            const uint32_t dw = renderer->getTextDimensions(ult::DIVIDER_SYMBOL, false, fontsize).first;
-                            // Stacked when CPU-temp is inline=OFF and both volt+temp exist (mirrors CPU_SVOLT/STEMP):
-                            // center=brackets, right-col=max(volt,temp). Otherwise inline after brackets.
+                            // Stacked full-CPU split: two rows (brackets top, freq bottom).
+                            // Bracket worst-case depends on MaxCore012 mode (2 values vs 4).
+                            const char* bracketWorst = settings.showFullCPUMaxCore012
+                                ? "[100% 100%]" : "[100% 100% 44% 100%]";
+                            const uint32_t bwRaw  = renderer->getTextDimensions(bracketWorst, false, fontsize).first;
+                            const uint32_t freqWC = renderer->getTextDimensions("100%@4444.4", false, fontsize).first;
+                            // Left column = max(brackets, freq): shared right edge for both rows.
+                            const uint32_t bw = std::max(bwRaw, freqWC);
+                            // cpuFullStacked: volt and temp each get their own row in the right column.
+                            // Right-col width = dw + max(volt_w, temp_w) when either is present.
                             const bool cpuFullStacked = settings.showCPUTemp && settings.showStackedCPUTemp && settings.realVolts;
                             if (cpuFullStacked) {
-                                uint32_t rightColW = 0;
-                                if (settings.realVolts)
-                                    rightColW = std::max(rightColW, (uint32_t)renderer->getTextDimensions("444 mV", false, fontsize).first);
-                                if (settings.showCPUTemp)
-                                    rightColW = std::max(rightColW, (uint32_t)renderer->getTextDimensions("88°C", false, fontsize).first);
+                                // Right col holds whichever of volt/temp is wider (one per row).
+                                const uint32_t rightColW = std::max(volt_w, temp_w);
                                 width = bw + (rightColW > 0 ? dw + rightColW : 0);
                             } else {
+                                // Inline: volt and temp both appear on the center row, each preceded by a divider.
                                 width = bw;
-                                if (settings.realVolts)
-                                    width += dw + renderer->getTextDimensions("444 mV", false, fontsize).first;
-                                if (settings.showCPUTemp)
-                                    width += dw + renderer->getTextDimensions("88°C", false, fontsize).first;
+                                if (settings.realVolts)  width += dw + volt_w;
+                                if (settings.showCPUTemp) width += dw + temp_w;
                             }
                         } else if (!settings.realVolts) {
-                            if (settings.showFullCPU)
-                                width = renderer->getTextDimensions("[100% 100% 44% 100%]@4444.4", false, fontsize).first;
-                            else
+                            // No volt: inline [brackets]@freq or usage@freq.
+                            if (settings.showFullCPU) {
+                                // MaxCore012 condenses to 2 values; use the appropriate worst-case bracket.
+                                const char* bw = settings.showFullCPUMaxCore012
+                                    ? "[100% 100%]@4444.4" : "[100% 100% 44% 100%]@4444.4";
+                                width = renderer->getTextDimensions(bw, false, fontsize).first;
+                            } else {
                                 width = renderer->getTextDimensions("100%@4444.4", false, fontsize).first;
+                            }
                         } else {
-                            if (settings.showFullCPU)
-                                width = renderer->getTextDimensions("[100% 100% 44% 100%]@4444.4444 mV", false, fontsize).first;
-                            else
-                                width = renderer->getTextDimensions("100%@4444.4444 mV", false, fontsize).first;
+                            // Volt present: inline [brackets]@freq|volt or usage@freq|volt.
+                            // Build width from components so MaxCore012 uses the correct bracket proxy.
+                            if (settings.showFullCPU) {
+                                const char* bracketFreq = settings.showFullCPUMaxCore012
+                                    ? "[100% 100%]@4444.4" : "[100% 100% 44% 100%]@4444.4";
+                                width = renderer->getTextDimensions(bracketFreq, false, fontsize).first
+                                      + dw + volt_w;
+                            } else {
+                                width = renderer->getTextDimensions("100%@4444.4", false, fontsize).first
+                                      + dw + volt_w;
+                            }
+                        }
+                        // SBS CPU temp (not stacked, not handled by cpuSplit/cpuFullSplit above):
+                        // appended inline after the base width.  Layout differs by voltAtEnd:
+                        //   Normal:   ...@freq | volt | temp   -> base already has volt; add dw+temp
+                        //   VoltAtEnd: ...@freq | temp | volt  -> base already has volt; add dw+temp
+                        // Either way the net addition is exactly dw+temp_w.
+                        if (!cpuFullSplit && !cpuSplit && settings.showCPUTemp && !settings.showStackedCPUTemp) {
+                            width += dw + temp_w;
                         }
 
-                            // SBS CPU temp: add divider + temp (+ optional second div+volt when voltAtEnd)
-                            if (!cpuFullSplit && !cpuSplit && settings.showCPUTemp && !settings.showStackedCPUTemp) {
-                                const uint32_t div_w = renderer->getTextDimensions(ult::DIVIDER_SYMBOL, false, fontsize).first;
-                                const uint32_t temp_w = renderer->getTextDimensions("88°C", false, fontsize).first;
-                                if (settings.voltageAtEndCPU && settings.realVolts) {
-                                    // Base width already includes volt; layout is base_no_volt+div+temp+div+volt.
-                                    // Net change vs base: +div+temp+div (volt cancels out).
-                                    width += div_w + temp_w + div_w;
-                                } else {
-                                    width += div_w + temp_w;
-                                }
-                            }
                     } else if (key == "GPU" || (key == "RAM" && settings.showRAMLoad && (R_SUCCEEDED(sysclkCheck) || R_SUCCEEDED(hocclkCheck)))) {
                         //dimensions = renderer->drawString("100.0%@4444.4", false, 0, 0, fontsize, renderer->a(0x0000));
                         // Split VDD2/VDDQ: width = row1 (VDD2 only), always wider than row2
@@ -1061,6 +1075,7 @@ public:
             static int ramLoadVoltColX = 0;  // shared between RAM_SLOAD_TOP and RAM_SLOAD_BOT
             static int ramLoadTopBaseY = 0;  // RAM_SLOAD_TOP baseY, used by BOT to compute center-Y
             static int cpuFullSplitBracketsW = 0; // brackets pixel width for CPU_SFULL/CPU_SFREQ alignment
+            static int cpuFullSplitColW      = 0; // column width = max(bracketsW, freqW) — whichever line is longer
             static std::vector<std::string> _variableLines;
             if (!delayUpdate)
                 _variableLines = variableLines;
@@ -1835,16 +1850,28 @@ public:
                     const bool cpuFullStacked = settings.showCPUTemp && settings.showStackedCPUTemp && settings.realVolts;
                     const int cpuFullCenterY = baseY + ((int)fontsize + (int)settings.spacing / 2) / 2;
                     cpuFullSplitBracketsW = (int)renderer->getTextDimensions(currentLine, false, fontsize).first;
+                    // Column width = whichever line is longer: brackets or the freq line below.
+                    // This ensures both rows are right-aligned to the same edge so neither overflows
+                    // left into the CPU label area and the divider column stays cleanly to the right.
+                    {
+                        const int freqMeasW = MINI_CPU_freq_c[0]
+                            ? (int)renderer->getTextDimensions(std::string(MINI_CPU_freq_c), false, fontsize).first
+                            : 0;
+                        cpuFullSplitColW = std::max(cpuFullSplitBracketsW, freqMeasW);
+                    }
+                    // X offset so that the shorter line is pushed right to share the same right edge.
+                    const int bracketsOffsetX = cpuFullSplitColW - cpuFullSplitBracketsW;
                     const std::string cpuLbl = "CPU";
                     const uint32_t cpuLblW = renderer->getTextDimensions(cpuLbl, false, fontsize).first;
                     const uint32_t cpuLblX = cachedBaseX + (margin / 2) - (cpuLblW / 2);
                     if (cpuFullStacked) {
                         // ── Stacked mode: brackets on TOP row (baseY), volt inline after brackets.
                         // CPU_SFREQ (bottom row) draws @freq right-aligned + temp right of volt column.
-                        int currentX = baseX;
+                        // Brackets are right-aligned within cpuFullSplitColW so both rows share the same right edge.
+                        int currentX = baseX + bracketsOffsetX;
                         renderer->drawStringWithColoredSections(currentLine, false, specialChars,
                             currentX, baseY, fontsize, settings.textColor, settings.separatorColor);
-                        currentX += cpuFullSplitBracketsW; // advance to right edge of brackets
+                        currentX = baseX + cpuFullSplitColW; // volt column starts at shared right edge
                         // Center connector divider — connects top-row | and bottom-row | into one vertical bar
                         renderer->drawString(ult::DIVIDER_SYMBOL, false, currentX, cpuFullCenterY,
                             fontsize, settings.separatorColor);
@@ -1872,14 +1899,13 @@ public:
                         }
                     } else {
                         // ── Inline mode: brackets on baseY (top row), volt+temp on cpuFullCenterY (center row) ──
-                        // Brackets drawn at top, center connector divider marks the column,
-                        // volt/temp drawn at cpuFullCenterY (same row as CPU label), freq on bottom via CPU_SFREQ.
+                        // Brackets are right-aligned within cpuFullSplitColW; the divider/volt column sits at
+                        // baseX + cpuFullSplitColW so it never overlaps with either line's text.
                         renderer->drawStringWithColoredSections(currentLine, false, specialChars,
-                            baseX, baseY, fontsize, settings.textColor, settings.separatorColor);
-                        // 3-tall divider stack at right edge of brackets, spanning the full 2-row data block
-                        // on the left (brackets top, freq bot). Only draw the top/bot extensions if content
-                        // (volt or temp) will follow — otherwise the dividers would be orphan visual noise.
-                        const int voltColX = baseX + cpuFullSplitBracketsW;
+                            baseX + bracketsOffsetX, baseY, fontsize, settings.textColor, settings.separatorColor);
+                        // 3-tall divider stack at the shared right edge of the column.
+                        // Top and bottom extensions are only drawn when volt/temp content follows them.
+                        const int voltColX = baseX + cpuFullSplitColW;
                         const bool willDrawAnyCpu = (settings.realVolts && MINI_CPU_volt_c[0]) ||
                                                      mini_cpu_temp_c[0];
                         if (willDrawAnyCpu) {
@@ -1932,19 +1958,22 @@ public:
 
                 } else if (labelIndex < labelLines.size() && labelLines[labelIndex] == "CPU_SFREQ") {
                     // Full CPU freq split — row 2.
-                    // Freq right-aligned so right edge lines up with ']' of brackets above.
-                    // In stacked mode (SBS-cpu-temp OFF): also draws the bottom volt/temp to the right of the volt column.
+                    // Both the brackets above (CPU_SFULL) and this freq line are right-aligned to
+                    // cpuFullSplitColW — the width of whichever of the two is longer.
+                    // This means when freq is wider, it stays at baseX and brackets were pushed right;
+                    // when brackets are wider, freq is pushed right and brackets stay at baseX.
+                    // Either way the divider / volt column sits cleanly at baseX + cpuFullSplitColW.
                     const bool cpuFullStacked = settings.showCPUTemp && settings.showStackedCPUTemp && settings.realVolts;
                     const int freqY = baseY - (int)settings.spacing / 2;
                     const int freqW = currentLine.empty() ? 0 : (int)renderer->getTextDimensions(currentLine, false, fontsize).first;
-                    // Right edge of brackets = baseX + cpuFullSplitBracketsW
-                    const int freqX = baseX + cpuFullSplitBracketsW - freqW;
+                    // Right-align freq to the shared column right edge.
+                    const int freqX = baseX + cpuFullSplitColW - freqW;
                     renderer->drawStringWithColoredSections(currentLine, false, specialChars,
                         (uint32_t)std::max(baseX, freqX), freqY, fontsize,
                         settings.textColor, settings.separatorColor);
-                    // Stacked mode: draw bottom-row volt/temp to the right of the volt column (mirrors CPU_STEMP)
+                    // Stacked mode: draw bottom-row volt/temp to the right of the shared column edge.
                     if (cpuFullStacked) {
-                        int rx = baseX + cpuFullSplitBracketsW; // = cpuFullSplitVoltColX
+                        int rx = baseX + cpuFullSplitColW; // column right edge = shared boundary
                         if (settings.voltageAtEndCPU) {
                             // voltAtEnd: volt on bottom row
                             if (settings.realVolts && MINI_CPU_volt_c[0]) {
@@ -2409,18 +2438,45 @@ public:
             if (settings.showFullCPU) {
                 const uint16_t _cpuHz = (settings.realFrequencies && realCPU_Hz) ? realCPU_Hz / 1000000 : CPU_Hz / 1000000;
                 const uint8_t  _cpuHz10 = (settings.realFrequencies && realCPU_Hz) ? (realCPU_Hz / 100000) % 10 : (CPU_Hz / 100000) % 10;
+                // When showFullCPUMaxCore012 is on, brackets condense cores 0-2 into one max value.
+                // Build a small per-frame buffer for that max so the snprintf format strings below
+                // can use the same %s slots regardless of mode.
+                char MINI_CPU_UsageMax012[7] = "";
+                if (settings.showFullCPUMaxCore012) {
+                    double _m0 = 0, _m1 = 0, _m2 = 0;
+                    sscanf(MINI_CPU_Usage0, "%lf%%", &_m0);
+                    sscanf(MINI_CPU_Usage1, "%lf%%", &_m1);
+                    sscanf(MINI_CPU_Usage2, "%lf%%", &_m2);
+                    const double _maxCore012 = std::max({_m0, _m1, _m2});
+                    snprintf(MINI_CPU_UsageMax012, sizeof(MINI_CPU_UsageMax012), "%.0f%%", _maxCore012);
+                }
                 if (!settings.showStackedFullCPU) {
                     // Inline mode (default): [23%,29%,0%,32%]@1000.0
-                    snprintf(MINI_CPU_compressed_c, sizeof(MINI_CPU_compressed_c),
-                        "[%s %s %s %s]@%hu.%hhu",
-                        MINI_CPU_Usage0, MINI_CPU_Usage1, MINI_CPU_Usage2, MINI_CPU_Usage3,
-                        _cpuHz, _cpuHz10);
+                    if (settings.showFullCPUMaxCore012) {
+                        // Condensed: [max(c0,c1,c2) c3]@freq
+                        snprintf(MINI_CPU_compressed_c, sizeof(MINI_CPU_compressed_c),
+                            "[%s %s]@%hu.%hhu",
+                            MINI_CPU_UsageMax012, MINI_CPU_Usage3,
+                            _cpuHz, _cpuHz10);
+                    } else {
+                        snprintf(MINI_CPU_compressed_c, sizeof(MINI_CPU_compressed_c),
+                            "[%s %s %s %s]@%hu.%hhu",
+                            MINI_CPU_Usage0, MINI_CPU_Usage1, MINI_CPU_Usage2, MINI_CPU_Usage3,
+                            _cpuHz, _cpuHz10);
+                    }
                     // MINI_CPU_freq_c already reset to '\0' above
                 } else {
                     // Split mode: brackets on top row, max%@freq on bottom row
-                    snprintf(MINI_CPU_compressed_c, sizeof(MINI_CPU_compressed_c),
-                        "[%s %s %s %s]",
-                        MINI_CPU_Usage0, MINI_CPU_Usage1, MINI_CPU_Usage2, MINI_CPU_Usage3);
+                    if (settings.showFullCPUMaxCore012) {
+                        // Condensed: [max(c0,c1,c2) c3] on top
+                        snprintf(MINI_CPU_compressed_c, sizeof(MINI_CPU_compressed_c),
+                            "[%s %s]",
+                            MINI_CPU_UsageMax012, MINI_CPU_Usage3);
+                    } else {
+                        snprintf(MINI_CPU_compressed_c, sizeof(MINI_CPU_compressed_c),
+                            "[%s %s %s %s]",
+                            MINI_CPU_Usage0, MINI_CPU_Usage1, MINI_CPU_Usage2, MINI_CPU_Usage3);
+                    }
                     double _u0 = 0, _u1 = 0, _u2 = 0, _u3 = 0;
                     sscanf(MINI_CPU_Usage0, "%lf%%", &_u0);
                     sscanf(MINI_CPU_Usage1, "%lf%%", &_u1);

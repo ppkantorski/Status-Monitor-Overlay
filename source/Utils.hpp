@@ -1718,6 +1718,7 @@ struct MiniSettings {
     bool realVolts;
     bool showLabels;
     bool showFullCPU;
+    bool showFullCPUMaxCore012; // true = brackets show [max(c0,c1,c2) c3] instead of [c0 c1 c2 c3]
     bool showStackedFullCPU; // true = brackets top, freq bottom (stacked); false = [brackets]@freq inline
     bool showFullResolution;
     bool showFanPercentage;
@@ -1770,6 +1771,7 @@ struct MicroSettings {
     bool realFrequencies;
     bool realVolts; 
     bool showFullCPU;
+    bool showFullCPUMaxCore012; // true = brackets show [max(c0,c1,c2) c3] instead of [c0 c1 c2 c3]
     bool showStackedFullCPU; // true = brackets top, freq bottom (stacked); false = [brackets]@freq inline
     bool showFullResolution;
     bool showSOCVoltage;
@@ -1874,6 +1876,7 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
     settings->realFrequencies = true;
     settings->realVolts = true;
     settings->showFullCPU = false;
+    settings->showFullCPUMaxCore012 = false;
     settings->showStackedFullCPU = false;
     settings->showFullResolution = true;
     settings->showFanPercentage = true;
@@ -2035,6 +2038,13 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
         key = it->second;
         convertToUpper(key);
         settings->showFullCPU = !(key == "FALSE");
+    }
+
+    it = section.find("show_full_cpu_max_core_012");
+    if (it != section.end()) {
+        key = it->second;
+        convertToUpper(key);
+        settings->showFullCPUMaxCore012 = (key == "TRUE");
     }
 
     it = section.find("show_side_by_side_full_cpu");
@@ -2295,6 +2305,7 @@ ALWAYS_INLINE void GetConfigSettings(MicroSettings* settings) {
     settings->realFrequencies = true;
     settings->realVolts = true;
     settings->showFullCPU = false;
+    settings->showFullCPUMaxCore012 = false;
     settings->showStackedFullCPU = false;
     settings->showFullResolution = false;
     settings->showSOCVoltage = true;
@@ -2390,6 +2401,13 @@ ALWAYS_INLINE void GetConfigSettings(MicroSettings* settings) {
         key = it->second;
         convertToUpper(key);
         settings->showFullCPU = (key == "TRUE");
+    }
+
+    it = section.find("show_full_cpu_max_core_012");
+    if (it != section.end()) {
+        key = it->second;
+        convertToUpper(key);
+        settings->showFullCPUMaxCore012 = (key == "TRUE");
     }
 
     it = section.find("show_side_by_side_full_cpu");

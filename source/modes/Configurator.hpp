@@ -589,6 +589,12 @@ public:
             });
             list->addItem(showFullCPU);
 
+            auto* fullCPUMaxCore012 = new tsl::elm::ToggleListItem("Full CPU Max Core 0-2", getCurrentShowFullCPUMaxCore012());
+            fullCPUMaxCore012->setStateChangedListener([this, section](bool state) {
+                ult::setIniFileValue(configIniPath, section, "show_full_cpu_max_core_012", state ? "true" : "false");
+            });
+            list->addItem(fullCPUMaxCore012);
+
             auto* stackedFullCPU = new tsl::elm::ToggleListItem("Stacked Full CPU", getCurrentShowStackedFullCPU());
             stackedFullCPU->setStateChangedListener([this, section](bool state) {
                 ult::setIniFileValue(configIniPath, section, "show_side_by_side_full_cpu", state ? "false" : "true");
@@ -873,6 +879,14 @@ private:
     bool getCurrentShowFullCPU() {
         const std::string section = isMiniMode ? "mini" : "micro";
         std::string value = ult::parseValueFromIniSection(configIniPath, section, "show_full_cpu");
+        if (value.empty()) return false;
+        convertToUpper(value);
+        return value == "TRUE";
+    }
+
+    bool getCurrentShowFullCPUMaxCore012() {
+        const std::string section = isMiniMode ? "mini" : "micro";
+        std::string value = ult::parseValueFromIniSection(configIniPath, section, "show_full_cpu_max_core_012");
         if (value.empty()) return false;
         convertToUpper(value);
         return value == "TRUE";
