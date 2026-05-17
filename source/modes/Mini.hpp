@@ -2355,8 +2355,8 @@ public:
                 if (idletick > systemtickfrequency_impl) {
                     strcpy(buf, "0%");
                 } else {
-                    snprintf(buf, size, "%.0f%%",
-                             (1.0 - (static_cast<double>(idletick) / systemtickfrequency_impl)) * 100.0);
+                    const double load = (1.0 - (static_cast<double>(idletick) / systemtickfrequency_impl)) * 100.0;
+                    snprintf(buf, size, "%.0f%%", std::max(0.0, std::min(100.0, load)));
                 }
             };
             
