@@ -1679,7 +1679,7 @@ public:
             if (!settings.showStackedRAMLoad) {
                 // SBS: [cpu% gpu%]total%@freq on one line
                 snprintf(RAM_var_compressed_c, sizeof(RAM_var_compressed_c),
-                    "[%u%% %u%%]%u%%%s%u.%u", cpuL, gpuL, totL, ramDiff, ramMHz, ramMHz10);
+                    "[%u%% %u%%] %u%%%s%u.%u", cpuL, gpuL, totL, ramDiff, ramMHz, ramMHz10);
             } else {
                 // Split: brackets top, total@freq bottom
                 snprintf(RAM_var_compressed_c, sizeof(RAM_var_compressed_c),

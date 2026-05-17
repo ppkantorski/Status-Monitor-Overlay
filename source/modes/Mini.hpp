@@ -448,8 +448,8 @@ public:
                         } else {
                             // Helper: data-only width for load part
                             const uint32_t sbs_data_w = !settings.showStackedRAMLoad
-                                ? renderer->getTextDimensions("[100% 100%]100%@4444.4", false, fontsize).first
-                                : std::max(renderer->getTextDimensions("[100% 100%]", false, fontsize).first,
+                                ? renderer->getTextDimensions("[44% 44%] 100%@4444.4", false, fontsize).first
+                                : std::max(renderer->getTextDimensions("[44% 44%]", false, fontsize).first,
                                            renderer->getTextDimensions("100%@4444.4", false, fontsize).first);
                             if (!settings.realVolts) {
                                 width = sbs_data_w;
@@ -492,8 +492,8 @@ public:
                                     const uint32_t data_rw4b = !settings.showRAMLoadCPUGPU
                                         ? renderer->getTextDimensions("100%@4444.4", false, fontsize).first
                                         : !settings.showStackedRAMLoad
-                                            ? renderer->getTextDimensions("[100% 100%]100%@4444.4", false, fontsize).first
-                                            : std::max(renderer->getTextDimensions("[100% 100%]", false, fontsize).first,
+                                            ? renderer->getTextDimensions("[44% 44%] 100%@4444.4", false, fontsize).first
+                                            : std::max(renderer->getTextDimensions("[44% 44%]", false, fontsize).first,
                                                        renderer->getTextDimensions("100%@4444.4", false, fontsize).first);
                                     const uint32_t volt_temp_row_w = data_rw4b + sbs_dw4b + std::max(vdd2_rw4b, vddq_rw4b) + sbs_dw4b + tmp_rw4b;
                                     width = std::max(width, volt_temp_row_w);
@@ -507,8 +507,8 @@ public:
                                     const uint32_t data_rw4 = !settings.showRAMLoadCPUGPU
                                         ? renderer->getTextDimensions("100%@4444.4", false, fontsize).first
                                         : !settings.showStackedRAMLoad
-                                            ? renderer->getTextDimensions("[100% 100%]100%@4444.4", false, fontsize).first
-                                            : std::max(renderer->getTextDimensions("[100% 100%]", false, fontsize).first,
+                                            ? renderer->getTextDimensions("[44% 44%] 100%@4444.4", false, fontsize).first
+                                            : std::max(renderer->getTextDimensions("[44% 44%]", false, fontsize).first,
                                                        renderer->getTextDimensions("100%@4444.4", false, fontsize).first);
                                     // Total is same either way; max(vdd2,vddq)+div+temp == temp+div+max(vdd2,vddq)
                                     const uint32_t ctr_row_w = data_rw4 + sbs_dw4 + tmp_w + sbs_dw4 + std::max(vdd2_rw4, vddq_rw4);
@@ -2505,7 +2505,7 @@ public:
                         if (!settings.showStackedRAMLoad) {
                             // SBS: [cpu% gpu%]total%@freq on one line
                             snprintf(MINI_RAM_var_compressed_c, sizeof(MINI_RAM_var_compressed_c),
-                                     "[%u%% %u%%]%u%%@%u.%u",
+                                     "[%u%% %u%%] %u%%@%u.%u",
                                      ramCpuLoadInt, ramGpuLoadInt, ramLoadInt, ramMHz, ramMHz10);
                         } else {
                             // Split: [cpu% gpu%] top, total%@freq bottom
