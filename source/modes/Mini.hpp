@@ -2132,12 +2132,28 @@ public:
                         renderer->drawString(batLbl, false, batLblX + _frameOffsetX + clippingOffsetX,
                             batCenterY, fontsize, settings.catColor);
                     }
-                    renderer->drawString(currentLine, false, baseX, baseY, fontsize, settings.textColor);
+                    // Right-align both rows within max(topW, botW) so the shorter line
+                    // aligns to the same right edge as the wider line (mirrors CPU/RAM behaviour).
+                    {
+                        const char* botStr = settings.invertBatteryDisplay ? Battery_draw_c : Battery_pct_c;
+                        const uint32_t topW = renderer->getTextDimensions(currentLine, false, fontsize).first;
+                        const uint32_t botW = botStr[0] ? renderer->getTextDimensions(std::string(botStr), false, fontsize).first : 0;
+                        const int batColW = (int)std::max(topW, botW);
+                        const int topDrawX = baseX + batColW - (int)topW;
+                        renderer->drawString(currentLine, false, topDrawX, baseY, fontsize, settings.textColor);
+                    }
 
                 } else if (labelIndex < labelLines.size() && labelLines[labelIndex] == "BAT_SBOT") {
-                    // BAT split row 2: bottom row, same X as top row.
+                    // BAT split row 2: bottom row, right-aligned to match top row.
                     const int batBotY = baseY - (int)settings.spacing / 2;
-                    renderer->drawString(currentLine, false, baseX, batBotY, fontsize, settings.textColor);
+                    {
+                        const char* topStr = settings.invertBatteryDisplay ? Battery_pct_c : Battery_c;
+                        const uint32_t topW = topStr[0] ? renderer->getTextDimensions(std::string(topStr), false, fontsize).first : 0;
+                        const uint32_t botW = renderer->getTextDimensions(currentLine, false, fontsize).first;
+                        const int batColW = (int)std::max(topW, botW);
+                        const int botDrawX = baseX + batColW - (int)botW;
+                        renderer->drawString(currentLine, false, botDrawX, batBotY, fontsize, settings.textColor);
+                    }
                     currentY -= (int)settings.spacing / 2;
 
                 } else if (labelIndex < labelLines.size() && labelLines[labelIndex] == "TMP_SFAN") {

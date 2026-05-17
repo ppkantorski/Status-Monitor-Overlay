@@ -1815,6 +1815,7 @@ struct MicroSettings {
     bool disableScreenshots;
     uint8_t horizontalPadding;  // 0-10 px, left/right gap from screen edge to text; default 8
     uint8_t verticalPadding;    // 0-8 px, gap above/below text within bar; default 2
+    uint8_t labelPadding;       // 2-8 px, gap between element label and its value; 0 = auto (font-size-based)
 };
 
 struct FpsCounterSettings {
@@ -2350,6 +2351,7 @@ ALWAYS_INLINE void GetConfigSettings(MicroSettings* settings) {
     settings->refreshRate = 3;
     settings->horizontalPadding = 12;
     settings->verticalPadding   = 6;
+    settings->labelPadding      = 0;  // 0 = auto (font-size-based)
 
     // Open and read file efficiently
     FILE* configFile = fopen(configIniPath, "r");
@@ -2705,6 +2707,10 @@ ALWAYS_INLINE void GetConfigSettings(MicroSettings* settings) {
     it = section.find("vertical_padding");
     if (it != section.end()) {
         settings->verticalPadding = (uint8_t)std::clamp(atoi(it->second.c_str()), 0, 20);
+    }
+    it = section.find("label_padding");
+    if (it != section.end()) {
+        settings->labelPadding = (uint8_t)std::clamp(atoi(it->second.c_str()), 4, 12);
     }
 
 }

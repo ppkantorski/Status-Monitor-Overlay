@@ -1540,6 +1540,74 @@ public:
 };
 
 
+// Micro Label Padding (2–8 px, gap between label and value)
+class MicroLabelPaddingConfig : public tsl::Gui {
+    int currentPadding;
+    int autoDefault;
+private:
+    static constexpr int MIN_PADDING = 4;
+    static constexpr int MAX_PADDING = 12;
+
+public:
+    MicroLabelPaddingConfig() {
+        // Determine the auto default based on font size (mirrors calculateLayoutMetrics logic)
+        const std::string fsVal = ult::parseValueFromIniSection(configIniPath, "micro", "handheld_font_size");
+        const int fs = fsVal.empty() ? 15 : atoi(fsVal.c_str());
+        if (fs <= 16) autoDefault = 6;
+        else if (fs <= 20) autoDefault = 8;
+        else autoDefault = 10;
+
+        const std::string value = ult::parseValueFromIniSection(configIniPath, "micro", "label_padding");
+        currentPadding = value.empty() ? 0 : std::clamp(atoi(value.c_str()), MIN_PADDING, MAX_PADDING);
+    }
+    ~MicroLabelPaddingConfig() { lastSelectedListItem = nullptr; }
+
+    virtual tsl::elm::Element* createUI() override {
+        auto* list = new tsl::elm::List();
+        list->addItem(new tsl::elm::CategoryHeader("Label Padding"));
+        for (int p = MIN_PADDING; p <= MAX_PADDING; ++p) {
+            const bool isAuto = (currentPadding == 0 && p == autoDefault);
+            const bool isSelected = (currentPadding == p) || isAuto;
+            std::string label = std::to_string(p) + " px";
+            if (p == autoDefault) label += " (default)";
+            auto* item = new tsl::elm::ListItem(label);
+            if (isSelected) {
+                item->setValue(ult::CHECKMARK_SYMBOL);
+                lastSelectedListItem = item;
+            }
+            item->setClickListener([this, item, p](uint64_t keys) {
+                if (keys & KEY_A) {
+                    ult::setIniFileValue(configIniPath, "micro", "label_padding", std::to_string(p));
+                    item->setValue(ult::CHECKMARK_SYMBOL);
+                    if (lastSelectedListItem && item != lastSelectedListItem)
+                        lastSelectedListItem->setValue("");
+                    lastSelectedListItem = item;
+                    return true;
+                }
+                return false;
+            });
+            list->addItem(item);
+        }
+        list->jumpToItem("", ult::CHECKMARK_SYMBOL, false);
+        auto* rootFrame = new tsl::elm::OverlayFrame("Status Monitor", "Micro " + ult::DIVIDER_SYMBOL + " Configuration");
+        rootFrame->setContent(list);
+        return rootFrame;
+    }
+
+    virtual bool handleInput(u64 keysDown, u64 keysHeld, const HidTouchState &touchPos, HidAnalogStickState joyStickPosLeft, HidAnalogStickState joyStickPosRight) override {
+        if (keysDown & KEY_B) {
+            triggerExitFeedback();
+            jumpItemName = "Label Padding";
+            jumpItemValue = "";
+            jumpItemExactMatch = false;
+            tsl::swapTo<ConfiguratorOverlay>(SwapDepth(2), "Micro");
+            return true;
+        }
+        return false;
+    }
+};
+
+
 // Font Size Selector
 class FontSizeSelector : public tsl::Gui {
 private:
@@ -2733,6 +2801,18 @@ public:
                 return false;
             });
             list->addItem(vPadding);
+
+            // Label Padding for Micro
+            auto* lPadding = new tsl::elm::ListItem("Label Padding");
+            lPadding->setValue(std::to_string(getCurrentMicroLabelPadding()) + " px");
+            lPadding->setClickListener([this](uint64_t keys) {
+                if (keys & KEY_A) {
+                    tsl::changeTo<MicroLabelPaddingConfig>();
+                    return true;
+                }
+                return false;
+            });
+            list->addItem(lPadding);
             
         } else if (isFullMode) {
             // Horizontal Position for Full (Left/Right only)
@@ -2877,6 +2957,18 @@ private:
     int getCurrentMicroVPadding() {
         const std::string value = ult::parseValueFromIniSection(configIniPath, "micro", "vertical_padding");
         return value.empty() ? 2 : std::clamp(atoi(value.c_str()), 0, 20);
+    }
+
+    int getCurrentMicroLabelPadding() {
+        const std::string value = ult::parseValueFromIniSection(configIniPath, "micro", "label_padding");
+        if (value.empty()) {
+            // Show auto default based on font size
+            const std::string fsVal = ult::parseValueFromIniSection(configIniPath, "micro", "handheld_font_size");
+            const int fs = fsVal.empty() ? 15 : atoi(fsVal.c_str());
+            if (fs <= 16) return 6;
+            return 8;
+        }
+        return std::clamp(atoi(value.c_str()), 4, 12);
     }
 
     int getCurrentFramePadding() {

@@ -117,6 +117,10 @@ private:
             layout.volt_data_gap = 0;
             layout.item_spacing = 20;
         }
+        // Override label_data_gap if user has set a label_padding value (non-zero = explicit)
+        if (settings.labelPadding != 0) {
+            layout.label_data_gap = settings.labelPadding;
+        }
         // Horizontal padding setting controls left/right gap from screen edge to text.
         // The bar rectangle always spans full screen width; only the text is inset.
         layout.side_margin = settings.horizontalPadding;
@@ -1149,6 +1153,8 @@ public:
                         ? current_x + item_layout.data_width - renderer->getTextDimensions(item.data_ptr, false, fontsize).first
                         : (cpuFullIsSplit && item.type == 0)
                         ? current_x + (cpuFullColW - item_layout.data_width)  // right-align brackets
+                        : (batIsSplit && item.type == 6)
+                        ? current_x + item_layout.data_width - renderer->getTextDimensions(item.data_ptr, false, fontsize).first  // right-align top bat row
                         : current_x;
                     renderer->drawStringWithColoredSections(item.data_ptr, false, specialChars, drawX, dataY, fontsize, textColorA, (settings.separatorColor));
                 }
@@ -1418,8 +1424,10 @@ public:
                 // current_x has already advanced past data_width; step back to the data column start.
                 if (batIsSplit && item.type == 6) {
                     const char* botStr = settings.invertBatteryDisplay ? Battery_draw_c : Battery_pct_c;
+                    const uint32_t botW = botStr[0] ? renderer->getTextDimensions(botStr, false, fontsize).first : 0;
                     const uint32_t dataStartX = current_x - item_layout.data_width;
-                    renderer->drawString(botStr, false, dataStartX, gridBotY, fontsize, textColorA);
+                    const uint32_t botX = dataStartX + item_layout.data_width - botW;  // right-align
+                    renderer->drawString(botStr, false, botX, gridBotY, fontsize, textColorA);
                 }
 
                 // RAM load split: draw total@freq on bottom row aligned with [cpu% gpu%].
