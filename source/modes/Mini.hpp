@@ -2887,7 +2887,7 @@ public:
                     strcat(Temp, " ");
                 } else {
                     strcat(Temp, MINI_CPU_compressed_c);
-                    if (settings.realVolts && MINI_CPU_volt_c[0] && !settings.voltageAtEndCPU) {
+                    if (settings.realVolts && MINI_CPU_volt_c[0] && (!settings.voltageAtEndCPU || !mini_cpu_temp_c[0])) {
                         strcat(Temp, "");
                         strcat(Temp, MINI_CPU_volt_c);
                     }
@@ -2904,7 +2904,7 @@ public:
                     strcat(Temp, " ");
                 } else {
                     strcat(Temp, MINI_GPU_Load_c);
-                    if (settings.realVolts && MINI_GPU_volt_c[0] && !settings.voltageAtEndGPU) {
+                    if (settings.realVolts && MINI_GPU_volt_c[0] && (!settings.voltageAtEndGPU || !mini_gpu_temp_c[0])) {
                         strcat(Temp, "");
                         strcat(Temp, MINI_GPU_volt_c);
                     }
