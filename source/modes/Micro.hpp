@@ -1692,7 +1692,7 @@ public:
             if (R_SUCCEEDED(sysclkCheck) || R_SUCCEEDED(hocclkCheck)) {
                 // Use IPC RAM load if available
                 snprintf(MICRO_RAM_all_c, sizeof(MICRO_RAM_all_c), "%hu%%",
-                         ramLoad[SysClkRamLoad_All] / 10);
+                         (ramLoad[SysClkRamLoad_All] + 5) / 10);
             } else {
                 const uint64_t RAM_Total_all = RAM_Total_application_u + RAM_Total_applet_u + RAM_Total_system_u + RAM_Total_systemunsafe_u;
                 const uint64_t RAM_Used_all = RAM_Used_application_u + RAM_Used_applet_u + RAM_Used_system_u + RAM_Used_systemunsafe_u;
@@ -1714,10 +1714,10 @@ public:
         RAM_load_bot_c[0] = '\0';
         if (settings.showRAMLoad && settings.showRAMLoadCPUGPU &&
             (R_SUCCEEDED(sysclkCheck) || R_SUCCEEDED(hocclkCheck))) {
-            const unsigned cpuL = ramLoad[SysClkRamLoad_Cpu] / 10;
+            const unsigned cpuL = (ramLoad[SysClkRamLoad_Cpu] + 5) / 10;
             const int gpuRaw = ramLoad[SysClkRamLoad_All] - ramLoad[SysClkRamLoad_Cpu];
-            const unsigned gpuL = (unsigned)(gpuRaw > 0 ? gpuRaw / 10 : 0);
-            const unsigned totL = ramLoad[SysClkRamLoad_All] / 10;
+            const unsigned gpuL = (unsigned)(gpuRaw > 0 ? (gpuRaw + 5) / 10 : 0);
+            const unsigned totL = (ramLoad[SysClkRamLoad_All] + 5) / 10;
             if (!settings.showStackedRAMLoad) {
                 // SBS: [cpu% gpu%]total%@freq on one line
                 snprintf(RAM_var_compressed_c, sizeof(RAM_var_compressed_c),

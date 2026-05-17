@@ -2567,12 +2567,12 @@ public:
                 unsigned ramLoadInt;
                 
                 if (R_SUCCEEDED(sysclkCheck) || R_SUCCEEDED(hocclkCheck)) {
-                    ramLoadInt = ramLoad[SysClkRamLoad_All] / 10;
+                    ramLoadInt = (ramLoad[SysClkRamLoad_All] + 5) / 10;
                     
                     if (settings.showRAMLoadCPUGPU) {
-                        unsigned ramCpuLoadInt = ramLoad[SysClkRamLoad_Cpu] / 10;
+                        unsigned ramCpuLoadInt = (ramLoad[SysClkRamLoad_Cpu] + 5) / 10;
                         int RAM_GPU_Load = ramLoad[SysClkRamLoad_All] - ramLoad[SysClkRamLoad_Cpu];
-                        unsigned ramGpuLoadInt = (unsigned)(RAM_GPU_Load > 0 ? RAM_GPU_Load / 10 : 0);
+                        unsigned ramGpuLoadInt = (unsigned)(RAM_GPU_Load > 0 ? (RAM_GPU_Load + 5) / 10 : 0);
                         const uint32_t useHz = (settings.realFrequencies && realRAM_Hz) ? realRAM_Hz : (uint32_t)RAM_Hz;
                         const unsigned ramMHz   = useHz / 1000000;
                         const unsigned ramMHz10 = (useHz / 100000) % 10;
@@ -2887,7 +2887,7 @@ public:
                     strcat(Temp, " ");
                 } else {
                     strcat(Temp, MINI_CPU_compressed_c);
-                    if (settings.realVolts && MINI_CPU_volt_c[0] && (!settings.voltageAtEndCPU || !mini_cpu_temp_c[0])) {
+                    if (settings.realVolts && MINI_CPU_volt_c[0] && !settings.voltageAtEndCPU) {
                         strcat(Temp, "");
                         strcat(Temp, MINI_CPU_volt_c);
                     }
@@ -2904,7 +2904,7 @@ public:
                     strcat(Temp, " ");
                 } else {
                     strcat(Temp, MINI_GPU_Load_c);
-                    if (settings.realVolts && MINI_GPU_volt_c[0] && (!settings.voltageAtEndGPU || !mini_gpu_temp_c[0])) {
+                    if (settings.realVolts && MINI_GPU_volt_c[0] && !settings.voltageAtEndGPU) {
                         strcat(Temp, "");
                         strcat(Temp, MINI_GPU_volt_c);
                     }
