@@ -709,6 +709,29 @@ public:
                         rectangleWidth = width;
                     }
                 }
+                // Adjust bottomPadding so the visual gap below the last glyph matches
+                // the visual gap above the first glyph.
+                //
+                // drawString(Y) draws with the baseline at Y.  The first row's Y is:
+                //   cachedBaseY + fontsize + spacing + topPadding
+                // so the top of its glyphs sits at:
+                //   Y - ascent  →  gap from box top = fontsize + spacing + topPadding - ascent
+                //
+                // The last row's baseline is at:
+                //   Y_last  (= first row Y + (N-1)*(fontsize+spacing))
+                // Bottom of its glyphs = Y_last + descentAbs.
+                // Box bottom = cachedBaseY + (fontsize+spacing)*N + spacing + topPadding + bottomPadding
+                // Bottom gap = spacing + bottomPadding - descentAbs
+                //
+                // Setting top gap == bottom gap:
+                //   fontsize + spacing + topPadding - ascent = spacing + bottomPadding - descentAbs
+                //   bottomPadding = topPadding + (fontsize - ascent) + descentAbs
+                {
+                    const auto fm = tsl::gfx::FontManager::getFontMetricsForCharacter('A', fontsize);
+                    const int ascent     = fm.ascent;        // pixels above baseline (positive)
+                    const int descentAbs = -(fm.descent);    // fm.descent is negative; make positive
+                    bottomPadding = topPadding + ((int)fontsize - ascent) + descentAbs;
+                }
                 Initialized = true;
                 needsRecalc = true;
             }
