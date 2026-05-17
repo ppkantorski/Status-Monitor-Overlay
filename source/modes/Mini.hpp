@@ -32,6 +32,7 @@ private:
     int frameOffsetX, frameOffsetY;
     int topPadding, bottomPadding;
     int cachedBaselineOffset = 0;  // ascent pixels; used for currentY start
+    int cachedDescentAbs     = 0;  // descent pixels below baseline; used for last-row glyph bottom
     bool isDragging = false;
 
     bool skipOnce = true;
@@ -85,6 +86,7 @@ public:
         topPadding = 5;
         bottomPadding = 5;
         cachedBaselineOffset = (int)fontsize;  // updated to true ascent once font is loaded
+        cachedDescentAbs     = 0;              // updated to true descent once font is loaded
 
         //if (ult::limitedMemory) {
         //    tsl::gfx::Renderer::get().setLayerPos(std::max(std::min((int)(frameOffsetX*1.5 + 0.5) - tsl::impl::currentUnderscanPixels.first, 1280-32 - tsl::impl::currentUnderscanPixels.first), 0), 0);
@@ -712,21 +714,20 @@ public:
                     }
                 }
                 {
+                    // drawString(Y) places baseline at Y; glyph top is at Y - ascent,
+                    // glyph bottom is at Y + descentAbs. stbtt scales so ascent + descentAbs == fontsize
+                    // BEFORE int truncation; afterward we can lose 1-2 px. Using fontsize in the height
+                    // formula bakes that truncation loss into the bottom gap, making it visibly fatter.
+                    // We measure ascent/descentAbs directly and use them so layout is pixel-exact.
                     const auto fm = tsl::gfx::FontManager::getFontMetricsForCharacter('A', fontsize);
                     const int ascent     = fm.ascent;        // pixels above baseline (positive)
-                    //const int descentAbs = -(fm.descent);    // fm.descent is negative; make positive
-                    // currentY for row 1 = boxTop + ascent + spacing + topPadding
-                    //   glyph top pixel  = boxTop + spacing + topPadding   (top gap = spacing+topPadding)
-                    // last baseline      = boxTop + (fontsize+spacing)*N + topPadding - descentAbs
-                    //   last glyph bot   = boxTop + (fontsize+spacing)*N + topPadding
-                    // box bottom         = boxTop + (fontsize+spacing)*N + spacing + topPadding + bottomPadding
-                    // bottom gap         = spacing + bottomPadding
-                    // equal gaps require: bottomPadding = topPadding  (descentAbs already cancels)
+                    const int descentAbs = -(fm.descent);    // fm.descent is negative; make positive
                     if (ascent > 0) {
                         cachedBaselineOffset = ascent;
-                        bottomPadding = topPadding;
-                        Initialized = true;
-                        needsRecalc = true;
+                        cachedDescentAbs     = descentAbs;
+                        bottomPadding        = topPadding;   // equal padding -> equal top/bottom gaps
+                        Initialized          = true;
+                        needsRecalc          = true;
                     }
                     // else: font not loaded yet, leave Initialized=false and retry next frame
                 }
@@ -881,8 +882,24 @@ public:
                 // unlike Variables[] which is written by update() and may lag behind needsRecalc.
                 const size_t actualEntryCount = labelLines.size();
                 
-                // Use the actual entry count for height calculation
-                cachedHeight = ((fontsize + settings.spacing) * actualEntryCount) + settings.spacing + topPadding + bottomPadding;
+                // Height layout (drawString puts baseline at Y):
+                //   currentY for row 1 = boxTop + ascent + spacing + topPadding
+                //     -> first glyph top pixel sits at: spacing + topPadding   (= top gap)
+                //   each subsequent row advances by (fontsize + spacing)
+                //   last row's baseline   = boxTop + ascent + spacing + topPadding + (N-1)*(fontsize+spacing)
+                //     -> last glyph bottom = last baseline + descentAbs
+                //   We want bottom gap == top gap == (spacing + bottomPadding), with bottomPadding == topPadding.
+                //   So: cachedHeight = last_glyph_bottom + spacing + bottomPadding
+                //                    = ascent + descentAbs + 2*spacing + topPadding + bottomPadding
+                //                      + (N-1)*(fontsize+spacing)
+                //   Using ascent+descentAbs (measured) instead of fontsize avoids the 1-2 px truncation
+                //   error stbtt's int-cast leaves in (ascent+descentAbs) vs fontsize -- that error was
+                //   leaking entirely into the bottom gap, making it visibly fatter than the top.
+                const int   firstRowExtent = cachedBaselineOffset + cachedDescentAbs;  // ascent + descentAbs
+                cachedHeight = (firstRowExtent
+                              + ((fontsize + settings.spacing) * (actualEntryCount > 0 ? actualEntryCount - 1 : 0))
+                              + 2 * settings.spacing
+                              + topPadding + bottomPadding);
                 // Two-row blocks (dual-row TMP, TMP split, RAM split) use half inter-row spacing, trim box height
                 if ((settings.showComponentTemps && settings.showSocPcbSkinTemps) ||
                     (settings.showStackedFanSOC && settings.showFanPercentage &&
@@ -2321,6 +2338,7 @@ public:
                 Initialized = false;
                 fontsize = settings.handheldFontSize;
                 cachedBaselineOffset = (int)fontsize;
+                cachedDescentAbs     = 0;
             }
         }
         else if (performanceMode == ApmPerformanceMode_Boost) {
@@ -2328,6 +2346,7 @@ public:
                 Initialized = false;
                 fontsize = settings.dockedFontSize;
                 cachedBaselineOffset = (int)fontsize;
+                cachedDescentAbs     = 0;
             }
         }
     
