@@ -51,6 +51,7 @@ private:
     bool cpuIsSplit = false; // true when CPU volt on row 1, CPU temp on row 2
     bool cpuFullIsSplit = false; // true when Full CPU brackets on top row, freq on bottom row
     bool batIsSplit     = false; // true when BAT draw/pct stack vertically
+    bool dtcIsSplit     = false; // true when DTC splits at DIVIDER_SYMBOL into 2 stacked rows
     bool ramLoadIsSplit = false; // true when RAM CPU/GPU load stacks above total@freq
     bool gpuIsSplit = false; // true when GPU volt on row 1, GPU temp on row 2
     bool ramTempSplit = false; // true when VDDQ on row 1, RAM temp on row 2 (VDDQ-only Mariko)
@@ -357,12 +358,14 @@ public:
         bool hasGpu = false;
         bool hasRam = false;
         bool hasBat = false;
+        bool hasDtc = false;
         for (const auto& item : renderItems) {
             if (item.type == 4) hasTmp = true;
             if (item.type == 0) hasCpu = true;
             if (item.type == 1) hasGpu = true;
             if (item.type == 2) hasRam = true;
             if (item.type == 6) hasBat = true;
+            if (item.type == 8) hasDtc = true;
         }
         tmpIsSplit = hasTmp &&
                      settings.showStackedFanSOC &&
@@ -384,6 +387,8 @@ public:
         cpuFullIsSplit = hasCpu && settings.showFullCPU && settings.showStackedFullCPU;
         // BAT stacked: power draw on top row, pct+estimate on bottom row
         batIsSplit = hasBat && settings.showStackedBAT;
+        // DTC stacked: split user's dtcFormat at DIVIDER_SYMBOL into 2 rows
+        dtcIsSplit = hasDtc && settings.showDTC && settings.showStackedDTC;
         ramLoadIsSplit = hasRam && settings.showRAMLoad && settings.showRAMLoadCPUGPU && settings.showStackedRAMLoad;
         // GPU die temp split: volt on top row, GPU temp on bottom row
         gpuIsSplit = hasGpu && settings.showGPUTemp && settings.showStackedGPUTemp && settings.realVolts;
@@ -435,7 +440,7 @@ public:
             prepareRenderItems();
             calculateLayoutMetrics(renderer);
             {
-                const int32_t gridExtraHeight = (tmpIsGrid || tmpIsSplit || ramIsSplit || cpuIsSplit || gpuIsSplit || ramTempSplit || cpuFullIsSplit || batIsSplit || ramLoadIsSplit) ? ((int32_t)cachedMargin + gridGap) : 0;
+                const int32_t gridExtraHeight = (tmpIsGrid || tmpIsSplit || ramIsSplit || cpuIsSplit || gpuIsSplit || ramTempSplit || cpuFullIsSplit || batIsSplit || ramLoadIsSplit || dtcIsSplit) ? ((int32_t)cachedMargin + gridGap) : 0;
                 const int32_t vPad = (int32_t)settings.verticalPadding;
                 // Visual text height = ascent + |descent|  (excludes lineGap)
                 const int32_t textVisualH = cachedAscent + cachedDescentAbs;
@@ -675,6 +680,28 @@ public:
                     item_layout.total_width = item_layout.label_width + layout.label_data_gap + std::max(draw_w, pct_w);
                 }
 
+                // DTC split: width = label + gap + max(topHalf, botHalf) computed from the
+                // LIVE DTC_c string (the actual rendered content) — not from probe samples.
+                // Sample-based probes can be wider than the live string, which would push
+                // the right-aligned content rightward and leave visible empty space on the
+                // left of the cell. Using live widths makes the cell tightly hug whatever
+                // is being drawn this frame, the same way inline DTC already works.
+                // If the user's format has no DIVIDER_SYMBOL, leave data_width alone (it
+                // was already set from item.data_ptr above).
+                if (dtcIsSplit && item.type == 8 && settings.showDTC && item.data_ptr && item.data_ptr[0]) {
+                    const std::string s(item.data_ptr);
+                    const size_t divPos = s.find(ult::DIVIDER_SYMBOL);
+                    if (divPos != std::string::npos) {
+                        const std::string topHalf = s.substr(0, divPos);
+                        const std::string botHalf = s.substr(divPos + ult::DIVIDER_SYMBOL.length());
+                        const uint32_t tw = topHalf.empty() ? 0 : renderer->getTextDimensions(topHalf, false, fontsize).first;
+                        const uint32_t bw = botHalf.empty() ? 0 : renderer->getTextDimensions(botHalf, false, fontsize).first;
+                        const uint32_t maxW = std::max(tw, bw);
+                        item_layout.total_width = item_layout.label_width + layout.label_data_gap + maxW;
+                        item_layout.data_width  = maxW;
+                    }
+                }
+
                 item_layouts.push_back(item_layout);
                 total_main_width += item_layout.total_width;
             }
@@ -814,11 +841,11 @@ public:
             // \u2500\u2500 Grid-mode Y coordinates \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
             // When tmpIsGrid: bar is taller; other items centered in expanded bar;
             // TMP renders as two rows (componentTemps_c top, skin_temperature_c bottom).
-            const int32_t gridExtraH  = (tmpIsGrid || tmpIsSplit || ramIsSplit || cpuIsSplit || gpuIsSplit || ramTempSplit || cpuFullIsSplit || batIsSplit || ramLoadIsSplit) ? ((int32_t)cachedMargin + gridGap) : 0;
+            const int32_t gridExtraH  = (tmpIsGrid || tmpIsSplit || ramIsSplit || cpuIsSplit || gpuIsSplit || ramTempSplit || cpuFullIsSplit || batIsSplit || ramLoadIsSplit || dtcIsSplit) ? ((int32_t)cachedMargin + gridGap) : 0;
             const int32_t halfExtra   = gridExtraH / 2;
             // Y for non-TMP items — centered in expanded bar (grid or split)
             const int32_t singleItemY = (int32_t)base_y + (int32_t)cachedMargin +
-                                        ((tmpIsGrid || tmpIsSplit || ramIsSplit || cpuIsSplit || gpuIsSplit || ramTempSplit || cpuFullIsSplit || batIsSplit || ramLoadIsSplit) ? (settings.setPosBottom ? -halfExtra : halfExtra) : 0);
+                                        ((tmpIsGrid || tmpIsSplit || ramIsSplit || cpuIsSplit || gpuIsSplit || ramTempSplit || cpuFullIsSplit || batIsSplit || ramLoadIsSplit || dtcIsSplit) ? (settings.setPosBottom ? -halfExtra : halfExtra) : 0);
             // Y for the two TMP rows (used by both grid mode and split fan/volt mode)
             const int32_t gridTopY = (int32_t)base_y + (int32_t)cachedMargin +
                                      (settings.setPosBottom ? -(int32_t)gridExtraH : 0);
@@ -1171,7 +1198,26 @@ public:
                 } else {
                     // Dynamic colors off: normal rendering
                     // cpuFullIsSplit: brackets go on the top row, not the center row
-                    const int32_t dataY = (cpuFullIsSplit && item.type == 0) ? gridTopY : (batIsSplit && item.type == 6) ? gridTopY : (ramLoadIsSplit && item.type == 2) ? gridTopY : singleItemY;
+
+                    // DTC split: pre-compute top half of the formatted datetime (everything
+                    // before DIVIDER_SYMBOL). Bottom half is drawn separately below.
+                    // If the user's format has no DIVIDER_SYMBOL, dtcDoSplit stays false and
+                    // we fall through to the normal full-string draw.
+                    std::string dtcTopHalfStr;
+                    bool dtcDoSplit = false;
+                    if (dtcIsSplit && item.type == 8 && item.data_ptr && item.data_ptr[0]) {
+                        const std::string dtStr(item.data_ptr);
+                        const size_t divPos = dtStr.find(ult::DIVIDER_SYMBOL);
+                        if (divPos != std::string::npos) {
+                            dtcTopHalfStr = dtStr.substr(0, divPos);
+                            dtcDoSplit = true;
+                        }
+                    }
+                    const char* dtcTopPtr = dtcDoSplit ? dtcTopHalfStr.c_str() : item.data_ptr;
+                    const uint32_t dtcTopW = dtcDoSplit
+                        ? renderer->getTextDimensions(dtcTopHalfStr, false, fontsize).first : 0u;
+
+                    const int32_t dataY = (cpuFullIsSplit && item.type == 0) ? gridTopY : (batIsSplit && item.type == 6) ? gridTopY : (ramLoadIsSplit && item.type == 2) ? gridTopY : (dtcDoSplit) ? gridTopY : singleItemY;
                     // ramLoadIsSplit top row: right-align [cpu% gpu%] so its right edge matches total@freq
                     // cpuFullIsSplit top row: right-align brackets within max(brackets_w, freq_w) so both
                     //   rows share the same right edge and neither overflows left into the label area.
@@ -1185,8 +1231,10 @@ public:
                         ? current_x + (cpuFullColW - item_layout.data_width)  // right-align brackets
                         : (batIsSplit && item.type == 6)
                         ? current_x + item_layout.data_width - renderer->getTextDimensions(item.data_ptr, false, fontsize).first  // right-align top bat row
+                        : (dtcDoSplit)
+                        ? current_x + item_layout.data_width - dtcTopW  // right-align top DTC half
                         : current_x;
-                    renderer->drawStringWithColoredSections(item.data_ptr, false, specialChars, drawX, dataY, fontsize, textColorA, (settings.separatorColor));
+                    renderer->drawStringWithColoredSections(dtcTopPtr, false, specialChars, drawX, dataY, fontsize, textColorA, (settings.separatorColor));
                 }
                 current_x += item_layout.data_width;
                 // Save the start of the data column before voltage may advance current_x.
@@ -1458,6 +1506,23 @@ public:
                     const uint32_t dataStartX = current_x - item_layout.data_width;
                     const uint32_t botX = dataStartX + item_layout.data_width - botW;  // right-align
                     renderer->drawString(botStr, false, botX, gridBotY, fontsize, textColorA);
+                }
+
+                // DTC split: draw bottom half (everything after DIVIDER_SYMBOL in the user's
+                // dtcFormat). Right-aligned to share the same right edge as the top half,
+                // so the shorter line fits flush-right against the wider line.
+                if (dtcIsSplit && item.type == 8 && item.data_ptr && item.data_ptr[0]) {
+                    const std::string dtStr(item.data_ptr);
+                    const size_t divPos = dtStr.find(ult::DIVIDER_SYMBOL);
+                    if (divPos != std::string::npos) {
+                        const std::string botHalf = dtStr.substr(divPos + ult::DIVIDER_SYMBOL.length());
+                        if (!botHalf.empty()) {
+                            const uint32_t botW = renderer->getTextDimensions(botHalf, false, fontsize).first;
+                            const uint32_t dataStartX = current_x - item_layout.data_width;
+                            const uint32_t botX = dataStartX + item_layout.data_width - botW;  // right-align
+                            renderer->drawStringWithColoredSections(botHalf, false, specialChars, botX, gridBotY, fontsize, textColorA, (settings.separatorColor));
+                        }
+                    }
                 }
 
                 // RAM load split: draw total@freq on bottom row aligned with [cpu% gpu%].
@@ -1734,7 +1799,11 @@ public:
             } else {
                 const uint64_t RAM_Total_all = RAM_Total_application_u + RAM_Total_applet_u + RAM_Total_system_u + RAM_Total_systemunsafe_u;
                 const uint64_t RAM_Used_all = RAM_Used_application_u + RAM_Used_applet_u + RAM_Used_system_u + RAM_Used_systemunsafe_u;
-                const unsigned ramLoadPercent = (RAM_Total_all > 0) ? (unsigned)((RAM_Used_all * 100) / RAM_Total_all) : 0;
+                // Round to nearest by adding half-divisor before dividing — matches the
+                // (value + 5) / 10 pattern used by the IPC RAM load path above.
+                const unsigned ramLoadPercent = (RAM_Total_all > 0)
+                    ? (unsigned)((RAM_Used_all * 100 + RAM_Total_all / 2) / RAM_Total_all)
+                    : 0;
                 snprintf(MICRO_RAM_all_c, sizeof(MICRO_RAM_all_c), "%u%%", ramLoadPercent);
             }
         }

@@ -1742,7 +1742,9 @@ struct MiniSettings {
     bool showDTC;
     bool useDTCSymbol;
     bool useIntegerFPS;
-    std::string dtcFormat;
+    std::string dtcFormat;   // derived at load time: format1 + DIVIDER + format2 (or just format1 when format2 is "None")
+    std::string dtcFormat1;  // top half (always present)
+    std::string dtcFormat2;  // bottom half (== ult::OPTION_SYMBOL means "None" — no bottom half, no divider)
     size_t handheldFontSize;
     size_t dockedFontSize;
     size_t spacing;
@@ -1759,6 +1761,7 @@ struct MiniSettings {
     bool showSocPcbSkinTemps;   // show SOC/PCB/Skin temps row (default: true)
     bool invertBatteryDisplay;
     bool showStackedBAT;   // true = draw on top, pct on bottom stacked; false = draw+pct inline
+    bool showStackedDTC;   // true = split DTC at DIVIDER_SYMBOL into 2 stacked rows; false = single line
     bool disableScreenshots;
     //int setPos;
     int frameOffsetX;
@@ -1794,9 +1797,12 @@ struct MicroSettings {
     bool showDTC;
     bool useDTCSymbol;
     bool useIntegerFPS;
-    std::string dtcFormat;
+    std::string dtcFormat;   // derived at load time: format1 + DIVIDER + format2 (or just format1 when format2 is "None")
+    std::string dtcFormat1;  // top half (always present)
+    std::string dtcFormat2;  // bottom half (== ult::OPTION_SYMBOL means "None" — no bottom half, no divider)
     bool invertBatteryDisplay;
     bool showStackedBAT;   // true = draw on top, pct on bottom stacked; false = draw+pct inline
+    bool showStackedDTC;   // true = split DTC at DIVIDER_SYMBOL into 2 stacked rows; false = single line
     size_t handheldFontSize;
     size_t dockedFontSize;
     uint8_t alignTo;
@@ -1902,7 +1908,9 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
     settings->showDTC = true;
     settings->useDTCSymbol = true;
     settings->useIntegerFPS = false;
-    settings->dtcFormat = "%a, %b %d%I:%M %p";
+    settings->dtcFormat1 = "%a, %b %d";
+    settings->dtcFormat2 = "%I:%M %p";
+    settings->dtcFormat  = settings->dtcFormat1 + ult::DIVIDER_SYMBOL + settings->dtcFormat2;
     settings->handheldFontSize = 15;
     settings->dockedFontSize = 15;
     settings->spacing = 8;
@@ -1920,6 +1928,7 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
     settings->showSocPcbSkinTemps = true;
     settings->invertBatteryDisplay = true;
     settings->showStackedBAT = false;
+    settings->showStackedDTC = false;
     settings->refreshRate = 3;
     settings->disableScreenshots = false;
     //settings->setPos = 0;
@@ -2183,10 +2192,36 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
         settings->useIntegerFPS = (key != "FALSE");
     }
 
-    it = section.find("dtc_format");
-    if (it != section.end()) {
-        key = it->second;
-        settings->dtcFormat = std::move(key);
+    // DTC format: prefer the new two-part keys (dtc_format_1, dtc_format_2). Fall back
+    // to splitting the legacy dtc_format key at DIVIDER_SYMBOL so existing user configs
+    // keep working. Final dtcFormat is rebuilt as format1 + DIVIDER + format2 (or just
+    // format1 when format2 is OPTION_SYMBOL / "None"), so the rendering pipeline (which
+    // already splits dtcFormat at DIVIDER_SYMBOL for stacking) doesn't need to change.
+    {
+        const auto it1 = section.find("dtc_format_1");
+        const auto it2 = section.find("dtc_format_2");
+        const auto itLegacy = section.find("dtc_format");
+        if (it1 != section.end() || it2 != section.end()) {
+            if (it1 != section.end()) settings->dtcFormat1 = it1->second;
+            if (it2 != section.end()) settings->dtcFormat2 = it2->second;
+        } else if (itLegacy != section.end()) {
+            // Back-compat: split the legacy combined value at DIVIDER_SYMBOL.
+            const std::string legacy = itLegacy->second;
+            const size_t divPos = legacy.find(ult::DIVIDER_SYMBOL);
+            if (divPos != std::string::npos) {
+                settings->dtcFormat1 = legacy.substr(0, divPos);
+                settings->dtcFormat2 = legacy.substr(divPos + ult::DIVIDER_SYMBOL.length());
+            } else {
+                settings->dtcFormat1 = legacy;
+                settings->dtcFormat2 = ult::OPTION_SYMBOL;
+            }
+        }
+        // Rebuild the runtime dtcFormat that the rendering code consumes.
+        if (settings->dtcFormat2 == ult::OPTION_SYMBOL || settings->dtcFormat2.empty()) {
+            settings->dtcFormat = settings->dtcFormat1;
+        } else {
+            settings->dtcFormat = settings->dtcFormat1 + ult::DIVIDER_SYMBOL + settings->dtcFormat2;
+        }
     }
 
     // Process show string
@@ -2252,6 +2287,13 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
         key = it->second;
         convertToUpper(key);
         settings->showStackedBAT = (key == "FALSE");
+    }
+
+    it = section.find("show_side_by_side_dtc");
+    if (it != section.end()) {
+        key = it->second;
+        convertToUpper(key);
+        settings->showStackedDTC = (key == "FALSE");
     }
 
     // Process disable screenshots
@@ -2329,9 +2371,12 @@ ALWAYS_INLINE void GetConfigSettings(MicroSettings* settings) {
     settings->showDTC = true;
     settings->useDTCSymbol = true;
     settings->useIntegerFPS = false;
-    settings->dtcFormat = "%H:%M";
+    settings->dtcFormat1 = "%H:%M";
+    settings->dtcFormat2 = ult::OPTION_SYMBOL; // "None" — single-line, no second format
+    settings->dtcFormat  = settings->dtcFormat1; // no divider, no format2 (matches dtcFormat2 == OPTION_SYMBOL)
     settings->invertBatteryDisplay = false;
     settings->showStackedBAT = false;
+    settings->showStackedDTC = false;
     settings->handheldFontSize = 15;
     settings->dockedFontSize = 15;
     settings->alignTo = 1; // CENTER
@@ -2547,10 +2592,33 @@ ALWAYS_INLINE void GetConfigSettings(MicroSettings* settings) {
         settings->useIntegerFPS = (key != "FALSE");
     }
 
-    it = section.find("dtc_format");
-    if (it != section.end()) {
-        key = it->second;
-        settings->dtcFormat = std::move(key);
+    // DTC format: prefer the new two-part keys (dtc_format_1, dtc_format_2). Fall back
+    // to splitting the legacy dtc_format key at DIVIDER_SYMBOL so existing user configs
+    // keep working. Final dtcFormat is rebuilt as format1 + DIVIDER + format2 (or just
+    // format1 when format2 is OPTION_SYMBOL / "None").
+    {
+        const auto it1 = section.find("dtc_format_1");
+        const auto it2 = section.find("dtc_format_2");
+        const auto itLegacy = section.find("dtc_format");
+        if (it1 != section.end() || it2 != section.end()) {
+            if (it1 != section.end()) settings->dtcFormat1 = it1->second;
+            if (it2 != section.end()) settings->dtcFormat2 = it2->second;
+        } else if (itLegacy != section.end()) {
+            const std::string legacy = itLegacy->second;
+            const size_t divPos = legacy.find(ult::DIVIDER_SYMBOL);
+            if (divPos != std::string::npos) {
+                settings->dtcFormat1 = legacy.substr(0, divPos);
+                settings->dtcFormat2 = legacy.substr(divPos + ult::DIVIDER_SYMBOL.length());
+            } else {
+                settings->dtcFormat1 = legacy;
+                settings->dtcFormat2 = ult::OPTION_SYMBOL;
+            }
+        }
+        if (settings->dtcFormat2 == ult::OPTION_SYMBOL || settings->dtcFormat2.empty()) {
+            settings->dtcFormat = settings->dtcFormat1;
+        } else {
+            settings->dtcFormat = settings->dtcFormat1 + ult::DIVIDER_SYMBOL + settings->dtcFormat2;
+        }
     }
 
     // Invert the battery display value
@@ -2566,6 +2634,13 @@ ALWAYS_INLINE void GetConfigSettings(MicroSettings* settings) {
         key = it->second;
         convertToUpper(key);
         settings->showStackedBAT = (key == "FALSE");
+    }
+
+    it = section.find("show_side_by_side_dtc");
+    if (it != section.end()) {
+        key = it->second;
+        convertToUpper(key);
+        settings->showStackedDTC = (key == "FALSE");
     }
     
     // Process font sizes with shared bounds

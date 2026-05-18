@@ -336,44 +336,80 @@ public:
 
 
 // Define available DTC format options
-static const std::vector<std::pair<std::string, std::string>> dtcFormats = {
-    // Special
-    {"Pretty", "%a, %b %d"+ult::DIVIDER_SYMBOL+"%I:%M %p"},
-    {"Compact", "%Y%m%d"+ult::DIVIDER_SYMBOL+"%H:%M:%S"},
-    {"FileSafe", "%Y-%m-%d"+ult::DIVIDER_SYMBOL+"%H-%M-%S"},
-    {"Day+Time", "%a"+ult::DIVIDER_SYMBOL+"%H:%M"},
-
-    // Datetime (default included here)
-    {"Date+Time(s)", "%m-%d-%Y"+ult::DIVIDER_SYMBOL+"%H:%M:%S"},           // default
-    {"Date+Time AM/PM", "%m-%d-%Y"+ult::DIVIDER_SYMBOL+"%I:%M %p"},
-    {"Date+Time(s) AM/PM", "%m-%d-%Y"+ult::DIVIDER_SYMBOL+"%I:%M:%S %p"},
-    {"Date+Time EU", "%d/%m/%Y"+ult::DIVIDER_SYMBOL+"%H:%M"},
-    {"Date+Time EU AM/PM", "%d/%m/%Y"+ult::DIVIDER_SYMBOL+"%I:%M %p"},
-    {"Date+Time(s) EU AM/PM", "%d/%m/%Y"+ult::DIVIDER_SYMBOL+"%I:%M:%S %p"},
-    {"Date+Time ISO", "%Y-%m-%dT"+ult::DIVIDER_SYMBOL+"%H:%M:%S"},
-
-    // Time only
-    {"Time 24h", "%H:%M"},
-    {"Time AM/PM", "%I:%M %p"},
-    {"Time(s) 24h", "%H:%M:%S"},
-    {"Time(s) AM/PM", "%I:%M:%S %p"},
-
-    // Date only
-    {"Date US", "%m-%d-%Y"},
-    {"Date EU", "%d/%m/%Y"},
-    {"Date ISO", "%Y-%m-%d"},
-    {"Date Short", "%m/%d/%y"}
+// DTC component list. These are intentionally individual pieces with no embedded
+// DIVIDER_SYMBOL — users compose their full DTC line by picking one component for
+// "DTC Format 1" (top half) and one for "DTC Format 2" (bottom half / right side
+// of the divider when inline). Format 2 also gets a "None" entry (OPTION_SYMBOL)
+// prepended at the UI layer, which selects "no second format, no divider".
+//
+// Categorized for organized presentation. Each entry's display name and strftime
+// format string are kept separate so future renames don't break stored ini values.
+struct DTCFormatEntry {
+    std::string label;   // user-visible name
+    std::string fmt;     // strftime format string (never contains DIVIDER_SYMBOL)
+};
+struct DTCFormatCategory {
+    std::string header;
+    std::vector<DTCFormatEntry> entries;
 };
 
+static const std::vector<DTCFormatCategory> dtcFormatCategories = {
+    {"Time", {
+        {"Time 24h",     "%H:%M"},
+        {"Time 24h(s)",  "%H:%M:%S"},
+        {"Time 12h",     "%I:%M %p"},
+        {"Time 12h(s)",  "%I:%M:%S %p"}
+        }},
+    {"Date", {
+        {"Date US Dash",   "%m-%d-%Y"}, // 04-20-2024
+        {"Date US Slash",  "%m/%d/%Y"}, // 04/20/2024
+        {"Date EU Dash",   "%d-%m-%Y"}, // 20-04-2024
+        {"Date EU Slash",  "%d/%m/%Y"}, // 20/04/2024
+        {"Date ISO",       "%Y-%m-%d"}, // 2024-04-20
+        {"Date ISO Slash", "%Y/%m/%d"}, // 2024/04/20
+        {"Date Short US",  "%m/%d/%y"}, // 04/20/24
+        {"Date Short EU",  "%d/%m/%y"}, // 20/04/24
+        {"Date Compact",   "%Y%m%d"}    // 20240420
+    }},
+    {"Day & Month", {
+        {"Day + Date Short", "%a, %b %d"},
+        {"Day + Date Full",  "%A, %B %d"},
+        {"Weekday Short",    "%a"},
+        {"Weekday Full",     "%A"},
+        {"Month Short",      "%b"},
+        {"Month Full",       "%B"},
+        {"Month + Year",     "%b %Y"},
+        {"Day of Year",      "%j"},
+    }},
+};
+
+// Flat lookup table used by the format-name resolver (label by fmt string).
+static const std::vector<std::pair<std::string, std::string>>& getDTCFormatsFlat() {
+    static const std::vector<std::pair<std::string, std::string>> flat = [](){
+        std::vector<std::pair<std::string, std::string>> out;
+        for (const auto& cat : dtcFormatCategories)
+            for (const auto& e : cat.entries)
+                out.push_back({e.label, e.fmt});
+        return out;
+    }();
+    return flat;
+}
+
 // DTC Format Configuration (Mini/Micro only)
+// One config screen per slot: slot 1 = "DTC Format 1" (top half), slot 2 = "DTC Format 2"
+// (bottom half / right-of-divider). Slot 2 also offers an OPTION_SYMBOL "None" entry
+// that, when selected, means "no second format" — the rendered DTC becomes a single
+// line with no divider after format 1.
 class DTCFormatConfig : public tsl::Gui {
 private:
     std::string modeName;
     bool isMiniMode;
     bool isMicroMode;
+    int slot;  // 1 = format1 (no "None" option), 2 = format2 ("None" option prepended)
     
 public:
-    DTCFormatConfig(const std::string& mode) : modeName(mode) {
+    DTCFormatConfig(const std::string& mode, int slotIndex)
+        : modeName(mode), slot(slotIndex) {
         isMiniMode = (mode == "Mini");
         isMicroMode = (mode == "Micro");
     }
@@ -383,43 +419,78 @@ public:
     
     virtual tsl::elm::Element* createUI() override {
         auto* list = new tsl::elm::List();
-        list->addItem(new tsl::elm::CategoryHeader("DTC Format"));
 
         const std::string section = isMiniMode ? "mini" : "micro";
-        std::string currentValue = ult::parseValueFromIniSection(configIniPath, section, "dtc_format");
-        
-        // Handle default values
+        const std::string iniKey = (slot == 2) ? "dtc_format_2" : "dtc_format_1";
+        const std::string title  = (slot == 2) ? "DTC Format 2" : "DTC Format 1";
+
+        // Read current selection — if absent, fall back to the relevant default so
+        // the checkmark lands on the right item on first open.
+        std::string currentValue = ult::parseValueFromIniSection(configIniPath, section, iniKey);
         if (currentValue.empty()) {
-            currentValue = isMiniMode ? "%m-%d-%Y"+ult::DIVIDER_SYMBOL+"%H:%M:%S" : "%H:%M:%S";
-        }
-        
-        
-        for (const auto& format : dtcFormats) {
-            auto* formatItem = new tsl::elm::ListItem(format.first);
-            //formatItem->setValue(format.second);
-            if (format.second == currentValue) {
-                formatItem->setValue(ult::CHECKMARK_SYMBOL);
-                lastSelectedListItem = formatItem;
+            if (slot == 1) {
+                currentValue = isMiniMode ? std::string("%a, %b %d") : std::string("%H:%M");
+            } else {
+                currentValue = isMiniMode ? std::string("%I:%M %p") : ult::OPTION_SYMBOL;
             }
-            formatItem->setClickListener([this, formatItem, format, section](uint64_t keys) {
+        }
+
+        // Slot 2 only: "None" entry at the very top — selecting it stores OPTION_SYMBOL
+        // and the renderer treats this as "no bottom half, no divider".
+        if (slot == 2) {
+            list->addItem(new tsl::elm::CategoryHeader("None"));
+            auto* noneItem = new tsl::elm::ListItem(ult::OPTION_SYMBOL);
+            if (currentValue == ult::OPTION_SYMBOL) {
+                noneItem->setValue(ult::CHECKMARK_SYMBOL);
+                lastSelectedListItem = noneItem;
+            }
+            noneItem->setClickListener([this, noneItem, section](uint64_t keys) {
                 if (keys & KEY_A) {
-                    ult::setIniFileValue(configIniPath, section, "dtc_format", format.second);
-                    formatItem->setValue(ult::CHECKMARK_SYMBOL);
-                    if (lastSelectedListItem && lastSelectedListItem != formatItem) {
+                    ult::setIniFileValue(configIniPath, section, "dtc_format_2", ult::OPTION_SYMBOL);
+                    noneItem->setValue(ult::CHECKMARK_SYMBOL);
+                    if (lastSelectedListItem && lastSelectedListItem != noneItem) {
                         lastSelectedListItem->setValue("");
                     }
-                    lastSelectedListItem = formatItem;
+                    lastSelectedListItem = noneItem;
                     return true;
                 }
                 return false;
             });
-            list->addItem(formatItem);
+            list->addItem(noneItem);
         }
-        
+
+        // Component categories. Each entry stores the strftime fmt (never contains
+        // DIVIDER_SYMBOL — those are inserted at render-build time, not in the picker).
+        for (const auto& cat : dtcFormatCategories) {
+            list->addItem(new tsl::elm::CategoryHeader(cat.header));
+            for (const auto& entry : cat.entries) {
+                auto* formatItem = new tsl::elm::ListItem(entry.label);
+                if (entry.fmt == currentValue) {
+                    formatItem->setValue(ult::CHECKMARK_SYMBOL);
+                    lastSelectedListItem = formatItem;
+                }
+                const std::string capturedFmt = entry.fmt;
+                const std::string capturedKey = iniKey;
+                formatItem->setClickListener([this, formatItem, capturedFmt, capturedKey, section](uint64_t keys) {
+                    if (keys & KEY_A) {
+                        ult::setIniFileValue(configIniPath, section, capturedKey, capturedFmt);
+                        formatItem->setValue(ult::CHECKMARK_SYMBOL);
+                        if (lastSelectedListItem && lastSelectedListItem != formatItem) {
+                            lastSelectedListItem->setValue("");
+                        }
+                        lastSelectedListItem = formatItem;
+                        return true;
+                    }
+                    return false;
+                });
+                list->addItem(formatItem);
+            }
+        }
+
         // Jump to currently selected item
         list->jumpToItem("", ult::CHECKMARK_SYMBOL, false);
         
-        tsl::elm::OverlayFrame* rootFrame = new tsl::elm::OverlayFrame("Status Monitor", "DTC Format");
+        tsl::elm::OverlayFrame* rootFrame = new tsl::elm::OverlayFrame("Status Monitor", title);
         rootFrame->setContent(list);
         return rootFrame;
     }
@@ -427,7 +498,9 @@ public:
     virtual bool handleInput(u64 keysDown, u64 keysHeld, const HidTouchState &touchPos, HidAnalogStickState joyStickPosLeft, HidAnalogStickState joyStickPosRight) override {
         if (keysDown & KEY_B) {
             triggerExitFeedback();
-            jumpItemName = "DTC Format";
+            // Re-focus the menu row the user just left so back navigation lands
+            // on the right item.
+            jumpItemName = (slot == 2) ? "DTC Format 2" : "DTC Format 1";
             jumpItemValue = "";
             jumpItemExactMatch = false;
             
@@ -797,6 +870,12 @@ public:
                 ult::setIniFileValue(configIniPath, section, "use_dtc_symbol", state ? "true" : "false");
             });
             list->addItem(dtcSymbol);
+
+            auto* stackedDTC = new tsl::elm::ToggleListItem("Stacked", getCurrentShowStackedDTC(section));
+            stackedDTC->setStateChangedListener([this, section](bool state) {
+                ult::setIniFileValue(configIniPath, section, "show_side_by_side_dtc", state ? "false" : "true");
+            });
+            list->addItem(stackedDTC);
             
         } else if (isGameResolutionsMode) {
             // Game Resolutions mode
@@ -1059,6 +1138,13 @@ private:
 
     bool getCurrentShowStackedBAT(const std::string& section) {
         std::string value = ult::parseValueFromIniSection(configIniPath, section, "show_side_by_side_bat");
+        if (value.empty()) return false; // Default: false (not stacked = inline)
+        convertToUpper(value);
+        return value == "FALSE";
+    }
+
+    bool getCurrentShowStackedDTC(const std::string& section) {
+        std::string value = ult::parseValueFromIniSection(configIniPath, section, "show_side_by_side_dtc");
         if (value.empty()) return false; // Default: false (not stacked = inline)
         convertToUpper(value);
         return value == "FALSE";
@@ -1828,57 +1914,86 @@ public:
         // Extract the color without alpha for comparison (for backgrounds and text colors)
         std::string currentColorWithoutAlpha = extractColorWithoutAlpha(currentValue);
         
-        // Updated colors list with comprehensive color palette
-        static const std::vector<std::pair<std::string, std::string>> colors = {
+        static const std::vector<std::pair<std::string, std::string>>colors = {
             // Grays & Basics
-            {"Black", "#000F"},
-            {"Dark Gray", "#333F"},
-            {"Gray", "#444F"},
-            {"Light Gray", "#888F"},
-            {"Silver", "#CCCF"},
-            {"White", "#FFFF"},
-            
+            {"Black",         "#000"},
+            {"Charcoal",      "#222"},
+            {"Dark Gray",     "#444"},
+            {"Gray",          "#666"},
+            {"Light Gray",    "#999"},
+            {"Silver",        "#CCC"},
+            {"Off-White",     "#EEE"},
+            {"White",         "#FFF"},
+        
             // Reds
-            {"Dark Red", "#800F"},
-            {"Red", "#F00F"},
-            {"Light Red", "#F88F"},
-            {"Pink", "#F8AF"},
-            
+            {"Dark Red",      "#200"},
+            {"Maroon",        "#700"},
+            {"Crimson",       "#B22"},
+            {"Red",           "#F00"},
+            {"Light Red",     "#F66"},
+            {"Salmon",        "#FAA"},
+        
+            // Oranges
+            {"Dark Orange",   "#520"},
+            {"Burnt Orange",  "#A40"},
+            {"Orange",        "#F80"},
+            {"Light Orange",  "#FB6"},
+            {"Peach",         "#FC8"},
+        
+            // Yellows & Golds
+            {"Dark Yellow",   "#220"},
+            {"Gold",          "#CA0"},
+            {"Yellow",        "#FF0"},
+            {"Light Yellow",  "#FF6"},
+            {"Cream",         "#FFC"},
+        
             // Greens
-            {"Dark Green", "#080F"},
-            {"Green", "#0F0F"},
-            {"Lime Green", "#0C0F"},
-            {"Light Green", "#8F8F"},
-            
-            // Blues
-            {"Dark Blue", "#003F"},
-            {"Blue", "#00FF"},
-            {"Light Blue", "#2DFF"},
-            {"Sky Blue", "#8CFF"},
-            
-            // Purples
-            {"Dark Purple", "#808F"},
-            {"Purple", "#80FF"},
-            {"Light Purple", "#C8FF"},
-            {"Violet", "#A0FF"},
-            
-            // Yellows & Oranges
-            {"Orange", "#F80F"},
-            {"Yellow", "#FF0F"},
-            {"Light Yellow", "#FFCF"},
-            
+            {"Dark Green",    "#020"},
+            {"Forest Green",  "#063"},
+            {"Green",         "#080"},
+            {"Lime Green",    "#0C0"},
+            {"Bright Green",  "#0F0"},
+            {"Light Green",   "#8F8"},
+            {"Mint",          "#CFA"},
+        
             // Cyans & Teals
-            {"Teal", "#088F"},
-            {"Cyan", "#0FFF"},
-            {"Light Cyan", "#8FFF"},
-            
+            {"Dark Teal",     "#022"},
+            {"Teal",          "#066"},
+            {"Aqua",          "#0AA"},
+            {"Cyan",          "#0FF"},
+            {"Light Cyan",    "#8FF"},
+        
+            // Blues
+            {"Midnight Blue", "#002"},
+            {"Dark Blue",     "#003"},
+            {"Navy",          "#04A"},
+            {"Royal Blue",    "#06F"},
+            {"Blue",          "#00F"},
+            {"Light Blue",    "#2DF"},
+            {"Sky Blue",      "#8CF"},
+            {"Powder Blue",   "#ACE"},
+        
+            // Purples & Violets
+            {"Dark Purple",   "#202"},
+            {"Eggplant",      "#404"},
+            {"Indigo",        "#608"},
+            {"Purple",        "#808"},
+            {"Violet",        "#A0F"},
+            {"Lavender",      "#C8F"},
+            {"Light Lavender","#D9F"},
+        
             // Magentas & Pinks
-            {"Magenta", "#F0FF"},
-            {"Hot Pink", "#F8CF"},
-            
+            {"Dark Magenta",  "#606"},
+            {"Magenta",       "#F0F"},
+            {"Hot Pink",      "#F4A"},
+            {"Pink",          "#F8A"},
+            {"Light Pink",    "#FCE"},
+        
             // Browns
-            {"Brown", "#840F"},
-            {"Light Brown", "#A86F"}
+            {"Dark Brown",    "#321"},
+            {"Brown",         "#642"},
+            {"Light Brown",   "#A75"},
+            {"Tan",           "#DB8"},
         };
         
         std::string _jumpItemValue;
@@ -2031,56 +2146,98 @@ public:
             }
             
             // Map of hex colors to names (RGB only, no alpha)
+
+            // Organized by family. Each family generally follows the progression:
+
+            //   Dark → Base → Light → Accent/variant
+
+            // 3-digit hex values use 4-bit channels (0–F), so each step ≈ 17/255 ≈ 6.7%
+
+            // brightness. Truly dark shades live in the #2–#5 range, mid-tones around
+
+            // #7–#9, and lights at #C and up.
+
             static const std::map<std::string, std::string> colorNames = {
                 // Grays & Basics
                 {"#000", "Black"},
-                {"#333", "Dark Gray"},
-                {"#444", "Gray"},
-                {"#888", "Light Gray"},
+                {"#222", "Charcoal"},
+                {"#444", "Dark Gray"},
+                {"#666", "Gray"},
+                {"#999", "Light Gray"},
                 {"#CCC", "Silver"},
+                {"#EEE", "Off-White"},
                 {"#FFF", "White"},
-                
+
                 // Reds
-                {"#800", "Dark Red"},
+                {"#200", "Dark Red"},
+                {"#700", "Maroon"},
+                {"#B22", "Crimson"},
                 {"#F00", "Red"},
-                {"#F88", "Light Red"},
-                {"#F8A", "Pink"},
-                
+                {"#F66", "Light Red"},
+                {"#FAA", "Salmon"},
+
+                // Oranges
+                {"#520", "Dark Orange"},
+                {"#A40", "Burnt Orange"},
+                {"#F80", "Orange"},
+                {"#FB6", "Light Orange"},
+                {"#FC8", "Peach"},
+
+                // Yellows & Golds
+                {"#220", "Dark Yellow"},
+                {"#CA0", "Gold"},
+                {"#FF0", "Yellow"},
+                {"#FF6", "Light Yellow"},
+                {"#FFC", "Cream"},
+            
                 // Greens
-                {"#080", "Dark Green"},
-                {"#0F0", "Green"},
+                {"#020", "Dark Green"},
+                {"#063", "Forest Green"},
+                {"#080", "Green"},
                 {"#0C0", "Lime Green"},
+                {"#0F0", "Bright Green"},
                 {"#8F8", "Light Green"},
-                
+                {"#CFA", "Mint"},
+            
+                // Cyans & Teals
+                {"#022", "Dark Teal"},
+                {"#066", "Teal"},
+                {"#0AA", "Aqua"},
+                {"#0FF", "Cyan"},
+                {"#8FF", "Light Cyan"},
+            
                 // Blues
+                {"#002", "Midnight Blue"},
                 {"#003", "Dark Blue"},
+                {"#04A", "Navy"},
+                {"#06F", "Royal Blue"},
                 {"#00F", "Blue"},
                 {"#2DF", "Light Blue"},
                 {"#8CF", "Sky Blue"},
-                
-                // Purples
-                {"#808", "Dark Purple"},
-                {"#80F", "Purple"},
-                {"#C8F", "Light Purple"},
+                {"#ACE", "Powder Blue"},
+            
+                // Purples & Violets
+                {"#202", "Dark Purple"},
+                {"#404", "Eggplant"},
+                {"#608", "Indigo"},
+                {"#808", "Purple"},
                 {"#A0F", "Violet"},
-                
-                // Yellows & Oranges
-                {"#F80", "Orange"},
-                {"#FF0", "Yellow"},
-                {"#FFC", "Light Yellow"},
-                
-                // Cyans & Teals
-                {"#088", "Teal"},
-                {"#0FF", "Cyan"},
-                {"#8FF", "Light Cyan"},
-                
+                {"#C8F", "Lavender"},
+                {"#D9F", "Light Lavender"},
+            
                 // Magentas & Pinks
+                {"#606", "Dark Magenta"},
                 {"#F0F", "Magenta"},
-                {"#F8C", "Hot Pink"},
-                
+                {"#F4A", "Hot Pink"},
+                {"#F8A", "Pink"},
+                {"#FCE", "Light Pink"},
+            
                 // Browns
-                {"#840", "Brown"},
-                {"#A86", "Light Brown"}
+                {"#321", "Dark Brown"},
+                {"#642", "Brown"},
+                {"#A75", "Light Brown"},
+                {"#DB8", "Tan"},
+
             };
             
             auto it = colorNames.find(rgb);
@@ -2720,19 +2877,31 @@ public:
         });
         list->addItem(refreshRate);
         
-        // 6. DTC Format (Mini/Micro only) - NEW ADDITION
+        // 6. DTC Format (Mini/Micro only) — split into two slots: Format 1 = top half,
+        //    Format 2 = bottom half / right-of-divider. Format 2's first entry is "None"
+        //    (OPTION_SYMBOL); selecting it renders only Format 1 with no divider.
         if (isMiniMode || isMicroMode) {
-            auto* dtcFormat = new tsl::elm::ListItem("DTC Format");
-            dtcFormat->setValue(getCurrentDTCFormat());
-            dtcFormat->setClickListener([this, dtcFormat](uint64_t keys) {
+            auto* dtcFormat1 = new tsl::elm::ListItem("DTC Format 1");
+            dtcFormat1->setValue(getCurrentDTCFormatLabel(1));
+            dtcFormat1->setClickListener([this, dtcFormat1](uint64_t keys) {
                 if (keys & KEY_A) {
-                    //tsl::shiftItemFocus(dtcFormat);
-                    tsl::changeTo<DTCFormatConfig>(modeName);
+                    tsl::changeTo<DTCFormatConfig>(modeName, 1);
                     return true;
                 }
                 return false;
             });
-            list->addItem(dtcFormat);
+            list->addItem(dtcFormat1);
+
+            auto* dtcFormat2 = new tsl::elm::ListItem("DTC Format 2");
+            dtcFormat2->setValue(getCurrentDTCFormatLabel(2));
+            dtcFormat2->setClickListener([this, dtcFormat2](uint64_t keys) {
+                if (keys & KEY_A) {
+                    tsl::changeTo<DTCFormatConfig>(modeName, 2);
+                    return true;
+                }
+                return false;
+            });
+            list->addItem(dtcFormat2);
         }
 
         // 7. Frame Padding (Mini only) - NEW ADDITION
@@ -2920,26 +3089,44 @@ private:
     }
     
     // NEW METHOD: Get current DTC format for display
-    std::string getCurrentDTCFormat() {
-        if (isMiniMode || isMicroMode) {
-            const std::string section = isMiniMode ? "mini" : "micro";
-            std::string value = ult::parseValueFromIniSection(configIniPath, section, "dtc_format");
-            
-            // Handle defaults properly
-            if (value.empty()) {
-                value = isMiniMode ? "%m-%d-%Y"+ult::DIVIDER_SYMBOL+"%H:%M:%S" : "%H:%M:%S";
+    // Slot-aware label resolver for the menu rows. Returns the user-visible name
+    // (e.g. "Time 24h") for the currently saved format1/format2 value. Falls back
+    // to splitting the legacy combined dtc_format key if the new keys are absent
+    // so users coming from the old single-format config see something sensible.
+    std::string getCurrentDTCFormatLabel(int slot) {
+        if (!(isMiniMode || isMicroMode)) return "";
+        const std::string section = isMiniMode ? "mini" : "micro";
+        const std::string iniKey  = (slot == 2) ? "dtc_format_2" : "dtc_format_1";
+
+        std::string value = ult::parseValueFromIniSection(configIniPath, section, iniKey);
+
+        if (value.empty()) {
+            // Back-compat: derive from legacy combined key.
+            const std::string legacy = ult::parseValueFromIniSection(configIniPath, section, "dtc_format");
+            if (!legacy.empty()) {
+                const size_t divPos = legacy.find(ult::DIVIDER_SYMBOL);
+                if (divPos != std::string::npos) {
+                    value = (slot == 1) ? legacy.substr(0, divPos)
+                                        : legacy.substr(divPos + ult::DIVIDER_SYMBOL.length());
+                } else {
+                    value = (slot == 1) ? legacy : ult::OPTION_SYMBOL;
+                }
+            } else {
+                // No saved value at all — use the same defaults as the loader/UI.
+                if (slot == 1) value = isMiniMode ? std::string("%a, %b %d") : std::string("%H:%M");
+                else           value = isMiniMode ? std::string("%I:%M %p") : ult::OPTION_SYMBOL;
             }
-            
-            // Convert format string to display name
-            return getDTCFormatName(value);
         }
-        return "";
+
+        return getDTCFormatName(value);
     }
-    
+
     // Helper function to convert format string to display name
     std::string getDTCFormatName(const std::string& formatStr) {
-        
-        for (const auto& format : dtcFormats) {
+        // "None" sentinel surfaces as the OPTION_SYMBOL glyph.
+        if (formatStr == ult::OPTION_SYMBOL) return ult::OPTION_SYMBOL;
+
+        for (const auto& format : getDTCFormatsFlat()) {
             if (format.second == formatStr) {
                 return format.first;
             }

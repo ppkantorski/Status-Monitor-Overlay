@@ -712,9 +712,30 @@ public:
                             mktime(&t); // normalize (sets weekday, etc.)
                     
                             strftime(sampleDateTime, sizeof(sampleDateTime), settings.dtcFormat.c_str(), &t);
-                            const size_t w = renderer->getTextDimensions(std::string(sampleDateTime) + "  ", false, fontsize).first;
-                            if (w > maxWidth)
-                                maxWidth = w;
+
+                            if (settings.showStackedDTC) {
+                                // When stacked, the line is split at DIVIDER_SYMBOL into 2 rows.
+                                // Column width = wider of the two halves (the shorter one right-aligns
+                                // to that edge). User formats may or may not contain DIVIDER_SYMBOL;
+                                // if absent, fall back to measuring the whole string.
+                                const std::string sampleStr(sampleDateTime);
+                                const size_t divPos = sampleStr.find(ult::DIVIDER_SYMBOL);
+                                size_t w;
+                                if (divPos != std::string::npos) {
+                                    const std::string topHalf = sampleStr.substr(0, divPos);
+                                    const std::string botHalf = sampleStr.substr(divPos + ult::DIVIDER_SYMBOL.length());
+                                    const size_t topW = renderer->getTextDimensions(topHalf + "  ", false, fontsize).first;
+                                    const size_t botW = renderer->getTextDimensions(botHalf + "  ", false, fontsize).first;
+                                    w = std::max(topW, botW);
+                                } else {
+                                    w = renderer->getTextDimensions(sampleStr + "  ", false, fontsize).first;
+                                }
+                                if (w > maxWidth) maxWidth = w;
+                            } else {
+                                const size_t w = renderer->getTextDimensions(std::string(sampleDateTime) + "  ", false, fontsize).first;
+                                if (w > maxWidth)
+                                    maxWidth = w;
+                            }
                         }
                     
                         width = maxWidth;
@@ -871,8 +892,14 @@ public:
                         labelText = "READ";
                         flags |= 512;
                     } else if (key == "DTC" && !(flags & 256) && settings.showDTC) {
-                        shouldAdd = true;
-                        labelText = settings.useDTCSymbol ? "\uE007" : "DTC";
+                        if (settings.showStackedDTC) {
+                            labelLines.push_back("DTC_STOP");
+                            labelLines.push_back("DTC_SBOT");
+                            entryCount += 2;
+                        } else {
+                            shouldAdd = true;
+                            labelText = settings.useDTCSymbol ? "\uE007" : "DTC";
+                        }
                         flags |= 256;
                     } else if (key == "MEM" && !(flags & 1024)) {
                         shouldAdd = true;
@@ -951,6 +978,12 @@ public:
                     if (settings.showStackedBAT) {
                         for (const auto& k : showKeys) {
                             if (k == "BAT" || k == "DRAW") { cachedHeight -= settings.spacing / 2; break; }
+                        }
+                    }
+                    // DTC split: two-row block reduces height by spacing/2
+                    if (settings.showStackedDTC && settings.showDTC) {
+                        for (const auto& k : showKeys) {
+                            if (k == "DTC") { cachedHeight -= settings.spacing / 2; break; }
                         }
                     }
                     // RAM load split: two-row block reduces height by spacing/2 (only once — suppress VDDQ deduction when active)
@@ -1107,6 +1140,7 @@ public:
                      labelLines[labelIndex] == "CPU_SFULL" || labelLines[labelIndex] == "CPU_SFREQ" ||
                      labelLines[labelIndex] == "RAM_SVDDQ_ONLY" || labelLines[labelIndex] == "RAM_STEMP" ||
                      labelLines[labelIndex] == "BAT_STOP" || labelLines[labelIndex] == "BAT_SBOT" ||
+                     labelLines[labelIndex] == "DTC_STOP" || labelLines[labelIndex] == "DTC_SBOT" ||
                      labelLines[labelIndex] == "RAM_SLOAD_TOP" || labelLines[labelIndex] == "RAM_SLOAD_BOT"));
                 if (!isTmpDualRow && settings.showLabels && !labelLines[labelIndex].empty()) {
                     labelWidth = renderer->getTextDimensions(labelLines[labelIndex], false, fontsize).first;
@@ -2170,6 +2204,41 @@ public:
                     }
                     currentY -= (int)settings.spacing / 2;
 
+                } else if (labelIndex < labelLines.size() && labelLines[labelIndex] == "DTC_STOP") {
+                    // DTC split row 1: top half (text before DIVIDER_SYMBOL in user format).
+                    // DTC label centered between both rows. The bottom row is sourced from the
+                    // next variable line (_variableLines[i+1]) so we can right-align both halves
+                    // within max(topW, botW) — shorter half right-aligns to the wider edge.
+                    const int dtcCenterY = baseY + ((int)fontsize + (int)settings.spacing / 2) / 2;
+                    if (settings.showLabels) {
+                        const std::string dtcLbl = settings.useDTCSymbol ? "\uE007" : "DTC";
+                        const uint32_t dtcLblW = renderer->getTextDimensions(dtcLbl, false, fontsize).first;
+                        const uint32_t dtcLblX = cachedBaseX + (margin / 2) - (dtcLblW / 2);
+                        renderer->drawString(dtcLbl, false, dtcLblX + _frameOffsetX + clippingOffsetX,
+                            dtcCenterY, fontsize, settings.catColor);
+                    }
+                    {
+                        const std::string botStr = (i + 1 < _variableLines.size()) ? _variableLines[i + 1] : std::string();
+                        const uint32_t topW = renderer->getTextDimensions(currentLine, false, fontsize).first;
+                        const uint32_t botW = botStr.empty() ? 0 : renderer->getTextDimensions(botStr, false, fontsize).first;
+                        const int dtcColW = (int)std::max(topW, botW);
+                        const int topDrawX = baseX + dtcColW - (int)topW;
+                        renderer->drawString(currentLine, false, topDrawX, baseY, fontsize, settings.textColor);
+                    }
+
+                } else if (labelIndex < labelLines.size() && labelLines[labelIndex] == "DTC_SBOT") {
+                    // DTC split row 2: bottom half (text after DIVIDER_SYMBOL), right-aligned to match top.
+                    const int dtcBotY = baseY - (int)settings.spacing / 2;
+                    {
+                        const std::string topStr = (i >= 1) ? _variableLines[i - 1] : std::string();
+                        const uint32_t topW = topStr.empty() ? 0 : renderer->getTextDimensions(topStr, false, fontsize).first;
+                        const uint32_t botW = renderer->getTextDimensions(currentLine, false, fontsize).first;
+                        const int dtcColW = (int)std::max(topW, botW);
+                        const int botDrawX = baseX + dtcColW - (int)botW;
+                        renderer->drawString(currentLine, false, botDrawX, dtcBotY, fontsize, settings.textColor);
+                    }
+                    currentY -= (int)settings.spacing / 2;
+
                 } else if (labelIndex < labelLines.size() && labelLines[labelIndex] == "TMP_SFAN") {
                     // Split fan row: temps + fan on row 1; "TMP" label drawn manually.
                     // Dual-row split: temps at baseY (top row), label centered between both rows. (top row), label centered between both rows.
@@ -2634,7 +2703,11 @@ public:
                                                    RAM_Total_system_u + RAM_Total_systemunsafe_u;
                     const uint64_t RAM_Used_all = RAM_Used_application_u + RAM_Used_applet_u + 
                                                   RAM_Used_system_u + RAM_Used_systemunsafe_u;
-                    ramLoadInt = (RAM_Total_all > 0) ? (unsigned)((RAM_Used_all * 100) / RAM_Total_all) : 0;
+                    // Round to nearest by adding half-divisor before dividing — matches the
+                    // (value + 5) / 10 pattern used by the IPC RAM load path above.
+                    ramLoadInt = (RAM_Total_all > 0)
+                        ? (unsigned)((RAM_Used_all * 100 + RAM_Total_all / 2) / RAM_Total_all)
+                        : 0;
                     
                     if (settings.realFrequencies && realRAM_Hz) {
                         snprintf(MINI_RAM_var_compressed_c, sizeof(MINI_RAM_var_compressed_c),
@@ -3110,7 +3183,25 @@ public:
                 time_t rawtime = time(NULL);
                 struct tm *timeinfo = localtime(&rawtime);
                 strftime(dateTimeStr, sizeof(dateTimeStr), settings.dtcFormat.c_str(), timeinfo);
-                strcat(Temp, dateTimeStr);
+                if (settings.showStackedDTC) {
+                    // Split at DIVIDER_SYMBOL: top half goes on row 1, bottom half on row 2.
+                    // If the user's format has no DIVIDER_SYMBOL, fall back to the whole
+                    // string on the top row + empty bottom row (still 2 label slots).
+                    const std::string dtStr(dateTimeStr);
+                    const size_t divPos = dtStr.find(ult::DIVIDER_SYMBOL);
+                    if (divPos != std::string::npos) {
+                        const std::string topHalf = dtStr.substr(0, divPos);
+                        const std::string botHalf = dtStr.substr(divPos + ult::DIVIDER_SYMBOL.length());
+                        strcat(Temp, topHalf.c_str());
+                        strcat(Temp, "\n");
+                        strcat(Temp, botHalf.c_str());
+                    } else {
+                        strcat(Temp, dateTimeStr);
+                        strcat(Temp, "\n");
+                    }
+                } else {
+                    strcat(Temp, dateTimeStr);
+                }
                 flags |= 256;
             }
             else if (key == "MEM" && !(flags & 1024)) {
