@@ -949,7 +949,22 @@ public:
                                 }
                             }
                             if (!rOK) {
-                                renderer->drawStringWithColoredSections(skin_temperature_c, false, specialChars, current_x, tempDrawY, fontsize, textColorA, (settings.separatorColor));
+                                {
+                                    static const std::string socFanIcon_ = "";
+                                    const std::string socStr_(skin_temperature_c);
+                                    const size_t fanPos_ = socStr_.find(socFanIcon_);
+                                    uint32_t cx_ = current_x;
+                                    if (fanPos_ != std::string::npos) {
+                                        if (fanPos_ > 0)
+                                            cx_ += renderer->drawStringWithColoredSections(socStr_.substr(0, fanPos_), false, specialChars, cx_, tempDrawY, fontsize, textColorA, (settings.separatorColor)).first;
+                                        cx_ += renderer->drawString(socFanIcon_, false, cx_, tempDrawY, fontsize, (settings.catColor)).first;
+                                        const std::string afterFan_ = socStr_.substr(fanPos_ + socFanIcon_.size());
+                                        if (!afterFan_.empty())
+                                            renderer->drawStringWithColoredSections(afterFan_, false, specialChars, cx_, tempDrawY, fontsize, textColorA, (settings.separatorColor));
+                                    } else {
+                                        renderer->drawStringWithColoredSections(socStr_, false, specialChars, cx_, tempDrawY, fontsize, textColorA, (settings.separatorColor));
+                                    }
+                                }
                                 fanColX = current_x + renderer->getTextDimensions(skin_temperature_c, false, fontsize).first;
                             }
                         }
@@ -1072,7 +1087,22 @@ public:
                                     renderer->drawStringWithColoredSections(rest, false, specialChars, rx, singleItemY, fontsize, textColorA, (settings.separatorColor));
                                 }
                             }
-                            if (!rOK) renderer->drawStringWithColoredSections(skin_temperature_c, false, specialChars, current_x, gridBotY, fontsize, textColorA, (settings.separatorColor));
+                            if (!rOK) {
+                            static const std::string socFanIcon2_ = "";
+                            const std::string socStr2_(skin_temperature_c);
+                            const size_t fanPos2_ = socStr2_.find(socFanIcon2_);
+                            uint32_t cx2_ = current_x;
+                            if (fanPos2_ != std::string::npos) {
+                                if (fanPos2_ > 0)
+                                    cx2_ += renderer->drawStringWithColoredSections(socStr2_.substr(0, fanPos2_), false, specialChars, cx2_, gridBotY, fontsize, textColorA, (settings.separatorColor)).first;
+                                cx2_ += renderer->drawString(socFanIcon2_, false, cx2_, gridBotY, fontsize, (settings.catColor)).first;
+                                const std::string afterFan2_ = socStr2_.substr(fanPos2_ + socFanIcon2_.size());
+                                if (!afterFan2_.empty())
+                                    renderer->drawStringWithColoredSections(afterFan2_, false, specialChars, cx2_, gridBotY, fontsize, textColorA, (settings.separatorColor));
+                            } else {
+                                renderer->drawStringWithColoredSections(socStr2_, false, specialChars, cx2_, gridBotY, fontsize, textColorA, (settings.separatorColor));
+                            }
+                        }
                         }
                     } else {
                         // —— SINGLE-ROW MODE (SBS, comp-only, or soc-only) ——

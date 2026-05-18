@@ -1143,10 +1143,24 @@ public:
                             int currentX = baseX;
                             renderer->drawString(tempPart, false, currentX, baseY, fontsize, tempColor);
                             
-                            // Render remaining text with normal color
+                            // Render remaining text: separator in separatorColor, fan icon in catColor
                             if (!restPart.empty()) {
                                 currentX += renderer->getTextDimensions(tempPart, false, fontsize).first;
-                                renderer->drawStringWithColoredSections(restPart, false, specialChars, currentX, baseY, fontsize, settings.textColor, settings.separatorColor);
+                                static const std::string socFanIcon = "";
+                                const size_t fanPos = restPart.find(socFanIcon);
+                                if (fanPos != std::string::npos) {
+                                    // Before fan icon: separator char -> separatorColor
+                                    if (fanPos > 0)
+                                        currentX += renderer->drawStringWithColoredSections(restPart.substr(0, fanPos), false, specialChars, currentX, baseY, fontsize, settings.textColor, settings.separatorColor).first;
+                                    // Fan icon alone -> catColor
+                                    currentX += renderer->drawString(socFanIcon, false, currentX, baseY, fontsize, settings.catColor).first;
+                                    // After fan icon: remaining text (% value, optional volt sep+value) -> separatorColor for sep char
+                                    const std::string afterFan = restPart.substr(fanPos + socFanIcon.size());
+                                    if (!afterFan.empty())
+                                        renderer->drawStringWithColoredSections(afterFan, false, specialChars, currentX, baseY, fontsize, settings.textColor, settings.separatorColor);
+                                } else {
+                                    renderer->drawStringWithColoredSections(restPart, false, specialChars, currentX, baseY, fontsize, settings.textColor, settings.separatorColor);
+                                }
                             }
                         } else {
                             // Fallback: no C found after degrees, render normally
