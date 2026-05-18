@@ -367,7 +367,7 @@ public:
         };
 
         for (const auto& option : alphaOptions) {
-            auto* alphaItem = new tsl::elm::ListItem(option.first);
+            auto* alphaItem = new tsl::elm::MiniListItem(option.first);
             if (!currentAlpha.empty() && currentAlpha[0] == option.second)
                 selectItem(lastSelectedListItem, alphaItem, ult::CHECKMARK_SYMBOL);
             alphaItem->setClickListener([this, alphaItem, option, section](uint64_t keys) {
@@ -479,7 +479,7 @@ public:
 
         if (slot == 2) {
             list->addItem(new tsl::elm::CategoryHeader("None"));
-            auto* noneItem = new tsl::elm::ListItem(ult::OPTION_SYMBOL);
+            auto* noneItem = new tsl::elm::MiniListItem(ult::OPTION_SYMBOL);
             if (currentValue == ult::OPTION_SYMBOL)
                 selectItem(lastSelectedListItem, noneItem, ult::CHECKMARK_SYMBOL);
             noneItem->setClickListener([this, noneItem, section](uint64_t keys) {
@@ -496,7 +496,7 @@ public:
         for (const auto& cat : dtcFormatCategories) {
             list->addItem(new tsl::elm::CategoryHeader(cat.header));
             for (const auto& entry : cat.entries) {
-                auto* formatItem = new tsl::elm::ListItem(entry.label);
+                auto* formatItem = new tsl::elm::MiniListItem(entry.label);
                 if (entry.fmt == currentValue)
                     selectItem(lastSelectedListItem, formatItem, ult::CHECKMARK_SYMBOL);
                 const std::string capturedFmt = entry.fmt;
@@ -543,7 +543,7 @@ private:
                    const std::string& key, bool defaultVal,
                    const std::string& overrideSection = "") {
         const std::string& sec = overrideSection.empty() ? section : overrideSection;
-        auto* item = new tsl::elm::ToggleListItem(label, readBool(sec, key, defaultVal));
+        auto* item = new tsl::elm::MiniToggleListItem(label, readBool(sec, key, defaultVal));
         item->setStateChangedListener([sec, key](bool state) {
             ult::setIniFileValue(configIniPath, sec, key, state ? "true" : "false");
         });
@@ -552,7 +552,7 @@ private:
 
     void addInvertedToggle(tsl::elm::List* list, const std::string& label,
                            const std::string& key, bool defaultVal) {
-        auto* item = new tsl::elm::ToggleListItem(label, readInvertedBool(section, key, defaultVal));
+        auto* item = new tsl::elm::MiniToggleListItem(label, readInvertedBool(section, key, defaultVal));
         item->setStateChangedListener([this, key](bool state) {
             ult::setIniFileValue(configIniPath, section, key, state ? "false" : "true");
         });
@@ -577,23 +577,13 @@ public:
         } else if (flags.isFull) {
             list->addItem(new tsl::elm::CategoryHeader("Global"));
             addToggle(list, "Disable Screenshots", "disable_screenshots", false);
-            list->addItem(new tsl::elm::CategoryHeader("Full Mode"));
             addToggle(list, "Real Freqs",          "show_real_freqs",     true);
             addToggle(list, "Deltas",              "show_deltas",         true);
             addToggle(list, "Target Freqs",        "show_target_freqs",   true);
             addToggle(list, "FPS",                 "show_fps",            true);
             addToggle(list, "RES",                 "show_res",            true);
             addToggle(list, "Read Speed",          "show_read_speed",     true);
-            // Dynamic colors is stored in fps-graph section (intentional, matches original)
-            {
-                auto* dynItem = new tsl::elm::ToggleListItem("Dynamic Temp Colors",
-                    readBool("fps-graph", "use_dynamic_colors", true));
-                dynItem->setStateChangedListener([](bool state) {
-                    ult::setIniFileValue(configIniPath, "fps-graph", "use_dynamic_colors",
-                                        state ? "true" : "false");
-                });
-                list->addItem(dynItem);
-            }
+            addToggle(list, "Dynamic Temp Colors", "use_dynamic_colors",  true);
 
         } else if (flags.isMini || flags.isMicro) {
             list->addItem(new tsl::elm::CategoryHeader("Global"));
@@ -638,9 +628,9 @@ public:
             list->addItem(new tsl::elm::CategoryHeader("TMP"));
             {
                 // Mutual-exclusivity pair
-                auto* compTemps   = new tsl::elm::ToggleListItem("CPU/GPU/RAM Temps",
+                auto* compTemps   = new tsl::elm::MiniToggleListItem("CPU/GPU/RAM Temps",
                     readBool(section, "show_component_temps", false));
-                auto* socPcbTemps = new tsl::elm::ToggleListItem("SOC/PCB/Skin Temps",
+                auto* socPcbTemps = new tsl::elm::MiniToggleListItem("SOC/PCB/Skin Temps",
                     readBool(section, "show_soc_pcb_skin_temps", true));
 
                 compTemps->setStateChangedListener([this, compTemps, socPcbTemps](bool state) {
@@ -739,7 +729,7 @@ public:
         const std::string section = modeToSection(modeName);
         static const int rates[] = {1, 2, 3, 5, 10, 15, 30, 60};
         for (int rate : rates) {
-            auto* rateItem = new tsl::elm::ListItem(std::to_string(rate) + " Hz");
+            auto* rateItem = new tsl::elm::MiniListItem(std::to_string(rate) + " Hz");
             if (rate == currentRate)
                 selectItem(lastSelectedListItem, rateItem, ult::CHECKMARK_SYMBOL);
             rateItem->setClickListener([this, rateItem, rate, section](uint64_t keys) {
@@ -869,7 +859,7 @@ public:
         list->addItem(new tsl::elm::CategoryHeader("Frame Padding"));
 
         for (int padding = 0; padding <= 14; ++padding) {
-            auto* paddingItem = new tsl::elm::ListItem(std::to_string(padding) + " px");
+            auto* paddingItem = new tsl::elm::MiniListItem(std::to_string(padding) + " px");
             if (padding == currentPadding)
                 selectItem(lastSelectedListItem, paddingItem, ult::CHECKMARK_SYMBOL);
             paddingItem->setClickListener([this, paddingItem, padding](uint64_t keys) {
@@ -926,7 +916,7 @@ public:
         auto* list = new tsl::elm::List();
         list->addItem(new tsl::elm::CategoryHeader(headerLabel));
         for (int p = MIN_P; p <= MAX_P; ++p) {
-            auto* item = new tsl::elm::ListItem(formatLabel(p));
+            auto* item = new tsl::elm::MiniListItem(formatLabel(p));
             if (p == currentPadding)
                 selectItem(lastSelectedListItem, item, ult::CHECKMARK_SYMBOL);
             item->setClickListener([this, item, p](uint64_t keys) {
@@ -1016,7 +1006,7 @@ public:
         const int maxSize = flags.isFPSCounter ? 150 : (flags.isMini ? 22 : 18);
 
         for (int size = minSize; size <= maxSize; size++) {
-            auto* sizeItem = new tsl::elm::ListItem(std::to_string(size) + " pt");
+            auto* sizeItem = new tsl::elm::MiniListItem(std::to_string(size) + " pt");
             if (size == currentSize)
                 selectItem(lastSelectedListItem, sizeItem, ult::CHECKMARK_SYMBOL);
             sizeItem->setClickListener([this, sizeItem, size, keyName, section](uint64_t keys) {
@@ -1137,7 +1127,7 @@ public:
 
         std::string _jumpItemValue;
         for (const auto& color : g_colorPalette) {
-            auto* colorItem = new tsl::elm::ListItem(color.first);
+            auto* colorItem = new tsl::elm::MiniListItem(color.first);
             const std::string displayValue = extractColorWithoutAlpha(color.second);
             colorItem->setValue(displayValue);
 
@@ -1378,7 +1368,7 @@ public:
             const std::string& element = elementOrder[i];
             const bool isEnabled = enabledElements.count(element) > 0;
 
-            auto* elementItem = new tsl::elm::ListItem(element);
+            auto* elementItem = new tsl::elm::MiniListItem(element);
             elementItem->enableShortHoldKey();
             elementItem->enableLongHoldKey();
             elementItem->setValue(isEnabled ? ult::ON : ult::OFF, !isEnabled);
