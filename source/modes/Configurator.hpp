@@ -417,8 +417,8 @@ static const std::vector<DTCFormatCategory> dtcFormatCategories = {
     {"Time", {
         {"Time 24h",    "%H:%M"},
         {"Time 24h(s)", "%H:%M:%S"},
-        {"Time 12h",    "%I:%M %p"},
-        {"Time 12h(s)", "%I:%M:%S %p"}
+        {"Time 12h",    "%l:%M %p"},
+        {"Time 12h(s)", "%l:%M:%S %p"}
     }},
     {"Date", {
         {"Date US Dash",   "%m-%d-%Y"},
