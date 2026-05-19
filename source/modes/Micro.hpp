@@ -585,7 +585,7 @@ public:
                 item_layout.data_width = renderer->getTextDimensions(item.data_ptr, false, fontsize).first;
                 
                 // Calculate voltage width if present
-                if (item.has_voltage && item.volt_ptr) {
+                if (item.has_voltage && item.volt_ptr && item.volt_ptr[0]) {
                     //uto volt_dim = renderer->drawString(item.volt_ptr, false, 0, 0, fontsize, renderer->a(0x0000));
                     //auto volt_dim = renderer->getTextDimensions(item.volt_ptr, fontsize);
                     item_layout.volt_width = renderer->getTextDimensions(item.volt_ptr, false, fontsize).first;
