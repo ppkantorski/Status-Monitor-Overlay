@@ -1418,40 +1418,36 @@ public:
                         pos = tempEnd;
                     }
                     
-                    // Render remaining: div1(sep) + fan(cat) [+ div2(sep) + voltage(sep)]
+                    // voltageAtEndTMP OFF => div+volt then div+fan; ON => div+fan then div+volt.
+                    const bool tmpSOCHasVolt = settings.realVolts && settings.showSOCVoltage && MINI_SOC_volt_c[0];
+                    if (!settings.voltageAtEndTMP && tmpSOCHasVolt) {
+                        currentX += renderer->drawString(ult::DIVIDER_SYMBOL, false, currentX, baseY, fontsize, settings.separatorColor).first;
+                        renderer->drawStringWithColoredSections(std::string(MINI_SOC_volt_c), false, specialChars, currentX, baseY, fontsize, settings.textColor, settings.separatorColor);
+                        currentX += (int)renderer->getTextDimensions(std::string(MINI_SOC_volt_c), false, fontsize).first;
+                    }
+                    // Render remaining: div(sep) + fan(cat)  [volt no longer in data string]
                     if (pos < currentLine.length()) {
                         std::string restPart = currentLine.substr(pos);
                         const size_t divLen = ult::DIVIDER_SYMBOL.length();
                         const size_t div1Pos = restPart.find(ult::DIVIDER_SYMBOL);
                         if (div1Pos != std::string::npos) {
-                            // Draw first divider (before fan) in separatorColor
+                            // Draw divider (before fan) in separatorColor
                             currentX += renderer->drawString(restPart.substr(0, div1Pos + divLen), false, currentX, baseY, fontsize, settings.separatorColor).first;
                             const std::string afterDiv1 = restPart.substr(div1Pos + divLen);
-                            const size_t div2Pos = afterDiv1.find(ult::DIVIDER_SYMBOL);
-                            if (div2Pos != std::string::npos) {
-                                // Fan part before second divider: fan icon in catColor
+                            // Fan only (volt drawn explicitly), fan icon in catColor
+                            if (!afterDiv1.empty()) {
                                 static const std::vector<std::string> tmpFanIconChars = {""};
-                                currentX += renderer->drawStringWithColoredSections(afterDiv1.substr(0, div2Pos), false, tmpFanIconChars,
+                                currentX += renderer->drawStringWithColoredSections(afterDiv1, false, tmpFanIconChars,
                                     currentX, baseY, fontsize, settings.textColor, settings.catColor).first;
-                                // Second divider (fan -> voltage) in separatorColor
-                                currentX += renderer->drawString(ult::DIVIDER_SYMBOL, false, currentX, baseY, fontsize, settings.separatorColor).first;
-                                // Voltage in separatorColor
-                                const std::string voltPart = afterDiv1.substr(div2Pos + divLen);
-                                if (!voltPart.empty())
-                                    renderer->drawStringWithColoredSections(voltPart, false, specialChars, currentX, baseY, fontsize, settings.textColor, settings.separatorColor);
-                            } else {
-                                // Fan only (no voltage), fan icon in catColor
-                                if (!afterDiv1.empty()) {
-                                    static const std::vector<std::string> tmpFanOnlyChars = {""};
-                                    renderer->drawStringWithColoredSections(afterDiv1, false, tmpFanOnlyChars,
-                                        currentX, baseY, fontsize, settings.textColor, settings.catColor);
-                                }
                             }
                         } else {
-                            renderer->drawStringWithColoredSections(restPart, false, specialChars, currentX, baseY, fontsize, settings.textColor, settings.separatorColor);
+                            currentX += renderer->drawStringWithColoredSections(restPart, false, specialChars, currentX, baseY, fontsize, settings.textColor, settings.separatorColor).first;
                         }
                     }
-                    
+                    if (settings.voltageAtEndTMP && tmpSOCHasVolt) {
+                        currentX += renderer->drawString(ult::DIVIDER_SYMBOL, false, currentX, baseY, fontsize, settings.separatorColor).first;
+                        renderer->drawStringWithColoredSections(std::string(MINI_SOC_volt_c), false, specialChars, currentX, baseY, fontsize, settings.textColor, settings.separatorColor);
+                    }
                     // If parsing failed, fall back to normal rendering
                     if (!parseSuccess) {
                         renderer->drawStringWithColoredSections(currentLine, false, specialChars, baseX, baseY, fontsize, settings.textColor, settings.separatorColor);
@@ -1518,6 +1514,16 @@ public:
                             tmpTopRowY, fanY, tmpBotRowY,
                             fontsize, settings.separatorColor);
                         afterContentX = fanX + (int)renderer->getTextDimensions(ult::DIVIDER_SYMBOL, false, fontsize).first;
+                        const bool tmpTopHasVolt = settings.realVolts && settings.showSOCVoltage && MINI_SOC_volt_c[0];
+                        // voltageAtEndTMP OFF: volt right after structural DIV (no extra leading DIV), then DIV, then fan.
+                        // voltageAtEndTMP ON:  fan first, then DIV, then volt (original order).
+                        if (!settings.voltageAtEndTMP && tmpTopHasVolt) {
+                            // No extra divider before volt: structural divider already serves as separator.
+                            renderer->drawStringWithColoredSections(std::string(MINI_SOC_volt_c), false, specialChars, afterContentX, fanY, fontsize, settings.textColor, settings.separatorColor);
+                            afterContentX += (int)renderer->getTextDimensions(std::string(MINI_SOC_volt_c), false, fontsize).first;
+                            // Divider between volt and fan.
+                            afterContentX += renderer->drawString(ult::DIVIDER_SYMBOL, false, afterContentX, fanY, fontsize, settings.separatorColor).first;
+                        }
                         if (settings.showFanPercentage) {
                             const int fanDuty = safeFanDuty((int)Rotation_Duty);
                             char fanPctStr[24];
@@ -1527,9 +1533,9 @@ public:
                                 afterContentX, fanY, fontsize, settings.textColor, settings.catColor);
                             afterContentX += (int)renderer->getTextDimensions(std::string(fanPctStr), false, fontsize).first;
                         }
-                        if (settings.realVolts && settings.showSOCVoltage && MINI_SOC_volt_c[0]) {
-                            const int voltDivX = afterContentX + (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, afterContentX, fanY, fontsize, settings.separatorColor).first;
-                            renderer->drawStringWithColoredSections(std::string(MINI_SOC_volt_c), false, specialChars, voltDivX, fanY, fontsize, settings.textColor, settings.separatorColor);
+                        if (settings.voltageAtEndTMP && tmpTopHasVolt) {
+                            afterContentX += renderer->drawString(ult::DIVIDER_SYMBOL, false, afterContentX, fanY, fontsize, settings.separatorColor).first;
+                            renderer->drawStringWithColoredSections(std::string(MINI_SOC_volt_c), false, specialChars, afterContentX, fanY, fontsize, settings.textColor, settings.separatorColor);
                         }
                     }
 
@@ -3716,12 +3722,8 @@ public:
                     // Only component die temps: single row, no voltage
                     strcat(Temp, componentTemps_c);
                 } else {
-                    // Only SOC/PCB/Skin temps: single row + optional voltage
+                    // Only SOC/PCB/Skin temps: single row, volt drawn explicitly by renderer (respects voltageAtEndTMP)
                     strcat(Temp, skin_temperature_c);
-                    if (settings.realVolts && settings.showSOCVoltage && MINI_SOC_volt_c[0]) {
-                        strcat(Temp, "");
-                        strcat(Temp, MINI_SOC_volt_c);
-                    }
                 }
                 flags |= 16;
             }

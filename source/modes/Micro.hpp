@@ -372,11 +372,9 @@ public:
                         break;
                     case 0x544D50: // "TMP"
                         if (!(seen_flags & 16)) {
-                            // In split mode volt is drawn by the renderer, not via has_voltage
-                            const bool splitFanSOC = settings.showStackedFanSOC &&
-                                                     settings.realVolts && settings.showSOCVoltage;
-                            renderItems.push_back({4, "TMP", skin_temperature_c, SOC_volt_c,
-                                settings.realVolts && settings.showSOCVoltage && !splitFanSOC});
+                            // Volt is drawn entirely by the TMP renderer in all paths (split/grid/single-row).
+                            // has_voltage=false so the generic volt block never fires for TMP.
+                            renderItems.push_back({4, "TMP", skin_temperature_c, SOC_volt_c, false});
                             seen_flags |= 16;
                         }
                         break;
@@ -602,6 +600,16 @@ public:
                         const uint32_t bottom_w = temp_part_w + sep_width + volt_w;
                         item_layout.total_width = item_layout.label_width + layout.label_data_gap +
                                                   std::max(item_layout.data_width, bottom_w);
+                    }
+
+                    // Grid and single-row TMP: volt is drawn inline by the renderer after the fan,
+                    // but data_width only covers temps+fan from the data string (no volt).
+                    // Widen total_width by sep+volt so the column is allocated enough space.
+                    if ((tmpIsGrid || !tmpIsSplit) && item.type == 4 &&
+                        settings.realVolts && settings.showSOCVoltage && item.volt_ptr && item.volt_ptr[0]) {
+                        const uint32_t volt_w = renderer->getTextDimensions(item.volt_ptr, false, fontsize).first;
+                        item_layout.total_width = item_layout.label_width + layout.label_data_gap +
+                                                  item_layout.data_width + sep_width + volt_w;
                     }
 
                     // In split RAM mode both rows share the volt column: take max(vdd2_w, vddq_w).
@@ -1099,7 +1107,7 @@ public:
                             {
                                 const int tmpFanDuty = safeFanDuty((int)Rotation_Duty);
                                 char tmpFanPctStr[24];
-                                snprintf(tmpFanPctStr, sizeof(tmpFanPctStr), " %d%%", tmpFanDuty);
+                                snprintf(tmpFanPctStr, sizeof(tmpFanPctStr), " %d%%", tmpFanDuty);
                                 static const std::vector<std::string> tmpFanFic = {""};
                                 renderer->drawStringWithColoredSections(std::string(tmpFanPctStr), false, tmpFanFic,
                                     fanColX + tmpDivW, fanDrawY, fontsize, textColorA, catColorA);
@@ -1215,9 +1223,22 @@ public:
                                     micro_divider_scissor::drawDividerStack3(renderer, rx, gridTopY, singleItemY, gridBotY, fontsize, (settings.separatorColor));
                                     rx += renderer->getTextDimensions(ult::DIVIDER_SYMBOL, false, fontsize).first;
                                     const std::string ad = rest.substr(dv + dl);
+                                    const bool gridHasVolt = settings.realVolts && settings.showSOCVoltage && SOC_volt_c[0];
+                                    // voltageAtEndTMP OFF: volt before fan (mirrors Mini TMP_COMP ordering)
+                                    if (!settings.voltageAtEndTMP && gridHasVolt) {
+                                        renderer->drawStringWithColoredSections(SOC_volt_c, false, specialChars, rx, singleItemY, fontsize, textColorA, (settings.separatorColor));
+                                        rx += renderer->getTextDimensions(SOC_volt_c, false, fontsize).first;
+                                        rx += renderer->drawString(ult::DIVIDER_SYMBOL, false, rx, singleItemY, fontsize, (settings.separatorColor)).first;
+                                    }
                                     if (!ad.empty()) {
                                         static const std::vector<std::string> fic2 = {""};
                                         renderer->drawStringWithColoredSections(ad, false, fic2, rx, singleItemY, fontsize, textColorA, catColorA);
+                                        rx += renderer->getTextDimensions(ad, false, fontsize).first;
+                                    }
+                                    // voltageAtEndTMP ON: volt after fan
+                                    if (settings.voltageAtEndTMP && gridHasVolt) {
+                                        rx += renderer->drawString(ult::DIVIDER_SYMBOL, false, rx, singleItemY, fontsize, (settings.separatorColor)).first;
+                                        renderer->drawStringWithColoredSections(SOC_volt_c, false, specialChars, rx, singleItemY, fontsize, textColorA, (settings.separatorColor));
                                     }
                                 } else {
                                     renderer->drawStringWithColoredSections(rest, false, specialChars, rx, singleItemY, fontsize, textColorA, (settings.separatorColor));
@@ -1283,25 +1304,43 @@ public:
                             renderX += renderer->getTextDimensions(tempPart, false, fontsize).first;
                             pos = cPos + 1;
                         }
-                        // Render any remaining text (fan%, etc.) - only if we drew at least one temp
-                        if (pos < dataStr.length() && (parseSuccess || renderX > current_x)) {
-                            const std::string restPart = dataStr.substr(pos);
-                            const size_t divPos2 = restPart.find(ult::DIVIDER_SYMBOL);
-                            if (divPos2 != std::string::npos) {
-                                const size_t dl = ult::DIVIDER_SYMBOL.length();
-                                renderX += renderer->drawString(restPart.substr(0, divPos2 + dl), false, renderX, singleItemY, fontsize, (settings.separatorColor)).first;
-                                const std::string afterDiv = restPart.substr(divPos2 + dl);
-                                if (!afterDiv.empty()) {
-                                    static const std::vector<std::string> fic3 = {""};
-                                    renderer->drawStringWithColoredSections(afterDiv, false, fic3, renderX, singleItemY, fontsize, textColorA, catColorA);
-                                }
-                            } else {
-                                renderer->drawStringWithColoredSections(restPart, false, specialChars, renderX, singleItemY, fontsize, textColorA, (settings.separatorColor));
+                        // Single-row volt + fan: mirrors Mini TMP_COMP ordering.
+                        // voltageAtEndTMP OFF => div+volt then div+fan; ON => div+fan then div+volt.
+                        {
+                            const bool singleHasVolt = settings.realVolts && settings.showSOCVoltage && SOC_volt_c[0];
+                            // volt BEFORE fan when voltageAtEndTMP is OFF
+                            if (!settings.voltageAtEndTMP && singleHasVolt) {
+                                renderX += renderer->drawString(ult::DIVIDER_SYMBOL, false, renderX, singleItemY, fontsize, (settings.separatorColor)).first;
+                                renderer->drawStringWithColoredSections(SOC_volt_c, false, specialChars, renderX, singleItemY, fontsize, textColorA, (settings.separatorColor));
+                                renderX += renderer->getTextDimensions(SOC_volt_c, false, fontsize).first;
                             }
-                        }
-                        if (!parseSuccess && renderX == current_x) {
-                            // Full fallback only if nothing was successfully drawn
-                            renderer->drawStringWithColoredSections(item.data_ptr, false, specialChars, current_x, singleItemY, fontsize, textColorA, (settings.separatorColor));
+                            // fan from data string (embedded as  duty%) — only if temps drew ok
+                            if (pos < dataStr.length() && (parseSuccess || renderX > current_x)) {
+                                const std::string restPart = dataStr.substr(pos);
+                                const size_t divPos2 = restPart.find(ult::DIVIDER_SYMBOL);
+                                if (divPos2 != std::string::npos) {
+                                    const size_t dl = ult::DIVIDER_SYMBOL.length();
+                                    renderX += renderer->drawString(restPart.substr(0, divPos2 + dl), false, renderX, singleItemY, fontsize, (settings.separatorColor)).first;
+                                    const std::string afterDiv = restPart.substr(divPos2 + dl);
+                                    if (!afterDiv.empty()) {
+                                        static const std::vector<std::string> fic3 = {""};
+                                        renderer->drawStringWithColoredSections(afterDiv, false, fic3, renderX, singleItemY, fontsize, textColorA, catColorA);
+                                        renderX += renderer->getTextDimensions(afterDiv, false, fontsize).first;
+                                    }
+                                } else {
+                                    renderer->drawStringWithColoredSections(restPart, false, specialChars, renderX, singleItemY, fontsize, textColorA, (settings.separatorColor));
+                                    renderX += renderer->getTextDimensions(restPart, false, fontsize).first;
+                                }
+                            } else if (!parseSuccess && renderX == current_x) {
+                                // Full fallback: nothing drew from parse loop
+                                renderer->drawStringWithColoredSections(item.data_ptr, false, specialChars, current_x, singleItemY, fontsize, textColorA, (settings.separatorColor));
+                                renderX += renderer->getTextDimensions(item.data_ptr, false, fontsize).first;
+                            }
+                            // volt AFTER fan when voltageAtEndTMP is ON
+                            if (settings.voltageAtEndTMP && singleHasVolt) {
+                                renderX += renderer->drawString(ult::DIVIDER_SYMBOL, false, renderX, singleItemY, fontsize, (settings.separatorColor)).first;
+                                renderer->drawStringWithColoredSections(SOC_volt_c, false, specialChars, renderX, singleItemY, fontsize, textColorA, (settings.separatorColor));
+                            }
                         }
                     }
                 } else {
