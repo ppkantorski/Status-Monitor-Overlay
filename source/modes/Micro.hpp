@@ -66,6 +66,12 @@ namespace micro_divider_scissor {
     }
 } // namespace micro_divider_scissor
 
+// Sentinel character prepended to single-digit percentages so fixed-width bracket
+// strings like "[#4% #8%]" keep a stable pixel width across 1- and 2-digit values.
+// The renderer draws this character transparent (cpuPadChars / cpuPadTransparent).
+// Change to any single ASCII character to test alternative padding glyphs.
+static constexpr char kPadSentinelMicro = 'B';
+
 class MicroOverlay : public tsl::Gui {
 private:
     char GPU_Load_c[32];
@@ -944,8 +950,33 @@ public:
 
             uint32_t current_x;
             static std::vector<std::string> specialChars = {""};
-            static const std::vector<std::string> cpuPadChars = {"#"};
+            static const std::vector<std::string> cpuPadChars = {std::string(1, kPadSentinelMicro)};
             static const tsl::Color cpuPadTransparent{0, 0, 0, 0};
+            // Bracket-aware draw: only the [...] portion of a string contains pad sentinels.
+            // Everything outside the brackets is drawn with specialChars (so embedded
+            // DIVIDER_SYMBOL characters get separatorColor). The bracket content is drawn
+            // with cpuPadChars so the sentinel character is rendered fully transparent.
+            // Returns the total advance width of the string.
+            auto drawBracketAware = [&](const std::string& s, int x, int y) -> int {
+                const size_t lbPos = s.find('[');
+                const size_t rbPos = (lbPos != std::string::npos) ? s.find(']', lbPos) : std::string::npos;
+                if (lbPos == std::string::npos || rbPos == std::string::npos) {
+                    // No brackets -- no sentinels. Draw entirely with specialChars.
+                    return (int)renderer->drawStringWithColoredSections(s, false, specialChars, x, y, fontsize, textColorA, (settings.separatorColor)).first;
+                }
+                int cx = x;
+                if (lbPos > 0) {
+                    const std::string pre = s.substr(0, lbPos);
+                    cx += (int)renderer->drawStringWithColoredSections(pre, false, specialChars, cx, y, fontsize, textColorA, (settings.separatorColor)).first;
+                }
+                const std::string brk = s.substr(lbPos, rbPos - lbPos + 1);
+                cx += (int)renderer->drawStringWithColoredSections(brk, false, cpuPadChars, cx, y, fontsize, textColorA, cpuPadTransparent).first;
+                if (rbPos + 1 < s.size()) {
+                    const std::string suf = s.substr(rbPos + 1);
+                    cx += (int)renderer->drawStringWithColoredSections(suf, false, specialChars, cx, y, fontsize, textColorA, (settings.separatorColor)).first;
+                }
+                return cx - x;
+            };
 
             // \u2500\u2500 Grid-mode Y coordinates \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
             // When tmpIsGrid: bar is taller; other items centered in expanded bar;
@@ -1468,9 +1499,9 @@ public:
                             int cx = drawX;
                             cx += (int)renderer->drawStringWithColoredSections(bwPart, false, specialChars, cx, dataY, fontsize, textColorA, (settings.separatorColor)).first;
                             cx += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, cx, dataY, fontsize, (settings.separatorColor)).first;
-                            renderer->drawStringWithColoredSections(brkPart, false, cpuPadChars, cx, dataY, fontsize, textColorA, cpuPadTransparent);
+                            drawBracketAware(brkPart, cx, dataY);
                         } else {
-                            renderer->drawStringWithColoredSections(dtcTopPtr, false, cpuPadChars, drawX, dataY, fontsize, textColorA, cpuPadTransparent);
+                            drawBracketAware(std::string(dtcTopPtr), drawX, dataY);
                         }
                     } else {
                         renderer->drawStringWithColoredSections(dtcTopPtr, false, specialChars, drawX, dataY, fontsize, textColorA, (settings.separatorColor));
@@ -1993,7 +2024,7 @@ public:
                         // Bot row may contain '#' sentinels (e.g. "[#4% #8%] 12%@1600.0" when
                         // ramBWIsSplit=true: BW on top, load-SBS on bottom). Use cpuPadChars so
                         // the '#' padding renders transparent rather than as a literal '#' character.
-                        renderer->drawStringWithColoredSections(std::string(RAM_load_bot_c), false, cpuPadChars, botDrawX, gridBotY, fontsize, textColorA, cpuPadTransparent);
+                        drawBracketAware(std::string(RAM_load_bot_c), botDrawX, gridBotY);
                     }
                     // rLoadHasRight: is there any right-side content that needs the 3-tall
                     // divider stack (top+bot) drawn at the volt-column X?
@@ -2164,7 +2195,7 @@ public:
             // strlen("X%") == 2 means single digit — write " X%" into a local buffer.
             auto mkPad = [](const char* s, char (&buf)[4]) -> const char* {
                 if (s[0] != '\0' && s[1] == '%' && s[2] == '\0') {
-                    buf[0] = '#'; buf[1] = s[0]; buf[2] = '%'; buf[3] = '\0';
+                    buf[0] = kPadSentinelMicro; buf[1] = s[0]; buf[2] = '%'; buf[3] = '\0';
                     return buf;
                 }
                 return s;
@@ -2342,7 +2373,7 @@ public:
             // '#' is drawn transparent at render time so the bracket width stays fixed.
             auto mkPadR = [](unsigned v, char (&buf)[4]) -> const char* {
                 if (v < 10) {
-                    buf[0] = '#'; buf[1] = '0' + (char)v; buf[2] = '%'; buf[3] = '\0';
+                    buf[0] = kPadSentinelMicro; buf[1] = '0' + (char)v; buf[2] = '%'; buf[3] = '\0';
                     return buf;
                 }
                 // Two-or-three digit: format normally

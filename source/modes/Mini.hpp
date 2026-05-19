@@ -131,6 +131,12 @@ namespace mini_divider_scissor {
     }
 } // namespace mini_divider_scissor
 
+// Sentinel character prepended to single-digit percentages so fixed-width bracket
+// strings like "[#4% #8%]" keep a stable pixel width across 1- and 2-digit values.
+// The renderer draws this character transparent (cpuPadChars / cpuPadTransparent).
+// Change to any single ASCII character to test alternative padding glyphs.
+static constexpr char kPadSentinelMini = 'B';
+
 class MiniOverlay : public tsl::Gui {
 private:
     char GPU_Load_c[32] = "";
@@ -1434,8 +1440,33 @@ public:
             size_t labelIndex = 0;
             
             static const std::vector<std::string> specialChars = {""};
-            static const std::vector<std::string> cpuPadChars = {"#"};
+            static const std::vector<std::string> cpuPadChars = {std::string(1, kPadSentinelMini)};
             static const tsl::Color cpuPadTransparent{0, 0, 0, 0};
+            // Bracket-aware draw: only the [...] portion of a string contains pad sentinels.
+            // Everything outside the brackets is drawn with specialChars (so embedded
+            // DIVIDER_SYMBOL characters get separatorColor). The bracket content is drawn
+            // with cpuPadChars so the sentinel character is rendered fully transparent.
+            // Returns the total advance width of the string.
+            auto drawBracketAware = [&](const std::string& s, int x, int y) -> int {
+                const size_t lbPos = s.find('[');
+                const size_t rbPos = (lbPos != std::string::npos) ? s.find(']', lbPos) : std::string::npos;
+                if (lbPos == std::string::npos || rbPos == std::string::npos) {
+                    // No brackets -- no sentinels. Draw entirely with specialChars.
+                    return (int)renderer->drawStringWithColoredSections(s, false, specialChars, x, y, fontsize, settings.textColor, settings.separatorColor).first;
+                }
+                int cx = x;
+                if (lbPos > 0) {
+                    const std::string pre = s.substr(0, lbPos);
+                    cx += (int)renderer->drawStringWithColoredSections(pre, false, specialChars, cx, y, fontsize, settings.textColor, settings.separatorColor).first;
+                }
+                const std::string brk = s.substr(lbPos, rbPos - lbPos + 1);
+                cx += (int)renderer->drawStringWithColoredSections(brk, false, cpuPadChars, cx, y, fontsize, settings.textColor, cpuPadTransparent).first;
+                if (rbPos + 1 < s.size()) {
+                    const std::string suf = s.substr(rbPos + 1);
+                    cx += (int)renderer->drawStringWithColoredSections(suf, false, specialChars, cx, y, fontsize, settings.textColor, settings.separatorColor).first;
+                }
+                return cx - x;
+            };
 
             static uint32_t labelWidth, labelCenterX;
             static int sfanFanColX = 0;     // shared between TMP_SFAN and TMP_SVOLT
@@ -1928,10 +1959,10 @@ public:
                             int cx = topDrawX;
                             cx += (int)renderer->drawStringWithColoredSections(bwPart,  false, specialChars,  cx, baseY, fontsize, settings.textColor, settings.separatorColor).first;
                             cx += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, cx, baseY, fontsize, settings.separatorColor).first;
-                            renderer->drawStringWithColoredSections(brkPart, false, cpuPadChars, cx, baseY, fontsize, settings.textColor, cpuPadTransparent);
+                            drawBracketAware(brkPart, cx, baseY);
                         } else {
                             // Cases (a)/(b): no embedded DIVIDER
-                            renderer->drawStringWithColoredSections(currentLine, false, cpuPadChars, topDrawX, baseY, fontsize, settings.textColor, cpuPadTransparent);
+                            drawBracketAware(currentLine, topDrawX, baseY);
                         }
                     }
 
@@ -2070,7 +2101,7 @@ public:
                         // Bot row may contain '#' sentinels (e.g. "[#4% #8%] 12%@1600.0" when
                         // bwOnOwnRow=true: BW on top, load-SBS on bottom). Use cpuPadChars so the
                         // '#' padding renders transparent rather than as a literal '#' character.
-                        renderer->drawStringWithColoredSections(std::string(MINI_RAM_load_bot_c), false, cpuPadChars, botDrawX, ramLoadBotY, fontsize, settings.textColor, cpuPadTransparent);
+                        drawBracketAware(std::string(MINI_RAM_load_bot_c), botDrawX, ramLoadBotY);
                     }
                     // Use shared column X (computed by RAM_SLOAD_TOP); fall back to baseX if unset
                     int afterBotX = ramLoadVoltColX ? ramLoadVoltColX : baseX;
@@ -2596,8 +2627,7 @@ public:
                         // CPU_SFREQ (bottom row) draws @freq right-aligned + temp right of volt column.
                         // Brackets are right-aligned within cpuFullSplitColW so both rows share the same right edge.
                         int currentX = baseX + bracketsOffsetX;
-                        renderer->drawStringWithColoredSections(currentLine, false, cpuPadChars,
-                            currentX, baseY, fontsize, settings.textColor, cpuPadTransparent);
+                        drawBracketAware(currentLine, currentX, baseY);
                         currentX = baseX + cpuFullSplitColW; // volt column starts at shared right edge
                         // Center connector divider — connects top-row | and bottom-row | into one vertical bar
                         renderer->drawString(ult::DIVIDER_SYMBOL, false, currentX, cpuFullCenterY,
@@ -2628,8 +2658,7 @@ public:
                         // ── Inline mode: brackets on baseY (top row), volt+temp on cpuFullCenterY (center row) ──
                         // Brackets are right-aligned within cpuFullSplitColW; the divider/volt column sits at
                         // baseX + cpuFullSplitColW so it never overlaps with either line's text.
-                        renderer->drawStringWithColoredSections(currentLine, false, cpuPadChars,
-                            baseX + bracketsOffsetX, baseY, fontsize, settings.textColor, cpuPadTransparent);
+                        drawBracketAware(currentLine, baseX + bracketsOffsetX, baseY);
                         // 3-tall divider stack at the shared right edge of the column.
                         // Top and bottom extensions are only drawn when volt/temp content follows them.
                         const int voltColX = baseX + cpuFullSplitColW;
@@ -3262,11 +3291,10 @@ public:
                         const std::string line = currentLine;
                         const size_t divPos = line.find(ult::DIVIDER_SYMBOL);
                         if (divPos != std::string::npos) {
-                            renderer->drawStringWithColoredSections(line.substr(0, divPos), false, cpuPadChars, baseX, baseY, fontsize, settings.textColor, cpuPadTransparent);
-                            const int divX = baseX + (int)renderer->getTextDimensions(line.substr(0, divPos), false, fontsize).first;
-                            renderer->drawStringWithColoredSections(line.substr(divPos), false, specialChars, divX, baseY, fontsize, settings.textColor, settings.separatorColor);
+                            const int afterBrk = baseX + drawBracketAware(line.substr(0, divPos), baseX, baseY);
+                            renderer->drawStringWithColoredSections(line.substr(divPos), false, specialChars, afterBrk, baseY, fontsize, settings.textColor, settings.separatorColor);
                         } else {
-                            renderer->drawStringWithColoredSections(line, false, cpuPadChars, baseX, baseY, fontsize, settings.textColor, cpuPadTransparent);
+                            drawBracketAware(line, baseX, baseY);
                         }
                     } else if (curLabel == "RAM") {
                         // RAM string may embed a DIVIDER_SYMBOL when BW is inline:
@@ -3284,9 +3312,9 @@ public:
                                 int cx = baseX;
                                 cx += (int)renderer->drawStringWithColoredSections(leftPart, false, specialChars, cx, baseY, fontsize, settings.textColor, settings.separatorColor).first;
                                 cx += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, cx, baseY, fontsize, settings.separatorColor).first;
-                                renderer->drawStringWithColoredSections(rightPart, false, cpuPadChars, cx, baseY, fontsize, settings.textColor, cpuPadTransparent);
+                                drawBracketAware(rightPart, cx, baseY);
                             } else {
-                                renderer->drawStringWithColoredSections(currentLine, false, cpuPadChars, baseX, baseY, fontsize, settings.textColor, cpuPadTransparent);
+                                drawBracketAware(currentLine, baseX, baseY);
                             }
                         }
                     } else {
@@ -3458,7 +3486,7 @@ public:
                 // strlen("X%") == 2 means single digit — write " X%" into a local buffer.
                 auto mkPad = [](const char* s, char (&buf)[4]) -> const char* {
                     if (s[0] != '\0' && s[1] == '%' && s[2] == '\0') {
-                        buf[0] = '#'; buf[1] = s[0]; buf[2] = '%'; buf[3] = '\0';
+                        buf[0] = kPadSentinelMini; buf[1] = s[0]; buf[2] = '%'; buf[3] = '\0';
                         return buf;
                     }
                     return s;
@@ -3628,7 +3656,7 @@ public:
                         // '#' is drawn transparent at render time so bracket width stays fixed.
                         auto mkPadR = [](unsigned v, char (&buf)[4]) -> const char* {
                             if (v < 10) {
-                                buf[0] = '#'; buf[1] = '0' + (char)v; buf[2] = '%'; buf[3] = '\0';
+                                buf[0] = kPadSentinelMini; buf[1] = '0' + (char)v; buf[2] = '%'; buf[3] = '\0';
                                 return buf;
                             }
                             snprintf(buf, sizeof(buf), "%u%%", v);
