@@ -225,6 +225,7 @@ uint32_t realCPU_Hz = 0;
 uint32_t realGPU_Hz = 0;
 uint32_t realRAM_Hz = 0;
 uint32_t ramLoad[SysClkRamLoad_EnumMax];
+uint32_t ramBW_MBs = 0;  // RAM bandwidth in MB/s from ACTMON hardware (direct read)
 uint32_t realCPU_mV = 0; 
 uint32_t realGPU_mV = 0; 
 uint32_t realRAM_mV = 0; 
@@ -457,6 +458,173 @@ static void Read() {
 } // namespace Soctherm
 
 
+// ─────────────────────────────────────────────────────────────────────────────
+//  ACTMON – RAM bandwidth reading via direct ACTMON hardware access.
+//
+//  Reads the MC_ALL activity monitor average count and converts to MB/s.
+//  The formula is: bw_MB_s = avg_count * 16 / 20000
+//  (derived from: bw = emc_freq_khz * 16 * load_permille/1000000, where
+//   load_permille = avg_count * 1000 / (emc_freq_khz * ACTMON_PERIOD_MS),
+//   ACTMON_PERIOD_MS = 20 — the EMC freq cancels out)
+//
+//  If MC_ALL is not yet active we enable it (needs EMC freq for init_avg).
+//  We use a 1-second re-init throttle to avoid hammering on failure.
+//
+//  Requires ovll.json kernel_capabilities:
+//    0x6000C000 (ACTMON, 4KB) read+write
+//    0x60006000 (CAR,    4KB) read+write  ← for PTO-based EMC freq measurement
+// ─────────────────────────────────────────────────────────────────────────────
+namespace Actmon {
+
+static constexpr u64 PA_ACTMON = 0x6000C000ULL;
+static constexpr u64 PA_CAR    = 0x60006000ULL;
+
+// ACTMON base = PA_ACTMON + 0x800; devices start at base + 0x80
+static constexpr u32 ACTMON_BASE_OFF    = 0x800;
+static constexpr u32 ACTMON_DEV_OFF     = 0x80;  // devices start here within ACTMON_BASE
+static constexpr u32 ACTMON_DEV_SIZE    = 0x40;
+
+// ACTMON global registers (relative to ACTMON_BASE)
+static constexpr u32 GLB_STATUS        = 0x00;
+static constexpr u32 GLB_PERIOD_CTRL   = 0x04;
+static constexpr u32 MCALL_MON_ACT     = 1u << 9;
+static constexpr u32 GLB_PERIOD_USEC   = 1u << 8;
+
+// ACTMON_PERIOD: 20 ms sample window (same as hoc-clk)
+static constexpr u32 ACTMON_PERIOD_MS  = 20;
+// GLB_PERIOD_CTRL value: sample = (period_ms - 1) & 0xFF, no USEC bit (ms mode)
+static constexpr u32 GLB_PERIOD_VAL    = (ACTMON_PERIOD_MS - 1) & 0xFF;
+
+// Device enum index for MC_ALL (0-based within ACTMON_DEV_BASE):
+// CPU=0 BPMP=1 AHB=2 APB=3 CPU_FREQ=4 MC_ALL=5 MC_CPU=6
+static constexpr u32 DEV_MC_ALL        = 5;
+
+// Device register offsets within one device block (u32 slots)
+static constexpr u32 DEV_CTRL          = 0x00;
+static constexpr u32 DEV_UPPER_WMARK   = 0x04;
+static constexpr u32 DEV_LOWER_WMARK   = 0x08;
+static constexpr u32 DEV_INIT_AVG      = 0x0C;
+static constexpr u32 DEV_AVG_UPPER     = 0x10;
+static constexpr u32 DEV_AVG_LOWER     = 0x14;
+static constexpr u32 DEV_COUNT_WEIGHT  = 0x18;
+static constexpr u32 DEV_COUNT         = 0x1C;
+static constexpr u32 DEV_AVG_COUNT     = 0x20;
+
+// CTRL bits
+static constexpr u32 DEV_CTRL_K_VAL3   = 3u << 10;  // 8-sample average
+static constexpr u32 DEV_CTRL_ENB_PER  = 1u << 18;
+static constexpr u32 DEV_CTRL_ENB      = 1u << 31;
+
+// CAR register offsets (relative to PA_CAR)
+static constexpr u32 PTO_CLK_CNT_CNTL   = 0x60;
+static constexpr u32 PTO_CLK_CNT_STATUS = 0x64;
+static constexpr u32 PTO_CNT_EN         = 1u << 9;
+static constexpr u32 PTO_CNT_RST        = 1u << 10;
+static constexpr u32 PTO_CLK_ENABLE     = 1u << 13;
+static constexpr u32 PTO_SRC_SEL_SHIFT  = 14;
+static constexpr u32 PTO_DIV_SEL_DIV1   = 1u << 23;
+static constexpr u32 PTO_CLK_CNT_BUSY   = 1u << 31;
+static constexpr u32 PTO_CLK_CNT_MASK   = 0xFFFFFF;
+static constexpr u32 CLK_PTO_EMC        = 0x24;
+
+static u64  vActmon = 0;
+static u64  vCar    = 0;
+static bool mapped  = false;
+static u64  initFailTick = 0;  // tick when mapping last failed; retry after 1s
+
+template<typename T=u32>
+static T Rd(u64 base, u32 off) { return *reinterpret_cast<volatile T*>(base + off); }
+template<typename T=u32>
+static void Wr(u64 base, u32 off, T v) { *reinterpret_cast<volatile T*>(base + off) = v; }
+
+// Helper: map a physical address
+static bool MapPA(u64& va, u64 pa) {
+    if (hosversionAtLeast(10, 0, 0)) {
+        u64 sz = 0;
+        return R_SUCCEEDED(svcQueryMemoryMapping(&va, &sz, pa, 0x1000));
+    } else {
+        return R_SUCCEEDED(svcLegacyQueryIoMapping(&va, pa, 0x1000));
+    }
+}
+
+// Compute ACTMON_BASE virtual address
+static inline u64 ActmonBase()  { return vActmon + ACTMON_BASE_OFF; }
+// Compute device register base for MC_ALL
+static inline u64 DevBase()     { return ActmonBase() + ACTMON_DEV_OFF + DEV_MC_ALL * ACTMON_DEV_SIZE; }
+
+// Attempt one-time IO mapping
+static bool TryMap() {
+    if (mapped) return true;
+    u64 now = armGetSystemTick();
+    if (initFailTick && armTicksToNs(now - initFailTick) < 1000000000ULL) return false;
+    if (!MapPA(vActmon, PA_ACTMON)) { initFailTick = now; return false; }
+    if (!MapPA(vCar,    PA_CAR))    { vActmon = 0; initFailTick = now; return false; }
+    mapped = true;
+    return true;
+}
+
+// Use PTO counter to measure EMC frequency in kHz (same method as hoc-clk).
+// Returns 0 on failure. Takes ~0.5 ms due to the measurement window.
+// We fall back to the global RAM_Hz if PTO is unavailable.
+static u32 MeasureEmcKHz() {
+    if (!vCar) return 0;
+    const u32 pto_win  = 16;
+    const u32 pto_osc  = 32768;
+    u32 val = (CLK_PTO_EMC << PTO_SRC_SEL_SHIFT) | PTO_DIV_SEL_DIV1 | PTO_CLK_ENABLE | (pto_win - 1);
+    Wr(vCar, PTO_CLK_CNT_CNTL, val);
+    (void)Rd(vCar, PTO_CLK_CNT_CNTL);
+    svcSleepThread(2000);
+    Wr(vCar, PTO_CLK_CNT_CNTL, val | PTO_CNT_RST);
+    (void)Rd(vCar, PTO_CLK_CNT_CNTL);
+    svcSleepThread(2000);
+    Wr(vCar, PTO_CLK_CNT_CNTL, val);
+    (void)Rd(vCar, PTO_CLK_CNT_CNTL);
+    svcSleepThread(2000);
+    Wr(vCar, PTO_CLK_CNT_CNTL, val | PTO_CNT_EN);
+    (void)Rd(vCar, PTO_CLK_CNT_CNTL);
+    // window duration: 1s * pto_win / pto_osc + 14us
+    svcSleepThread((uint64_t)1000000000ULL * pto_win / pto_osc + 14000);
+    u32 iters = 100;
+    while ((Rd(vCar, PTO_CLK_CNT_STATUS) & PTO_CLK_CNT_BUSY) && iters--)
+        svcSleepThread(10000);
+    u32 cnt = Rd(vCar, PTO_CLK_CNT_STATUS) & PTO_CLK_CNT_MASK;
+    Wr(vCar, PTO_CLK_CNT_CNTL, 0);
+    (void)Rd(vCar, PTO_CLK_CNT_CNTL);
+    svcSleepThread(2000);
+    // freq_hz = cnt * 1 * pto_osc / pto_win; return kHz
+    return (u32)(((u64)cnt * pto_osc / pto_win) / 1000);
+}
+
+// Enable MC_ALL device in ACTMON (only called when not already active)
+static void EnableMcAll(u32 emc_freq_khz) {
+    u64 base = ActmonBase();
+    // Set global period (20 ms, millisecond mode — no USEC bit)
+    Wr(base, GLB_PERIOD_CTRL, GLB_PERIOD_VAL);
+    // Enable MC_ALL device
+    u64 dev = DevBase();
+    Wr(dev, DEV_INIT_AVG,     (u32)emc_freq_khz * ACTMON_PERIOD_MS / 2);
+    Wr(dev, DEV_COUNT_WEIGHT, 256u * 4u);
+    Wr(dev, DEV_CTRL,         DEV_CTRL_ENB | DEV_CTRL_ENB_PER | DEV_CTRL_K_VAL3);
+}
+
+// Read RAM bandwidth in MB/s. Returns 0 if hardware not ready.
+// Formula: bw_MB_s = avg_count * 16 / 20000  (EMC freq cancels out exactly)
+static u32 Read() {
+    if (!TryMap()) return 0;
+    u64 base = ActmonBase();
+    if (!(Rd(base, GLB_STATUS) & MCALL_MON_ACT)) {
+        // Device not running — enable it using RAM_Hz (global, set by clkrst/pcv)
+        u32 emc_khz = RAM_Hz / 1000;
+        if (!emc_khz) return 0;
+        EnableMcAll(emc_khz);
+        return 0;  // Return 0 this cycle; avg will warm up next poll
+    }
+    u32 avg = Rd(DevBase(), DEV_AVG_COUNT);
+    // bw_MB_s = avg * 16 / (ACTMON_PERIOD_MS * 1000)
+    return (u32)(((u64)avg * 16u) / (ACTMON_PERIOD_MS * 1000u));
+}
+
+} // namespace Actmon
 
 
 int compare (const void* elem1, const void* elem2) {
@@ -871,6 +1039,9 @@ void Misc(void*) {
 
         // Non-HOC: read CPU/GPU/MEM die temps directly from SOCTHERM hardware
         if (!usingHOC()) Soctherm::Read();
+
+        // Read RAM bandwidth directly from ACTMON hardware (always available)
+        ramBW_MBs = Actmon::Read();
         
         // Read voltages directly if not using EOS
         if (canReadVoltages) {
@@ -1099,6 +1270,9 @@ void Misc3(void*) {
 
         // Non-HOC: read CPU/GPU/MEM die temps directly from SOCTHERM hardware
         if (!usingHOC()) Soctherm::Read();
+
+        // Read RAM bandwidth directly from ACTMON hardware (always available)
+        ramBW_MBs = Actmon::Read();
         
         // Read voltages directly if not using EOS
         if (canReadVoltages) {
@@ -1756,7 +1930,9 @@ struct MiniSettings {
     std::string show;
     bool showRAMLoad;
     bool showRAMLoadCPUGPU;
-    bool showStackedRAMLoad; // true = split rows (stacked); false = [cpu% gpu%]total%@freq inline
+    bool showStackedRAMLoadCPUGPU; // true = split rows (stacked); false = [cpu% gpu%]total%@freq inline
+    bool showRAMBandwidth;        // show RAM bandwidth (GB/s) from ACTMON
+    bool showStackedRAMBandwidth; // true = BW on its own top row; false = BW inline before load
     bool showComponentTemps;    // dual-row TMP: show CPU/GPU/RAM die temps row
     bool showSocPcbSkinTemps;   // show SOC/PCB/Skin temps row (default: true)
     bool invertBatteryDisplay;
@@ -1814,7 +1990,9 @@ struct MicroSettings {
     std::string show;
     bool showRAMLoad;
     bool showRAMLoadCPUGPU;      // show CPU/GPU load breakdown
-    bool showStackedRAMLoad; // true = split rows (stacked); false = [cpu% gpu%]total%@freq inline
+    bool showStackedRAMLoadCPUGPU; // true = split rows (stacked); false = [cpu% gpu%]total%@freq inline
+    bool showRAMBandwidth;        // show RAM bandwidth (GB/s) from ACTMON direct read
+    bool showStackedRAMBandwidth; // true = BW on its own top row; false = BW inline before load
     bool showComponentTemps;    // show CPU/GPU/RAM die temps (default: false)
     bool showSocPcbSkinTemps;   // show SOC/PCB/Skin temps (default: true)
     bool showStackedTemps;   // true = temp groups on separate rows (stacked); false = one line with divider
@@ -1924,7 +2102,9 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
     settings->showLabels = true;
     settings->showRAMLoad = true;
     settings->showRAMLoadCPUGPU = false;
-    settings->showStackedRAMLoad = false;
+    settings->showStackedRAMLoadCPUGPU = false;
+    settings->showRAMBandwidth = false;
+    settings->showStackedRAMBandwidth = false;
     settings->showComponentTemps = true;
     settings->showSocPcbSkinTemps = true;
     settings->invertBatteryDisplay = true;
@@ -2058,11 +2238,11 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
         settings->showFullCPUMaxCore012 = (key == "TRUE");
     }
 
-    it = section.find("show_side_by_side_full_cpu");
+    it = section.find("show_stacked_full_cpu");
     if (it != section.end()) {
         key = it->second;
         convertToUpper(key);
-        settings->showStackedFullCPU = (key == "FALSE");
+        settings->showStackedFullCPU = (key == "TRUE");
     }
 
     it = section.find("show_full_res");
@@ -2079,18 +2259,18 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
         settings->showSOCVoltage = !(key == "FALSE");
     }
 
-    it = section.find("show_side_by_side_fan_soc");
+    it = section.find("show_stacked_fan_soc");
     if (it != section.end()) {
         key = it->second;
         convertToUpper(key);
-        settings->showStackedFanSOC = (key == "FALSE");
+        settings->showStackedFanSOC = (key == "TRUE");
     }
 
-    it = section.find("show_side_by_side_vddq");
+    it = section.find("show_stacked_vddq");
     if (it != section.end()) {
         key = it->second;
         convertToUpper(key);
-        settings->showStackedVDDQ = (key == "FALSE");
+        settings->showStackedVDDQ = (key == "TRUE");
     }
 
     it = section.find("show_cpu_temp");
@@ -2114,25 +2294,25 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
         settings->showRAMTemp = (key == "TRUE");
     }
 
-    it = section.find("show_side_by_side_cpu_temp");
+    it = section.find("show_stacked_cpu_temp");
     if (it != section.end()) {
         key = it->second;
         convertToUpper(key);
-        settings->showStackedCPUTemp = !(key == "TRUE");
+        settings->showStackedCPUTemp = (key == "TRUE");
     }
 
-    it = section.find("show_side_by_side_gpu_temp");
+    it = section.find("show_stacked_gpu_temp");
     if (it != section.end()) {
         key = it->second;
         convertToUpper(key);
-        settings->showStackedGPUTemp = !(key == "TRUE");
+        settings->showStackedGPUTemp = (key == "TRUE");
     }
 
-    it = section.find("show_side_by_side_ram_temp");
+    it = section.find("show_stacked_ram_temp");
     if (it != section.end()) {
         key = it->second;
         convertToUpper(key);
-        settings->showStackedRAMTemp = !(key == "TRUE");
+        settings->showStackedRAMTemp = (key == "TRUE");
     }
 
     it = section.find("voltage_at_end_cpu");
@@ -2249,11 +2429,25 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
         settings->showRAMLoadCPUGPU = (key != "FALSE");
     }
 
-    it = section.find("show_side_by_side_ram_load");
+    it = section.find("show_stacked_ram_load_cpu_gpu");
     if (it != section.end()) {
         key = it->second;
         convertToUpper(key);
-        settings->showStackedRAMLoad = (key == "FALSE");
+        settings->showStackedRAMLoadCPUGPU = (key == "TRUE");
+    }
+
+    it = section.find("show_ram_bandwidth");
+    if (it != section.end()) {
+        key = it->second;
+        convertToUpper(key);
+        settings->showRAMBandwidth = (key != "FALSE");
+    }
+
+    it = section.find("show_stacked_ram_bandwidth");
+    if (it != section.end()) {
+        key = it->second;
+        convertToUpper(key);
+        settings->showStackedRAMBandwidth = (key == "TRUE");
     }
 
     // Process CPU/GPU/RAM component temps flag (dual-row TMP only)
@@ -2283,18 +2477,18 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
         settings->invertBatteryDisplay = (key != "FALSE");
     }
 
-    it = section.find("show_side_by_side_bat");
+    it = section.find("show_stacked_bat");
     if (it != section.end()) {
         key = it->second;
         convertToUpper(key);
-        settings->showStackedBAT = (key == "FALSE");
+        settings->showStackedBAT = (key == "TRUE");
     }
 
-    it = section.find("show_side_by_side_dtc");
+    it = section.find("show_stacked_dtc");
     if (it != section.end()) {
         key = it->second;
         convertToUpper(key);
-        settings->showStackedDTC = (key == "FALSE");
+        settings->showStackedDTC = (key == "TRUE");
     }
 
     // Process disable screenshots
@@ -2389,7 +2583,9 @@ ALWAYS_INLINE void GetConfigSettings(MicroSettings* settings) {
     settings->show = "FPS+CPU+GPU+RAM+TMP+BAT+DTC";
     settings->showRAMLoad = true;
     settings->showRAMLoadCPUGPU = false;
-    settings->showStackedRAMLoad = false;
+    settings->showStackedRAMLoadCPUGPU = false;
+    settings->showRAMBandwidth = false;
+    settings->showStackedRAMBandwidth = false;
     settings->showComponentTemps = true;
     settings->showSocPcbSkinTemps = true;
     settings->showStackedTemps = true;
@@ -2459,11 +2655,11 @@ ALWAYS_INLINE void GetConfigSettings(MicroSettings* settings) {
         settings->showFullCPUMaxCore012 = (key == "TRUE");
     }
 
-    it = section.find("show_side_by_side_full_cpu");
+    it = section.find("show_stacked_full_cpu");
     if (it != section.end()) {
         key = it->second;
         convertToUpper(key);
-        settings->showStackedFullCPU = (key == "FALSE");
+        settings->showStackedFullCPU = (key == "TRUE");
     }
     
     it = section.find("show_full_res");
@@ -2480,18 +2676,18 @@ ALWAYS_INLINE void GetConfigSettings(MicroSettings* settings) {
         settings->showSOCVoltage = !(key == "FALSE");
     }
 
-    it = section.find("show_side_by_side_fan_soc");
+    it = section.find("show_stacked_fan_soc");
     if (it != section.end()) {
         key = it->second;
         convertToUpper(key);
-        settings->showStackedFanSOC = (key == "FALSE");
+        settings->showStackedFanSOC = (key == "TRUE");
     }
 
-    it = section.find("show_side_by_side_vddq");
+    it = section.find("show_stacked_vddq");
     if (it != section.end()) {
         key = it->second;
         convertToUpper(key);
-        settings->showStackedVDDQ = (key == "FALSE");
+        settings->showStackedVDDQ = (key == "TRUE");
     }
 
     it = section.find("show_cpu_temp");
@@ -2515,25 +2711,25 @@ ALWAYS_INLINE void GetConfigSettings(MicroSettings* settings) {
         settings->showRAMTemp = (key == "TRUE");
     }
 
-    it = section.find("show_side_by_side_cpu_temp");
+    it = section.find("show_stacked_cpu_temp");
     if (it != section.end()) {
         key = it->second;
         convertToUpper(key);
-        settings->showStackedCPUTemp = !(key == "TRUE");
+        settings->showStackedCPUTemp = (key == "TRUE");
     }
 
-    it = section.find("show_side_by_side_gpu_temp");
+    it = section.find("show_stacked_gpu_temp");
     if (it != section.end()) {
         key = it->second;
         convertToUpper(key);
-        settings->showStackedGPUTemp = !(key == "TRUE");
+        settings->showStackedGPUTemp = (key == "TRUE");
     }
 
-    it = section.find("show_side_by_side_ram_temp");
+    it = section.find("show_stacked_ram_temp");
     if (it != section.end()) {
         key = it->second;
         convertToUpper(key);
-        settings->showStackedRAMTemp = !(key == "TRUE");
+        settings->showStackedRAMTemp = (key == "TRUE");
     }
 
     it = section.find("voltage_at_end_cpu");
@@ -2631,18 +2827,18 @@ ALWAYS_INLINE void GetConfigSettings(MicroSettings* settings) {
         settings->invertBatteryDisplay = (key != "FALSE");
     }
 
-    it = section.find("show_side_by_side_bat");
+    it = section.find("show_stacked_bat");
     if (it != section.end()) {
         key = it->second;
         convertToUpper(key);
-        settings->showStackedBAT = (key == "FALSE");
+        settings->showStackedBAT = (key == "TRUE");
     }
 
-    it = section.find("show_side_by_side_dtc");
+    it = section.find("show_stacked_dtc");
     if (it != section.end()) {
         key = it->second;
         convertToUpper(key);
-        settings->showStackedDTC = (key == "FALSE");
+        settings->showStackedDTC = (key == "TRUE");
     }
     
     // Process font sizes with shared bounds
@@ -2741,11 +2937,25 @@ ALWAYS_INLINE void GetConfigSettings(MicroSettings* settings) {
         settings->showRAMLoadCPUGPU = (key != "FALSE");
     }
 
-    it = section.find("show_side_by_side_ram_load");
+    it = section.find("show_stacked_ram_load_cpu_gpu");
     if (it != section.end()) {
         key = it->second;
         convertToUpper(key);
-        settings->showStackedRAMLoad = (key == "FALSE");
+        settings->showStackedRAMLoadCPUGPU = (key == "TRUE");
+    }
+
+    it = section.find("show_ram_bandwidth");
+    if (it != section.end()) {
+        key = it->second;
+        convertToUpper(key);
+        settings->showRAMBandwidth = (key != "FALSE");
+    }
+
+    it = section.find("show_stacked_ram_bandwidth");
+    if (it != section.end()) {
+        key = it->second;
+        convertToUpper(key);
+        settings->showStackedRAMBandwidth = (key == "TRUE");
     }
 
     // Process component temps flag (also used in Micro)
@@ -2765,11 +2975,11 @@ ALWAYS_INLINE void GetConfigSettings(MicroSettings* settings) {
     }
 
     // Process stacked temps flag
-    it = section.find("show_side_by_side_temps");
+    it = section.find("show_stacked_temps");
     if (it != section.end()) {
         key = it->second;
         convertToUpper(key);
-        settings->showStackedTemps = (key == "FALSE");
+        settings->showStackedTemps = (key == "TRUE");
     }
 
     // Enforce mutual exclusivity: at least one temp group must be on

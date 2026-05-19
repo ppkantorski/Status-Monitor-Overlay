@@ -70,7 +70,7 @@ inline bool readBool(const std::string& section, const std::string& key, bool de
     return value != "FALSE";
 }
 
-// Read a boolean that is stored inverted (key is "show_side_by_side_*" where
+// Read a boolean that is stored inverted (key is "show_stacked_*" where
 // true-in-file means NOT stacked). Returns the logical "stacked" state.
 inline bool readInvertedBool(const std::string& section, const std::string& key, bool defaultVal = true) {
     std::string value = ult::parseValueFromIniSection(configIniPath, section, key);
@@ -550,14 +550,7 @@ private:
         list->addItem(item);
     }
 
-    void addInvertedToggle(tsl::elm::List* list, const std::string& label,
-                           const std::string& key, bool defaultVal) {
-        auto* item = new tsl::elm::MiniToggleListItem(label, readInvertedBool(section, key, defaultVal));
-        item->setStateChangedListener([this, key](bool state) {
-            ult::setIniFileValue(configIniPath, section, key, state ? "false" : "true");
-        });
-        list->addItem(item);
-    }
+
 
 public:
     TogglesConfig(const std::string& mode) : modeName(mode), flags(mode) {
@@ -599,19 +592,21 @@ public:
             list->addItem(new tsl::elm::CategoryHeader("CPU"));
             addToggle(list,         "Full CPU",              "show_full_cpu",              false);
             addToggle(list,         "Full CPU Max Core 0-2", "show_full_cpu_max_core_012", false);
-            addInvertedToggle(list, "Stacked Full CPU",      "show_side_by_side_full_cpu", false);
+            addToggle(list, "Stacked Full CPU",      "show_stacked_full_cpu", false);
             addToggle(list,         "CPU Temp",              "show_cpu_temp",              false);
-            addInvertedToggle(list, "Stacked CPU Temp",      "show_side_by_side_cpu_temp", false);
+            addToggle(list, "Stacked CPU Temp",      "show_stacked_cpu_temp", false);
             addToggle(list,         "Voltage At End",        "voltage_at_end_cpu",         false);
 
             list->addItem(new tsl::elm::CategoryHeader("GPU"));
             addToggle(list,         "GPU Temp",         "show_gpu_temp",              false);
-            addInvertedToggle(list, "Stacked GPU Temp", "show_side_by_side_gpu_temp", false);
+            addToggle(list, "Stacked GPU Temp", "show_stacked_gpu_temp", false);
             addToggle(list,         "Voltage At End",   "voltage_at_end_gpu",         false);
 
             list->addItem(new tsl::elm::CategoryHeader("RAM"));
+            addToggle(list,         "RAM Bandwidth",         "show_ram_bandwidth",               false);
+            addToggle(list, "Stacked RAM Bandwidth", "show_stacked_ram_bandwidth",  false);
             addToggle(list,         "RAM Load CPU/GPU", "show_RAM_load_CPU_GPU",      false);
-            addInvertedToggle(list, "Stacked RAM Load", "show_side_by_side_ram_load", false);
+            addToggle(list, "Stacked RAM Load CPU/GPU", "show_stacked_ram_load_cpu_gpu", false);
 
             if (isMariko)
                 addToggle(list, "VDD2", "show_vdd2", true);
@@ -619,10 +614,10 @@ public:
             addToggle(list, "VDDQ", "show_vddq", false);
 
             if (isMariko)
-                addInvertedToggle(list, "Stacked VDD2/VDDQ", "show_side_by_side_vddq", true);
+                addToggle(list, "Stacked VDD2/VDDQ", "show_stacked_vddq", true);
 
             addToggle(list,         "RAM Temp",         "show_ram_temp",              false);
-            addInvertedToggle(list, "Stacked RAM Temp", "show_side_by_side_ram_temp", false);
+            addToggle(list, "Stacked RAM Temp", "show_stacked_ram_temp", false);
             addToggle(list,         "Voltage At End",   "voltage_at_end_ram",         false);
 
             list->addItem(new tsl::elm::CategoryHeader("TMP"));
@@ -655,11 +650,11 @@ public:
                 list->addItem(socPcbTemps);
 
                 if (flags.isMicro)
-                    addInvertedToggle(list, "Stacked Temps", "show_side_by_side_temps", true);
+                    addToggle(list, "Stacked Temps", "show_stacked_temps", true);
             }
 
             addToggle(list, "SOC Voltage", "show_soc_voltage", false);
-            addInvertedToggle(list, "Stacked Fan/SOC", "show_side_by_side_fan_soc", true);
+            addToggle(list, "Stacked Fan/SOC", "show_stacked_fan_soc", true);
             addToggle(list, "Voltage At End", "voltage_at_end_tmp", false);
 
             list->addItem(new tsl::elm::CategoryHeader("RES"));
@@ -671,11 +666,11 @@ public:
             list->addItem(new tsl::elm::CategoryHeader("BAT"));
             addToggle(list, "Invert Battery Display", "invert_battery_display",
                       flags.isMini ? true : false);
-            addInvertedToggle(list, "Stacked", "show_side_by_side_bat", false);
+            addToggle(list, "Stacked", "show_stacked_bat", false);
 
             list->addItem(new tsl::elm::CategoryHeader("DTC"));
             addToggle(list,         "Use DTC Symbol", "use_dtc_symbol",         true);
-            addInvertedToggle(list, "Stacked",        "show_side_by_side_dtc",  false);
+            addToggle(list, "Stacked",        "show_stacked_dtc",  false);
 
         } else if (flags.isGameRes) {
             list->addItem(new tsl::elm::CategoryHeader("Global"));

@@ -71,6 +71,7 @@ private:
     char GPU_Load_c[32];
     char RAM_var_compressed_c[128];
     char RAM_load_bot_c[32] = "";
+    char RAM_bw_c[16] = "";       // RAM bandwidth string e.g. "2.2GB/s" (ACTMON direct)
     char CPU_compressed_c[160];
     char CPU_freq_c[16];          // freq part for full CPU split mode e.g. "@1000.0"
     char CPU_Usage0[32];
@@ -119,6 +120,7 @@ private:
     bool batIsSplit     = false; // true when BAT draw/pct stack vertically
     bool dtcIsSplit     = false; // true when DTC splits at DIVIDER_SYMBOL into 2 stacked rows
     bool ramLoadIsSplit = false; // true when RAM CPU/GPU load stacks above total@freq
+    bool ramBWIsSplit   = false; // true when RAM bandwidth stacks above the normal RAM line
     bool gpuIsSplit = false; // true when GPU volt on row 1, GPU temp on row 2
     bool ramTempSplit = false; // true when VDDQ on row 1, RAM temp on row 2 (VDDQ-only Mariko)
     
@@ -453,7 +455,8 @@ public:
         batIsSplit = hasBat && settings.showStackedBAT;
         // DTC stacked: split user's dtcFormat at DIVIDER_SYMBOL into 2 rows
         dtcIsSplit = hasDtc && settings.showDTC && settings.showStackedDTC;
-        ramLoadIsSplit = hasRam && settings.showRAMLoad && settings.showRAMLoadCPUGPU && settings.showStackedRAMLoad;
+        ramLoadIsSplit = hasRam && settings.showRAMLoad && settings.showRAMLoadCPUGPU && settings.showStackedRAMLoadCPUGPU &&
+                       (R_SUCCEEDED(sysclkCheck) || R_SUCCEEDED(hocclkCheck));
         // GPU die temp split: volt on top row, GPU temp on bottom row
         gpuIsSplit = hasGpu && settings.showGPUTemp && settings.showStackedGPUTemp && settings.realVolts;
         // RAM temp split: VDDQ-only Mariko → VDDQ top row, RAM temp bottom row
@@ -461,6 +464,12 @@ public:
                        settings.realVolts &&
                        ((settings.showVDDQ && isMariko && !settings.showVDD2) ||
                         (settings.showVDD2 && !settings.showVDDQ));
+        // RAM bandwidth split: BW on top row, normal RAM line on bottom row.
+        // Only blocked when load-CPU/GPU-split already owns both rows with load data.
+        // VDDQ split and RAM temp split are right-side column decorations — orthogonal to BW
+        // row layout — and must NOT block BW from taking the top row.
+        ramBWIsSplit = hasRam && settings.showRAMBandwidth && settings.showStackedRAMBandwidth &&
+                       !ramLoadIsSplit;
     }
     
     virtual tsl::elm::Element* createUI() override {
@@ -504,7 +513,7 @@ public:
             prepareRenderItems();
             calculateLayoutMetrics(renderer);
             {
-                const int32_t gridExtraHeight = (tmpIsGrid || tmpIsSplit || ramIsSplit || cpuIsSplit || gpuIsSplit || ramTempSplit || cpuFullIsSplit || batIsSplit || ramLoadIsSplit || dtcIsSplit) ? ((int32_t)cachedMargin + gridGap) : 0;
+                const int32_t gridExtraHeight = (tmpIsGrid || tmpIsSplit || ramIsSplit || cpuIsSplit || gpuIsSplit || ramTempSplit || cpuFullIsSplit || batIsSplit || ramLoadIsSplit || ramBWIsSplit || dtcIsSplit) ? ((int32_t)cachedMargin + gridGap) : 0;
                 const int32_t vPad = (int32_t)settings.verticalPadding;
                 // Visual text height = ascent + |descent|  (excludes lineGap)
                 const int32_t textVisualH = cachedAscent + cachedDescentAbs;
@@ -742,9 +751,33 @@ public:
                 if (ramLoadIsSplit && item.type == 2) {
                     const uint32_t top_w = RAM_var_compressed_c[0] ? renderer->getTextDimensions(RAM_var_compressed_c, false, fontsize).first : 0;
                     const uint32_t bot_w = RAM_load_bot_c[0] ? renderer->getTextDimensions(RAM_load_bot_c, false, fontsize).first : 0;
-                    const uint32_t corrected = std::max(top_w, bot_w);
+                    uint32_t corrected = std::max(top_w, bot_w);
+                    // bwLeftOfLoadSplit: BW NOT stacked but load IS stacked.
+                    // Width = BW_w + divW + max(top_w, bot_w).
+                    // RAM_bw_c is always populated (live value or "0.0 GB/s"), so measure directly.
+                    if (settings.showRAMBandwidth && !settings.showStackedRAMBandwidth && RAM_bw_c[0]) {
+                        const uint32_t bw_w   = renderer->getTextDimensions(RAM_bw_c, false, fontsize).first;
+                        const uint32_t div_w  = renderer->getTextDimensions(ult::DIVIDER_SYMBOL, false, fontsize).first;
+                        corrected = bw_w + div_w + corrected;
+                    }
                     item_layout.total_width += corrected - item_layout.data_width;
                     item_layout.data_width = corrected;
+                }
+
+                // RAM bandwidth split: width = max(BW top row, RAM content bottom row).
+                // After the data-build swap, RAM_var_compressed_c holds the live BW string
+                // (top row) and RAM_load_bot_c holds the regular RAM content (bottom row).
+                // Measure both from live content — same pattern as every other split here.
+                if (ramBWIsSplit && item.type == 2) {
+                    const uint32_t top_w = RAM_var_compressed_c[0]
+                        ? renderer->getTextDimensions(RAM_var_compressed_c, false, fontsize).first : 0;
+                    const uint32_t bot_w = RAM_load_bot_c[0]
+                        ? renderer->getTextDimensions(RAM_load_bot_c, false, fontsize).first : 0;
+                    const uint32_t corrected = std::max(top_w, bot_w);
+                    if (corrected > item_layout.data_width) {
+                        item_layout.total_width += corrected - item_layout.data_width;
+                        item_layout.data_width = corrected;
+                    }
                 }
 
                 // BAT split: width = label + gap + max(draw_w, pct_w)
@@ -915,11 +948,11 @@ public:
             // \u2500\u2500 Grid-mode Y coordinates \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
             // When tmpIsGrid: bar is taller; other items centered in expanded bar;
             // TMP renders as two rows (componentTemps_c top, skin_temperature_c bottom).
-            const int32_t gridExtraH  = (tmpIsGrid || tmpIsSplit || ramIsSplit || cpuIsSplit || gpuIsSplit || ramTempSplit || cpuFullIsSplit || batIsSplit || ramLoadIsSplit || dtcIsSplit) ? ((int32_t)cachedMargin + gridGap) : 0;
+            const int32_t gridExtraH  = (tmpIsGrid || tmpIsSplit || ramIsSplit || cpuIsSplit || gpuIsSplit || ramTempSplit || cpuFullIsSplit || batIsSplit || ramLoadIsSplit || ramBWIsSplit || dtcIsSplit) ? ((int32_t)cachedMargin + gridGap) : 0;
             const int32_t halfExtra   = gridExtraH / 2;
             // Y for non-TMP items — centered in expanded bar (grid or split)
             const int32_t singleItemY = (int32_t)base_y + (int32_t)cachedMargin +
-                                        ((tmpIsGrid || tmpIsSplit || ramIsSplit || cpuIsSplit || gpuIsSplit || ramTempSplit || cpuFullIsSplit || batIsSplit || ramLoadIsSplit || dtcIsSplit) ? (settings.setPosBottom ? -halfExtra : halfExtra) : 0);
+                                        ((tmpIsGrid || tmpIsSplit || ramIsSplit || cpuIsSplit || gpuIsSplit || ramTempSplit || cpuFullIsSplit || batIsSplit || ramLoadIsSplit || ramBWIsSplit || dtcIsSplit) ? (settings.setPosBottom ? -halfExtra : halfExtra) : 0);
             // Y for the two TMP rows (used by both grid mode and split fan/volt mode)
             const int32_t gridTopY = (int32_t)base_y + (int32_t)cachedMargin +
                                      (settings.setPosBottom ? -(int32_t)gridExtraH : 0);
@@ -1365,7 +1398,7 @@ public:
                     const uint32_t dtcTopW = dtcDoSplit
                         ? renderer->getTextDimensions(dtcTopHalfStr, false, fontsize).first : 0u;
 
-                    const int32_t dataY = (cpuFullIsSplit && item.type == 0) ? gridTopY : (batIsSplit && item.type == 6) ? gridTopY : (ramLoadIsSplit && item.type == 2) ? gridTopY : (dtcDoSplit) ? gridTopY : singleItemY;
+                    const int32_t dataY = (cpuFullIsSplit && item.type == 0) ? gridTopY : (batIsSplit && item.type == 6) ? gridTopY : ((ramLoadIsSplit || ramBWIsSplit) && item.type == 2) ? gridTopY : (dtcDoSplit) ? gridTopY : singleItemY;
                     // ramLoadIsSplit top row: right-align [cpu% gpu%] so its right edge matches total@freq
                     // cpuFullIsSplit top row: right-align brackets within max(brackets_w, freq_w) so both
                     //   rows share the same right edge and neither overflows left into the label area.
@@ -1373,8 +1406,39 @@ public:
                         ? (uint32_t)renderer->getTextDimensions(CPU_freq_c, false, fontsize).first : 0u;
                     const uint32_t cpuFullColW = (cpuFullIsSplit && item.type == 0)
                         ? std::max(item_layout.data_width, cpuFullFreqW) : item_layout.data_width;
-                    const uint32_t drawX = (ramLoadIsSplit && item.type == 2 && RAM_load_bot_c[0])
-                        ? current_x + item_layout.data_width - renderer->getTextDimensions(item.data_ptr, false, fontsize).first
+                    // bwLeftCol: BW inline (not stacked) + load IS stacked. BW draws as left column.
+                    const bool bwLeftCol = (ramLoadIsSplit && item.type == 2)
+                                         && settings.showRAMBandwidth && !settings.showStackedRAMBandwidth
+                                         && RAM_bw_c[0];
+                    const uint32_t bwLeftW  = bwLeftCol ? renderer->getTextDimensions(std::string(RAM_bw_c), false, fontsize).first : 0u;
+                    const uint32_t bwDivW   = bwLeftCol ? renderer->getTextDimensions(ult::DIVIDER_SYMBOL, false, fontsize).first : 0u;
+                    // loadDataColW: width of the stacked-load portion only (excludes BW + divider)
+                    const uint32_t loadDataColW = bwLeftCol ? (item_layout.data_width - bwLeftW - bwDivW) : item_layout.data_width;
+                    if (bwLeftCol) {
+                        // Draw BW on top row at the left edge of the data column
+                        renderer->drawString(std::string(RAM_bw_c), false, current_x, gridTopY, fontsize, textColorA);
+                        // Draw 3-stack dividers: top, center, and bot rows at current_x + bwLeftW
+                        const uint32_t divX = current_x + bwLeftW;
+                        {
+                            int cOff=0, lP=0, fW=0;
+                            if (micro_divider_scissor::getDividerScissorMetrics(fontsize, cOff, lP, fW)) {
+                                const int cutTC = micro_divider_scissor::computeDividerCutY((int)gridTopY, (int)singleItemY, cOff);
+                                const int cutCB = micro_divider_scissor::computeDividerCutY((int)singleItemY, (int)gridBotY, cOff);
+                                micro_divider_scissor::drawDividerScissored(renderer, (int)divX, (int)gridTopY,   micro_divider_scissor::kNoUpperCut, cutTC, fontsize, (settings.separatorColor), lP, fW);
+                                micro_divider_scissor::drawDividerScissored(renderer, (int)divX, (int)singleItemY, cutTC, cutCB, fontsize, (settings.separatorColor), lP, fW);
+                                micro_divider_scissor::drawDividerScissored(renderer, (int)divX, (int)gridBotY,   cutCB, micro_divider_scissor::kNoLowerCut, fontsize, (settings.separatorColor), lP, fW);
+                            } else {
+                                renderer->drawString(ult::DIVIDER_SYMBOL, false, divX, gridTopY,    fontsize, (settings.separatorColor));
+                                renderer->drawString(ult::DIVIDER_SYMBOL, false, divX, singleItemY, fontsize, (settings.separatorColor));
+                                renderer->drawString(ult::DIVIDER_SYMBOL, false, divX, gridBotY,    fontsize, (settings.separatorColor));
+                            }
+                        }
+                        RAM_bw_c[0] = '\0';
+                    }
+                    // loadDataStartX: left edge of the stacked-load content (after BW+div if bwLeftCol)
+                    const uint32_t loadDataStartX = current_x + (bwLeftCol ? bwLeftW + bwDivW : 0u);
+                    const uint32_t drawX = ((ramLoadIsSplit || ramBWIsSplit) && item.type == 2 && RAM_load_bot_c[0])
+                        ? loadDataStartX + loadDataColW - renderer->getTextDimensions(item.data_ptr, false, fontsize).first
                         : (cpuFullIsSplit && item.type == 0)
                         ? current_x + (cpuFullColW - item_layout.data_width)  // right-align brackets
                         : (batIsSplit && item.type == 6)
@@ -1891,15 +1955,21 @@ public:
                 // RAM load split: draw total@freq on bottom row aligned with [cpu% gpu%].
                 // Also draw a 3-tall divider stack at the volt column to visually connect
                 // the 2-row load data block with whatever right-side content follows.
-                if (ramLoadIsSplit && item.type == 2) {
-                    if (RAM_load_bot_c[0])
-                        renderer->drawString(RAM_load_bot_c, false, dataColStartX, gridBotY, fontsize, textColorA);
+                // ramBWIsSplit shares this code path — the buffers were swapped at data-build
+                // time so RAM_var_compressed_c holds the top (BW) and RAM_load_bot_c holds
+                // the bottom (regular RAM line). Volt/temp right-side content remains valid.
+                if ((ramLoadIsSplit || ramBWIsSplit) && item.type == 2) {
+                    if (RAM_load_bot_c[0]) {
+                        const uint32_t botW_draw = renderer->getTextDimensions(RAM_load_bot_c, false, fontsize).first;
+                        const uint32_t botDrawX  = dataColStartX + item_layout.data_width - botW_draw;
+                        renderer->drawString(RAM_load_bot_c, false, botDrawX, gridBotY, fontsize, textColorA);
+                    }
                     const bool rLoadHasRight = (item.has_voltage && item.volt_ptr)
                                              || ramIsSplit || ramTempSplit
                                              || (!ramIsSplit && !ramTempSplit && settings.showRAMTemp && ram_temp_c[0]);
                     if (rLoadHasRight) {
                         const uint32_t rLoadVoltColX = dataColStartX + item_layout.data_width;
-                        // Left data block is always 2-row when ramLoadIsSplit=true → always draw top+bot
+                        // Left data block is always 2-row when (ramLoadIsSplit||ramBWIsSplit)=true → always draw top+bot
                         // (mirrors Mini lines 1573-1578). Center comes naturally from the first inline
                         // DIV drawn by whoever follows (ramIsSplit, ramTempSplit, inline temp, or has_voltage).
                         renderer->drawString(ult::DIVIDER_SYMBOL, false, rLoadVoltColX, gridTopY, fontsize, (settings.separatorColor));
@@ -2182,13 +2252,26 @@ public:
         const unsigned ramMHz10 = (ramFreq / 100000) % 10;
 
         RAM_load_bot_c[0] = '\0';
+        RAM_bw_c[0] = '\0';
+        // Build RAM bandwidth string ("X.X GB/s") when enabled.
+        // Always written — "0.0 GB/s" placeholder when ACTMON hasn't delivered data yet
+        // so the stacked layout is stable from frame 1 and never jumps.
+        if (settings.showRAMBandwidth) {
+            if (ramBW_MBs > 0) {
+                const unsigned bwInt = ramBW_MBs / 1000;
+                const unsigned bwDec = (ramBW_MBs % 1000) / 100;
+                snprintf(RAM_bw_c, sizeof(RAM_bw_c), "%u.%u GB/s", bwInt, bwDec);
+            } else {
+                snprintf(RAM_bw_c, sizeof(RAM_bw_c), "0.0 GB/s");
+            }
+        }
         if (settings.showRAMLoad && settings.showRAMLoadCPUGPU &&
             (R_SUCCEEDED(sysclkCheck) || R_SUCCEEDED(hocclkCheck))) {
             const unsigned cpuL = (ramLoad[SysClkRamLoad_Cpu] + 5) / 10;
             const int gpuRaw = ramLoad[SysClkRamLoad_All] - ramLoad[SysClkRamLoad_Cpu];
             const unsigned gpuL = (unsigned)(gpuRaw > 0 ? (gpuRaw + 5) / 10 : 0);
             const unsigned totL = (ramLoad[SysClkRamLoad_All] + 5) / 10;
-            if (!settings.showStackedRAMLoad) {
+            if (!settings.showStackedRAMLoadCPUGPU) {
                 // SBS: [cpu% gpu%]total%@freq on one line
                 snprintf(RAM_var_compressed_c, sizeof(RAM_var_compressed_c),
                     "[%u%% %u%%] %u%%%s%u.%u", cpuL, gpuL, totL, ramDiff, ramMHz, ramMHz10);
@@ -2202,6 +2285,55 @@ public:
         } else {
             snprintf(RAM_var_compressed_c, sizeof(RAM_var_compressed_c),
                 "%s%s%u.%u", MICRO_RAM_all_c, ramDiff, ramMHz, ramMHz10);
+        }
+
+        // Recompute split flags here in update() so the buffer swap below always uses
+        // current values from the very first frame — independent of when prepareRenderItems()
+        // (draw-callback) has last run.  These are cheap boolean expressions derived
+        // solely from settings; no render-item list required.
+        {
+            const bool _hasRam = (settings.show.find("RAM") != std::string::npos);
+            ramLoadIsSplit = _hasRam && settings.showRAMLoad && settings.showRAMLoadCPUGPU &&
+                             settings.showStackedRAMLoadCPUGPU &&
+                             (R_SUCCEEDED(sysclkCheck) || R_SUCCEEDED(hocclkCheck));
+            ramBWIsSplit   = _hasRam && settings.showRAMBandwidth && settings.showStackedRAMBandwidth &&
+                             !ramLoadIsSplit;
+        }
+
+        // RAM bandwidth integration (mirrors Mini.hpp). Three layouts:
+        //   1) Inline BW (BW on, stacked BW off): prepend "X.XGB/s" + DIVIDER_SYMBOL to
+        //      RAM_var_compressed_c. Works in all sub-modes incl. stacked-load top row.
+        //   2) Stacked BW + stacked load (both stacks on): BW prepended inline to the [c% g%]
+        //      top row (ramBWIsSplit=false since ramLoadIsSplit owns both rows); RAM_load_bot_c
+        //      already holds total%@freq from the load-split data build.
+        //   3) Stacked BW + NO load-split active (incl. VDDQ/temp split cases): BW goes on its
+        //      own top row, regular RAM line on bottom. VDDQ/temp splits are right-side decorations
+        //      and do NOT block ramBWIsSplit. We SWAP content into the existing split-row buffers
+        //      and treat ramBWIsSplit identically to ramLoadIsSplit in the renderer.
+        //   4) BW inline (NOT stacked) + load split active: BW draws as a separate LEFT column
+        //      before the stacked-load block. RAM_bw_c is left populated for the renderer.
+        if (RAM_bw_c[0]) {
+            // bwLeftOfLoadSplit: BW not stacked, load IS stacked → BW draws as left column.
+            const bool bwLeftOfLoadSplit = !settings.showStackedRAMBandwidth && ramLoadIsSplit;
+            if (ramBWIsSplit) {
+                // Case (3): BW stacked, no other split active — swap buffers.
+                // RAM_var_compressed_c → RAM_load_bot_c (bottom), BW → RAM_var_compressed_c (top).
+                snprintf(RAM_load_bot_c, sizeof(RAM_load_bot_c), "%s", RAM_var_compressed_c);
+                snprintf(RAM_var_compressed_c, sizeof(RAM_var_compressed_c), "%s", RAM_bw_c);
+                RAM_bw_c[0] = '\0';
+            } else if (bwLeftOfLoadSplit) {
+                // Case (4): BW inline + load stacked. Leave RAM_bw_c populated for the renderer.
+                // The renderer draws BW at the left of the data column, then the 3-stack divider,
+                // then the stacked-load content right-aligned to the right of the divider.
+            } else {
+                // Cases (1) and (2): BW inline (no load split), or BW stacked + load stacked
+                // (prepend BW\xEE\x80\xB1 to the top row [c% g%]).
+                char tmp[sizeof(RAM_var_compressed_c)];
+                snprintf(tmp, sizeof(tmp), "%s%s",
+                         RAM_bw_c, RAM_var_compressed_c);
+                memcpy(RAM_var_compressed_c, tmp, sizeof(RAM_var_compressed_c));
+                RAM_bw_c[0] = '\0';
+            }
         }
             
         //if (settings.realVolts) {

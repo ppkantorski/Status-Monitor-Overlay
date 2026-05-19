@@ -152,6 +152,7 @@ private:
     char mini_gpu_temp_c[16] = "";    // GPU die temp string e.g. "48°C"
     char mini_ram_temp_c[16] = "";    // RAM die temp string e.g. "45°C"
     char MINI_RAM_load_bot_c[32] = ""; // RAM load split row 2: "total%@freq"
+    char MINI_RAM_bw_c[16] = "";       // RAM bandwidth string e.g. "2.2GB/s" (ACTMON direct)
 
     uint32_t rectangleWidth;
     char Variables[512];
@@ -347,7 +348,7 @@ public:
                             }
                         }
                         const int overlayHeight = ((overlay->fontsize + overlay->settings.spacing) * actualEntryCount) + 
-                                                 overlay->settings.spacing + 
+                                                 overlay->settings.spacing * actualEntryCount + 
                                                  overlay->topPadding + overlay->bottomPadding;
                         
                         // Add touch padding
@@ -586,30 +587,78 @@ public:
                         };
                         const uint32_t dw = mw(ult::DIVIDER_SYMBOL);
 
-                        // Data column (load line): depends on how the load is displayed
+                        // Data column (load line): depends on how the load is displayed.
+                        // RAM bandwidth (when enabled) prepends "44.4GB/s" + DIVIDER inline, or
+                        // sits on its own row (max-of-the-two width) when stacked BW is active.
+                        const bool bw_active = settings.showRAMBandwidth;
+                        // bw_left_load_stacked: BW NOT stacked (inline) + load IS stacked.
+                        // BW draws as a separate LEFT column before the triple-stack divider + stacked-load block.
+                        // Width = bw_w + dw + max(top_w, bot_w).
+                        const bool bw_left_load_stacked = bw_active && !settings.showStackedRAMBandwidth &&
+                                                          settings.showRAMLoadCPUGPU && settings.showStackedRAMLoadCPUGPU &&
+                                                          (R_SUCCEEDED(sysclkCheck) || R_SUCCEEDED(hocclkCheck));
+                        const bool bw_inline = bw_active && !settings.showStackedRAMBandwidth;
+                        const uint32_t bw_w = bw_active ? mw("44.4 GB/s") : 0u;
                         const uint32_t data_w = [&]() -> uint32_t {
+                            // Base content shape (without BW)
+                            uint32_t base_data;
                             if (!settings.showRAMLoadCPUGPU)
-                                return mw("100%@4444.4");
-                            if (!settings.showStackedRAMLoad)
-                                return mw("[44% 44%] 100%@4444.4");
-                            return std::max(mw("[44% 44%]"), mw("100%@4444.4"));
+                                base_data = mw("100%@4444.4");
+                            else if (!settings.showStackedRAMLoadCPUGPU)
+                                base_data = mw("[44% 44%] 100%@4444.4");
+                            else
+                                base_data = std::max(mw("[44% 44%]"), mw("100%@4444.4"));
+
+                            if (!bw_active) return base_data;
+
+                            // bw_stacked_load_stacked: BW IS stacked AND load IS stacked.
+                            // bwOnOwnRow=false (load-split already owns both rows), so BW is prepended
+                            // inline to the top row [cpu% gpu%] -> "BW<DIV>[cpu% gpu%]".
+                            // Top row rendered string: "44.4 GB/s" + DIVIDER + "[44% 44%]" (worst-case).
+                            // The renderer in RAM_SLOAD_TOP measures `currentLine` as one whole string via
+                            // getTextDimensions(currentLine, ...). To guarantee the width calc matches the
+                            // renderer's measurement exactly (including private-use DIVIDER advance),
+                            // we measure the worst-case top row as ONE concatenated string here, and also
+                            // sum the parts — taking the maximum to be defensive against any font/glyph
+                            // edge case where one measurement style differs from the other.
+                            // Bottom row is "100%@4444.4" (RAM total + freq).
+                            const bool bw_stacked_load_stacked = settings.showStackedRAMBandwidth &&
+                                                                  settings.showRAMLoadCPUGPU &&
+                                                                  settings.showStackedRAMLoadCPUGPU &&
+                                                                  (R_SUCCEEDED(sysclkCheck) || R_SUCCEEDED(hocclkCheck));
+                            if (bw_stacked_load_stacked) {
+                                const uint32_t top_whole = mw(std::string("44.4 GB/s") + ult::DIVIDER_SYMBOL + "[44% 44%]");
+                                const uint32_t top_sum   = bw_w + dw + mw("[44% 44%]");
+                                const uint32_t top_w     = std::max(top_whole, top_sum);
+                                return std::max(top_w, mw("100%@4444.4"));
+                            }
+
+                            // bw_left_load_stacked: BW NOT stacked (inline) + load IS stacked.
+                            // BW draws as a separate LEFT column before the stacked-load block.
+                            // Width = bw_w + dw + max(top_w, bot_w).  base_data is already max(top,bot).
+                            // bw_inline (load not stacked): BW + DIVIDER prepended to the single row.
+                            if (bw_inline || bw_left_load_stacked) {
+                                return base_data + bw_w + dw;
+                            }
+                            // Stacked BW (BW on its own top row, RAM content on bottom row): max of the two.
+                            return std::max(bw_w, base_data);
                         }();
 
-                        // Volt components (actual live values used where available to handle wide strings)
+                        // Volt/temp components: always use worst-case proxies, never live snapshots.
+                        // The width calc runs once at init; a narrow live value snapshotted now (e.g.
+                        // "1100 mV") would under-allocate when the value later widens (e.g. "1234 mV").
+                        // Proxies match the max digit count of each format so they bound every live value.
                         const uint32_t vdd2_w  = (key == "RAM" && settings.realVolts && settings.showVDD2)
-                            ? (vdd2_only_c[0]  ? renderer->getTextDimensions(vdd2_only_c,  false, fontsize).first
-                                               : (settings.decimalVDD2 ? mw("4444.4 mV") : mw("4444 mV")))
+                            ? (settings.decimalVDD2 ? mw("4444.4 mV") : mw("4444 mV"))
                             : 0u;
                         const uint32_t vddq_w  = (key == "RAM" && settings.realVolts && settings.showVDDQ && isMariko)
-                            ? (vddq_only_c[0]  ? renderer->getTextDimensions(vddq_only_c,  false, fontsize).first
-                                               : mw("444 mV"))
+                            ? mw("444 mV")
                             : 0u;
                         const uint32_t volt1_w = (key == "GPU" || (key == "RAM" && settings.realVolts
                                                                     && !settings.showVDD2 && !settings.showVDDQ))
                             ? mw("444 mV") : 0u;  // single-rail volt (non-Mariko or GPU)
                         const uint32_t temp_w  = (key == "RAM" && settings.showRAMTemp)
-                            ? (mini_ram_temp_c[0] ? renderer->getTextDimensions(mini_ram_temp_c, false, fontsize).first
-                                                  : mw("88\xc2\xb0""C"))
+                            ? mw("88\xc2\xb0""C")
                             : 0u;
                         const uint32_t gpu_temp_w = (key == "GPU" && settings.showGPUTemp && !settings.showStackedGPUTemp)
                             ? mw("88\xc2\xb0""C") : 0u;
@@ -634,9 +683,9 @@ public:
                                 uint32_t top_row_w = 0, bot_row_w = 0, center_row_w = 0;
 
                                 if (!settings.showRAMTemp || !temp_w) {
-                                    // No temp: TOP=data+dw+vdd2, BOT=dw+vddq
+                                    // No temp: TOP=data+dw+vdd2, BOT=data+dw+vddq
                                     top_row_w    = data_w + dw + vdd2_w;
-                                    bot_row_w    = dw + vddq_w;
+                                    bot_row_w    = data_w + dw + vddq_w;
                                 } else if (!settings.showStackedRAMTemp) {
                                     // Temp at center row (SBS mode):
                                     if (settings.voltageAtEndRAM) {
@@ -650,14 +699,14 @@ public:
                                         center_row_w = data_w + dw + std::max(vdd2_w, vddq_w) + dw + temp_w;
                                     }
                                     top_row_w = data_w + dw + vdd2_w;
-                                    bot_row_w = dw + vddq_w;
+                                    bot_row_w = data_w + dw + vddq_w;
                                 } else {
                                     // Temp on its own row (stacked):
                                     if (settings.voltageAtEndRAM) {
                                         // TOP: data + dw + temp + dw + vdd2
-                                        // BOT: dw + vddq
+                                        // BOT: data + dw + vddq
                                         top_row_w = data_w + dw + temp_w + dw + vdd2_w;
-                                        bot_row_w = dw + vddq_w;
+                                        bot_row_w = data_w + dw + vddq_w;
                                     } else {
                                         // TOP: data + dw + vdd2
                                         // BOT: data + dw + vddq + dw + temp  (bot row starts at baseX)
@@ -678,11 +727,13 @@ public:
                                     // stacked: temp on separate row, base_row >= temp row
                                 }
                             } else {
-                                // Single volt rail (non-Mariko or only one rail shown)
-                                const uint32_t single_v = settings.showVDD2 ? vdd2_w
-                                                        : settings.showVDDQ  ? vddq_w
-                                                        : volt1_w;
-                                uint32_t base_row = data_w + dw + single_v;
+                                // Single rail (Mariko: only one of VDD2/VDDQ on) or non-Mariko.
+                                // When BOTH VDD2 and VDDQ are off on Mariko, single_v=0 and no volt
+                                // overhead is added (no divider, no volt slot).
+                                const uint32_t single_v = isMariko
+                                    ? (settings.showVDD2 ? vdd2_w : settings.showVDDQ ? vddq_w : 0u)
+                                    : volt1_w;
+                                uint32_t base_row = data_w + (single_v ? dw + single_v : 0u);
                                 width = base_row;
                                 if (settings.showRAMTemp && temp_w) {
                                     const bool rts = settings.showStackedRAMTemp && settings.realVolts &&
@@ -700,18 +751,15 @@ public:
                         const uint32_t dw_R   = mwR(ult::DIVIDER_SYMBOL);
                         const uint32_t data_wR = mwR("100%@4444.4");  // RAM usage proxy
                         const uint32_t vdd2_wR = (settings.realVolts && settings.showVDD2 && isMariko)
-                            ? (vdd2_only_c[0]  ? renderer->getTextDimensions(vdd2_only_c,  false, fontsize).first
-                                               : (settings.decimalVDD2 ? mwR("4444.4 mV") : mwR("4444 mV")))
+                            ? (settings.decimalVDD2 ? mwR("4444.4 mV") : mwR("4444 mV"))
                             : 0u;
                         const uint32_t vddq_wR = (settings.realVolts && settings.showVDDQ && isMariko)
-                            ? (vddq_only_c[0]  ? renderer->getTextDimensions(vddq_only_c,  false, fontsize).first
-                                               : mwR("444 mV"))
+                            ? mwR("444 mV")
                             : 0u;
                         const uint32_t svolt_wR= (settings.realVolts && !isMariko)
                             ? (settings.decimalVDD2 ? mwR("4444.4 mV") : mwR("4444 mV")) : 0u;
                         const uint32_t temp_wR = settings.showRAMTemp
-                            ? (mini_ram_temp_c[0] ? renderer->getTextDimensions(mini_ram_temp_c, false, fontsize).first
-                                                  : mwR("88\xc2\xb0""C"))
+                            ? mwR("88\xc2\xb0""C")
                             : 0u;
                         const bool splitVDDQ_B  = settings.showStackedVDDQ && settings.realVolts &&
                                                   settings.showVDD2 && settings.showVDDQ && isMariko;
@@ -725,18 +773,18 @@ public:
                             uint32_t top_row_w = 0, bot_row_w = 0, center_row_w = 0;
                             if (!settings.showRAMTemp || !temp_wR) {
                                 top_row_w = data_wR + dw_R + vdd2_wR;
-                                bot_row_w = dw_R + vddq_wR;
+                                bot_row_w = data_wR + dw_R + vddq_wR;
                             } else if (!settings.showStackedRAMTemp) {
                                 if (settings.voltageAtEndRAM)
                                     center_row_w = data_wR + dw_R + temp_wR + dw_R + std::max(vdd2_wR, vddq_wR);
                                 else
                                     center_row_w = data_wR + dw_R + std::max(vdd2_wR, vddq_wR) + dw_R + temp_wR;
                                 top_row_w = data_wR + dw_R + vdd2_wR;
-                                bot_row_w = dw_R + vddq_wR;
+                                bot_row_w = data_wR + dw_R + vddq_wR;
                             } else {
                                 if (settings.voltageAtEndRAM) {
                                     top_row_w = data_wR + dw_R + temp_wR + dw_R + vdd2_wR;
-                                    bot_row_w = dw_R + vddq_wR;
+                                    bot_row_w = data_wR + dw_R + vddq_wR;
                                 } else {
                                     top_row_w = data_wR + dw_R + vdd2_wR;
                                     bot_row_w = data_wR + dw_R + vddq_wR + dw_R + temp_wR;
@@ -759,6 +807,17 @@ public:
                                                  ((settings.showVDDQ && isMariko && !settings.showVDD2) ||
                                                   (settings.showVDD2 && !settings.showVDDQ));
                                 if (!rts) width += dw_R + temp_wR;
+                            }
+                        }
+                        // RAM bandwidth width adjustment (no-load branch):
+                        // Inline BW prepends "44.4GB/s" + DIVIDER to the data row.
+                        // Stacked BW puts BW on its own row → max(width, bw_w).
+                        if (settings.showRAMBandwidth) {
+                            const uint32_t bw_wR = mwR("44.4 GB/s");
+                            if (settings.showStackedRAMBandwidth) {
+                                if (bw_wR > width) width = bw_wR;
+                            } else {
+                                width += bw_wR + dw_R;
                             }
                         }
                     } else if (key == "SOC") {                // new block
@@ -809,7 +868,7 @@ public:
                                     width = renderer->getTextDimensions("88\u00B0C 88\u00B0C 88\u00B0C", false, fontsize).first;
                             }
                         }
-                                        } else if (key == "BAT") {
+                    } else if (key == "BAT") {
                         if (settings.showStackedBAT) {
                             const uint32_t draw_w = renderer->getTextDimensions("-14.44 W", false, fontsize).first;
                             const uint32_t pct_w  = renderer->getTextDimensions("100.0% [44:44]", false, fontsize).first;
@@ -899,22 +958,34 @@ public:
                     }
                 }
                 {
-                    // drawString(Y) places baseline at Y; glyph top is at Y - ascent,
-                    // glyph bottom is at Y + descentAbs. stbtt scales so ascent + descentAbs == fontsize
-                    // BEFORE int truncation; afterward we can lose 1-2 px. Using fontsize in the height
-                    // formula bakes that truncation loss into the bottom gap, making it visibly fatter.
-                    // We measure ascent/descentAbs directly and use them so layout is pixel-exact.
-                    const auto fm = tsl::gfx::FontManager::getFontMetricsForCharacter('A', fontsize);
-                    const int ascent     = fm.ascent;        // pixels above baseline (positive)
-                    const int descentAbs = -(fm.descent);    // fm.descent is negative; make positive
-                    if (ascent > 0) {
-                        cachedBaselineOffset = ascent;
-                        cachedDescentAbs     = descentAbs;
-                        bottomPadding        = topPadding;   // equal padding -> equal top/bottom gaps
+                    // drawString(Y) places the baseline at Y.  We want the top and bottom gaps
+                    // (inside the rounded rect) to be visually equal.
+                    //
+                    // Using the font-wide ascent/descent metrics does NOT achieve this because:
+                    //   • ascent includes room for accents/tall glyphs; typical caps only reach
+                    //     cap_height (< ascent), leaving extra blank space above the glyph pixels.
+                    //   • descentAbs is the font-wide maximum descent; most Mini rows (RAM, DTC,
+                    //     FPS, …) have no descenders so the glyph bottom sits at the baseline.
+                    // Result: top gap looks visually larger than bottom gap.
+                    //
+                    // Fix: measure the ACTUAL pixel bounds of 'A' (representative tall cap):
+                    //   bounds[1]  = top   offset from baseline (negative → glyph top is above baseline)
+                    //   bounds[3]  = bottom offset from baseline (0 for caps, positive for descenders)
+                    // Setting cachedBaselineOffset = -bounds[1] places currentY so the topmost
+                    // pixel of 'A' lands exactly (spacing + topPadding) below the box top.
+                    // Setting cachedDescentAbs = bounds[3] (= 0 for 'A') makes the bottom gap
+                    // equal to (spacing + bottomPadding) == top gap for all-cap rows like DTC/RAM.
+                    // Rows with true descenders (g, p, y) use the spacing+bottomPadding buffer
+                    // (default 8+5 = 13 px) which is ample.
+                    const auto glyphA = tsl::gfx::FontManager::getOrCreateGlyph('A', false, fontsize);
+                    if (glyphA && glyphA->height > 0) {
+                        cachedBaselineOffset = -glyphA->bounds[1]; // cap height in px (positive)
+                        cachedDescentAbs     =  glyphA->bounds[3]; // 0 for caps; > 0 for descenders
+                        bottomPadding        = topPadding;         // equal padding → equal visual gaps
                         Initialized          = true;
                         needsRecalc          = true;
                     }
-                    // else: font not loaded yet, leave Initialized=false and retry next frame
+                    // else: glyph/font not ready yet — retry next frame
                 }
             }
 
@@ -968,13 +1039,25 @@ public:
                                                       !wantSplitVDDQ && settings.realVolts &&
                                                       ((settings.showVDDQ && isMariko && !settings.showVDD2) ||
                                                        (settings.showVDD2 && !settings.showVDDQ));
-                        const bool wantRAMLoadSplit = settings.showRAMLoad && settings.showRAMLoadCPUGPU &&
-                                                      settings.showStackedRAMLoad &&
+                        const bool wantRAMLoadCPUGPUSplit = settings.showRAMLoad && settings.showRAMLoadCPUGPU &&
+                                                      settings.showStackedRAMLoadCPUGPU &&
                                                       (R_SUCCEEDED(sysclkCheck) || R_SUCCEEDED(hocclkCheck));
+                        // BW stacked: BW occupies the top row, RAM content the bottom row,
+                        // reusing the RAM_SLOAD_TOP/BOT infrastructure for right-alignment + volts.
+                        // VDDQ split and RAM temp split are right-side decorations — orthogonal to row
+                        // layout — so they must NOT block BW stacking.
+                        // Only blocked when load-CPU/GPU-split already owns both rows with load data.
+                        const bool wantBWStackedSplit = settings.showRAMBandwidth &&
+                                                        settings.showStackedRAMBandwidth &&
+                                                        !wantRAMLoadCPUGPUSplit;
+                        // Either condition drives the 2-row SLOAD split path.
+                        // wantBWStackedSplit takes priority: RAM_SLOAD_TOP/BOT handles rSplitVDDQ and
+                        // rSplitTemp internally, so we never fall through to RAM_SVDD2/RAM_SVDDQ etc.
+                        const bool wantAnySplit = wantRAMLoadCPUGPUSplit || wantBWStackedSplit;
 
-                        if (wantRAMLoadSplit) {
-                            // Load split takes highest priority: [cpu% gpu%] on top, total%@freq on bottom
-                            // volt/temp are drawn inline by the RAM_SLOAD_BOT renderer
+                        if (wantAnySplit) {
+                            // RAM_SLOAD_TOP/BOT handles all cases: load-split, BW-stacked, and
+                            // BW-stacked with VDDQ/temp split on the right side.
                             labelLines.push_back("RAM_SLOAD_TOP");
                             labelLines.push_back("RAM_SLOAD_BOT");
                             entryCount++;
@@ -1091,61 +1174,162 @@ public:
                               + ((fontsize + settings.spacing) * (actualEntryCount > 0 ? actualEntryCount - 1 : 0))
                               + 2 * settings.spacing
                               + topPadding + bottomPadding);
-                // Two-row blocks (dual-row TMP, TMP split, RAM split) use half inter-row spacing, trim box height
-                if ((settings.showComponentTemps && settings.showSocPcbSkinTemps) ||
-                    (settings.showStackedFanSOC && settings.showFanPercentage &&
-                     settings.realVolts && settings.showSOCVoltage))
-                    cachedHeight -= settings.spacing / 2;
-                if (settings.showStackedVDDQ && settings.realVolts &&
-                    settings.showVDD2 && settings.showVDDQ && isMariko)
-                    cachedHeight -= settings.spacing / 2;
-                // CPU/GPU temp split contributes one compressed row per split
-                {
-                    const bool wantCPUFullSplit = settings.showFullCPU && settings.showStackedFullCPU;
-                    const bool wantCPUSplit = !wantCPUFullSplit && settings.showCPUTemp && settings.showStackedCPUTemp && settings.realVolts;
-                    const bool wantGPUSplit = settings.showGPUTemp && settings.showStackedGPUTemp && settings.realVolts;
-                    const bool wantRAMTempSplit = settings.showRAMTemp && settings.showStackedRAMTemp &&
-                                                  settings.realVolts &&
-                                                  ((settings.showVDDQ && isMariko && !settings.showVDD2) ||
-                                                   (settings.showVDD2 && !settings.showVDDQ));
 
-                    const bool wantVDDQSplit = settings.showStackedVDDQ && settings.realVolts && settings.showVDD2 && settings.showVDDQ && isMariko;
-                    // RAM load split takes highest priority — when active, suppress VDDQ and ramTemp height deductions for RAM
-                    const bool wantRAMLoadSplit_h = settings.showRAMLoad && settings.showRAMLoadCPUGPU &&
-                                                    settings.showStackedRAMLoad;
-                    for (const auto& k : showKeys) {
-                        if (k == "CPU" && (wantCPUSplit || wantCPUFullSplit)) { cachedHeight -= settings.spacing / 2; break; }
+
+                // THIS BLOCK IS THE ISSUE. IT IS APPLYING EVEN WHEN STUFF IS NOT SHOWING. IT IS NOT SPECIFIC TO THE STACKED LINE CASES THAT ARE VISIBLLY HAPPENING ONLY WHEN THEY ARE HAPPENING AND VISIBLE
+                // Two-row blocks (dual-row TMP, TMP split, RAM split) use half inter-row spacing, trim box height
+                //if ((settings.showComponentTemps && settings.showSocPcbSkinTemps) ||
+                //    (settings.showStackedFanSOC && settings.showFanPercentage &&
+                //     settings.realVolts && settings.showSOCVoltage))
+                //    cachedHeight -= settings.spacing / 2;
+                //if (settings.showStackedVDDQ && settings.realVolts &&
+                //    settings.showVDD2 && settings.showVDDQ && isMariko)
+                //    cachedHeight -= settings.spacing / 2;
+
+                // Split-row compression handling
+                {
+                    const int splitCompression = settings.spacing / 2;
+                
+                    const auto hasKey = [&](const char* key) {
+                        return std::find(showKeys.begin(), showKeys.end(), key) != showKeys.end();
+                    };
+                
+                    //
+                    // TMP
+                    //
+                
+                    // TMP dual-row:
+                    //   TOP = component temps
+                    //   BOT = SOC/PCB/Skin temps
+                    //
+                    // TMP split:
+                    //   centered fan/volt row between TMP rows
+                    //
+                    // Both compress the TMP block into a shared 2-row layout.
+                    const bool wantTMPDualRow =
+                        settings.showComponentTemps &&
+                        settings.showSocPcbSkinTemps;
+                
+                    const bool wantTMPSplit =
+                        settings.showStackedFanSOC &&
+                        settings.showFanPercentage &&
+                        settings.realVolts &&
+                        settings.showSOCVoltage;
+                
+                    if ((wantTMPDualRow || wantTMPSplit) && hasKey("TMP")) {
+                        cachedHeight -= splitCompression;
                     }
-                    for (const auto& k : showKeys) {
-                        if (k == "GPU" && wantGPUSplit) { cachedHeight -= settings.spacing / 2; break; }
+                
+                    //
+                    // CPU / GPU
+                    //
+                
+                    // CPU full split owns the CPU row layout and suppresses temp split ownership.
+                    const bool wantCPUFullSplit =
+                        settings.showFullCPU &&
+                        settings.showStackedFullCPU;
+                
+                    const bool wantCPUSplit =
+                        !wantCPUFullSplit &&
+                        settings.showCPUTemp &&
+                        settings.showStackedCPUTemp &&
+                        settings.realVolts;
+                
+                    const bool wantGPUSplit =
+                        settings.showGPUTemp &&
+                        settings.showStackedGPUTemp &&
+                        settings.realVolts;
+                
+                    if ((wantCPUSplit || wantCPUFullSplit) && hasKey("CPU")) {
+                        cachedHeight -= splitCompression;
                     }
-                    if (!wantRAMLoadSplit_h && !wantVDDQSplit) {
-                        for (const auto& k : showKeys) {
-                            if (k == "RAM" && wantRAMTempSplit) { cachedHeight -= settings.spacing / 2; break; }
-                        }
+                
+                    if (wantGPUSplit && hasKey("GPU")) {
+                        cachedHeight -= splitCompression;
                     }
-                    // BAT split: two-row block reduces height by spacing/2
-                    if (settings.showStackedBAT) {
-                        for (const auto& k : showKeys) {
-                            if (k == "BAT" || k == "DRAW") { cachedHeight -= settings.spacing / 2; break; }
-                        }
+                
+                    //
+                    // RAM layout ownership
+                    //
+                
+                    // Stacked VDD2/VDDQ split
+                    const bool wantVDDQSplit =
+                        settings.showStackedVDDQ &&
+                        settings.realVolts &&
+                        settings.showVDD2 &&
+                        settings.showVDDQ &&
+                        isMariko;
+                
+                    // RAM temp split:
+                    // only active when exactly one voltage rail is visible.
+                    const bool wantRAMTempSplit =
+                        settings.showRAMTemp &&
+                        settings.showStackedRAMTemp &&
+                        settings.realVolts &&
+                        (
+                            (settings.showVDDQ && isMariko && !settings.showVDD2) ||
+                            (settings.showVDD2 && !settings.showVDDQ)
+                        );
+                
+                    // RAM load split owns the RAM row layout completely.
+                    const bool wantRAMLoadSplit =
+                        settings.showRAMLoad &&
+                        settings.showRAMLoadCPUGPU &&
+                        settings.showStackedRAMLoadCPUGPU;
+                
+                    // BW stacked split also owns the RAM row layout.
+                    const bool wantBWStackedSplit =
+                        settings.showRAMBandwidth &&
+                        settings.showStackedRAMBandwidth;
+                
+                    // Determine which RAM feature owns row compression.
+                    //
+                    // Priority:
+                    //   1. RAM load split
+                    //   2. BW stacked split
+                    //   3. VDDQ split
+                    //   4. RAM temp split
+                    //
+                    // VDDQ/temp are considered decorations once a higher-level
+                    // stacked RAM layout takes ownership.
+                    bool applyRAMCompression = false;
+                
+                    if (wantRAMLoadSplit) {
+                        applyRAMCompression = true;
+                    } else if (wantBWStackedSplit) {
+                        applyRAMCompression = true;
+                    } else if (wantVDDQSplit) {
+                        applyRAMCompression = true;
+                    } else if (wantRAMTempSplit) {
+                        applyRAMCompression = true;
                     }
-                    // DTC split: two-row block reduces height by spacing/2
-                    if (settings.showStackedDTC && settings.showDTC) {
-                        for (const auto& k : showKeys) {
-                            if (k == "DTC") { cachedHeight -= settings.spacing / 2; break; }
-                        }
+                
+                    if (applyRAMCompression && hasKey("RAM")) {
+                        cachedHeight -= splitCompression;
                     }
-                    // RAM load split: two-row block reduces height by spacing/2 (only once — suppress VDDQ deduction when active)
-                    if (wantRAMLoadSplit_h) {
-                        for (const auto& k : showKeys) {
-                            if (k == "RAM") {
-                                // Undo VDDQ deduction if it was already applied above
-                                if (wantVDDQSplit) cachedHeight += settings.spacing / 2;
-                                cachedHeight -= settings.spacing / 2;
-                                break;
-                            }
-                        }
+                
+                    //
+                    // BAT
+                    //
+                
+                    // BAT stacked layout:
+                    //   BAT_TOP
+                    //   BAT_BOT
+                    if (settings.showStackedBAT && (hasKey("BAT") || hasKey("DRAW"))) {
+                        cachedHeight -= splitCompression;
+                    }
+                
+                    //
+                    // DTC
+                    //
+                
+                    // DTC stacked layout:
+                    //   DTC_TOP
+                    //   DTC_BOT
+                    if (settings.showStackedDTC &&
+                        settings.showDTC &&
+                        hasKey("DTC")) {
+                        cachedHeight -= splitCompression;
                     }
                 }
                 //const uint32_t margin = (fontsize * 4);
@@ -1693,16 +1877,35 @@ public:
                         renderer->drawString(ramLbl, false, ramLblX + _frameOffsetX + clippingOffsetX,
                             ramLoadCtrY, fontsize, settings.catColor);
                     }
-                    // Compute widths first so we can right-align the top row
+                    // Compute widths first so we can right-align the top row.
+                    // bwLeftCol: BW is drawn as a separate left column before the stacked-load block.
+                    // MINI_RAM_bw_c is populated by update() only in the "BW inline + load stacked" case.
+                    const bool bwLeftCol = MINI_RAM_bw_c[0] != '\0';
+                    const int bwLeftColW = bwLeftCol
+                        ? (int)renderer->getTextDimensions(std::string(MINI_RAM_bw_c), false, fontsize).first : 0;
+                    const uint32_t divW = (uint32_t)renderer->getTextDimensions(ult::DIVIDER_SYMBOL, false, fontsize).first;
+                    // loadBaseX: left edge of the stacked-load data block (shifted right when BW is left-column)
+                    const int loadBaseX = baseX + (bwLeftCol ? bwLeftColW + (int)divW : 0);
+
+                    if (bwLeftCol) {
+                        // Draw BW string on TOP row at baseX
+                        renderer->drawString(std::string(MINI_RAM_bw_c), false, baseX, baseY, fontsize, settings.textColor);
+                        // Draw 3-stack dividers at baseX+bwLeftColW: top, center, and bot rows
+                        rlDrawTopRowDiv(baseX + bwLeftColW);
+                        rlDrawCenterDiv(baseX + bwLeftColW);
+                        rlDrawBotRowDivFromTop(baseX + bwLeftColW);
+                        MINI_RAM_bw_c[0] = '\0';
+                    }
+
                     const uint32_t topW = renderer->getTextDimensions(currentLine, false, fontsize).first;
                     const uint32_t botW = MINI_RAM_load_bot_c[0]
                         ? renderer->getTextDimensions(std::string(MINI_RAM_load_bot_c), false, fontsize).first
                         : 0;
-                    ramLoadVoltColX = baseX + (int)std::max(topW, botW);
+                    ramLoadVoltColX = loadBaseX + (int)std::max(topW, botW);
 
                     // Draw [cpu% gpu%] right-aligned so its right edge matches total@freq
-                    const int topDrawX = baseX + (int)std::max(topW, botW) - (int)topW;
-                    renderer->drawString(currentLine, false, topDrawX, baseY, fontsize, settings.textColor);
+                    const int topDrawX = loadBaseX + (int)std::max(topW, botW) - (int)topW;
+                    renderer->drawStringWithColoredSections(currentLine, false, specialChars, topDrawX, baseY, fontsize, settings.textColor, settings.separatorColor);
 
                     // Determine right-side mode (mirrors label-building conditions)
                     const bool rSplitVDDQ = settings.showStackedVDDQ && settings.realVolts &&
@@ -1832,7 +2035,11 @@ public:
                         }
                     };
                     if (MINI_RAM_load_bot_c[0]) {
-                        renderer->drawString(MINI_RAM_load_bot_c, false, baseX, ramLoadBotY, fontsize, settings.textColor);
+                        const uint32_t botW_draw = renderer->getTextDimensions(std::string(MINI_RAM_load_bot_c), false, fontsize).first;
+                        // ramLoadVoltColX = baseX + max(topW, botW) — set by RAM_SLOAD_TOP.
+                        // Right-align bot row so its right edge matches the top row's right edge.
+                        const int botDrawX = ramLoadVoltColX - (int)botW_draw;
+                        renderer->drawString(MINI_RAM_load_bot_c, false, botDrawX, ramLoadBotY, fontsize, settings.textColor);
                     }
                     // Use shared column X (computed by RAM_SLOAD_TOP); fall back to baseX if unset
                     int afterBotX = ramLoadVoltColX ? ramLoadVoltColX : baseX;
@@ -3139,6 +3346,7 @@ public:
         MINI_GPU_volt_c[0] = '\0';  // reset each frame
         MINI_CPU_freq_c[0] = '\0';  // reset each frame (freq split mode)
         MINI_RAM_load_bot_c[0] = '\0'; // reset each frame
+        MINI_RAM_bw_c[0] = '\0';       // reset each frame (RAM bandwidth)
 
         // Only process CPU if needed
         if (isActive("CPU")) {
@@ -3272,6 +3480,19 @@ public:
     
         // Only process RAM if needed
         if (isActive("RAM")) {
+            // Build RAM bandwidth string ("X.X GB/s") when enabled.
+            // Always written — "0.0 GB/s" placeholder when ACTMON hasn't delivered data yet
+            // so the stacked layout is stable from frame 1 and never jumps.
+            if (settings.showRAMBandwidth) {
+                if (ramBW_MBs > 0) {
+                    const unsigned bwInt = ramBW_MBs / 1000;
+                    const unsigned bwDec = (ramBW_MBs % 1000) / 100;
+                    snprintf(MINI_RAM_bw_c, sizeof(MINI_RAM_bw_c), "%u.%u GB/s", bwInt, bwDec);
+                } else {
+                    snprintf(MINI_RAM_bw_c, sizeof(MINI_RAM_bw_c), "0.0 GB/s");
+                }
+            }
+
             if (!settings.showRAMLoad) {
                 const float ramTotalGiB = (RAM_Total_application_u + RAM_Total_applet_u +
                                      RAM_Total_system_u + RAM_Total_systemunsafe_u) /
@@ -3304,7 +3525,7 @@ public:
                         const uint32_t useHz = (settings.realFrequencies && realRAM_Hz) ? realRAM_Hz : (uint32_t)RAM_Hz;
                         const unsigned ramMHz   = useHz / 1000000;
                         const unsigned ramMHz10 = (useHz / 100000) % 10;
-                        if (!settings.showStackedRAMLoad) {
+                        if (!settings.showStackedRAMLoadCPUGPU) {
                             // SBS: [cpu% gpu%]total%@freq on one line
                             snprintf(MINI_RAM_var_compressed_c, sizeof(MINI_RAM_var_compressed_c),
                                      "[%u%% %u%%] %u%%@%u.%u",
@@ -3347,6 +3568,49 @@ public:
                                  "%u%%@%hu.%hhu", ramLoadInt,
                                  RAM_Hz / 1000000, (RAM_Hz / 100000) % 10);
                     }
+                }
+            }
+
+            // RAM bandwidth integration. Two layouts:
+            //   Inline BW (stacked BW off): prepend "X.XGB/s" + DIVIDER to MINI_RAM_var_compressed_c.
+            //     Works for all sub-modes including stacked-load top row.
+            //   Stacked BW (stacked BW on): BW goes on top row, existing RAM content on bottom row,
+            //     reusing the RAM_SLOAD_TOP/BOT infrastructure for right-alignment and volt rendering.
+            //     When load-CPU/GPU-split is already active (stacked load on), BW prepends inline to
+            //     the existing top row [c% g%] instead — that split already owns both rows with data.
+            //     VDDQ and RAM temp splits are right-side decorations; they never block BW stacking.
+            if (MINI_RAM_bw_c[0]) {
+                const bool dat_wantRAMLoadCPUGPUSplit = settings.showRAMLoad && settings.showRAMLoadCPUGPU &&
+                                                  settings.showStackedRAMLoadCPUGPU &&
+                                                  (R_SUCCEEDED(sysclkCheck) || R_SUCCEEDED(hocclkCheck));
+                // bwOnOwnRow: stacked BW is on, and load-CPU/GPU-split is not already consuming both rows.
+                // VDDQ split and RAM temp split are right-side column decorations — they are orthogonal
+                // to BW row layout and must NOT block BW from taking the top row.
+                // The renderer will use MINI_RAM_var_compressed_c as the top row (BW) and
+                // MINI_RAM_load_bot_c as the bottom row (RAM content), reusing RAM_SLOAD_TOP/BOT.
+                const bool bwOnOwnRow = settings.showStackedRAMBandwidth && !dat_wantRAMLoadCPUGPUSplit;
+                // bwLeftOfLoadSplit: BW NOT stacked + load-split active.
+                // BW is drawn as a separate LEFT column; MINI_RAM_bw_c is left populated for the renderer.
+                // The renderer draws BW at baseX, then a triple-stack divider, then the stacked-load
+                // content right-aligned within the remainder of the data width.
+                const bool bwLeftOfLoadSplit = !settings.showStackedRAMBandwidth && dat_wantRAMLoadCPUGPUSplit;
+                if (bwOnOwnRow) {
+                    // Stacked BW (no other split): swap — BW goes to top row, RAM content to bottom row.
+                    // RAM_SLOAD_TOP/BOT renderer handles right-alignment and volt columns.
+                    snprintf(MINI_RAM_load_bot_c, sizeof(MINI_RAM_load_bot_c), "%s", MINI_RAM_var_compressed_c);
+                    snprintf(MINI_RAM_var_compressed_c, sizeof(MINI_RAM_var_compressed_c), "%s", MINI_RAM_bw_c);
+                    MINI_RAM_bw_c[0] = '\0';
+                } else if (bwLeftOfLoadSplit) {
+                    // BW inline + load stacked: leave MINI_RAM_bw_c populated for the RAM_SLOAD_TOP
+                    // renderer to draw as the left column. Do NOT prepend to RAM_var_compressed_c.
+                    // (MINI_RAM_bw_c will be cleared by the renderer after drawing.)
+                } else {
+                    // Inline BW (stacked BW off, load not stacked): prepend "BW\xEE\x80\xB1" to data row.
+                    char tmp[sizeof(MINI_RAM_var_compressed_c)];
+                    snprintf(tmp, sizeof(tmp), "%s%s",
+                             MINI_RAM_bw_c, MINI_RAM_var_compressed_c);
+                    memcpy(MINI_RAM_var_compressed_c, tmp, sizeof(MINI_RAM_var_compressed_c));
+                    MINI_RAM_bw_c[0] = '\0';
                 }
             }
     
@@ -3654,11 +3918,17 @@ public:
                                             ((settings.showVDDQ && isMariko && !settings.showVDD2) ||
                                              (settings.showVDD2 && !settings.showVDDQ));
                 const bool ramLoadSplit_t = settings.showRAMLoad && settings.showRAMLoadCPUGPU &&
-                                            settings.showStackedRAMLoad &&
+                                            settings.showStackedRAMLoadCPUGPU &&
                                             (R_SUCCEEDED(sysclkCheck) || R_SUCCEEDED(hocclkCheck));
+                // wantAnySplit mirrors the label-building predicate: fires for load-split OR BW-stacked.
+                // VDDQ/temp splits are right-side decorations — they must NOT block BW stacking.
+                const bool wantBWStackedSplit_t = settings.showRAMBandwidth && settings.showStackedRAMBandwidth &&
+                                                  !ramLoadSplit_t;
+                const bool wantAnySplit_t = ramLoadSplit_t || wantBWStackedSplit_t;
 
-                if (ramLoadSplit_t) {
-                    // Row 1: [cpu% gpu%]; Row 2: placeholder (MINI_RAM_load_bot_c drawn directly by renderer)
+                if (wantAnySplit_t) {
+                    // Row 1: top content (BW string or [cpu% gpu%]); Row 2: placeholder
+                    // (MINI_RAM_load_bot_c drawn directly by RAM_SLOAD_BOT renderer)
                     strcat(Temp, MINI_RAM_var_compressed_c);
                     strcat(Temp, "\n");
                     strcat(Temp, " ");
