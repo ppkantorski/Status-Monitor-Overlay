@@ -1911,9 +1911,9 @@ public:
                     ramLoadVoltColX = loadBaseX + (int)std::max(topW, botW);
 
                     // Draw top row right-aligned. currentLine may be one of:
-                    //   a) "[#44% #44%]"                 — load-only, no BW embedded
+                    //   a) "[44% 44%]"                 — load-only, no BW embedded
                     //   b) "10.0 GB/s"                   — BW-on-own-row (top=BW, bot=load)
-                    //   c) "10.0 GB/s" + DIVIDER + "[#44% #44%]" — BW stacked + load stacked
+                    //   c) "10.0 GB/s" + DIVIDER + "[44% 44%]" — BW stacked + load stacked
                     //      (bwOnOwnRow=false, bwLeftOfLoadSplit=false → inline prepend with DIVIDER)
                     // Cases (a)/(b): no DIVIDER embedded → draw with cpuPadChars to hide '#' sentinels.
                     // Case (c): split at DIVIDER so the BW part uses specialChars (for separator color),
@@ -2067,7 +2067,10 @@ public:
                         // ramLoadVoltColX = baseX + max(topW, botW) — set by RAM_SLOAD_TOP.
                         // Right-align bot row so its right edge matches the top row's right edge.
                         const int botDrawX = ramLoadVoltColX - (int)botW_draw;
-                        renderer->drawString(MINI_RAM_load_bot_c, false, botDrawX, ramLoadBotY, fontsize, settings.textColor);
+                        // Bot row may contain '#' sentinels (e.g. "[#4% #8%] 12%@1600.0" when
+                        // bwOnOwnRow=true: BW on top, load-SBS on bottom). Use cpuPadChars so the
+                        // '#' padding renders transparent rather than as a literal '#' character.
+                        renderer->drawStringWithColoredSections(std::string(MINI_RAM_load_bot_c), false, cpuPadChars, botDrawX, ramLoadBotY, fontsize, settings.textColor, cpuPadTransparent);
                     }
                     // Use shared column X (computed by RAM_SLOAD_TOP); fall back to baseX if unset
                     int afterBotX = ramLoadVoltColX ? ramLoadVoltColX : baseX;
@@ -3266,9 +3269,26 @@ public:
                             renderer->drawStringWithColoredSections(line, false, cpuPadChars, baseX, baseY, fontsize, settings.textColor, cpuPadTransparent);
                         }
                     } else if (curLabel == "RAM") {
-                        // RAM load brackets [#cpu% #gpu%] — no DIVIDER_SYMBOL embedded in this
-                        // string, so draw directly with cpuPadChars to hide '#' sentinels.
-                        renderer->drawStringWithColoredSections(currentLine, false, cpuPadChars, baseX, baseY, fontsize, settings.textColor, cpuPadTransparent);
+                        // RAM string may embed a DIVIDER_SYMBOL when BW is inline:
+                        //   "10.5 GB/s" + DIVIDER + "50%@1432.1"         — BW + load (no brackets)
+                        //   "10.5 GB/s" + DIVIDER + "[#44% #44%] 50%@…"  — BW + CPU/GPU load SBS
+                        //   "[#44% #44%] 50%@…"                           — CPU/GPU load SBS, no BW
+                        // Split at DIVIDER if present: left uses specialChars (colors the DIVIDER),
+                        // right uses cpuPadChars (hides '#' sentinels). When no DIVIDER is embedded,
+                        // fall through to plain cpuPadChars draw.
+                        {
+                            const size_t divPos = currentLine.find(ult::DIVIDER_SYMBOL);
+                            if (divPos != std::string::npos) {
+                                const std::string leftPart  = currentLine.substr(0, divPos);
+                                const std::string rightPart = currentLine.substr(divPos + ult::DIVIDER_SYMBOL.length());
+                                int cx = baseX;
+                                cx += (int)renderer->drawStringWithColoredSections(leftPart, false, specialChars, cx, baseY, fontsize, settings.textColor, settings.separatorColor).first;
+                                cx += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, cx, baseY, fontsize, settings.separatorColor).first;
+                                renderer->drawStringWithColoredSections(rightPart, false, cpuPadChars, cx, baseY, fontsize, settings.textColor, cpuPadTransparent);
+                            } else {
+                                renderer->drawStringWithColoredSections(currentLine, false, cpuPadChars, baseX, baseY, fontsize, settings.textColor, cpuPadTransparent);
+                            }
+                        }
                     } else {
                         renderer->drawStringWithColoredSections(currentLine, false, specialChars, baseX, baseY, fontsize, settings.textColor, settings.separatorColor);
                     }

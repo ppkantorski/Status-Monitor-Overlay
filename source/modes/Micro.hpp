@@ -1482,7 +1482,7 @@ public:
                 const uint32_t dataColStartX = current_x - item_layout.data_width;
 
                 // Draw voltage if present -- inline at singleItemY for all modes including TMP grid
-                if (item.has_voltage && item.volt_ptr) {
+                if (item.has_voltage && item.volt_ptr && item.volt_ptr[0]) {
                     current_x += layout.volt_separator_gap;
                     renderer->drawString("", false, current_x, singleItemY, fontsize, (settings.separatorColor));
                     current_x += sep_width + layout.volt_data_gap;
@@ -1990,9 +1990,16 @@ public:
                     if (RAM_load_bot_c[0]) {
                         const uint32_t botW_draw = renderer->getTextDimensions(RAM_load_bot_c, false, fontsize).first;
                         const uint32_t botDrawX  = dataColStartX + item_layout.data_width - botW_draw;
-                        renderer->drawString(RAM_load_bot_c, false, botDrawX, gridBotY, fontsize, textColorA);
+                        // Bot row may contain '#' sentinels (e.g. "[#4% #8%] 12%@1600.0" when
+                        // ramBWIsSplit=true: BW on top, load-SBS on bottom). Use cpuPadChars so
+                        // the '#' padding renders transparent rather than as a literal '#' character.
+                        renderer->drawStringWithColoredSections(std::string(RAM_load_bot_c), false, cpuPadChars, botDrawX, gridBotY, fontsize, textColorA, cpuPadTransparent);
                     }
-                    const bool rLoadHasRight = (item.has_voltage && item.volt_ptr)
+                    // rLoadHasRight: is there any right-side content that needs the 3-tall
+                    // divider stack (top+bot) drawn at the volt-column X?
+                    // Guard has_voltage with volt_ptr[0] so an empty RAM_volt_c (realVolts=true
+                    // but no VDD2/VDDQ configured) doesn't produce phantom dividers.
+                    const bool rLoadHasRight = (item.has_voltage && item.volt_ptr && item.volt_ptr[0])
                                              || ramIsSplit || ramTempSplit
                                              || (!ramIsSplit && !ramTempSplit && settings.showRAMTemp && ram_temp_c[0]);
                     if (rLoadHasRight) {
@@ -2005,7 +2012,7 @@ public:
                         // Center only needed when has_voltage is the sole right-side content:
                         // its \ue031 separator is not a DIVIDER_SYMBOL so explicitly complete the fork.
                         const bool rLoadNeedsCenter = !ramIsSplit && !ramTempSplit
-                                                    && (item.has_voltage && item.volt_ptr)
+                                                    && (item.has_voltage && item.volt_ptr && item.volt_ptr[0])
                                                     && !(settings.showRAMTemp && ram_temp_c[0]);
                         if (rLoadNeedsCenter)
                             renderer->drawString(ult::DIVIDER_SYMBOL, false, rLoadVoltColX, singleItemY, fontsize, (settings.separatorColor));
