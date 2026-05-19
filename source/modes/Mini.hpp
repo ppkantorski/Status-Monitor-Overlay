@@ -1888,8 +1888,10 @@ public:
                     const int loadBaseX = baseX + (bwLeftCol ? bwLeftColW + (int)divW : 0);
 
                     if (bwLeftCol) {
-                        // Draw BW string on TOP row at baseX
-                        renderer->drawString(std::string(MINI_RAM_bw_c), false, baseX, baseY, fontsize, settings.textColor);
+                        // Draw BW string centered (at ramLoadCtrY) in the left column.
+                        // Nothing occupies the bottom row of this column, so centering it
+                        // aligns it with the RAM label and the center divider.
+                        renderer->drawString(std::string(MINI_RAM_bw_c), false, baseX, ramLoadCtrY, fontsize, settings.textColor);
                         // Draw 3-stack dividers at baseX+bwLeftColW: top, center, and bot rows
                         rlDrawTopRowDiv(baseX + bwLeftColW);
                         rlDrawCenterDiv(baseX + bwLeftColW);

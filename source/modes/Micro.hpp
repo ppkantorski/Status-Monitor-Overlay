@@ -1415,8 +1415,10 @@ public:
                     // loadDataColW: width of the stacked-load portion only (excludes BW + divider)
                     const uint32_t loadDataColW = bwLeftCol ? (item_layout.data_width - bwLeftW - bwDivW) : item_layout.data_width;
                     if (bwLeftCol) {
-                        // Draw BW on top row at the left edge of the data column
-                        renderer->drawString(std::string(RAM_bw_c), false, current_x, gridTopY, fontsize, textColorA);
+                        // Draw BW centered (at singleItemY) in the left column.
+                        // Nothing occupies the bottom row of this column, so centering it
+                        // aligns it with the RAM label and the center divider.
+                        renderer->drawString(std::string(RAM_bw_c), false, current_x, singleItemY, fontsize, textColorA);
                         // Draw 3-stack dividers: top, center, and bot rows at current_x + bwLeftW
                         const uint32_t divX = current_x + bwLeftW;
                         {
