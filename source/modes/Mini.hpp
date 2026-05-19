@@ -1,5 +1,136 @@
 class MainMenu;
 
+namespace mini_divider_scissor {
+    // ─────────────────────────────────────────────────────────────────────────
+    // 3-DIVIDER STACK SCISSORING HELPERS
+    //
+    // The DIVIDER_SYMBOL glyph has alpha-blended edges. When three are stacked
+    // vertically at the same x with overlapping pixel rows, the overlap regions
+    // double-blend and produce a visibly darker shade. These helpers draw each
+    // divider with a tight scissor band so the three glyphs meet exactly at the
+    // midpoint between their visual centers — no overlap, no shading artifact.
+    //
+    // Layout convention (libtesla: larger Y is lower on screen):
+    //
+    //   topY     ┊  (top divider — clipped above the upper cut)
+    //            ┊
+    //            ┊──── cut at midpoint between top and center glyph centers
+    //            ┊
+    //   centerY  ┊  (center divider — clipped between the two cuts)
+    //            ┊
+    //            ┊──── cut at midpoint between center and bot glyph centers
+    //            ┊
+    //   botY     ┊  (bot divider — clipped below the lower cut)
+    //
+    // The cut Y in screen space is:
+    //   ((Yupper + Ylower) / 2) + bounds[1] + glyphHeight/2
+    // which is the midpoint between the two glyphs' visual vertical centers.
+    // (bounds[1] is negative — it's the y-offset from baseline to glyph top.)
+    //
+    // Scissor stack note (tesla.hpp): enableScissoring/disableScissoring are a
+    // simple push/pop stack; only the top entry is consulted by the renderer.
+    // Every enable MUST be paired with a disable on every path.
+    // ─────────────────────────────────────────────────────────────────────────
+
+    // Fetch the divider glyph's vertical-center offset from its baseline Y,
+    // plus the horizontal scissor bounds needed to fully cover its pixels.
+    // Returns false if the glyph could not be obtained (caller should fall
+    // back to drawing without scissoring in that unlikely case).
+    static inline bool getDividerScissorMetrics(uint32_t fontsize,
+                                                 int& outCenterOffsetY,
+                                                 int& outLeftPad,
+                                                 int& outFullWidth) {
+        // DIVIDER_SYMBOL is a single codepoint (U+E031) in the PUA. Get its
+        // glyph metrics from the shared FontManager cache.
+        const uint32_t cp = 0xE031;
+        auto glyph = tsl::gfx::FontManager::getOrCreateGlyph(cp, false, fontsize);
+        if (!glyph) return false;
+        // bounds[1] is negative (above baseline); height is positive.
+        // Visual vertical center of the rasterised glyph relative to baseline:
+        outCenterOffsetY = glyph->bounds[1] + glyph->height / 2;
+        // Horizontal extent of the rasterised pixels (relative to draw x):
+        outLeftPad   = glyph->bounds[0];                 // may be negative
+        outFullWidth = glyph->width;
+        if (outFullWidth < 1) outFullWidth = 1;
+        return true;
+    }
+
+    // Compute the screen-Y at which to cut between two adjacent dividers
+    // (Yupper < Ylower in screen space). This is the midpoint between their
+    // visual glyph centers. Pixels with screen-y < cut belong to the upper
+    // divider; pixels with screen-y >= cut belong to the lower.
+    static inline int computeDividerCutY(int Yupper, int Ylower, int centerOffsetY) {
+        return ((Yupper + Ylower) / 2) + centerOffsetY;
+    }
+
+    // Sentinel "no cut on this side" values used by drawDividerScissored.
+    // These are plain integers far outside any plausible screen Y, avoiding
+    // any dependency on <climits>.
+    static constexpr int kNoUpperCut = -1000000;
+    static constexpr int kNoLowerCut =  1000000;
+
+    // Draws one divider at (x, baselineY) clipped to screen-y rows
+    // [cutAbove, cutBelow). Pass cutAbove == kNoUpperCut for "no upper cut"
+    // and cutBelow == kNoLowerCut for "no lower cut". The horizontal scissor
+    // extent is computed from the glyph's bitmap bounds so the glyph is
+    // never accidentally clipped on its sides.
+    static inline void drawDividerScissored(tsl::gfx::Renderer* renderer,
+                                            int x, int baselineY,
+                                            int cutAbove, int cutBelow,
+                                            uint32_t fontsize,
+                                            const tsl::Color& color,
+                                            int leftPad, int fullWidth) {
+        // Clamp cuts to framebuffer-valid u32 range. enableScissoring takes
+        // (x, y, w, h) where the inclusive rect is [x, x+w) x [y, y+h).
+        const int fbH = (int)tsl::cfg::FramebufferHeight;
+        int yLo = (cutAbove <= kNoUpperCut) ? 0   : cutAbove;
+        int yHi = (cutBelow >= kNoLowerCut) ? fbH : cutBelow;
+        if (yLo < 0)   yLo = 0;
+        if (yHi > fbH) yHi = fbH;
+        if (yHi <= yLo) return; // nothing visible — skip draw entirely
+
+        // Horizontal scissor: cover the full glyph bitmap with a tiny pad so
+        // anti-aliased side pixels are never clipped.
+        const int fbW = (int)tsl::cfg::FramebufferWidth;
+        int xLo = x + leftPad - 1;
+        int xHi = x + leftPad + fullWidth + 1;
+        if (xLo < 0)   xLo = 0;
+        if (xHi > fbW) xHi = fbW;
+        if (xHi <= xLo) return;
+
+        renderer->enableScissoring((u32)xLo, (u32)yLo,
+                                   (u32)(xHi - xLo), (u32)(yHi - yLo));
+        renderer->drawString(ult::DIVIDER_SYMBOL, false,
+                             (float)x, (float)baselineY, fontsize, color);
+        renderer->disableScissoring();
+    }
+
+    // High-level helper: draws three dividers at the same x at three distinct
+    // baseline Y values (topY < centerY < botY in screen space). Each draw is
+    // scissored to a clean non-overlapping band so the three glyphs meet at
+    // the midpoint between their visual centers. No layout changes — the
+    // baselines remain exactly where the caller put them.
+    static inline void drawDividerStack3(tsl::gfx::Renderer* renderer,
+                                         int x,
+                                         int topY, int centerY, int botY,
+                                         uint32_t fontsize,
+                                         const tsl::Color& color) {
+        int centerOff = 0, leftPad = 0, fullW = 0;
+        if (!getDividerScissorMetrics(fontsize, centerOff, leftPad, fullW)) {
+            // Fallback: draw without scissoring (preserves prior behaviour).
+            renderer->drawString(ult::DIVIDER_SYMBOL, false, (float)x, (float)topY,    fontsize, color);
+            renderer->drawString(ult::DIVIDER_SYMBOL, false, (float)x, (float)centerY, fontsize, color);
+            renderer->drawString(ult::DIVIDER_SYMBOL, false, (float)x, (float)botY,    fontsize, color);
+            return;
+        }
+        const int cutTC = computeDividerCutY(topY,    centerY, centerOff);
+        const int cutCB = computeDividerCutY(centerY, botY,    centerOff);
+        drawDividerScissored(renderer, x, topY,    kNoUpperCut, cutTC,        fontsize, color, leftPad, fullW);
+        drawDividerScissored(renderer, x, centerY, cutTC,       cutCB,        fontsize, color, leftPad, fullW);
+        drawDividerScissored(renderer, x, botY,    cutCB,       kNoLowerCut,  fontsize, color, leftPad, fullW);
+    }
+} // namespace mini_divider_scissor
+
 class MiniOverlay : public tsl::Gui {
 private:
     char GPU_Load_c[32] = "";
@@ -441,174 +572,193 @@ public:
                         }
 
                     } else if (key == "GPU" || (key == "RAM" && settings.showRAMLoad && (R_SUCCEEDED(sysclkCheck) || R_SUCCEEDED(hocclkCheck)))) {
-                        //dimensions = renderer->drawString("100.0%@4444.4", false, 0, 0, fontsize, renderer->a(0x0000));
-                        // Split VDD2/VDDQ: width = row1 (VDD2 only), always wider than row2
-                        const bool splitVDDQ_A = key == "RAM" && settings.showStackedVDDQ &&
-                                                 settings.realVolts && settings.showVDD2 &&
-                                                 settings.showVDDQ && isMariko;
+                        // Component-based width: measure each piece once, sum by actual row topology.
+                        const bool splitVDDQ_A  = key == "RAM" && settings.showStackedVDDQ &&
+                                                  settings.realVolts && settings.showVDD2 &&
+                                                  settings.showVDDQ && isMariko;
                         const bool stackedVDDQ_A = key == "RAM" && !settings.showStackedVDDQ &&
-                                                      settings.realVolts && settings.showVDD2 &&
-                                                      settings.showVDDQ && isMariko;
-                        if (!settings.showRAMLoadCPUGPU) {
-                            if (!settings.realVolts) {
-                                width = renderer->getTextDimensions("100%@4444.4", false, fontsize).first;
-                            } else if (splitVDDQ_A) {
-                                width = settings.decimalVDD2
-                                    ? renderer->getTextDimensions("100%@4444.44444.4 mV", false, fontsize).first
-                                    : renderer->getTextDimensions("100%@4444.44444 mV", false, fontsize).first;
-                            } else if (stackedVDDQ_A) {
-                                width = settings.decimalVDD2
-                                    ? renderer->getTextDimensions("100%@4444.44444.4 mV444 mV", false, fontsize).first
-                                    : renderer->getTextDimensions("100%@4444.44444 mV444 mV", false, fontsize).first;
-                            } else {
-                                width = renderer->getTextDimensions("100%@4444.4444 mV", false, fontsize).first;
-                            }
-                        } else {
-                            // Helper: data-only width for load part
-                            const uint32_t sbs_data_w = !settings.showStackedRAMLoad
-                                ? renderer->getTextDimensions("[44% 44%] 100%@4444.4", false, fontsize).first
-                                : std::max(renderer->getTextDimensions("[44% 44%]", false, fontsize).first,
-                                           renderer->getTextDimensions("100%@4444.4", false, fontsize).first);
-                            if (!settings.realVolts) {
-                                width = sbs_data_w;
-                            } else if (splitVDDQ_A) {
-                                width = settings.decimalVDD2
-                                    ? sbs_data_w + renderer->getTextDimensions("4444.4 mV", false, fontsize).first
-                                    : sbs_data_w + renderer->getTextDimensions("4444 mV", false, fontsize).first;
-                            } else if (stackedVDDQ_A) {
-                                // Renderer draws "DIV + VDD2 + DIV + VDDQ" — connector between rails in both
-                                // voltAtEnd ON and OFF paths. Proxy includes both DIVIDER_SYMBOLs.
-                                width = settings.decimalVDD2
-                                    ? sbs_data_w + renderer->getTextDimensions(std::string(ult::DIVIDER_SYMBOL) + "4444.4 mV" + std::string(ult::DIVIDER_SYMBOL) + "444 mV", false, fontsize).first
-                                    : sbs_data_w + renderer->getTextDimensions(std::string(ult::DIVIDER_SYMBOL) + "4444 mV" + std::string(ult::DIVIDER_SYMBOL) + "444 mV", false, fontsize).first;
-                            } else {
-                                width = sbs_data_w + renderer->getTextDimensions(std::string(ult::DIVIDER_SYMBOL) + "444 mV", false, fontsize).first;
-                            }
-                        }
+                                                   settings.realVolts && settings.showVDD2 &&
+                                                   settings.showVDDQ && isMariko;
 
-                         // SBS GPU temp: add divider + temp + "GPU" label (GPU key only)
-                        if (key == "GPU" && settings.showGPUTemp && !settings.showStackedGPUTemp) {
-                            const uint32_t div_w = renderer->getTextDimensions(ult::DIVIDER_SYMBOL, false, fontsize).first;
-                            width += div_w + renderer->getTextDimensions("88°C", false, fontsize).first;
-                        }
-                        // RAM temp width accounting
-                        if (key == "RAM" && settings.showRAMTemp) {
-                            const uint32_t div_w = renderer->getTextDimensions(ult::DIVIDER_SYMBOL, false, fontsize).first;
-                            const uint32_t tmp_w = renderer->getTextDimensions("88°C", false, fontsize).first;
-                            if (splitVDDQ_A) {
-                                // Split VDD2+VDDQ: check if the extended VDDQ row (with temp)
-                                // or the center row (SBS temp) overflows the VDD2 proxy width.
-                                if (settings.showStackedRAMTemp) {
-                                    // non-SBS: temp goes on whichever row has it (BOT in normal, TOP in voltAtEnd).
-                                    // Width must cover the wider of (DIV+vdd2+DIV+temp) and (DIV+vddq+DIV+temp).
-                                    // Use actual vdd2_only_c/vddq_only_c to avoid underestimating wide values like "1100 mV"
-                                    const uint32_t sbs_dw4b = renderer->getTextDimensions(ult::DIVIDER_SYMBOL, false, fontsize).first;
-                                    const uint32_t vdd2_rw4b = vdd2_only_c[0] ? renderer->getTextDimensions(vdd2_only_c, false, fontsize).first : 0;
-                                    const uint32_t vddq_rw4b = vddq_only_c[0] ? renderer->getTextDimensions(vddq_only_c, false, fontsize).first : 0;
-                                    const uint32_t tmp_rw4b = mini_ram_temp_c[0] ? renderer->getTextDimensions(mini_ram_temp_c, false, fontsize).first
-                                                                                  : renderer->getTextDimensions("88°C", false, fontsize).first;
-                                    const uint32_t data_rw4b = !settings.showRAMLoadCPUGPU
-                                        ? renderer->getTextDimensions("100%@4444.4", false, fontsize).first
-                                        : !settings.showStackedRAMLoad
-                                            ? renderer->getTextDimensions("[44% 44%] 100%@4444.4", false, fontsize).first
-                                            : std::max(renderer->getTextDimensions("[44% 44%]", false, fontsize).first,
-                                                       renderer->getTextDimensions("100%@4444.4", false, fontsize).first);
-                                    const uint32_t volt_temp_row_w = data_rw4b + sbs_dw4b + std::max(vdd2_rw4b, vddq_rw4b) + sbs_dw4b + tmp_rw4b;
-                                    width = std::max(width, volt_temp_row_w);
+                        // --- Measure every component that can appear in any row ---
+                        auto mw = [&](const std::string& s) -> uint32_t {
+                            return renderer->getTextDimensions(s.c_str(), false, fontsize).first;
+                        };
+                        const uint32_t dw = mw(ult::DIVIDER_SYMBOL);
+
+                        // Data column (load line): depends on how the load is displayed
+                        const uint32_t data_w = [&]() -> uint32_t {
+                            if (!settings.showRAMLoadCPUGPU)
+                                return mw("100%@4444.4");
+                            if (!settings.showStackedRAMLoad)
+                                return mw("[44% 44%] 100%@4444.4");
+                            return std::max(mw("[44% 44%]"), mw("100%@4444.4"));
+                        }();
+
+                        // Volt components (actual live values used where available to handle wide strings)
+                        const uint32_t vdd2_w  = (key == "RAM" && settings.realVolts && settings.showVDD2)
+                            ? (vdd2_only_c[0]  ? renderer->getTextDimensions(vdd2_only_c,  false, fontsize).first
+                                               : (settings.decimalVDD2 ? mw("4444.4 mV") : mw("4444 mV")))
+                            : 0u;
+                        const uint32_t vddq_w  = (key == "RAM" && settings.realVolts && settings.showVDDQ && isMariko)
+                            ? (vddq_only_c[0]  ? renderer->getTextDimensions(vddq_only_c,  false, fontsize).first
+                                               : mw("444 mV"))
+                            : 0u;
+                        const uint32_t volt1_w = (key == "GPU" || (key == "RAM" && settings.realVolts
+                                                                    && !settings.showVDD2 && !settings.showVDDQ))
+                            ? mw("444 mV") : 0u;  // single-rail volt (non-Mariko or GPU)
+                        const uint32_t temp_w  = (key == "RAM" && settings.showRAMTemp)
+                            ? (mini_ram_temp_c[0] ? renderer->getTextDimensions(mini_ram_temp_c, false, fontsize).first
+                                                  : mw("88\xc2\xb0""C"))
+                            : 0u;
+                        const uint32_t gpu_temp_w = (key == "GPU" && settings.showGPUTemp && !settings.showStackedGPUTemp)
+                            ? mw("88\xc2\xb0""C") : 0u;
+
+                        if (key == "GPU") {
+                            // GPU row: data + (dw + volt1) + (dw + gpu_temp)
+                            width = data_w
+                                + (settings.realVolts ? dw + volt1_w : 0u)
+                                + (gpu_temp_w ? dw + gpu_temp_w : 0u);
+                        } else {
+                            // RAM with load enabled.
+                            // Determine which rows exist and their widths, then take the max.
+                            if (!settings.realVolts) {
+                                // No volts at all — just the data line
+                                width = data_w;
+                            } else if (splitVDDQ_A) {
+                                // Stacked VDD2 / VDDQ: two rows share the data left-column.
+                                // Layout depends on showStackedRAMTemp (temp-stacked) and voltageAtEndRAM.
+                                //
+                                // showStackedRAMTemp=false = temp at center row (next to volt)
+                                // showStackedRAMTemp=true  = temp on its own top or bottom row
+                                uint32_t top_row_w = 0, bot_row_w = 0, center_row_w = 0;
+
+                                if (!settings.showRAMTemp || !temp_w) {
+                                    // No temp: TOP=data+dw+vdd2, BOT=dw+vddq
+                                    top_row_w    = data_w + dw + vdd2_w;
+                                    bot_row_w    = dw + vddq_w;
+                                } else if (!settings.showStackedRAMTemp) {
+                                    // Temp at center row (SBS mode):
+                                    if (settings.voltageAtEndRAM) {
+                                        // CENTER: data + dw + temp + dw + vdd2 (fork after temp)
+                                        // TOP:    (fork) + dw + vdd2  — same right edge as center
+                                        // BOT:    (fork) + dw + vddq  — same right edge as vddq
+                                        // Width governed by the CENTER row
+                                        center_row_w = data_w + dw + temp_w + dw + std::max(vdd2_w, vddq_w);
+                                    } else {
+                                        // Normal: CENTER: data + dw + max(vdd2,vddq) + dw + temp
+                                        center_row_w = data_w + dw + std::max(vdd2_w, vddq_w) + dw + temp_w;
+                                    }
+                                    top_row_w = data_w + dw + vdd2_w;
+                                    bot_row_w = dw + vddq_w;
                                 } else {
-                                    // SBS center row width depends on VoltAtEnd:
-                                    // Normal:    data + div + max(vdd2,vddq) + div + temp
-                                    // VoltAtEnd: data + div + temp + div + max(vdd2,vddq)
-                                    const uint32_t vdd2_rw4 = vdd2_only_c[0] ? renderer->getTextDimensions(vdd2_only_c, false, fontsize).first : 0;
-                                    const uint32_t vddq_rw4 = vddq_only_c[0] ? renderer->getTextDimensions(vddq_only_c, false, fontsize).first : 0;
-                                    const uint32_t sbs_dw4 = renderer->getTextDimensions(ult::DIVIDER_SYMBOL, false, fontsize).first;
-                                    const uint32_t data_rw4 = !settings.showRAMLoadCPUGPU
-                                        ? renderer->getTextDimensions("100%@4444.4", false, fontsize).first
-                                        : !settings.showStackedRAMLoad
-                                            ? renderer->getTextDimensions("[44% 44%] 100%@4444.4", false, fontsize).first
-                                            : std::max(renderer->getTextDimensions("[44% 44%]", false, fontsize).first,
-                                                       renderer->getTextDimensions("100%@4444.4", false, fontsize).first);
-                                    // Total is same either way; max(vdd2,vddq)+div+temp == temp+div+max(vdd2,vddq)
-                                    const uint32_t ctr_row_w = data_rw4 + sbs_dw4 + tmp_w + sbs_dw4 + std::max(vdd2_rw4, vddq_rw4);
-                                    width = std::max(width, ctr_row_w);
+                                    // Temp on its own row (stacked):
+                                    if (settings.voltageAtEndRAM) {
+                                        // TOP: data + dw + temp + dw + vdd2
+                                        // BOT: dw + vddq
+                                        top_row_w = data_w + dw + temp_w + dw + vdd2_w;
+                                        bot_row_w = dw + vddq_w;
+                                    } else {
+                                        // TOP: data + dw + vdd2
+                                        // BOT: data + dw + vddq + dw + temp  (bot row starts at baseX)
+                                        top_row_w = data_w + dw + vdd2_w;
+                                        bot_row_w = data_w + dw + vddq_w + dw + temp_w;
+                                    }
+                                }
+                                width = std::max({top_row_w, bot_row_w, center_row_w});
+
+                            } else if (stackedVDDQ_A) {
+                                // Non-stacked VDD2+VDDQ: both rails inline on the same row
+                                // Layout: data + dw + vdd2 + dw + vddq (inline)
+                                uint32_t base_row = data_w + dw + vdd2_w + dw + vddq_w;
+                                width = base_row;
+                                if (settings.showRAMTemp && temp_w) {
+                                    const bool rts = settings.showStackedRAMTemp;
+                                    if (!rts) width += dw + temp_w;
+                                    // stacked: temp on separate row, base_row >= temp row
                                 }
                             } else {
-                                // Not split VDD2+VDDQ: inline temp appended to volt
-                                // Skip if this is a ramTempSplit case (handled by proxy already)
-                                const bool rts_w = settings.showStackedRAMTemp && settings.realVolts &&
-                                                   ((settings.showVDDQ && isMariko && !settings.showVDD2) ||
-                                                    (settings.showVDD2 && !settings.showVDDQ));
-
-                                if (!rts_w) {
-                                    width += div_w + tmp_w;
+                                // Single volt rail (non-Mariko or only one rail shown)
+                                const uint32_t single_v = settings.showVDD2 ? vdd2_w
+                                                        : settings.showVDDQ  ? vddq_w
+                                                        : volt1_w;
+                                uint32_t base_row = data_w + dw + single_v;
+                                width = base_row;
+                                if (settings.showRAMTemp && temp_w) {
+                                    const bool rts = settings.showStackedRAMTemp && settings.realVolts &&
+                                                     ((settings.showVDDQ && isMariko && !settings.showVDD2) ||
+                                                      (settings.showVDD2 && !settings.showVDDQ));
+                                    if (!rts) width = base_row + dw + temp_w;
                                 }
                             }
                         }
                     } else if (key == "RAM" && (!settings.showRAMLoad || (R_FAILED(sysclkCheck) && R_FAILED(hocclkCheck)))) {
-                        //dimensions = renderer->drawString("44444444MB@4444.4", false, 0, 0, fontsize, renderer->a(0x0000));
-                        const bool splitVDDQ_B = settings.showStackedVDDQ &&
-                                                 settings.realVolts && settings.showVDD2 &&
-                                                 settings.showVDDQ && isMariko;
-                        if (!settings.realVolts) {
-                            width = renderer->getTextDimensions("100%@4444.4", false, fontsize).first;
-                        } else {
-                            if (isMariko) {
-                                // Split: width = row1 (VDD2 only), always >= row2 (VDDQ alone)
-                                if (splitVDDQ_B) {
-                                    width = settings.decimalVDD2
-                                        ? renderer->getTextDimensions("100%@4444.44444.4 mV", false, fontsize).first
-                                        : renderer->getTextDimensions("100%@4444.44444 mV", false, fontsize).first;
-                                } else if (settings.showVDD2 && settings.decimalVDD2 && settings.showVDDQ)
-                                    width = renderer->getTextDimensions("100%@4444.44444.4 mV444 mV", false, fontsize).first;
-                                else if (settings.showVDD2 && !settings.decimalVDD2 && settings.showVDDQ)
-                                    width = renderer->getTextDimensions("100%@4444.44444 mV444 mV", false, fontsize).first;
-                                else if (settings.showVDD2 && settings.decimalVDD2)
-                                    width = renderer->getTextDimensions("100%@4444.44444.4 mV", false, fontsize).first;
-                                else if (settings.showVDD2 && !settings.decimalVDD2)
-                                    width = renderer->getTextDimensions("100%@4444.44444 mV", false, fontsize).first;
-                                else if (settings.showVDDQ)
-                                    width = renderer->getTextDimensions("100%@4444.4444 mV", false, fontsize).first;
-                            } else {
-                                if (settings.decimalVDD2)
-                                    width = renderer->getTextDimensions("100%@4444.44444.4 mV", false, fontsize).first;
-                                else
-                                    width = renderer->getTextDimensions("100%@4444.44444 mV", false, fontsize).first;
-                            }
-                        }
-                        // RAM temp width for RAM-only block
-                        if (settings.showRAMTemp) {
-                            const uint32_t div_wB = renderer->getTextDimensions(ult::DIVIDER_SYMBOL, false, fontsize).first;
-                            const uint32_t tmp_wB = renderer->getTextDimensions("88°C", false, fontsize).first;
-                            if (splitVDDQ_B) {
-                                // Split VDD2+VDDQ: ensure VDDQ row (or center row SBS) is covered
-                                if (settings.showStackedRAMTemp) {
-                                    // non-SBS: temp goes on whichever row has it (BOT in normal, TOP in voltAtEnd).
-                                    // Width must cover the wider of (DIV+vdd2+DIV+temp) and (DIV+vddq+DIV+temp).
-                                    // Use actual vdd2_only_c/vddq_only_c to avoid underestimating wide values.
-                                    const uint32_t sbs_dw5 = renderer->getTextDimensions(ult::DIVIDER_SYMBOL, false, fontsize).first;
-                                    const uint32_t vdd2_rw5 = vdd2_only_c[0] ? renderer->getTextDimensions(vdd2_only_c, false, fontsize).first : 0;
-                                    const uint32_t vddq_rw5 = vddq_only_c[0] ? renderer->getTextDimensions(vddq_only_c, false, fontsize).first : 0;
-                                    const uint32_t tmp_rw5 = mini_ram_temp_c[0] ? renderer->getTextDimensions(mini_ram_temp_c, false, fontsize).first
-                                                                                  : renderer->getTextDimensions("88°C", false, fontsize).first;
-                                    const uint32_t volt_temp_row_w = renderer->getTextDimensions("100%@4444.4", false, fontsize).first + sbs_dw5 + std::max(vdd2_rw5, vddq_rw5) + sbs_dw5 + tmp_rw5;
-                                    width = std::max(width, volt_temp_row_w);
-                                } else {
-                                    // SBS center row: temp+div+max(vdd2,vddq) or max(vdd2,vddq)+div+temp — same total
-                                    const uint32_t vdd2_rw5 = vdd2_only_c[0] ? renderer->getTextDimensions(vdd2_only_c, false, fontsize).first : 0;
-                                    const uint32_t vddq_rw5 = vddq_only_c[0] ? renderer->getTextDimensions(vddq_only_c, false, fontsize).first : 0;
-                                    const uint32_t sbs_dw5 = renderer->getTextDimensions(ult::DIVIDER_SYMBOL, false, fontsize).first;
-                                    const uint32_t data_rw5 = renderer->getTextDimensions("100%@4444.4", false, fontsize).first;
-                                    const uint32_t ctr_row_w = data_rw5 + sbs_dw5 + tmp_wB + sbs_dw5 + std::max(vdd2_rw5, vddq_rw5);
-                                    width = std::max(width, ctr_row_w);
-                                }
-                            } else {
-                                const bool rts_wB = settings.showStackedRAMTemp && settings.realVolts &&
-                                                    ((settings.showVDDQ && isMariko && !settings.showVDD2) ||
-                                                     (settings.showVDD2 && !settings.showVDDQ));
+                        // RAM without clock/load: component-based width.
+                        auto mwR = [&](const std::string& s) -> uint32_t {
+                            return renderer->getTextDimensions(s.c_str(), false, fontsize).first;
+                        };
+                        const uint32_t dw_R   = mwR(ult::DIVIDER_SYMBOL);
+                        const uint32_t data_wR = mwR("100%@4444.4");  // RAM usage proxy
+                        const uint32_t vdd2_wR = (settings.realVolts && settings.showVDD2 && isMariko)
+                            ? (vdd2_only_c[0]  ? renderer->getTextDimensions(vdd2_only_c,  false, fontsize).first
+                                               : (settings.decimalVDD2 ? mwR("4444.4 mV") : mwR("4444 mV")))
+                            : 0u;
+                        const uint32_t vddq_wR = (settings.realVolts && settings.showVDDQ && isMariko)
+                            ? (vddq_only_c[0]  ? renderer->getTextDimensions(vddq_only_c,  false, fontsize).first
+                                               : mwR("444 mV"))
+                            : 0u;
+                        const uint32_t svolt_wR= (settings.realVolts && !isMariko)
+                            ? (settings.decimalVDD2 ? mwR("4444.4 mV") : mwR("4444 mV")) : 0u;
+                        const uint32_t temp_wR = settings.showRAMTemp
+                            ? (mini_ram_temp_c[0] ? renderer->getTextDimensions(mini_ram_temp_c, false, fontsize).first
+                                                  : mwR("88\xc2\xb0""C"))
+                            : 0u;
+                        const bool splitVDDQ_B  = settings.showStackedVDDQ && settings.realVolts &&
+                                                  settings.showVDD2 && settings.showVDDQ && isMariko;
+                        const bool stackedVDDQ_B = !settings.showStackedVDDQ && settings.realVolts &&
+                                                   settings.showVDD2 && settings.showVDDQ && isMariko;
 
-                                if (!rts_wB) {
-                                    width += div_wB + tmp_wB;
+                        if (!settings.realVolts) {
+                            width = data_wR + (temp_wR ? dw_R + temp_wR : 0u);
+                        } else if (splitVDDQ_B) {
+                            // Stacked VDD2/VDDQ: same topology as splitVDDQ_A but data_w = RAM usage proxy
+                            uint32_t top_row_w = 0, bot_row_w = 0, center_row_w = 0;
+                            if (!settings.showRAMTemp || !temp_wR) {
+                                top_row_w = data_wR + dw_R + vdd2_wR;
+                                bot_row_w = dw_R + vddq_wR;
+                            } else if (!settings.showStackedRAMTemp) {
+                                if (settings.voltageAtEndRAM)
+                                    center_row_w = data_wR + dw_R + temp_wR + dw_R + std::max(vdd2_wR, vddq_wR);
+                                else
+                                    center_row_w = data_wR + dw_R + std::max(vdd2_wR, vddq_wR) + dw_R + temp_wR;
+                                top_row_w = data_wR + dw_R + vdd2_wR;
+                                bot_row_w = dw_R + vddq_wR;
+                            } else {
+                                if (settings.voltageAtEndRAM) {
+                                    top_row_w = data_wR + dw_R + temp_wR + dw_R + vdd2_wR;
+                                    bot_row_w = dw_R + vddq_wR;
+                                } else {
+                                    top_row_w = data_wR + dw_R + vdd2_wR;
+                                    bot_row_w = data_wR + dw_R + vddq_wR + dw_R + temp_wR;
                                 }
+                            }
+                            width = std::max({top_row_w, bot_row_w, center_row_w});
+                        } else if (stackedVDDQ_B) {
+                            // Inline VDD2+VDDQ
+                            width = data_wR + dw_R + vdd2_wR + dw_R + vddq_wR;
+                            if (settings.showRAMTemp && temp_wR && !settings.showStackedRAMTemp)
+                                width += dw_R + temp_wR;
+                        } else {
+                            // Single rail or non-Mariko
+                            const uint32_t single_v = isMariko
+                                ? (settings.showVDD2 ? vdd2_wR : settings.showVDDQ ? vddq_wR : 0u)
+                                : svolt_wR;
+                            width = data_wR + (single_v ? dw_R + single_v : 0u);
+                            if (settings.showRAMTemp && temp_wR) {
+                                const bool rts = settings.showStackedRAMTemp && settings.realVolts &&
+                                                 ((settings.showVDDQ && isMariko && !settings.showVDD2) ||
+                                                  (settings.showVDD2 && !settings.showVDDQ));
+                                if (!rts) width += dw_R + temp_wR;
                             }
                         }
                     } else if (key == "SOC") {                // new block
@@ -1107,6 +1257,25 @@ public:
             static int ramTempVoltColX = 0;  // shared between RAM_SVDDQ_ONLY and RAM_STEMP
             static int ramLoadVoltColX = 0;  // shared between RAM_SLOAD_TOP and RAM_SLOAD_BOT
             static int ramLoadTopBaseY = 0;  // RAM_SLOAD_TOP baseY, used by BOT to compute center-Y
+            // Cross-block 3-divider scissor cuts: written in the TOP/CENTER label block,
+            // read in the BOT label block (which runs on the next iteration). These are
+            // screen-Y values; the BOT-row divider should be drawn scissored to
+            // [cutCB, kNoLowerCut). The TOP-row divider in the same block as the center
+            // is drawn locally with [kNoUpperCut, cutTC); the center divider with [cutTC, cutCB).
+            // A negative value indicates "no active cut for this pair this frame".
+            static int sfanStackCutCB         = -1; // TMP_SFAN center → TMP_SVOLT bot
+            static int sfanStackCutTC         = -1; // (for symmetry; may not be needed if no top in SFAN itself)
+            static int ramSplitStackCutCB     = -1; // RAM_SVDD2 center → RAM_SVDDQ bot
+            static int cpuSplitStackCutCB     = -1; // CPU_SVOLT center → CPU_STEMP bot
+            static int gpuSplitStackCutCB     = -1; // GPU_SVOLT center → GPU_STEMP bot
+            static int ramTempSplitStackCutCB = -1; // RAM_SVDDQ_ONLY center → RAM_STEMP bot
+            static int ramLoadStackCutCB      = -1; // RAM_SLOAD_TOP center → RAM_SLOAD_BOT bot
+            // Glyph metrics for the divider (cached per fontsize at start of each frame
+            // by the helper). Filled in by getDividerScissorMetrics when first needed.
+            // Used to scissor cross-block draws without re-querying glyph metrics.
+            static int dividerCenterOffY = 0;
+            static int dividerLeftPad    = 0;
+            static int dividerFullW      = 0;
             static int cpuFullSplitBracketsW = 0; // brackets pixel width for CPU_SFULL/CPU_SFREQ alignment
             static int cpuFullSplitColW      = 0; // column width = max(bracketsW, freqW) — whichever line is longer
             static std::vector<std::string> _variableLines;
@@ -1342,11 +1511,12 @@ public:
                         int afterContentX = fanX;
                         // 3-tall divider stack: connecting divider between 2-row temp data and centered fan/volt.
                         // Draw at top-row Y (baseY), center Y (fanY), and bot-row Y so it spans the full block height.
+                        // Scissored so the three glyphs meet pixel-perfect without alpha-blend overlap shading.
                         const int tmpTopRowY = baseY;
                         const int tmpBotRowY = baseY + (int)fontsize + (int)settings.spacing / 2;
-                        renderer->drawString(ult::DIVIDER_SYMBOL, false, fanX, tmpTopRowY, fontsize, settings.separatorColor);
-                        renderer->drawString(ult::DIVIDER_SYMBOL, false, fanX, fanY,       fontsize, settings.separatorColor);
-                        renderer->drawString(ult::DIVIDER_SYMBOL, false, fanX, tmpBotRowY, fontsize, settings.separatorColor);
+                        mini_divider_scissor::drawDividerStack3(renderer, fanX,
+                            tmpTopRowY, fanY, tmpBotRowY,
+                            fontsize, settings.separatorColor);
                         afterContentX = fanX + (int)renderer->getTextDimensions(ult::DIVIDER_SYMBOL, false, fontsize).first;
                         if (settings.showFanPercentage) {
                             const int fanDuty = safeFanDuty((int)Rotation_Duty);
@@ -1430,13 +1600,19 @@ public:
                         renderer->drawString(tmpLbl, false, tmpLblX + _frameOffsetX + clippingOffsetX,
                             baseY, fontsize, settings.catColor);
                     }
-                    // Draw fan percentage inline after the temps (if enabled)
-                    int afterFanX = currentX; // tracks X after fan draw (or last temp if no fan)
+                    // voltageAtEndTMP OFF => div+volt then div+fan; ON => div+fan then div+volt.
+                    int afterFanX = currentX;
+                    const bool compHasVolt = settings.realVolts && settings.showSOCVoltage && MINI_SOC_volt_c[0];
+                    if (!settings.voltageAtEndTMP && compHasVolt) {
+                        const int voltDivX = afterFanX + (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, afterFanX, baseY, fontsize, settings.separatorColor).first;
+                        renderer->drawStringWithColoredSections(std::string(MINI_SOC_volt_c), false, specialChars, voltDivX, baseY, fontsize, settings.textColor, settings.separatorColor);
+                        afterFanX = voltDivX + (int)renderer->getTextDimensions(std::string(MINI_SOC_volt_c), false, fontsize).first;
+                    }
                     if (settings.showFanPercentage) {
                         const int fanDuty = safeFanDuty((int)Rotation_Duty);
                         const int fanY = baseY;
-                        const int afterDivX = currentX + renderer->drawString(
-                            ult::DIVIDER_SYMBOL, false, currentX, fanY, fontsize, settings.separatorColor).first;
+                        const int afterDivX = afterFanX + renderer->drawString(
+                            ult::DIVIDER_SYMBOL, false, afterFanX, fanY, fontsize, settings.separatorColor).first;
                         char fanPctStr[24];
                         snprintf(fanPctStr, sizeof(fanPctStr), " %d%%", fanDuty);
                         static const std::vector<std::string> compFanIconChars = {""};
@@ -1444,8 +1620,7 @@ public:
                             afterDivX, fanY, fontsize, settings.textColor, settings.catColor);
                         afterFanX = afterDivX + (int)renderer->getTextDimensions(std::string(fanPctStr), false, fontsize).first;
                     }
-                    // Draw SOC voltage after fan (or directly after temps if fan is off)
-                    if (settings.realVolts && settings.showSOCVoltage && MINI_SOC_volt_c[0]) {
+                    if (settings.voltageAtEndTMP && compHasVolt) {
                         const int voltDivX = afterFanX + (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, afterFanX, baseY, fontsize, settings.separatorColor).first;
                         renderer->drawStringWithColoredSections(std::string(MINI_SOC_volt_c), false, specialChars, voltDivX, baseY, fontsize, settings.textColor, settings.separatorColor);
                     }
@@ -1455,6 +1630,56 @@ public:
                     // rSplitTemp puts volt or temp on top depending on voltageAtEndRAM; otherwise nothing on top.
                     const int ramLoadCtrY = baseY + ((int)fontsize + (int)settings.spacing / 2) / 2;
                     ramLoadTopBaseY = baseY;  // store TOP baseY so BOT can compute center-Y consistently
+                    // 3-stack scissoring: top=baseY, center=ramLoadCtrY, bot=ramLoadBotY (in RAM_SLOAD_BOT).
+                    // Predicted bot Y = baseY + fontsize + spacing/2.
+                    const int ramLoadPredictedBotY = baseY + (int)fontsize + (int)settings.spacing / 2;
+                    bool ramLoadScissorOK = mini_divider_scissor::getDividerScissorMetrics(
+                        fontsize, dividerCenterOffY, dividerLeftPad, dividerFullW);
+                    int ramLoadCutTC = 0;
+                    int ramLoadCutCB = 0;
+                    if (ramLoadScissorOK) {
+                        ramLoadCutTC = mini_divider_scissor::computeDividerCutY(
+                            baseY, ramLoadCtrY, dividerCenterOffY);
+                        ramLoadCutCB = mini_divider_scissor::computeDividerCutY(
+                            ramLoadCtrY, ramLoadPredictedBotY, dividerCenterOffY);
+                    }
+                    ramLoadStackCutCB = ramLoadScissorOK ? ramLoadCutCB : -1;
+
+                    auto rlDrawCenterDiv = [&](int dx) {
+                        if (ramLoadScissorOK) {
+                            mini_divider_scissor::drawDividerScissored(renderer, dx, ramLoadCtrY,
+                                ramLoadCutTC, ramLoadCutCB, fontsize, settings.separatorColor,
+                                dividerLeftPad, dividerFullW);
+                        } else {
+                            renderer->drawString(ult::DIVIDER_SYMBOL, false, dx, ramLoadCtrY,
+                                fontsize, settings.separatorColor);
+                        }
+                    };
+                    auto rlDrawTopRowDiv = [&](int dx) {
+                        if (ramLoadScissorOK) {
+                            mini_divider_scissor::drawDividerScissored(renderer, dx, baseY,
+                                mini_divider_scissor::kNoUpperCut, ramLoadCutTC,
+                                fontsize, settings.separatorColor,
+                                dividerLeftPad, dividerFullW);
+                        } else {
+                            renderer->drawString(ult::DIVIDER_SYMBOL, false, dx, baseY,
+                                fontsize, settings.separatorColor);
+                        }
+                    };
+                    // Bot-row DIV drawn FROM TOP (only in voltAtEnd+SBS path), at the pre-fork ramLoadVoltColX.
+                    // Y = rLoadBotY = ramLoadPredictedBotY.
+                    auto rlDrawBotRowDivFromTop = [&](int dx) {
+                        if (ramLoadScissorOK) {
+                            mini_divider_scissor::drawDividerScissored(renderer, dx, ramLoadPredictedBotY,
+                                ramLoadCutCB, mini_divider_scissor::kNoLowerCut,
+                                fontsize, settings.separatorColor,
+                                dividerLeftPad, dividerFullW);
+                        } else {
+                            renderer->drawString(ult::DIVIDER_SYMBOL, false, dx, ramLoadPredictedBotY,
+                                fontsize, settings.separatorColor);
+                        }
+                    };
+
                     if (settings.showLabels) {
                         const std::string ramLbl = "RAM";
                         const uint32_t ramLblW = renderer->getTextDimensions(ramLbl, false, fontsize).first;
@@ -1485,8 +1710,7 @@ public:
                         // Stacked VDD2/VDDQ. Mirror SVDD2 top-row logic.
                         // Centre connector divider at ramLoadCtrY, linking the TOP-row DIV (before VDD2)
                         // and the BOT-row DIV (before VDDQ) into a continuous fork.
-                        renderer->drawString(ult::DIVIDER_SYMBOL, false, ramLoadVoltColX,
-                            ramLoadCtrY, fontsize, settings.separatorColor);
+                        rlDrawCenterDiv(ramLoadVoltColX);
                         const uint32_t sbs_dw = renderer->getTextDimensions(ult::DIVIDER_SYMBOL, false, fontsize).first;
                         if (settings.showRAMTemp && mini_ram_temp_c[0] && settings.voltageAtEndRAM &&
                             !settings.showStackedRAMTemp) {
@@ -1496,22 +1720,28 @@ public:
                             // Shift ramLoadVoltColX past the temp column so BOT's VDDQ aligns with TOP's VDD2.
                             // The LEFT side of the temp column needs a 3-tall divider stack:
                             // center connector already drawn above; add top-row and bot-row dividers here.
-                            const int rLoadBotY = baseY + (int)fontsize + (int)settings.spacing / 2;
-                            renderer->drawString(ult::DIVIDER_SYMBOL, false, ramLoadVoltColX, baseY,     fontsize, settings.separatorColor);
-                            renderer->drawString(ult::DIVIDER_SYMBOL, false, ramLoadVoltColX, rLoadBotY, fontsize, settings.separatorColor);
+                            // We draw the BOT row's divider from here (since ramLoadVoltColX will mutate
+                            // before RAM_SLOAD_BOT runs). We also clear ramLoadStackCutCB so BOT doesn't
+                            // re-draw it (BOT will use the new ramLoadVoltColX for its own DIVs which are
+                            // separate from this pre-fork stack).
+                            rlDrawTopRowDiv(ramLoadVoltColX);
+                            rlDrawBotRowDivFromTop(ramLoadVoltColX);
                             const int rtv = atoi(mini_ram_temp_c);
                             int cx = ramLoadVoltColX + (int)sbs_dw;
                             renderer->drawString(std::string(mini_ram_temp_c), false, cx, ramLoadCtrY, fontsize,
                                 settings.useDynamicColors ? tsl::GradientColor((float)rtv, tsl::DEFAULT_TEMP_RANGE_HIGH) : settings.textColor);
                             cx += (int)renderer->getTextDimensions(std::string(mini_ram_temp_c), false, fontsize).first;
                             // Right-fork connector at center Y, before the new volt column.
-                            renderer->drawString(ult::DIVIDER_SYMBOL, false, cx, ramLoadCtrY, fontsize, settings.separatorColor);
+                            // This is the center of a NEW 3-stack (new col). Bot of that new stack is the
+                            // VDDQ divider drawn by RAM_SLOAD_BOT at the new ramLoadVoltColX — so the cut
+                            // we wrote at ramLoadStackCutCB is correct for it (same Y math).
+                            rlDrawCenterDiv(cx);
                             ramLoadVoltColX = cx;  // VDD2/VDDQ start at the right-fork connector X
                             // Draw VDD2 at the new column on baseY
                             if (vdd2_only_c[0]) {
                                 int rx = ramLoadVoltColX;
-                                rx += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, rx, baseY,
-                                    fontsize, settings.separatorColor).first;
+                                rlDrawTopRowDiv(rx);
+                                rx += (int)renderer->getTextDimensions(ult::DIVIDER_SYMBOL, false, fontsize).first;
                                 renderer->drawStringWithColoredSections(std::string(vdd2_only_c), false,
                                     specialChars, rx, baseY, fontsize, settings.textColor, settings.separatorColor);
                             }
@@ -1523,11 +1753,15 @@ public:
                             if (vdd2_only_c[0]) {
                                 const int rtv = atoi(mini_ram_temp_c);
                                 int rx = ramLoadVoltColX;
-                                rx += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, rx, baseY, fontsize, settings.separatorColor).first;
+                                rlDrawTopRowDiv(rx);
+                                rx += (int)renderer->getTextDimensions(ult::DIVIDER_SYMBOL, false, fontsize).first;
                                 renderer->drawString(std::string(mini_ram_temp_c), false, rx, baseY, fontsize,
                                     settings.useDynamicColors ? tsl::GradientColor((float)rtv, tsl::DEFAULT_TEMP_RANGE_HIGH) : settings.textColor);
                                 rx += (int)renderer->getTextDimensions(std::string(mini_ram_temp_c), false, fontsize).first;
-                                rx += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, rx, baseY, fontsize, settings.separatorColor).first;
+                                // Div between temp and VDD2 on the top row — different X from the
+                                // ramLoadVoltColX 3-stack column, so unscissored (no paired top/bot here).
+                                rx += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, rx, baseY,
+                                    fontsize, settings.separatorColor).first;
                                 renderer->drawStringWithColoredSections(std::string(vdd2_only_c), false,
                                     specialChars, rx, baseY, fontsize, settings.textColor, settings.separatorColor);
                             }
@@ -1535,8 +1769,8 @@ public:
                             // Default rSplitVDDQ TOP: VDD2 at ramLoadVoltColX on baseY
                             if (vdd2_only_c[0]) {
                                 int rx = ramLoadVoltColX;
-                                rx += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, rx, baseY,
-                                    fontsize, settings.separatorColor).first;
+                                rlDrawTopRowDiv(rx);
+                                rx += (int)renderer->getTextDimensions(ult::DIVIDER_SYMBOL, false, fontsize).first;
                                 renderer->drawStringWithColoredSections(std::string(vdd2_only_c), false,
                                     specialChars, rx, baseY, fontsize, settings.textColor, settings.separatorColor);
                             }
@@ -1544,15 +1778,14 @@ public:
                     } else if (rSplitTemp) {
                         // Single rail + non-SBS temp: mirror SVDDQ_ONLY top row.
                         // Centre connector divider at ramLoadCtrY (links TOP DIV and BOT DIV).
-                        renderer->drawString(ult::DIVIDER_SYMBOL, false, ramLoadVoltColX,
-                            ramLoadCtrY, fontsize, settings.separatorColor);
+                        rlDrawCenterDiv(ramLoadVoltColX);
                         const char* rTopVolt = vddq_only_c[0] ? vddq_only_c : vdd2_only_c;
                         if (settings.voltageAtEndRAM) {
                             // VoltAtEnd: temp at top
                             if (mini_ram_temp_c[0]) {
                                 int rx = ramLoadVoltColX;
-                                rx += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, rx, baseY,
-                                    fontsize, settings.separatorColor).first;
+                                rlDrawTopRowDiv(rx);
+                                rx += (int)renderer->getTextDimensions(ult::DIVIDER_SYMBOL, false, fontsize).first;
                                 const int tv = atoi(mini_ram_temp_c);
                                 renderer->drawString(std::string(mini_ram_temp_c), false, rx, baseY, fontsize,
                                     settings.useDynamicColors ? tsl::GradientColor((float)tv, tsl::DEFAULT_TEMP_RANGE_HIGH) : settings.textColor);
@@ -1561,14 +1794,15 @@ public:
                             // Normal: volt at top
                             if (rTopVolt[0]) {
                                 int rx = ramLoadVoltColX;
-                                rx += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, rx, baseY,
-                                    fontsize, settings.separatorColor).first;
+                                rlDrawTopRowDiv(rx);
+                                rx += (int)renderer->getTextDimensions(ult::DIVIDER_SYMBOL, false, fontsize).first;
                                 renderer->drawStringWithColoredSections(std::string(rTopVolt), false,
                                     specialChars, rx, baseY, fontsize, settings.textColor, settings.separatorColor);
                             }
                         }
                     }
                     // else: inline mode — TOP row draws nothing extra; BOT row handles all volt/temp.
+                    // In inline mode, no center/top DIVs in this label block; BOT will run the inline path.
 
                 } else if (labelIndex < labelLines.size() && labelLines[labelIndex] == "RAM_SLOAD_BOT") {
                     // RAM load split row 2: total%@freq at baseX, then right-side at ramLoadVoltColX.
@@ -1577,6 +1811,20 @@ public:
                     // TOP's center connector position exactly. Using BOT's baseY directly would point
                     // BELOW the bot row instead of between the two rows.
                     const int ramLoadCtrY = ramLoadTopBaseY + ((int)fontsize + (int)settings.spacing / 2) / 2;
+                    // 3-stack scissoring: BOT row. ramLoadStackCutCB was written by RAM_SLOAD_TOP.
+                    // (In inline mode, the inline block computes its own cuts locally and doesn't read this.)
+                    const bool ramLoadBotScissorOK = (ramLoadStackCutCB >= 0);
+                    auto rlbDrawBotRowDiv = [&](int dx) {
+                        if (ramLoadBotScissorOK) {
+                            mini_divider_scissor::drawDividerScissored(renderer, dx, ramLoadBotY,
+                                ramLoadStackCutCB, mini_divider_scissor::kNoLowerCut,
+                                fontsize, settings.separatorColor,
+                                dividerLeftPad, dividerFullW);
+                        } else {
+                            renderer->drawString(ult::DIVIDER_SYMBOL, false, dx, ramLoadBotY,
+                                fontsize, settings.separatorColor);
+                        }
+                    };
                     if (MINI_RAM_load_bot_c[0]) {
                         renderer->drawString(MINI_RAM_load_bot_c, false, baseX, ramLoadBotY, fontsize, settings.textColor);
                     }
@@ -1599,14 +1847,16 @@ public:
                         const uint32_t sbs_dw = renderer->getTextDimensions(ult::DIVIDER_SYMBOL, false, fontsize).first;
                         if (vddq_only_c[0]) {
                             int rx = afterBotX;
-                            rx += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, rx, ramLoadBotY,
-                                fontsize, settings.separatorColor).first;
+                            // Bot-row DIV before VDDQ — scissored to bottom band of the 3-stack.
+                            rlbDrawBotRowDiv(rx);
+                            rx += (int)renderer->getTextDimensions(ult::DIVIDER_SYMBOL, false, fontsize).first;
                             renderer->drawStringWithColoredSections(std::string(vddq_only_c), false,
                                 specialChars, rx, ramLoadBotY, fontsize, settings.textColor, settings.separatorColor);
                             // Non-SBS temp appended after VDDQ at BOT (skip when voltAtEnd — temp on TOP)
                             if (settings.showRAMTemp && settings.showStackedRAMTemp &&
                                 !settings.voltageAtEndRAM && mini_ram_temp_c[0]) {
                                 rx += (int)renderer->getTextDimensions(std::string(vddq_only_c), false, fontsize).first;
+                                // Div before temp — different X from 3-stack column (afterBotX) → unscissored.
                                 rx += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, rx, ramLoadBotY,
                                     fontsize, settings.separatorColor).first;
                                 const int rtv = atoi(mini_ram_temp_c);
@@ -1628,13 +1878,11 @@ public:
                             const int dividerX = afterBotX + (int)sbs_dw + (int)std::max(vdd2_rw, vddq_rw);
                             // 3-tall divider stack: top row, center, bot row — connects the 2-row volt column
                             // (VDD2 top, VDDQ bot) to the single-row temp at center Y.
-                            renderer->drawString(ult::DIVIDER_SYMBOL, false, dividerX, ramLoadTopBaseY,
+                            // Scissored so the three glyphs meet pixel-perfect without alpha-blend overlap shading.
+                            mini_divider_scissor::drawDividerStack3(renderer, dividerX,
+                                ramLoadTopBaseY, ramLoadCtrY, ramLoadBotY,
                                 fontsize, settings.separatorColor);
-                            renderer->drawString(ult::DIVIDER_SYMBOL, false, dividerX, ramLoadBotY,
-                                fontsize, settings.separatorColor);
-                            int cx = dividerX;
-                            cx += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, cx, ramLoadCtrY,
-                                fontsize, settings.separatorColor).first;
+                            int cx = dividerX + (int)renderer->getTextDimensions(ult::DIVIDER_SYMBOL, false, fontsize).first;
                             renderer->drawString(std::string(mini_ram_temp_c), false, cx, ramLoadCtrY, fontsize,
                                 settings.useDynamicColors ? tsl::GradientColor((float)rtv, tsl::DEFAULT_TEMP_RANGE_HIGH) : settings.textColor);
                         }
@@ -1645,8 +1893,8 @@ public:
                             // VoltAtEnd: volt at bottom
                             if (rBotVolt[0]) {
                                 int rx = afterBotX;
-                                rx += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, rx, ramLoadBotY,
-                                    fontsize, settings.separatorColor).first;
+                                rlbDrawBotRowDiv(rx);
+                                rx += (int)renderer->getTextDimensions(ult::DIVIDER_SYMBOL, false, fontsize).first;
                                 renderer->drawStringWithColoredSections(std::string(rBotVolt), false,
                                     specialChars, rx, ramLoadBotY, fontsize, settings.textColor, settings.separatorColor);
                             }
@@ -1654,8 +1902,8 @@ public:
                             // Normal: temp at bottom
                             if (mini_ram_temp_c[0]) {
                                 int rx = afterBotX;
-                                rx += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, rx, ramLoadBotY,
-                                    fontsize, settings.separatorColor).first;
+                                rlbDrawBotRowDiv(rx);
+                                rx += (int)renderer->getTextDimensions(ult::DIVIDER_SYMBOL, false, fontsize).first;
                                 const int tv = atoi(mini_ram_temp_c);
                                 renderer->drawString(std::string(mini_ram_temp_c), false, rx, ramLoadBotY, fontsize,
                                     settings.useDynamicColors ? tsl::GradientColor((float)tv, tsl::DEFAULT_TEMP_RANGE_HIGH) : settings.textColor);
@@ -1671,28 +1919,70 @@ public:
                         const bool anyInlineVolt = settings.realVolts && (vdd2_only_c[0] || vddq_only_c[0]);
                         const bool anyInlineTemp = settings.showRAMTemp && mini_ram_temp_c[0];
                         const bool willDrawInline = anyInlineVolt || anyInlineTemp;
+                        // 3-tall divider stack scissoring: top + bot drawn here, center is drawn naturally
+                        // as the FIRST inline DIV below at the same X (afterBotX==ramLoadVoltColX) at yInline.
+                        // Compute scissor cuts once and flag the first inline DIV to be drawn scissored.
+                        int rsbInlineCenterOff = 0, rsbInlineLeftPad = 0, rsbInlineFullW = 0;
+                        int rsbInlineCutTC = 0, rsbInlineCutCB = 0;
+                        bool rsbInlineFirstDivScissor = false;
                         if (willDrawInline) {
-                            renderer->drawString(ult::DIVIDER_SYMBOL, false, ramLoadVoltColX, ramLoadTopBaseY,
-                                fontsize, settings.separatorColor);
-                            renderer->drawString(ult::DIVIDER_SYMBOL, false, ramLoadVoltColX, ramLoadBotY,
-                                fontsize, settings.separatorColor);
-                            // The center-Y divider is drawn naturally as part of the first inline DIV below.
+                            if (mini_divider_scissor::getDividerScissorMetrics(
+                                    fontsize, rsbInlineCenterOff, rsbInlineLeftPad, rsbInlineFullW)) {
+                                rsbInlineCutTC = mini_divider_scissor::computeDividerCutY(
+                                    ramLoadTopBaseY, yInline, rsbInlineCenterOff);
+                                rsbInlineCutCB = mini_divider_scissor::computeDividerCutY(
+                                    yInline, ramLoadBotY, rsbInlineCenterOff);
+                                mini_divider_scissor::drawDividerScissored(renderer,
+                                    ramLoadVoltColX, ramLoadTopBaseY,
+                                    mini_divider_scissor::kNoUpperCut, rsbInlineCutTC,
+                                    fontsize, settings.separatorColor,
+                                    rsbInlineLeftPad, rsbInlineFullW);
+                                mini_divider_scissor::drawDividerScissored(renderer,
+                                    ramLoadVoltColX, ramLoadBotY,
+                                    rsbInlineCutCB, mini_divider_scissor::kNoLowerCut,
+                                    fontsize, settings.separatorColor,
+                                    rsbInlineLeftPad, rsbInlineFullW);
+                                rsbInlineFirstDivScissor = true;
+                            } else {
+                                // Metrics unavailable — fallback to original unscissored draws.
+                                renderer->drawString(ult::DIVIDER_SYMBOL, false, ramLoadVoltColX, ramLoadTopBaseY,
+                                    fontsize, settings.separatorColor);
+                                renderer->drawString(ult::DIVIDER_SYMBOL, false, ramLoadVoltColX, ramLoadBotY,
+                                    fontsize, settings.separatorColor);
+                            }
                         }
+                        // Lambda for the first inline DIV at afterBotX==ramLoadVoltColX, yInline.
+                        // Scissors that one draw to the center band of the 3-stack; for all
+                        // subsequent inline DIVs (at different X positions) falls through to a
+                        // plain unscissored draw. Returns the divider's text width like drawString.first.
+                        auto drawInlineDivMaybeScissored = [&](int dx) -> int {
+                            if (rsbInlineFirstDivScissor && dx == ramLoadVoltColX) {
+                                rsbInlineFirstDivScissor = false; // only the first one needs scissor
+                                mini_divider_scissor::drawDividerScissored(renderer,
+                                    dx, yInline,
+                                    rsbInlineCutTC, rsbInlineCutCB,
+                                    fontsize, settings.separatorColor,
+                                    rsbInlineLeftPad, rsbInlineFullW);
+                                return (int)renderer->getTextDimensions(ult::DIVIDER_SYMBOL, false, fontsize).first;
+                            }
+                            return (int)renderer->drawString(ult::DIVIDER_SYMBOL, false,
+                                dx, yInline, fontsize, settings.separatorColor).first;
+                        };
                         // Volt inline before temp (when voltageAtEnd is OFF)
                         if (!settings.voltageAtEndRAM && settings.realVolts && (vdd2_only_c[0] || vddq_only_c[0])) {
                             if (vdd2_only_c[0] && vddq_only_c[0]) {
                                 // DIV + VDD2 + DIV + VDDQ (matches the SBS visualization with connector between rails)
-                                afterBotX += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, afterBotX, yInline, fontsize, settings.separatorColor).first;
+                                afterBotX += drawInlineDivMaybeScissored(afterBotX);
                                 renderer->drawStringWithColoredSections(std::string(vdd2_only_c), false, specialChars,
                                     afterBotX, yInline, fontsize, settings.textColor, settings.separatorColor);
                                 afterBotX += (int)renderer->getTextDimensions(std::string(vdd2_only_c), false, fontsize).first;
-                                afterBotX += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, afterBotX, yInline, fontsize, settings.separatorColor).first;
+                                afterBotX += drawInlineDivMaybeScissored(afterBotX);
                                 renderer->drawStringWithColoredSections(std::string(vddq_only_c), false, specialChars,
                                     afterBotX, yInline, fontsize, settings.textColor, settings.separatorColor);
                                 afterBotX += (int)renderer->getTextDimensions(std::string(vddq_only_c), false, fontsize).first;
                             } else {
                                 const char* voltStr = vddq_only_c[0] ? vddq_only_c : vdd2_only_c;
-                                afterBotX += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, afterBotX, yInline, fontsize, settings.separatorColor).first;
+                                afterBotX += drawInlineDivMaybeScissored(afterBotX);
                                 renderer->drawStringWithColoredSections(std::string(voltStr), false, specialChars,
                                     afterBotX, yInline, fontsize, settings.textColor, settings.separatorColor);
                                 afterBotX += (int)renderer->getTextDimensions(std::string(voltStr), false, fontsize).first;
@@ -1700,7 +1990,7 @@ public:
                         }
                         // Temp inline
                         if (settings.showRAMTemp && mini_ram_temp_c[0]) {
-                            afterBotX += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, afterBotX, yInline, fontsize, settings.separatorColor).first;
+                            afterBotX += drawInlineDivMaybeScissored(afterBotX);
                             const int rtv = atoi(mini_ram_temp_c);
                             renderer->drawString(std::string(mini_ram_temp_c), false, afterBotX, yInline, fontsize,
                                 settings.useDynamicColors ? tsl::GradientColor((float)rtv, tsl::DEFAULT_TEMP_RANGE_HIGH) : settings.textColor);
@@ -1710,27 +2000,68 @@ public:
                         if (settings.voltageAtEndRAM && settings.realVolts && (vdd2_only_c[0] || vddq_only_c[0])) {
                             if (vdd2_only_c[0] && vddq_only_c[0]) {
                                 // Match default RAM renderer voltAtEnd path: DIV + VDD2 + DIV + VDDQ
-                                afterBotX += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, afterBotX, yInline, fontsize, settings.separatorColor).first;
+                                afterBotX += drawInlineDivMaybeScissored(afterBotX);
                                 renderer->drawStringWithColoredSections(std::string(vdd2_only_c), false, specialChars,
                                     afterBotX, yInline, fontsize, settings.textColor, settings.separatorColor);
                                 afterBotX += (int)renderer->getTextDimensions(std::string(vdd2_only_c), false, fontsize).first;
-                                afterBotX += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, afterBotX, yInline, fontsize, settings.separatorColor).first;
+                                afterBotX += drawInlineDivMaybeScissored(afterBotX);
                                 renderer->drawStringWithColoredSections(std::string(vddq_only_c), false, specialChars,
                                     afterBotX, yInline, fontsize, settings.textColor, settings.separatorColor);
                             } else {
                                 const char* voltStr = vddq_only_c[0] ? vddq_only_c : vdd2_only_c;
-                                afterBotX += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, afterBotX, yInline, fontsize, settings.separatorColor).first;
+                                afterBotX += drawInlineDivMaybeScissored(afterBotX);
                                 renderer->drawStringWithColoredSections(std::string(voltStr), false, specialChars,
                                     afterBotX, yInline, fontsize, settings.textColor, settings.separatorColor);
                             }
                         }
                     }
+                    ramLoadStackCutCB = -1;
                     currentY -= (int)settings.spacing / 2;
 
                 } else if (labelIndex < labelLines.size() && labelLines[labelIndex] == "RAM_SVDD2") {
                     // Split VDD2/VDDQ row 1.
                     // Usage drawn at centre (between rows), VDD2 at baseY (top), mirroring TMP_SFAN single-group.
                     const int ramCenterY = baseY + ((int)fontsize + (int)settings.spacing / 2) / 2;
+                    // 3-stack scissoring: top=baseY, center=ramCenterY, bot=svddqY (drawn in RAM_SVDDQ).
+                    // svddqY (predicted) = baseY_SVDDQ - spacing/2 = (baseY + fontsize + spacing) - spacing/2
+                    //                    = baseY + fontsize + spacing/2.
+                    const int ramSplitPredictedBotY = baseY + (int)fontsize + (int)settings.spacing / 2;
+                    bool ramSplitScissorOK = mini_divider_scissor::getDividerScissorMetrics(
+                        fontsize, dividerCenterOffY, dividerLeftPad, dividerFullW);
+                    int ramSplitCutTC = 0;
+                    int ramSplitCutCB = 0;
+                    if (ramSplitScissorOK) {
+                        ramSplitCutTC = mini_divider_scissor::computeDividerCutY(
+                            baseY, ramCenterY, dividerCenterOffY);
+                        ramSplitCutCB = mini_divider_scissor::computeDividerCutY(
+                            ramCenterY, ramSplitPredictedBotY, dividerCenterOffY);
+                    }
+                    // Hand off bottom cut to RAM_SVDDQ via static var (consumed next iteration).
+                    ramSplitStackCutCB = ramSplitScissorOK ? ramSplitCutCB : -1;
+
+                    // Local lambdas: scissored DIV draws using the cuts above.
+                    auto drawCenterDiv = [&](int dx) {
+                        if (ramSplitScissorOK) {
+                            mini_divider_scissor::drawDividerScissored(renderer, dx, ramCenterY,
+                                ramSplitCutTC, ramSplitCutCB, fontsize, settings.separatorColor,
+                                dividerLeftPad, dividerFullW);
+                        } else {
+                            renderer->drawString(ult::DIVIDER_SYMBOL, false, dx, ramCenterY,
+                                fontsize, settings.separatorColor);
+                        }
+                    };
+                    auto drawTopRowDiv = [&](int dx) {
+                        if (ramSplitScissorOK) {
+                            mini_divider_scissor::drawDividerScissored(renderer, dx, baseY,
+                                mini_divider_scissor::kNoUpperCut, ramSplitCutTC,
+                                fontsize, settings.separatorColor,
+                                dividerLeftPad, dividerFullW);
+                        } else {
+                            renderer->drawString(ult::DIVIDER_SYMBOL, false, dx, baseY,
+                                fontsize, settings.separatorColor);
+                        }
+                    };
+
                     int currentX = baseX;
                     // Usage at centre Y
                     renderer->drawStringWithColoredSections(currentLine, false, specialChars,
@@ -1745,9 +2076,30 @@ public:
                         renderer->drawString(ramLbl, false, ramLblX + _frameOffsetX + clippingOffsetX,
                             ramCenterY, fontsize, settings.catColor);
                     }
-                    // Centre connector divider at ramCenterY
-                    renderer->drawString(ult::DIVIDER_SYMBOL, false, ramSplitVoltColX,
-                        ramCenterY, fontsize, settings.separatorColor);
+                    // Divider at ramSplitVoltColX — the 3-stack column shared by TOP, CENTER, BOT.
+                    // Cases:
+                    //  • VoltAtEnd+!SBS (!showStackedRAMTemp): temp goes at center, no top content
+                    //    after this divider on baseY — BUT it IS the true 3-stack column.
+                    //    Previous code drew drawDividerStack3 (all 3 at once) here. Keep that.
+                    //  • VoltAtEnd+SBS (showStackedRAMTemp): temp goes on baseY (top row) starting
+                    //    ramSplitVoltColX+dw. So this X has TOP content (temp) AND CENTER (usage)
+                    //    AND BOT (vddq). Draw top+center here; bot is handled by RAM_SVDDQ.
+                    //  • All other cases: only center is relevant here; top/bot drawn elsewhere.
+                    if (settings.showRAMTemp && mini_ram_temp_c[0] &&
+                        !settings.showStackedRAMTemp && settings.voltageAtEndRAM) {
+                        // VoltAtEnd+!SBS: no top-row content at this X — draw full spine.
+                        mini_divider_scissor::drawDividerStack3(renderer, ramSplitVoltColX,
+                            baseY, ramCenterY, ramSplitPredictedBotY,
+                            fontsize, settings.separatorColor);
+                    } else if (settings.showRAMTemp && mini_ram_temp_c[0] &&
+                               settings.showStackedRAMTemp && settings.voltageAtEndRAM) {
+                        // VoltAtEnd+SBS: temp on top row → true 3-stack here; draw top+center.
+                        // Bot is scissored in RAM_SVDDQ via ramSplitStackCutCB.
+                        drawTopRowDiv(ramSplitVoltColX);
+                        drawCenterDiv(ramSplitVoltColX);
+                    } else {
+                        drawCenterDiv(ramSplitVoltColX);
+                    }
                     // SBS RAM temp + VoltAtEnd logic for RAM_SVDD2 (top row):
                     // Normal SBS:    temp after max(vdd2,vddq) at center
                     // VoltAtEnd+SBS: left-connector IS divider before temp; temp at center;
@@ -1765,15 +2117,19 @@ public:
                                 renderer->drawString(std::string(mini_ram_temp_c), false, cx, ramCenterY, fontsize,
                                     settings.useDynamicColors ? tsl::GradientColor((float)rtv, tsl::DEFAULT_TEMP_RANGE_HIGH) : settings.textColor);
                                 cx += (int)renderer->getTextDimensions(std::string(mini_ram_temp_c), false, fontsize).first;
-                                // Right-fork connector before volt column
-                                renderer->drawString(ult::DIVIDER_SYMBOL, false, cx, ramCenterY, fontsize, settings.separatorColor);
+                                // Right-fork connector before volt column (scissored — part of the new 3-stack at new column X)
+                                drawCenterDiv(cx);
                                 vdd2StartX = cx; // VDD2/VDDQ start at the right-fork connector X
                             } else {
                                 // Normal SBS: temp after max(vdd2,vddq)
                                 const uint32_t vdd2_rw = vdd2_only_c[0] ? (int)renderer->getTextDimensions(vdd2_only_c, false, fontsize).first : 0;
                                 const uint32_t vddq_rw = vddq_only_c[0] ? (int)renderer->getTextDimensions(vddq_only_c, false, fontsize).first : 0;
                                 int cx = ramSplitVoltColX + sbs_dw + std::max(vdd2_rw, vddq_rw);
-                                cx += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, cx, ramCenterY, fontsize, settings.separatorColor).first;
+                                // Center DIV before temp at cx — isolated (no top/bot at this X),
+                                // draw plain/unscissored so its full glyph is visible.
+                                renderer->drawString(ult::DIVIDER_SYMBOL, false, cx, ramCenterY,
+                                    fontsize, settings.separatorColor);
+                                cx += (int)renderer->getTextDimensions(ult::DIVIDER_SYMBOL, false, fontsize).first;
                                 renderer->drawString(std::string(mini_ram_temp_c), false, cx, ramCenterY, fontsize,
                                     settings.useDynamicColors ? tsl::GradientColor((float)rtv, tsl::DEFAULT_TEMP_RANGE_HIGH) : settings.textColor);
                             }
@@ -1785,7 +2141,11 @@ public:
                                 renderer->drawString(std::string(mini_ram_temp_c), false, rx, baseY, fontsize,
                                     settings.useDynamicColors ? tsl::GradientColor((float)rtv, tsl::DEFAULT_TEMP_RANGE_HIGH) : settings.textColor);
                                 rx += (int)renderer->getTextDimensions(std::string(mini_ram_temp_c), false, fontsize).first;
-                                rx += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, rx, baseY, fontsize, settings.separatorColor).first;
+                                // DIV between temp and VDD2 — different X from the 3-stack column
+                                // (ramSplitVoltColX); not part of the 3-stack. Draw plain/unscissored.
+                                renderer->drawString(ult::DIVIDER_SYMBOL, false, (float)rx, (float)baseY,
+                                    fontsize, settings.separatorColor);
+                                rx += (int)renderer->getTextDimensions(ult::DIVIDER_SYMBOL, false, fontsize).first;
                                 renderer->drawStringWithColoredSections(std::string(vdd2_only_c), false,
                                     specialChars, rx, baseY, fontsize, settings.textColor, settings.separatorColor);
                             }
@@ -1799,23 +2159,40 @@ public:
                     // VDD2 at top row (baseY) — skip if VoltAtEnd+!SBS (already drawn above)
                     if (vdd2_only_c[0] && vdd2StartX != -1 && !(settings.voltageAtEndRAM && settings.showRAMTemp && mini_ram_temp_c[0] && settings.showStackedRAMTemp)) {
                         int rx = vdd2StartX;
-                        rx += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, rx, baseY,
-                            fontsize, settings.separatorColor).first;
+                        // Top-row DIV before VDD2 — scissored to the top band of the 3-stack.
+                        drawTopRowDiv(rx);
+                        rx += (int)renderer->getTextDimensions(ult::DIVIDER_SYMBOL, false, fontsize).first;
                         renderer->drawStringWithColoredSections(std::string(vdd2_only_c), false,
                             specialChars, rx, baseY, fontsize, settings.textColor, settings.separatorColor);
                     }
                 } else if (labelIndex < labelLines.size() && labelLines[labelIndex] == "RAM_SVDDQ") {
                     // Split VDD2/VDDQ row 2: VDDQ at the volt column; uses spacing/2 compression.
                     const int svddqY = baseY - (int)settings.spacing / 2;
+                    // 3-stack scissoring: this is the BOT row of the SVDD2/SVDDQ stack.
+                    // ramSplitStackCutCB was written by RAM_SVDD2 on the previous iteration.
+                    const bool svddqScissorOK = (ramSplitStackCutCB >= 0);
+                    auto drawBotRowDiv = [&](int dx) {
+                        if (svddqScissorOK) {
+                            mini_divider_scissor::drawDividerScissored(renderer, dx, svddqY,
+                                ramSplitStackCutCB, mini_divider_scissor::kNoLowerCut,
+                                fontsize, settings.separatorColor,
+                                dividerLeftPad, dividerFullW);
+                        } else {
+                            renderer->drawString(ult::DIVIDER_SYMBOL, false, dx, svddqY,
+                                fontsize, settings.separatorColor);
+                        }
+                    };
                     if (vddq_only_c[0]) {
                         int rx = ramSplitVoltColX;
-                        rx += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, rx, svddqY,
-                            fontsize, settings.separatorColor).first;
+                        // Bot-row DIV before VDDQ — scissored to the bottom band of the 3-stack.
+                        drawBotRowDiv(rx);
+                        rx += (int)renderer->getTextDimensions(ult::DIVIDER_SYMBOL, false, fontsize).first;
                         renderer->drawStringWithColoredSections(std::string(vddq_only_c), false,
                             specialChars, rx, svddqY, fontsize, settings.textColor, settings.separatorColor);
                         // non-SBS: RAM temp appended after VDDQ at bottom row (skip when VoltAtEnd — temp is drawn on top row instead)
                         if (settings.showRAMTemp && settings.showStackedRAMTemp && !settings.voltageAtEndRAM && mini_ram_temp_c[0]) {
                             rx += (int)renderer->getTextDimensions(std::string(vddq_only_c), false, fontsize).first;
+                            // Div before temp — different X from 3-stack column (ramSplitVoltColX) → unscissored.
                             rx += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, rx, svddqY,
                                 fontsize, settings.separatorColor).first;
                             const int rtv = atoi(mini_ram_temp_c);
@@ -1826,11 +2203,51 @@ public:
 
                         }
                     }
+                    // Cut consumed — clear it so a stale value doesn't leak into a future frame
+                    // where SVDD2 might not run before SVDDQ (defensive; current label order makes this safe anyway).
+                    ramSplitStackCutCB = -1;
                     currentY -= (int)settings.spacing / 2;
 
                 } else if (labelIndex < labelLines.size() && labelLines[labelIndex] == "CPU_SVOLT") {
                     // CPU split row 1: data centered; normal=volt at top, voltAtEnd=temp at top.
                     const int cpuCenterY = baseY + ((int)fontsize + (int)settings.spacing / 2) / 2;
+                    // 3-stack scissoring: top=baseY, center=cpuCenterY, bot=stempY (drawn in CPU_STEMP).
+                    // stempY (predicted) = baseY_STEMP - spacing/2 = baseY + fontsize + spacing/2.
+                    const int cpuSplitPredictedBotY = baseY + (int)fontsize + (int)settings.spacing / 2;
+                    bool cpuSplitScissorOK = mini_divider_scissor::getDividerScissorMetrics(
+                        fontsize, dividerCenterOffY, dividerLeftPad, dividerFullW);
+                    int cpuSplitCutTC = 0;
+                    int cpuSplitCutCB = 0;
+                    if (cpuSplitScissorOK) {
+                        cpuSplitCutTC = mini_divider_scissor::computeDividerCutY(
+                            baseY, cpuCenterY, dividerCenterOffY);
+                        cpuSplitCutCB = mini_divider_scissor::computeDividerCutY(
+                            cpuCenterY, cpuSplitPredictedBotY, dividerCenterOffY);
+                    }
+                    cpuSplitStackCutCB = cpuSplitScissorOK ? cpuSplitCutCB : -1;
+
+                    auto cpuDrawCenterDiv = [&](int dx) {
+                        if (cpuSplitScissorOK) {
+                            mini_divider_scissor::drawDividerScissored(renderer, dx, cpuCenterY,
+                                cpuSplitCutTC, cpuSplitCutCB, fontsize, settings.separatorColor,
+                                dividerLeftPad, dividerFullW);
+                        } else {
+                            renderer->drawString(ult::DIVIDER_SYMBOL, false, dx, cpuCenterY,
+                                fontsize, settings.separatorColor);
+                        }
+                    };
+                    auto cpuDrawTopRowDiv = [&](int dx) {
+                        if (cpuSplitScissorOK) {
+                            mini_divider_scissor::drawDividerScissored(renderer, dx, baseY,
+                                mini_divider_scissor::kNoUpperCut, cpuSplitCutTC,
+                                fontsize, settings.separatorColor,
+                                dividerLeftPad, dividerFullW);
+                        } else {
+                            renderer->drawString(ult::DIVIDER_SYMBOL, false, dx, baseY,
+                                fontsize, settings.separatorColor);
+                        }
+                    };
+
                     int currentX = baseX;
                     renderer->drawStringWithColoredSections(currentLine, false, specialChars,
                         currentX, cpuCenterY, fontsize, settings.textColor, settings.separatorColor);
@@ -1843,14 +2260,15 @@ public:
                         renderer->drawString(cpuLbl, false, cpuLblX + _frameOffsetX + clippingOffsetX,
                             cpuCenterY, fontsize, settings.catColor);
                     }
-                    renderer->drawString(ult::DIVIDER_SYMBOL, false, cpuSplitVoltColX,
-                        cpuCenterY, fontsize, settings.separatorColor);
+                    // Centre connector divider — scissored to the center band of the 3-stack.
+                    cpuDrawCenterDiv(cpuSplitVoltColX);
                     if (settings.voltageAtEndCPU) {
                         // VoltAtEnd: temp at top row
                         if (mini_cpu_temp_c[0]) {
                             int rx = cpuSplitVoltColX;
-                            rx += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, rx, baseY,
-                                fontsize, settings.separatorColor).first;
+                            // Top-row DIV before temp — scissored to top band.
+                            cpuDrawTopRowDiv(rx);
+                            rx += (int)renderer->getTextDimensions(ult::DIVIDER_SYMBOL, false, fontsize).first;
                             const int tv = atoi(mini_cpu_temp_c);
                             renderer->drawString(std::string(mini_cpu_temp_c), false, rx, baseY, fontsize,
                                 settings.useDynamicColors ? tsl::GradientColor((float)tv, tsl::DEFAULT_TEMP_RANGE_HIGH) : settings.textColor);
@@ -1859,8 +2277,9 @@ public:
                         // Normal: volt at top row
                         if (settings.realVolts && MINI_CPU_volt_c[0]) {
                             int rx = cpuSplitVoltColX;
-                            rx += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, rx, baseY,
-                                fontsize, settings.separatorColor).first;
+                            // Top-row DIV before volt — scissored to top band.
+                            cpuDrawTopRowDiv(rx);
+                            rx += (int)renderer->getTextDimensions(ult::DIVIDER_SYMBOL, false, fontsize).first;
                             renderer->drawStringWithColoredSections(std::string(MINI_CPU_volt_c), false,
                                 specialChars, rx, baseY, fontsize, settings.textColor, settings.separatorColor);
                         }
@@ -1869,18 +2288,33 @@ public:
                 } else if (labelIndex < labelLines.size() && labelLines[labelIndex] == "CPU_STEMP") {
                     // CPU split row 2: normal=temp at bottom; voltAtEnd=volt at bottom.
                     const int stempY = baseY - (int)settings.spacing / 2;
+                    // 3-stack scissoring: this is the BOT row. cpuSplitStackCutCB was written by CPU_SVOLT.
+                    const bool cpuStempScissorOK = (cpuSplitStackCutCB >= 0);
+                    auto cpuDrawBotRowDiv = [&](int dx) {
+                        if (cpuStempScissorOK) {
+                            mini_divider_scissor::drawDividerScissored(renderer, dx, stempY,
+                                cpuSplitStackCutCB, mini_divider_scissor::kNoLowerCut,
+                                fontsize, settings.separatorColor,
+                                dividerLeftPad, dividerFullW);
+                        } else {
+                            renderer->drawString(ult::DIVIDER_SYMBOL, false, dx, stempY,
+                                fontsize, settings.separatorColor);
+                        }
+                    };
                     int rx = cpuSplitVoltColX ? cpuSplitVoltColX : baseX;
                     if (settings.voltageAtEndCPU) {
                         if (settings.realVolts && MINI_CPU_volt_c[0]) {
-                            rx += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, rx, stempY,
-                                fontsize, settings.separatorColor).first;
+                            // Bot-row DIV before volt — scissored to bottom band.
+                            cpuDrawBotRowDiv(rx);
+                            rx += (int)renderer->getTextDimensions(ult::DIVIDER_SYMBOL, false, fontsize).first;
                             renderer->drawStringWithColoredSections(std::string(MINI_CPU_volt_c), false,
                                 specialChars, rx, stempY, fontsize, settings.textColor, settings.separatorColor);
                         }
                     } else {
                         if (mini_cpu_temp_c[0]) {
-                            rx += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, rx, stempY,
-                                fontsize, settings.separatorColor).first;
+                            // Bot-row DIV before temp — scissored to bottom band.
+                            cpuDrawBotRowDiv(rx);
+                            rx += (int)renderer->getTextDimensions(ult::DIVIDER_SYMBOL, false, fontsize).first;
                             const int tv = atoi(mini_cpu_temp_c);
                             renderer->drawString(std::string(mini_cpu_temp_c), false, rx, stempY, fontsize,
                                 settings.useDynamicColors
@@ -1888,6 +2322,7 @@ public:
                                     : settings.textColor);
                         }
                     }
+                    cpuSplitStackCutCB = -1;
                     currentY -= (int)settings.spacing / 2;
 
                 } else if (labelIndex < labelLines.size() && labelLines[labelIndex] == "CPU_SFULL") {
@@ -1958,48 +2393,71 @@ public:
                                                      mini_cpu_temp_c[0];
                         if (willDrawAnyCpu) {
                             const int cpuFullBotY = baseY + (int)fontsize + (int)settings.spacing / 2;
-                            renderer->drawString(ult::DIVIDER_SYMBOL, false, voltColX, baseY,
+                            // 3-divider stack: top (baseY), center (cpuFullCenterY), bot (cpuFullBotY).
+                            // Scissored so the three glyphs meet pixel-perfect without alpha-blend overlap.
+                            mini_divider_scissor::drawDividerStack3(renderer, voltColX,
+                                baseY, cpuFullCenterY, cpuFullBotY,
                                 fontsize, settings.separatorColor);
-                            renderer->drawString(ult::DIVIDER_SYMBOL, false, voltColX, cpuFullBotY,
+                        } else {
+                            // No volt/temp content — center connector only; unscissored (isolated).
+                            renderer->drawString(ult::DIVIDER_SYMBOL, false, voltColX, cpuFullCenterY,
                                 fontsize, settings.separatorColor);
                         }
-                        renderer->drawString(ult::DIVIDER_SYMBOL, false, voltColX, cpuFullCenterY,
-                            fontsize, settings.separatorColor);
                         if (settings.showLabels)
                             renderer->drawString(cpuLbl, false, cpuLblX + _frameOffsetX + clippingOffsetX,
                                 cpuFullCenterY, fontsize, settings.catColor);
-                        // Volt/temp on center row (cpuFullCenterY), right of volt column
-                        int rx = voltColX;
+                        // Volt/temp on center row (cpuFullCenterY), right of volt column.
+                        // The 3-stack already drew a divider at (voltColX, cpuFullCenterY), so the FIRST
+                        // inline item draws directly at rx = voltColX + divider_width with no leading divider
+                        // (otherwise it would stack on top of the center stack divider). Subsequent items
+                        // get a normal plain divider separator between them.
+                        const int dividerW = (int)renderer->getTextDimensions(ult::DIVIDER_SYMBOL, false, fontsize).first;
+                        int rx = willDrawAnyCpu ? (voltColX + dividerW) : voltColX;
+                        bool cpuInlineDrewFirst = false;
                         if (settings.voltageAtEndCPU) {
                             if (mini_cpu_temp_c[0]) {
-                                rx += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, rx, cpuFullCenterY,
-                                    fontsize, settings.separatorColor).first;
+                                if (cpuInlineDrewFirst) {
+                                    rx += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, rx, cpuFullCenterY,
+                                        fontsize, settings.separatorColor).first;
+                                }
                                 const int tv = atoi(mini_cpu_temp_c);
                                 const std::string tempStr(mini_cpu_temp_c);
                                 renderer->drawString(tempStr, false, rx, cpuFullCenterY, fontsize,
                                     settings.useDynamicColors ? tsl::GradientColor((float)tv, tsl::DEFAULT_TEMP_RANGE_HIGH) : settings.textColor);
                                 rx += (int)renderer->getTextDimensions(tempStr, false, fontsize).first;
+                                cpuInlineDrewFirst = true;
                             }
                             if (settings.realVolts && MINI_CPU_volt_c[0]) {
-                                rx += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, rx, cpuFullCenterY,
-                                    fontsize, settings.separatorColor).first;
-                                renderer->drawStringWithColoredSections(std::string(MINI_CPU_volt_c), false,
-                                    specialChars, rx, cpuFullCenterY, fontsize, settings.textColor, settings.separatorColor);
-                            }
-                        } else {
-                            if (settings.realVolts && MINI_CPU_volt_c[0]) {
-                                rx += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, rx, cpuFullCenterY,
-                                    fontsize, settings.separatorColor).first;
+                                if (cpuInlineDrewFirst) {
+                                    rx += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, rx, cpuFullCenterY,
+                                        fontsize, settings.separatorColor).first;
+                                }
                                 renderer->drawStringWithColoredSections(std::string(MINI_CPU_volt_c), false,
                                     specialChars, rx, cpuFullCenterY, fontsize, settings.textColor, settings.separatorColor);
                                 rx += (int)renderer->getTextDimensions(std::string(MINI_CPU_volt_c), false, fontsize).first;
+                                cpuInlineDrewFirst = true;
+                            }
+                        } else {
+                            if (settings.realVolts && MINI_CPU_volt_c[0]) {
+                                if (cpuInlineDrewFirst) {
+                                    rx += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, rx, cpuFullCenterY,
+                                        fontsize, settings.separatorColor).first;
+                                }
+                                renderer->drawStringWithColoredSections(std::string(MINI_CPU_volt_c), false,
+                                    specialChars, rx, cpuFullCenterY, fontsize, settings.textColor, settings.separatorColor);
+                                rx += (int)renderer->getTextDimensions(std::string(MINI_CPU_volt_c), false, fontsize).first;
+                                cpuInlineDrewFirst = true;
                             }
                             if (mini_cpu_temp_c[0]) {
-                                rx += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, rx, cpuFullCenterY,
-                                    fontsize, settings.separatorColor).first;
+                                if (cpuInlineDrewFirst) {
+                                    rx += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, rx, cpuFullCenterY,
+                                        fontsize, settings.separatorColor).first;
+                                }
                                 const int tv = atoi(mini_cpu_temp_c);
                                 renderer->drawString(std::string(mini_cpu_temp_c), false, rx, cpuFullCenterY, fontsize,
                                     settings.useDynamicColors ? tsl::GradientColor((float)tv, tsl::DEFAULT_TEMP_RANGE_HIGH) : settings.textColor);
+                                rx += (int)renderer->getTextDimensions(std::string(mini_cpu_temp_c), false, fontsize).first;
+                                cpuInlineDrewFirst = true;
                             }
                         }
                     }
@@ -2046,6 +2504,42 @@ public:
                 } else if (labelIndex < labelLines.size() && labelLines[labelIndex] == "GPU_SVOLT") {
                     // GPU split row 1: normal=volt at top; voltAtEnd=temp at top.
                     const int gpuCenterY = baseY + ((int)fontsize + (int)settings.spacing / 2) / 2;
+                    // 3-stack scissoring: top=baseY, center=gpuCenterY, bot=stempY (drawn in GPU_STEMP).
+                    const int gpuSplitPredictedBotY = baseY + (int)fontsize + (int)settings.spacing / 2;
+                    bool gpuSplitScissorOK = mini_divider_scissor::getDividerScissorMetrics(
+                        fontsize, dividerCenterOffY, dividerLeftPad, dividerFullW);
+                    int gpuSplitCutTC = 0;
+                    int gpuSplitCutCB = 0;
+                    if (gpuSplitScissorOK) {
+                        gpuSplitCutTC = mini_divider_scissor::computeDividerCutY(
+                            baseY, gpuCenterY, dividerCenterOffY);
+                        gpuSplitCutCB = mini_divider_scissor::computeDividerCutY(
+                            gpuCenterY, gpuSplitPredictedBotY, dividerCenterOffY);
+                    }
+                    gpuSplitStackCutCB = gpuSplitScissorOK ? gpuSplitCutCB : -1;
+
+                    auto gpuDrawCenterDiv = [&](int dx) {
+                        if (gpuSplitScissorOK) {
+                            mini_divider_scissor::drawDividerScissored(renderer, dx, gpuCenterY,
+                                gpuSplitCutTC, gpuSplitCutCB, fontsize, settings.separatorColor,
+                                dividerLeftPad, dividerFullW);
+                        } else {
+                            renderer->drawString(ult::DIVIDER_SYMBOL, false, dx, gpuCenterY,
+                                fontsize, settings.separatorColor);
+                        }
+                    };
+                    auto gpuDrawTopRowDiv = [&](int dx) {
+                        if (gpuSplitScissorOK) {
+                            mini_divider_scissor::drawDividerScissored(renderer, dx, baseY,
+                                mini_divider_scissor::kNoUpperCut, gpuSplitCutTC,
+                                fontsize, settings.separatorColor,
+                                dividerLeftPad, dividerFullW);
+                        } else {
+                            renderer->drawString(ult::DIVIDER_SYMBOL, false, dx, baseY,
+                                fontsize, settings.separatorColor);
+                        }
+                    };
+
                     int currentX = baseX;
                     renderer->drawStringWithColoredSections(currentLine, false, specialChars,
                         currentX, gpuCenterY, fontsize, settings.textColor, settings.separatorColor);
@@ -2058,13 +2552,13 @@ public:
                         renderer->drawString(gpuLbl, false, gpuLblX + _frameOffsetX + clippingOffsetX,
                             gpuCenterY, fontsize, settings.catColor);
                     }
-                    renderer->drawString(ult::DIVIDER_SYMBOL, false, gpuSplitVoltColX,
-                        gpuCenterY, fontsize, settings.separatorColor);
+                    // Centre connector divider — scissored to center band.
+                    gpuDrawCenterDiv(gpuSplitVoltColX);
                     if (settings.voltageAtEndGPU) {
                         if (mini_gpu_temp_c[0]) {
                             int rx = gpuSplitVoltColX;
-                            rx += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, rx, baseY,
-                                fontsize, settings.separatorColor).first;
+                            gpuDrawTopRowDiv(rx);
+                            rx += (int)renderer->getTextDimensions(ult::DIVIDER_SYMBOL, false, fontsize).first;
                             const int tv = atoi(mini_gpu_temp_c);
                             renderer->drawString(std::string(mini_gpu_temp_c), false, rx, baseY, fontsize,
                                 settings.useDynamicColors ? tsl::GradientColor((float)tv, tsl::DEFAULT_TEMP_RANGE_HIGH) : settings.textColor);
@@ -2072,8 +2566,8 @@ public:
                     } else {
                         if (settings.realVolts && MINI_GPU_volt_c[0]) {
                             int rx = gpuSplitVoltColX;
-                            rx += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, rx, baseY,
-                                fontsize, settings.separatorColor).first;
+                            gpuDrawTopRowDiv(rx);
+                            rx += (int)renderer->getTextDimensions(ult::DIVIDER_SYMBOL, false, fontsize).first;
                             renderer->drawStringWithColoredSections(std::string(MINI_GPU_volt_c), false,
                                 specialChars, rx, baseY, fontsize, settings.textColor, settings.separatorColor);
                         }
@@ -2082,18 +2576,31 @@ public:
                 } else if (labelIndex < labelLines.size() && labelLines[labelIndex] == "GPU_STEMP") {
                     // GPU split row 2: normal=temp at bottom; voltAtEnd=volt at bottom.
                     const int stempY = baseY - (int)settings.spacing / 2;
+                    // 3-stack scissoring: this is the BOT row. gpuSplitStackCutCB was written by GPU_SVOLT.
+                    const bool gpuStempScissorOK = (gpuSplitStackCutCB >= 0);
+                    auto gpuDrawBotRowDiv = [&](int dx) {
+                        if (gpuStempScissorOK) {
+                            mini_divider_scissor::drawDividerScissored(renderer, dx, stempY,
+                                gpuSplitStackCutCB, mini_divider_scissor::kNoLowerCut,
+                                fontsize, settings.separatorColor,
+                                dividerLeftPad, dividerFullW);
+                        } else {
+                            renderer->drawString(ult::DIVIDER_SYMBOL, false, dx, stempY,
+                                fontsize, settings.separatorColor);
+                        }
+                    };
                     int rx = gpuSplitVoltColX ? gpuSplitVoltColX : baseX;
                     if (settings.voltageAtEndGPU) {
                         if (settings.realVolts && MINI_GPU_volt_c[0]) {
-                            rx += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, rx, stempY,
-                                fontsize, settings.separatorColor).first;
+                            gpuDrawBotRowDiv(rx);
+                            rx += (int)renderer->getTextDimensions(ult::DIVIDER_SYMBOL, false, fontsize).first;
                             renderer->drawStringWithColoredSections(std::string(MINI_GPU_volt_c), false,
                                 specialChars, rx, stempY, fontsize, settings.textColor, settings.separatorColor);
                         }
                     } else {
                         if (mini_gpu_temp_c[0]) {
-                            rx += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, rx, stempY,
-                                fontsize, settings.separatorColor).first;
+                            gpuDrawBotRowDiv(rx);
+                            rx += (int)renderer->getTextDimensions(ult::DIVIDER_SYMBOL, false, fontsize).first;
                             const int tv = atoi(mini_gpu_temp_c);
                             renderer->drawString(std::string(mini_gpu_temp_c), false, rx, stempY, fontsize,
                                 settings.useDynamicColors
@@ -2101,11 +2608,48 @@ public:
                                     : settings.textColor);
                         }
                     }
+                    gpuSplitStackCutCB = -1;
                     currentY -= (int)settings.spacing / 2;
 
                 } else if (labelIndex < labelLines.size() && labelLines[labelIndex] == "RAM_SVDDQ_ONLY") {
                     // RAM temp split row 1 (single volt rail): data centered, volt at top (baseY).
                     const int ramTCenterY = baseY + ((int)fontsize + (int)settings.spacing / 2) / 2;
+                    // 3-stack scissoring: top=baseY, center=ramTCenterY, bot=stempY (drawn in RAM_STEMP).
+                    const int ramTSplitPredictedBotY = baseY + (int)fontsize + (int)settings.spacing / 2;
+                    bool ramTSplitScissorOK = mini_divider_scissor::getDividerScissorMetrics(
+                        fontsize, dividerCenterOffY, dividerLeftPad, dividerFullW);
+                    int ramTSplitCutTC = 0;
+                    int ramTSplitCutCB = 0;
+                    if (ramTSplitScissorOK) {
+                        ramTSplitCutTC = mini_divider_scissor::computeDividerCutY(
+                            baseY, ramTCenterY, dividerCenterOffY);
+                        ramTSplitCutCB = mini_divider_scissor::computeDividerCutY(
+                            ramTCenterY, ramTSplitPredictedBotY, dividerCenterOffY);
+                    }
+                    ramTempSplitStackCutCB = ramTSplitScissorOK ? ramTSplitCutCB : -1;
+
+                    auto rtDrawCenterDiv = [&](int dx) {
+                        if (ramTSplitScissorOK) {
+                            mini_divider_scissor::drawDividerScissored(renderer, dx, ramTCenterY,
+                                ramTSplitCutTC, ramTSplitCutCB, fontsize, settings.separatorColor,
+                                dividerLeftPad, dividerFullW);
+                        } else {
+                            renderer->drawString(ult::DIVIDER_SYMBOL, false, dx, ramTCenterY,
+                                fontsize, settings.separatorColor);
+                        }
+                    };
+                    auto rtDrawTopRowDiv = [&](int dx) {
+                        if (ramTSplitScissorOK) {
+                            mini_divider_scissor::drawDividerScissored(renderer, dx, baseY,
+                                mini_divider_scissor::kNoUpperCut, ramTSplitCutTC,
+                                fontsize, settings.separatorColor,
+                                dividerLeftPad, dividerFullW);
+                        } else {
+                            renderer->drawString(ult::DIVIDER_SYMBOL, false, dx, baseY,
+                                fontsize, settings.separatorColor);
+                        }
+                    };
+
                     int currentX = baseX;
                     // RAM data at center Y
                     renderer->drawStringWithColoredSections(currentLine, false, specialChars,
@@ -2120,16 +2664,15 @@ public:
                         renderer->drawString(ramLbl, false, ramLblX + _frameOffsetX + clippingOffsetX,
                             ramTCenterY, fontsize, settings.catColor);
                     }
-                    // Centre connector divider
-                    renderer->drawString(ult::DIVIDER_SYMBOL, false, ramTempVoltColX,
-                        ramTCenterY, fontsize, settings.separatorColor);
+                    // Centre connector divider — scissored to center band.
+                    rtDrawCenterDiv(ramTempVoltColX);
                     const char* ramSplitTopVolt = vddq_only_c[0] ? vddq_only_c : vdd2_only_c;
                     if (settings.voltageAtEndRAM) {
                         // VoltAtEnd: temp at top row
                         if (mini_ram_temp_c[0]) {
                             int rx = ramTempVoltColX;
-                            rx += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, rx, baseY,
-                                fontsize, settings.separatorColor).first;
+                            rtDrawTopRowDiv(rx);
+                            rx += (int)renderer->getTextDimensions(ult::DIVIDER_SYMBOL, false, fontsize).first;
                             const int tv = atoi(mini_ram_temp_c);
                             renderer->drawString(std::string(mini_ram_temp_c), false, rx, baseY, fontsize,
                                 settings.useDynamicColors ? tsl::GradientColor((float)tv, tsl::DEFAULT_TEMP_RANGE_HIGH) : settings.textColor);
@@ -2138,8 +2681,8 @@ public:
                         // Normal: volt at top row
                         if (ramSplitTopVolt[0]) {
                             int rx = ramTempVoltColX;
-                            rx += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, rx, baseY,
-                                fontsize, settings.separatorColor).first;
+                            rtDrawTopRowDiv(rx);
+                            rx += (int)renderer->getTextDimensions(ult::DIVIDER_SYMBOL, false, fontsize).first;
                             renderer->drawStringWithColoredSections(std::string(ramSplitTopVolt), false,
                                 specialChars, rx, baseY, fontsize, settings.textColor, settings.separatorColor);
                         }
@@ -2148,19 +2691,32 @@ public:
                 } else if (labelIndex < labelLines.size() && labelLines[labelIndex] == "RAM_STEMP") {
                     // RAM temp split row 2: normal=temp at bottom; voltAtEnd=volt at bottom.
                     const int stempY = baseY - (int)settings.spacing / 2;
+                    // 3-stack scissoring: BOT row. ramTempSplitStackCutCB was written by RAM_SVDDQ_ONLY.
+                    const bool ramStempScissorOK = (ramTempSplitStackCutCB >= 0);
+                    auto rtDrawBotRowDiv = [&](int dx) {
+                        if (ramStempScissorOK) {
+                            mini_divider_scissor::drawDividerScissored(renderer, dx, stempY,
+                                ramTempSplitStackCutCB, mini_divider_scissor::kNoLowerCut,
+                                fontsize, settings.separatorColor,
+                                dividerLeftPad, dividerFullW);
+                        } else {
+                            renderer->drawString(ult::DIVIDER_SYMBOL, false, dx, stempY,
+                                fontsize, settings.separatorColor);
+                        }
+                    };
                     int rx = ramTempVoltColX ? ramTempVoltColX : baseX;
                     const char* rts2Volt = vddq_only_c[0] ? vddq_only_c : vdd2_only_c;
                     if (settings.voltageAtEndRAM) {
                         if (rts2Volt[0]) {
-                            rx += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, rx, stempY,
-                                fontsize, settings.separatorColor).first;
+                            rtDrawBotRowDiv(rx);
+                            rx += (int)renderer->getTextDimensions(ult::DIVIDER_SYMBOL, false, fontsize).first;
                             renderer->drawStringWithColoredSections(std::string(rts2Volt), false,
                                 specialChars, rx, stempY, fontsize, settings.textColor, settings.separatorColor);
                         }
                     } else {
                         if (mini_ram_temp_c[0]) {
-                            rx += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, rx, stempY,
-                                fontsize, settings.separatorColor).first;
+                            rtDrawBotRowDiv(rx);
+                            rx += (int)renderer->getTextDimensions(ult::DIVIDER_SYMBOL, false, fontsize).first;
                             const int tv = atoi(mini_ram_temp_c);
                             renderer->drawString(std::string(mini_ram_temp_c), false, rx, stempY, fontsize,
                                 settings.useDynamicColors
@@ -2168,6 +2724,7 @@ public:
                                     : settings.textColor);
                         }
                     }
+                    ramTempSplitStackCutCB = -1;
                     currentY -= (int)settings.spacing / 2;
 
                 } else if (labelIndex < labelLines.size() && labelLines[labelIndex] == "BAT_STOP") {
@@ -2292,18 +2849,60 @@ public:
                     sfanFanColX = currentX;
                     sfanBaseY = baseY;  // store top-row Y for TMP_SVOLT volt-swap
 
-                    // Connect center divider
-                    renderer->drawString(ult::DIVIDER_SYMBOL, false, sfanFanColX,
-                        sfanIsDual ? sfanLabelY : sfanTempY, fontsize, settings.separatorColor);
+                    // ── Scissored 3-stack at sfanFanColX ─────────────────────────────────
+                    // Three dividers share sfanFanColX across TMP_SFAN and TMP_SVOLT:
+                    //   voltAtEnd ON : fan=TOP(baseY), center=sfanCenterY, volt=BOT(svoltY)
+                    //   voltAtEnd OFF: volt=TOP(baseY), center=sfanCenterY, fan=BOT(botY)
+                    // Cuts are computed here; sfanStackCutCB/TC are handed to TMP_SVOLT.
+                    const int sfanCenterY  = sfanIsDual ? sfanLabelY : sfanTempY;
+                    const int sfanPredBotY = baseY + (int)fontsize + (int)settings.spacing / 2;
+                    const bool sfanScissorOK = mini_divider_scissor::getDividerScissorMetrics(
+                        fontsize, dividerCenterOffY, dividerLeftPad, dividerFullW);
+                    int sfanCutTC = 0, sfanCutCB = 0;
+                    if (sfanScissorOK) {
+                        sfanCutTC = mini_divider_scissor::computeDividerCutY(
+                            baseY, sfanCenterY, dividerCenterOffY);
+                        sfanCutCB = mini_divider_scissor::computeDividerCutY(
+                            sfanCenterY, sfanPredBotY, dividerCenterOffY);
+                    }
+                    sfanStackCutTC = sfanScissorOK ? sfanCutTC : -1;
+                    sfanStackCutCB = sfanScissorOK ? sfanCutCB : -1;
 
-                    // Draw fan: voltAtEnd OFF=bottom row Y (swapped), voltAtEnd ON=baseY (top, normal)
+                    // Center connector divider (scissored to center band)
+                    if (sfanScissorOK) {
+                        mini_divider_scissor::drawDividerScissored(renderer, sfanFanColX, sfanCenterY,
+                            sfanCutTC, sfanCutCB, fontsize, settings.separatorColor,
+                            dividerLeftPad, dividerFullW);
+                    } else {
+                        renderer->drawString(ult::DIVIDER_SYMBOL, false, (float)sfanFanColX,
+                            (float)sfanCenterY, fontsize, settings.separatorColor);
+                    }
+
+                    // Draw fan: voltAtEnd ON=TOP(baseY), voltAtEnd OFF=BOT(botY)
                     if (settings.showFanPercentage) {
                         const int fanDuty = safeFanDuty((int)Rotation_Duty);
                         const int fanDrawY = settings.voltageAtEndTMP
                             ? baseY
                             : (baseY + (int)fontsize + (int)settings.spacing / 2);
-                        const int afterDivX = currentX + renderer->drawString(
-                            ult::DIVIDER_SYMBOL, false, currentX, fanDrawY, fontsize, settings.separatorColor).first;
+                        // Fan is TOP when voltAtEnd ON, BOT when voltAtEnd OFF
+                        int afterDivX;
+                        if (sfanScissorOK) {
+                            if (settings.voltageAtEndTMP) {
+                                mini_divider_scissor::drawDividerScissored(renderer, currentX, fanDrawY,
+                                    mini_divider_scissor::kNoUpperCut, sfanCutTC,
+                                    fontsize, settings.separatorColor, dividerLeftPad, dividerFullW);
+                            } else {
+                                mini_divider_scissor::drawDividerScissored(renderer, currentX, fanDrawY,
+                                    sfanCutCB, mini_divider_scissor::kNoLowerCut,
+                                    fontsize, settings.separatorColor, dividerLeftPad, dividerFullW);
+                            }
+                            afterDivX = currentX + (int)renderer->getTextDimensions(
+                                ult::DIVIDER_SYMBOL, false, fontsize).first;
+                        } else {
+                            afterDivX = currentX + (int)renderer->drawString(
+                                ult::DIVIDER_SYMBOL, false, (float)currentX, (float)fanDrawY,
+                                fontsize, settings.separatorColor).first;
+                        }
                         char fanPctStr[24];
                         snprintf(fanPctStr, sizeof(fanPctStr), " %d%%", fanDuty);
                         static const std::vector<std::string> sfanIconChars = {""};
@@ -2345,14 +2944,38 @@ public:
                             currentX = baseX + (int)renderer->getTextDimensions(currentLine, false, fontsize).first;
                         }
                     }
-                    // Draw SOC voltage: voltAtEnd ON=svoltY (bottom, normal), voltAtEnd OFF=sfanBaseY (top, swapped)
+                    // Draw SOC voltage: voltAtEnd ON=svoltY (BOT), voltAtEnd OFF=sfanBaseY (TOP)
+                    // The volt divider is ALWAYS the 3rd element of the scissored stack at sfanFanColX.
+                    // Both single-group and dual-row cases draw the volt column starting at sfanFanColX.
                     if (settings.realVolts && settings.showSOCVoltage && MINI_SOC_volt_c[0]) {
                         const int voltDrawY = settings.voltageAtEndTMP ? svoltY : sfanBaseY;
-                        const int voltDivX = currentX + (int)renderer->drawString(
-                            ult::DIVIDER_SYMBOL, false, currentX, voltDrawY, fontsize, settings.separatorColor).first;
+                        const int voltColX = sfanFanColX;
+                        int voltDivX;
+                        if (sfanStackCutCB >= 0) {
+                            if (settings.voltageAtEndTMP) {
+                                // Volt is BOT: scissor [sfanStackCutCB, kNoLowerCut)
+                                mini_divider_scissor::drawDividerScissored(renderer, voltColX, voltDrawY,
+                                    sfanStackCutCB, mini_divider_scissor::kNoLowerCut,
+                                    fontsize, settings.separatorColor, dividerLeftPad, dividerFullW);
+                            } else {
+                                // Volt is TOP: scissor [kNoUpperCut, sfanStackCutTC)
+                                mini_divider_scissor::drawDividerScissored(renderer, voltColX, voltDrawY,
+                                    mini_divider_scissor::kNoUpperCut, sfanStackCutTC,
+                                    fontsize, settings.separatorColor, dividerLeftPad, dividerFullW);
+                            }
+                            voltDivX = voltColX + (int)renderer->getTextDimensions(
+                                ult::DIVIDER_SYMBOL, false, fontsize).first;
+                        } else {
+                            voltDivX = voltColX + (int)renderer->drawString(
+                                ult::DIVIDER_SYMBOL, false, (float)voltColX, (float)voltDrawY,
+                                fontsize, settings.separatorColor).first;
+                        }
                         renderer->drawStringWithColoredSections(std::string(MINI_SOC_volt_c), false, specialChars,
                             voltDivX, voltDrawY, fontsize, settings.textColor, settings.separatorColor);
                     }
+                    // Clear sfan cuts so stale values do not leak into the next frame.
+                    sfanStackCutTC = -1;
+                    sfanStackCutCB = -1;
                     // Both dual-row and single-group split use spacing/2 compression: compensate currentY
                     currentY -= (int)settings.spacing / 2;
                 } else if (labelIndex < labelLines.size() && labelLines[labelIndex] == "MEM") {

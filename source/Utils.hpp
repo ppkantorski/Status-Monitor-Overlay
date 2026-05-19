@@ -1790,6 +1790,7 @@ struct MicroSettings {
     bool voltageAtEndGPU;       // true = volt at end
     bool voltageAtEndRAM;       // true = volt at end
     bool voltageAtEndTMP;       // true = SOC volt at top, fan at bottom (swapped)
+    bool showFanPercentage;
     bool useDynamicColors;
     bool showVDDQ;
     bool showVDD2;
@@ -2364,6 +2365,7 @@ ALWAYS_INLINE void GetConfigSettings(MicroSettings* settings) {
     settings->voltageAtEndGPU = false;
     settings->voltageAtEndRAM = false;
     settings->voltageAtEndTMP = false;
+    settings->showFanPercentage = true;
     settings->useDynamicColors = true;
     settings->showVDDQ = true;
     settings->showVDD2 = true;
