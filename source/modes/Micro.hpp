@@ -754,7 +754,7 @@ public:
                     uint32_t corrected = std::max(top_w, bot_w);
                     // bwLeftOfLoadSplit: BW NOT stacked but load IS stacked.
                     // Width = BW_w + divW + max(top_w, bot_w).
-                    // RAM_bw_c is always populated (live value or "0.0 GB/s"), so measure directly.
+                    // RAM_bw_c is always populated (live value or "0.00 GB/s"), so measure directly.
                     if (settings.showRAMBandwidth && !settings.showStackedRAMBandwidth && RAM_bw_c[0]) {
                         const uint32_t bw_w   = renderer->getTextDimensions(RAM_bw_c, false, fontsize).first;
                         const uint32_t div_w  = renderer->getTextDimensions(ult::DIVIDER_SYMBOL, false, fontsize).first;
@@ -2305,15 +2305,31 @@ public:
         RAM_load_bot_c[0] = '\0';
         RAM_bw_c[0] = '\0';
         // Build RAM bandwidth string ("X.X GB/s") when enabled.
-        // Always written — "0.0 GB/s" placeholder when ACTMON hasn't delivered data yet
+        // Always written — "0.00 GB/s" placeholder when ACTMON hasn't delivered data yet
         // so the stacked layout is stable from frame 1 and never jumps.
+        //   < 1 GB/s  →  "0.XY GB/s"  (2 decimal places, e.g. "0.54 GB/s")
+        //   1–9.99    →  "X.XX GB/s"  (2 decimal places, e.g. "2.54 GB/s")
+        //  10+        →  "XX.X GB/s"  (1 decimal place,  e.g. "22.4 GB/s")
+        // Max-width case "44.4 GB/s" is unchanged so layout metrics remain valid.
         if (settings.showRAMBandwidth) {
             if (ramBW_MBs > 0) {
-                const unsigned bwInt = ramBW_MBs / 1000;
-                const unsigned bwDec = (ramBW_MBs % 1000) / 100;
-                snprintf(RAM_bw_c, sizeof(RAM_bw_c), "%u.%u GB/s", bwInt, bwDec);
+                if (ramBW_MBs >= 10000) {
+                    // >= 10 GB/s: 1 decimal place
+                    const unsigned bwInt = ramBW_MBs / 1000;
+                    const unsigned bwDec = (ramBW_MBs % 1000) / 100;
+                    snprintf(RAM_bw_c, sizeof(RAM_bw_c), "%u.%u GB/s", bwInt, bwDec);
+                } else if (ramBW_MBs >= 1000) {
+                    // 1–9.99 GB/s: 2 decimal places
+                    const unsigned bwInt = ramBW_MBs / 1000;
+                    const unsigned bwDec = (ramBW_MBs % 1000) / 10;
+                    snprintf(RAM_bw_c, sizeof(RAM_bw_c), "%u.%02u GB/s", bwInt, bwDec);
+                } else {
+                    // < 1 GB/s: 2 decimal places, leading "0."
+                    const unsigned bwDec = ramBW_MBs / 10;
+                    snprintf(RAM_bw_c, sizeof(RAM_bw_c), "0.%02u GB/s", bwDec);
+                }
             } else {
-                snprintf(RAM_bw_c, sizeof(RAM_bw_c), "0.0 GB/s");
+                snprintf(RAM_bw_c, sizeof(RAM_bw_c), "0.00 GB/s");
             }
         }
         if (settings.showRAMLoad && settings.showRAMLoadCPUGPU &&
