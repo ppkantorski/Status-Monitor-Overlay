@@ -944,6 +944,8 @@ public:
 
             uint32_t current_x;
             static std::vector<std::string> specialChars = {""};
+            static const std::vector<std::string> cpuPadChars = {"#"};
+            static const tsl::Color cpuPadTransparent{0, 0, 0, 0};
 
             // \u2500\u2500 Grid-mode Y coordinates \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
             // When tmpIsGrid: bar is taller; other items centered in expanded bar;
@@ -1448,7 +1450,12 @@ public:
                         : (dtcDoSplit)
                         ? current_x + item_layout.data_width - dtcTopW  // right-align top DTC half
                         : current_x;
-                    renderer->drawStringWithColoredSections(dtcTopPtr, false, specialChars, drawX, dataY, fontsize, textColorA, (settings.separatorColor));
+
+                    if (item.type == 0) {
+                        renderer->drawStringWithColoredSections(dtcTopPtr, false, cpuPadChars, drawX, dataY, fontsize, textColorA, cpuPadTransparent); // for full cpu spacing
+                    } else {
+                        renderer->drawStringWithColoredSections(dtcTopPtr, false, specialChars, drawX, dataY, fontsize, textColorA, (settings.separatorColor));
+                    }
                 }
                 current_x += item_layout.data_width;
                 // Save the start of the data column before voltage may advance current_x.
@@ -2126,18 +2133,34 @@ public:
                 const double _maxCore012 = std::max({_m0, _m1, _m2});
                 snprintf(CPU_UsageMax012, sizeof(CPU_UsageMax012), "%.0f%%", _maxCore012);
             }
+            // Pad single-digit core % with a leading space so bracket contents
+            // stay fixed-width: "1%" -> " 1%", "24%" unchanged, "100%" unchanged.
+            // strlen("X%") == 2 means single digit — write " X%" into a local buffer.
+            auto mkPad = [](const char* s, char (&buf)[4]) -> const char* {
+                if (s[0] != '\0' && s[1] == '%' && s[2] == '\0') {
+                    buf[0] = '#'; buf[1] = s[0]; buf[2] = '%'; buf[3] = '\0';
+                    return buf;
+                }
+                return s;
+            };
+            char _pb0[4], _pb1[4], _pb2[4], _pb3[4], _pbM[4];
+            const char* p0 = mkPad(CPU_Usage0,       _pb0);
+            const char* p1 = mkPad(CPU_Usage1,       _pb1);
+            const char* p2 = mkPad(CPU_Usage2,       _pb2);
+            const char* p3 = mkPad(CPU_Usage3,       _pb3);
+            const char* pM = mkPad(CPU_UsageMax012,  _pbM);
             if (!settings.showStackedFullCPU) {
                 // Existing inline mode: [23%,29%,0%,32%]@1000.0
                 if (settings.showFullCPUMaxCore012) {
                     // Condensed: [max(c0,c1,c2) c3]@freq
                     snprintf(CPU_compressed_c, sizeof(CPU_compressed_c),
                         "[%s %s]%s%u.%u",
-                        CPU_UsageMax012, CPU_Usage3,
+                        pM, p3,
                         cpuDiff, cpuFreq / 1000000, (cpuFreq / 100000) % 10);
                 } else {
                     snprintf(CPU_compressed_c, sizeof(CPU_compressed_c),
                         "[%s %s %s %s]%s%u.%u",
-                        CPU_Usage0, CPU_Usage1, CPU_Usage2, CPU_Usage3,
+                        p0, p1, p2, p3,
                         cpuDiff, cpuFreq / 1000000, (cpuFreq / 100000) % 10);
                 }
                 CPU_freq_c[0] = '\0';
@@ -2147,11 +2170,11 @@ public:
                     // Condensed: [max(c0,c1,c2) c3] on top
                     snprintf(CPU_compressed_c, sizeof(CPU_compressed_c),
                         "[%s %s]",
-                        CPU_UsageMax012, CPU_Usage3);
+                        pM, p3);
                 } else {
                     snprintf(CPU_compressed_c, sizeof(CPU_compressed_c),
                         "[%s %s %s %s]",
-                        CPU_Usage0, CPU_Usage1, CPU_Usage2, CPU_Usage3);
+                        p0, p1, p2, p3);
                 }
                 const double _u0 = strtod(CPU_Usage0, nullptr);
                 const double _u1 = strtod(CPU_Usage1, nullptr);

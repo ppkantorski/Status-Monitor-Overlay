@@ -1432,6 +1432,9 @@ public:
             size_t labelIndex = 0;
             
             static const std::vector<std::string> specialChars = {""};
+            static const std::vector<std::string> cpuPadChars = {"#"};
+            static const tsl::Color cpuPadTransparent{0, 0, 0, 0};
+
             static uint32_t labelWidth, labelCenterX;
             static int sfanFanColX = 0;     // shared between TMP_SFAN and TMP_SVOLT
             static int sfanBaseY = 0;       // TMP_SFAN baseY, used by TMP_SVOLT for volt-at-top swap
@@ -2567,8 +2570,8 @@ public:
                         // CPU_SFREQ (bottom row) draws @freq right-aligned + temp right of volt column.
                         // Brackets are right-aligned within cpuFullSplitColW so both rows share the same right edge.
                         int currentX = baseX + bracketsOffsetX;
-                        renderer->drawStringWithColoredSections(currentLine, false, specialChars,
-                            currentX, baseY, fontsize, settings.textColor, settings.separatorColor);
+                        renderer->drawStringWithColoredSections(currentLine, false, cpuPadChars,
+                            currentX, baseY, fontsize, settings.textColor, cpuPadTransparent);
                         currentX = baseX + cpuFullSplitColW; // volt column starts at shared right edge
                         // Center connector divider — connects top-row | and bottom-row | into one vertical bar
                         renderer->drawString(ult::DIVIDER_SYMBOL, false, currentX, cpuFullCenterY,
@@ -2599,8 +2602,8 @@ public:
                         // ── Inline mode: brackets on baseY (top row), volt+temp on cpuFullCenterY (center row) ──
                         // Brackets are right-aligned within cpuFullSplitColW; the divider/volt column sits at
                         // baseX + cpuFullSplitColW so it never overlaps with either line's text.
-                        renderer->drawStringWithColoredSections(currentLine, false, specialChars,
-                            baseX + bracketsOffsetX, baseY, fontsize, settings.textColor, settings.separatorColor);
+                        renderer->drawStringWithColoredSections(currentLine, false, cpuPadChars,
+                            baseX + bracketsOffsetX, baseY, fontsize, settings.textColor, cpuPadTransparent);
                         // 3-tall divider stack at the shared right edge of the column.
                         // Top and bottom extensions are only drawn when volt/temp content follows them.
                         const int voltColX = baseX + cpuFullSplitColW;
@@ -3226,7 +3229,19 @@ public:
                     renderer->drawString("System", false, currentX, baseY, fontsize, settings.textColor);
                 } else {
                     // Normal rendering for all other line types (CPU, GPU, RAM, BAT, FPS, RES, DTC)
-                    renderer->drawStringWithColoredSections(currentLine, false, specialChars, baseX, baseY, fontsize, settings.textColor, settings.separatorColor);
+                    if (labelIndex < labelLines.size() && labelLines[labelIndex] == "CPU") {
+                        const std::string line = currentLine;
+                        const size_t divPos = line.find(ult::DIVIDER_SYMBOL);
+                        if (divPos != std::string::npos) {
+                            renderer->drawStringWithColoredSections(line.substr(0, divPos), false, cpuPadChars, baseX, baseY, fontsize, settings.textColor, cpuPadTransparent);
+                            const int divX = baseX + (int)renderer->getTextDimensions(line.substr(0, divPos), false, fontsize).first;
+                            renderer->drawStringWithColoredSections(line.substr(divPos), false, specialChars, divX, baseY, fontsize, settings.textColor, settings.separatorColor);
+                        } else {
+                            renderer->drawStringWithColoredSections(line, false, cpuPadChars, baseX, baseY, fontsize, settings.textColor, cpuPadTransparent);
+                        }
+                    } else {
+                        renderer->drawStringWithColoredSections(currentLine, false, specialChars, baseX, baseY, fontsize, settings.textColor, settings.separatorColor);
+                    }
                     int afterX = baseX + (int)renderer->getTextDimensions(currentLine, false, fontsize).first;
                     if (labelIndex < labelLines.size() && labelLines[labelIndex] == "CPU" &&
                         settings.showCPUTemp && !settings.showStackedCPUTemp && mini_cpu_temp_c[0]) {
@@ -3388,18 +3403,34 @@ public:
                     const double _maxCore012 = std::max({_m0, _m1, _m2});
                     snprintf(MINI_CPU_UsageMax012, sizeof(MINI_CPU_UsageMax012), "%.0f%%", _maxCore012);
                 }
+                // Pad single-digit core % with a leading space so bracket contents
+                // stay fixed-width: "1%" -> " 1%", "24%" unchanged, "100%" unchanged.
+                // strlen("X%") == 2 means single digit — write " X%" into a local buffer.
+                auto mkPad = [](const char* s, char (&buf)[4]) -> const char* {
+                    if (s[0] != '\0' && s[1] == '%' && s[2] == '\0') {
+                        buf[0] = '#'; buf[1] = s[0]; buf[2] = '%'; buf[3] = '\0';
+                        return buf;
+                    }
+                    return s;
+                };
+                char _pb0[4], _pb1[4], _pb2[4], _pb3[4], _pbM[4];
+                const char* p0   = mkPad(MINI_CPU_Usage0,    _pb0);
+                const char* p1   = mkPad(MINI_CPU_Usage1,    _pb1);
+                const char* p2   = mkPad(MINI_CPU_Usage2,    _pb2);
+                const char* p3   = mkPad(MINI_CPU_Usage3,    _pb3);
+                const char* pM   = mkPad(MINI_CPU_UsageMax012, _pbM);
                 if (!settings.showStackedFullCPU) {
                     // Inline mode (default): [23%,29%,0%,32%]@1000.0
                     if (settings.showFullCPUMaxCore012) {
                         // Condensed: [max(c0,c1,c2) c3]@freq
                         snprintf(MINI_CPU_compressed_c, sizeof(MINI_CPU_compressed_c),
                             "[%s %s]@%hu.%hhu",
-                            MINI_CPU_UsageMax012, MINI_CPU_Usage3,
+                            pM, p3,
                             _cpuHz, _cpuHz10);
                     } else {
                         snprintf(MINI_CPU_compressed_c, sizeof(MINI_CPU_compressed_c),
                             "[%s %s %s %s]@%hu.%hhu",
-                            MINI_CPU_Usage0, MINI_CPU_Usage1, MINI_CPU_Usage2, MINI_CPU_Usage3,
+                            p0, p1, p2, p3,
                             _cpuHz, _cpuHz10);
                     }
                     // MINI_CPU_freq_c already reset to '\0' above
@@ -3409,11 +3440,11 @@ public:
                         // Condensed: [max(c0,c1,c2) c3] on top
                         snprintf(MINI_CPU_compressed_c, sizeof(MINI_CPU_compressed_c),
                             "[%s %s]",
-                            MINI_CPU_UsageMax012, MINI_CPU_Usage3);
+                            pM, p3);
                     } else {
                         snprintf(MINI_CPU_compressed_c, sizeof(MINI_CPU_compressed_c),
                             "[%s %s %s %s]",
-                            MINI_CPU_Usage0, MINI_CPU_Usage1, MINI_CPU_Usage2, MINI_CPU_Usage3);
+                            p0, p1, p2, p3);
                     }
                     double _u0 = 0, _u1 = 0, _u2 = 0, _u3 = 0;
                     sscanf(MINI_CPU_Usage0, "%lf%%", &_u0);
