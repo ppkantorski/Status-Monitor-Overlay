@@ -1451,8 +1451,27 @@ public:
                         ? current_x + item_layout.data_width - dtcTopW  // right-align top DTC half
                         : current_x;
 
-                    if (item.type == 0) {
-                        renderer->drawStringWithColoredSections(dtcTopPtr, false, cpuPadChars, drawX, dataY, fontsize, textColorA, cpuPadTransparent); // for full cpu spacing
+                    if (item.type == 0 || item.type == 2) {
+                        // CPU (type 0) and RAM load brackets (type 2) may contain '#' padding
+                        // sentinels from mkPad/mkPadR — draw them fully transparent to hide them
+                        // while preserving the glyph-advance spacing.
+                        // RAM (type 2) in the BW-stacked + load-stacked case embeds a DIVIDER_SYMBOL
+                        // between the BW string and the bracket string. Split at DIVIDER_SYMBOL so the
+                        // BW part uses specialChars (separator color for DIVIDER) and the bracket part
+                        // uses cpuPadChars (transparent '#' sentinels). CPU strings never embed DIVIDER
+                        // here, so the else branch is taken for CPU (safe no-op split-check).
+                        const std::string topStr(dtcTopPtr);
+                        const size_t divPos = (item.type == 2) ? topStr.find(ult::DIVIDER_SYMBOL) : std::string::npos;
+                        if (divPos != std::string::npos) {
+                            const std::string bwPart  = topStr.substr(0, divPos);
+                            const std::string brkPart = topStr.substr(divPos + ult::DIVIDER_SYMBOL.length());
+                            int cx = drawX;
+                            cx += (int)renderer->drawStringWithColoredSections(bwPart, false, specialChars, cx, dataY, fontsize, textColorA, (settings.separatorColor)).first;
+                            cx += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, cx, dataY, fontsize, (settings.separatorColor)).first;
+                            renderer->drawStringWithColoredSections(brkPart, false, cpuPadChars, cx, dataY, fontsize, textColorA, cpuPadTransparent);
+                        } else {
+                            renderer->drawStringWithColoredSections(dtcTopPtr, false, cpuPadChars, drawX, dataY, fontsize, textColorA, cpuPadTransparent);
+                        }
                     } else {
                         renderer->drawStringWithColoredSections(dtcTopPtr, false, specialChars, drawX, dataY, fontsize, textColorA, (settings.separatorColor));
                     }
@@ -2296,14 +2315,28 @@ public:
             const int gpuRaw = ramLoad[SysClkRamLoad_All] - ramLoad[SysClkRamLoad_Cpu];
             const unsigned gpuL = (unsigned)(gpuRaw > 0 ? (gpuRaw + 5) / 10 : 0);
             const unsigned totL = (ramLoad[SysClkRamLoad_All] + 5) / 10;
+            // Pad single-digit RAM load values with '#' sentinel (same as CPU mkPad).
+            // '#' is drawn transparent at render time so the bracket width stays fixed.
+            auto mkPadR = [](unsigned v, char (&buf)[4]) -> const char* {
+                if (v < 10) {
+                    buf[0] = '#'; buf[1] = '0' + (char)v; buf[2] = '%'; buf[3] = '\0';
+                    return buf;
+                }
+                // Two-or-three digit: format normally
+                snprintf(buf, sizeof(buf), "%u%%", v);
+                return buf;
+            };
+            char _rb0[4], _rb1[4];
+            const char* rp0 = mkPadR(cpuL, _rb0);
+            const char* rp1 = mkPadR(gpuL, _rb1);
             if (!settings.showStackedRAMLoadCPUGPU) {
                 // SBS: [cpu% gpu%]total%@freq on one line
                 snprintf(RAM_var_compressed_c, sizeof(RAM_var_compressed_c),
-                    "[%u%% %u%%] %u%%%s%u.%u", cpuL, gpuL, totL, ramDiff, ramMHz, ramMHz10);
+                    "[%s %s] %u%%%s%u.%u", rp0, rp1, totL, ramDiff, ramMHz, ramMHz10);
             } else {
                 // Split: brackets top, total@freq bottom
                 snprintf(RAM_var_compressed_c, sizeof(RAM_var_compressed_c),
-                    "[%u%% %u%%]", cpuL, gpuL);
+                    "[%s %s]", rp0, rp1);
                 snprintf(RAM_load_bot_c, sizeof(RAM_load_bot_c),
                     "%u%%%s%u.%u", totL, ramDiff, ramMHz, ramMHz10);
             }

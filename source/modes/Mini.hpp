@@ -583,7 +583,7 @@ public:
 
                         // --- Measure every component that can appear in any row ---
                         auto mw = [&](const std::string& s) -> uint32_t {
-                            return renderer->getTextDimensions(s.c_str(), false, fontsize).first;
+                            return renderer->getTextDimensions(s, false, fontsize).first;
                         };
                         const uint32_t dw = mw(ult::DIVIDER_SYMBOL);
 
@@ -627,9 +627,11 @@ public:
                                                                   settings.showStackedRAMLoadCPUGPU &&
                                                                   (R_SUCCEEDED(sysclkCheck) || R_SUCCEEDED(hocclkCheck));
                             if (bw_stacked_load_stacked) {
-                                const uint32_t top_whole = mw(std::string("44.4 GB/s") + ult::DIVIDER_SYMBOL + "[44% 44%]");
-                                const uint32_t top_sum   = bw_w + dw + mw("[44% 44%]");
-                                const uint32_t top_w     = std::max(top_whole, top_sum);
+                                //const uint32_t top_whole = mw(std::string("44.4 GB/s") + ult::DIVIDER_SYMBOL + "[100% 44%]");
+                                //const uint32_t top_sum   = bw_w + dw + mw("[100% 44%]");
+
+                                // THIS IS NOT PERFECT, BUT VISUALLY IT LOOKS ACCURATE SO IM KEEPING IT. SET 44% to 100% in the component
+                                const uint32_t top_w     = bw_w + dw + mw("[100% 44%]"); 
                                 return std::max(top_w, mw("100%@4444.4"));
                             }
 
@@ -1908,9 +1910,30 @@ public:
                         : 0;
                     ramLoadVoltColX = loadBaseX + (int)std::max(topW, botW);
 
-                    // Draw [cpu% gpu%] right-aligned so its right edge matches total@freq
+                    // Draw top row right-aligned. currentLine may be one of:
+                    //   a) "[#44% #44%]"                 — load-only, no BW embedded
+                    //   b) "10.0 GB/s"                   — BW-on-own-row (top=BW, bot=load)
+                    //   c) "10.0 GB/s" + DIVIDER + "[#44% #44%]" — BW stacked + load stacked
+                    //      (bwOnOwnRow=false, bwLeftOfLoadSplit=false → inline prepend with DIVIDER)
+                    // Cases (a)/(b): no DIVIDER embedded → draw with cpuPadChars to hide '#' sentinels.
+                    // Case (c): split at DIVIDER so the BW part uses specialChars (for separator color),
+                    //           DIVIDER is drawn in separator color, and the bracket part uses cpuPadChars.
                     const int topDrawX = loadBaseX + (int)std::max(topW, botW) - (int)topW;
-                    renderer->drawStringWithColoredSections(currentLine, false, specialChars, topDrawX, baseY, fontsize, settings.textColor, settings.separatorColor);
+                    {
+                        const size_t divPos = currentLine.find(ult::DIVIDER_SYMBOL);
+                        if (divPos != std::string::npos) {
+                            // Case (c): BW + DIVIDER + [#cpu% #gpu%]
+                            const std::string bwPart  = currentLine.substr(0, divPos);
+                            const std::string brkPart = currentLine.substr(divPos + ult::DIVIDER_SYMBOL.length());
+                            int cx = topDrawX;
+                            cx += (int)renderer->drawStringWithColoredSections(bwPart,  false, specialChars,  cx, baseY, fontsize, settings.textColor, settings.separatorColor).first;
+                            cx += (int)renderer->drawString(ult::DIVIDER_SYMBOL, false, cx, baseY, fontsize, settings.separatorColor).first;
+                            renderer->drawStringWithColoredSections(brkPart, false, cpuPadChars, cx, baseY, fontsize, settings.textColor, cpuPadTransparent);
+                        } else {
+                            // Cases (a)/(b): no embedded DIVIDER
+                            renderer->drawStringWithColoredSections(currentLine, false, cpuPadChars, topDrawX, baseY, fontsize, settings.textColor, cpuPadTransparent);
+                        }
+                    }
 
                     // Determine right-side mode (mirrors label-building conditions)
                     const bool rSplitVDDQ = settings.showStackedVDDQ && settings.realVolts &&
@@ -3229,7 +3252,10 @@ public:
                     renderer->drawString("System", false, currentX, baseY, fontsize, settings.textColor);
                 } else {
                     // Normal rendering for all other line types (CPU, GPU, RAM, BAT, FPS, RES, DTC)
-                    if (labelIndex < labelLines.size() && labelLines[labelIndex] == "CPU") {
+                    const std::string& curLabel = (labelIndex < labelLines.size()) ? labelLines[labelIndex] : "";
+                    if (curLabel == "CPU") {
+                        // CPU may have a DIVIDER_SYMBOL suffix (volt inline): split at it so the
+                        // divider still gets separatorColor while '#' padding gets transparent.
                         const std::string line = currentLine;
                         const size_t divPos = line.find(ult::DIVIDER_SYMBOL);
                         if (divPos != std::string::npos) {
@@ -3239,6 +3265,10 @@ public:
                         } else {
                             renderer->drawStringWithColoredSections(line, false, cpuPadChars, baseX, baseY, fontsize, settings.textColor, cpuPadTransparent);
                         }
+                    } else if (curLabel == "RAM") {
+                        // RAM load brackets [#cpu% #gpu%] — no DIVIDER_SYMBOL embedded in this
+                        // string, so draw directly with cpuPadChars to hide '#' sentinels.
+                        renderer->drawStringWithColoredSections(currentLine, false, cpuPadChars, baseX, baseY, fontsize, settings.textColor, cpuPadTransparent);
                     } else {
                         renderer->drawStringWithColoredSections(currentLine, false, specialChars, baseX, baseY, fontsize, settings.textColor, settings.separatorColor);
                     }
@@ -3558,15 +3588,28 @@ public:
                         const uint32_t useHz = (settings.realFrequencies && realRAM_Hz) ? realRAM_Hz : (uint32_t)RAM_Hz;
                         const unsigned ramMHz   = useHz / 1000000;
                         const unsigned ramMHz10 = (useHz / 100000) % 10;
+                        // Pad single-digit RAM load values with '#' sentinel (same as CPU mkPad).
+                        // '#' is drawn transparent at render time so bracket width stays fixed.
+                        auto mkPadR = [](unsigned v, char (&buf)[4]) -> const char* {
+                            if (v < 10) {
+                                buf[0] = '#'; buf[1] = '0' + (char)v; buf[2] = '%'; buf[3] = '\0';
+                                return buf;
+                            }
+                            snprintf(buf, sizeof(buf), "%u%%", v);
+                            return buf;
+                        };
+                        char _rb0[4], _rb1[4];
+                        const char* rp0 = mkPadR(ramCpuLoadInt, _rb0);
+                        const char* rp1 = mkPadR(ramGpuLoadInt, _rb1);
                         if (!settings.showStackedRAMLoadCPUGPU) {
                             // SBS: [cpu% gpu%]total%@freq on one line
                             snprintf(MINI_RAM_var_compressed_c, sizeof(MINI_RAM_var_compressed_c),
-                                     "[%u%% %u%%] %u%%@%u.%u",
-                                     ramCpuLoadInt, ramGpuLoadInt, ramLoadInt, ramMHz, ramMHz10);
+                                     "[%s %s] %u%%@%u.%u",
+                                     rp0, rp1, ramLoadInt, ramMHz, ramMHz10);
                         } else {
                             // Split: [cpu% gpu%] top, total%@freq bottom
                             snprintf(MINI_RAM_var_compressed_c, sizeof(MINI_RAM_var_compressed_c),
-                                     "[%u%% %u%%]", ramCpuLoadInt, ramGpuLoadInt);
+                                     "[%s %s]", rp0, rp1);
                             snprintf(MINI_RAM_load_bot_c, sizeof(MINI_RAM_load_bot_c),
                                      "%u%%@%u.%u", ramLoadInt, ramMHz, ramMHz10);
                         }
