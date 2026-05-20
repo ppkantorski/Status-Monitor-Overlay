@@ -1242,7 +1242,7 @@ public:
 
         if (!flags.isFull) {
             addColorWithAlpha(list, "Background Color", "background_color",       "#0009", "Background Alpha");
-            if (flags.isMini || flags.isFPSCounter || flags.isFPSGraph || flags.isGameRes)
+            if (flags.isMini || flags.isMicro || flags.isFPSCounter || flags.isFPSGraph || flags.isGameRes)
                 addColorWithAlpha(list, "Focus Color",  "focus_background_color", "#000F", "Focus Alpha");
         }
 
