@@ -229,6 +229,8 @@ private:
         static constexpr u64 POLL_NS              = 32'000'000ULL;   // 32 ms sleep / exit check
         static constexpr u64 SWIPE_WINDOW_NS      = 150'000'000ULL;  // 150 ms gesture window
         static constexpr int SWIPE_DIST_PX        = 84;              // framebuffer pixels
+        static constexpr int SWIPE_EDGE_PX        = 16;              // touch must start within 16 px of top/bottom edge
+        static constexpr int SCREEN_HEIGHT_PX     = 720;             // framebuffer height
         static constexpr u64 PLUS_HOLD_NS         = 1'000'000'000ULL; // 1 s hold to activate
 
         // HID setup — same as Mini's touch poll thread: allow P1 + Handheld.
@@ -265,8 +267,13 @@ private:
                         const int  deltaY   = ty - initialY;
                         const bool atTop    = !self->settings.setPosBottom;
                         const bool atBottom =  self->settings.setPosBottom;
-                        if ((atTop    && deltaY >=  SWIPE_DIST_PX) ||
-                            (atBottom && deltaY <= -SWIPE_DIST_PX)) {
+                        // Touch must have started within SWIPE_EDGE_PX of the
+                        // relevant screen edge — same guard tesla uses for swipe-to-open.
+                        const bool startedAtEdge = (atTop    && initialY <= SWIPE_EDGE_PX) ||
+                                                   (atBottom && initialY >= SCREEN_HEIGHT_PX - SWIPE_EDGE_PX);
+                        if (startedAtEdge &&
+                            ((atTop    && deltaY >=  SWIPE_DIST_PX) ||
+                             (atBottom && deltaY <= -SWIPE_DIST_PX))) {
                             if (isRendering) {
                                 isRendering = false;
                                 leventSignal(&renderingStopEvent);
