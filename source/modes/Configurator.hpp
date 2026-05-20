@@ -199,6 +199,80 @@ inline tsl::elm::Element* makeFrame(const std::string& subtitle, tsl::elm::Eleme
     return f;
 }
 
+// Convert a #RGB or #RGBA string to a fully-opaque tsl::Color for a color swatch.
+// Each hex nibble maps directly to the 4-bit RGBA4444 channel value.
+inline tsl::Color hexToSwatchColor(const std::string& hex) {
+    if (hex.size() < 4 || hex[0] != '#') return tsl::Color(0xF, 0xF, 0xF, 0xF);
+    auto nibble = [](char c) -> u8 {
+        if (c >= '0' && c <= '9') return static_cast<u8>(c - '0');
+        if (c >= 'A' && c <= 'F') return static_cast<u8>(c - 'A' + 10);
+        if (c >= 'a' && c <= 'f') return static_cast<u8>(c - 'a' + 10);
+        return 0u;
+    };
+    return tsl::Color(nibble(hex[1]), nibble(hex[2]), nibble(hex[3]), 0xF);
+}
+
+// Unicode filled square used as a color swatch in list item values.
+static const std::string COLOR_SWATCH = "■";
+
+// Special-chars vector for drawStringWithColoredSections — routes ■ to the swatch color.
+static const std::vector<std::string> COLOR_SWATCH_SPECIAL = { COLOR_SWATCH };
+
+// Template: isMini=true uses MiniListItem height, isMini=false uses full ListItem height.
+// Renders the swatch in its true color by stripping it from m_value before the parent
+// draws (no double-composite / anti-alias fringe), then drawing it once via
+// drawStringWithColoredSections with the stored swatch color. The checkmark and focus
+// highlight draw normally through the parent.
+template<bool isMini>
+class ColorSwatchListItemT : public std::conditional_t<isMini, tsl::elm::MiniListItem, tsl::elm::ListItem> {
+    using Base = std::conditional_t<isMini, tsl::elm::MiniListItem, tsl::elm::ListItem>;
+public:
+    explicit ColorSwatchListItemT(const std::string& text)
+        : Base(text), m_swatchColor(tsl::Color(0xF, 0xF, 0xF, 0xF)) {}
+
+    void setSwatchColor(tsl::Color color) { m_swatchColor = color; }
+
+    virtual void draw(tsl::gfx::Renderer* renderer) override {
+        const std::string full = this->m_value;
+
+        // x = getX() + getWidth() - textWidth(full,20) - 19
+        // (equivalent to drawValue's getX() + m_maxWidth + 47 with full value)
+        const s32 fullValueWidth = renderer->getTextDimensions(full, false, 20).first;
+        const s32 swatchX = this->getX() + this->getWidth() - fullValueWidth - 19;
+
+        // Strip the swatch so the parent never renders it.
+        std::string withoutSwatch = full;
+        const auto pos = withoutSwatch.find(COLOR_SWATCH);
+        if (pos != std::string::npos) {
+            withoutSwatch.erase(pos, COLOR_SWATCH.size());
+            while (!withoutSwatch.empty() && withoutSwatch.front() == ' ')
+                withoutSwatch.erase(withoutSwatch.begin());
+        }
+        this->m_value    = withoutSwatch;
+        this->m_maxWidth = 0;
+        Base::draw(renderer);
+        this->m_value    = full;
+        this->m_maxWidth = 0;
+
+        // Draw the swatch once in m_swatchColor at the correct position.
+        static constexpr s32 fontSize   = 20;
+        static constexpr u16 itemHeight = isMini ? tsl::style::MiniListItemDefaultHeight
+                                                 : tsl::style::ListItemDefaultHeight;
+        static constexpr s32 yOffset    = (tsl::style::ListItemDefaultHeight - itemHeight) / 2 + 1;
+        const s32 swatchY = this->getY() + 45 - yOffset - 1;
+        renderer->drawStringWithColoredSections(
+            COLOR_SWATCH, false, COLOR_SWATCH_SPECIAL,
+            swatchX, swatchY, fontSize, tsl::Color(0, 0, 0, 0), m_swatchColor);
+    }
+
+private:
+    tsl::Color m_swatchColor;
+};
+
+// ColorConfig navigation rows (full height); ColorSelector palette rows (mini height).
+using ColorSwatchListItem     = ColorSwatchListItemT<false>;
+using MiniColorSwatchListItem = ColorSwatchListItemT<true>;
+
 // Shared color palette used by ColorSelector.
 static const std::vector<std::pair<std::string, std::string>> g_colorPalette = {
     {"Black","#000"},        {"Charcoal","#222"},     {"Dark Gray","#444"},
@@ -1122,24 +1196,28 @@ public:
 
         std::string _jumpItemValue;
         for (const auto& color : g_colorPalette) {
-            auto* colorItem = new tsl::elm::MiniListItem(color.first);
-            const std::string displayValue = extractColorWithoutAlpha(color.second);
-            colorItem->setValue(displayValue);
+            auto* colorItem = new MiniColorSwatchListItem(color.first);
+            const std::string hexRgb = extractColorWithoutAlpha(color.second); // #RGB
+            const tsl::Color swatchColor = hexToSwatchColor(hexRgb);
+            colorItem->setSwatchColor(swatchColor);
+            colorItem->setValue(COLOR_SWATCH);
 
-            const bool isSelected = (extractColorWithoutAlpha(color.second) == currentColorWithoutAlpha);
+            const bool isSelected = (hexRgb == currentColorWithoutAlpha);
             if (isSelected) {
-                colorItem->setValue(displayValue + " " + ult::CHECKMARK_SYMBOL);
+                colorItem->setValue(COLOR_SWATCH + " " + ult::CHECKMARK_SYMBOL);
                 lastSelectedListItem = colorItem;
-                _jumpItemValue = displayValue + " " + ult::CHECKMARK_SYMBOL;
+                _jumpItemValue = COLOR_SWATCH + " " + ult::CHECKMARK_SYMBOL;
             }
 
-            colorItem->setClickListener([this, colorItem, color, section, displayValue](uint64_t keys) {
+            colorItem->setClickListener([this, colorItem, color, section, hexRgb, swatchColor](uint64_t keys) {
                 if (keys & KEY_A) {
                     std::string valueToSave = color.second;
                     if (isBackgroundColor) {
                         std::string existing = ult::parseValueFromIniSection(configIniPath, section, colorKey);
-                        if (!existing.empty() && existing.length() == 5)
-                            valueToSave = setAlphaInColor(color.second, existing[4]);
+                        char alpha = (existing.length() == 5) ? existing[4]
+                                   : (defaultValue.length() == 5) ? defaultValue[4]
+                                   : '9';
+                        valueToSave = setAlphaInColor(color.second, alpha);
                     } else if (isTextBasedColor) {
                         valueToSave = setAlphaInColor(color.second, 'F');
                     }
@@ -1148,12 +1226,12 @@ public:
                     if (lastSelectedListItem && lastSelectedListItem != colorItem) {
                         for (const auto& c : g_colorPalette) {
                             if (lastSelectedListItem->getText() == c.first) {
-                                lastSelectedListItem->setValue(extractColorWithoutAlpha(c.second));
+                                lastSelectedListItem->setValue(COLOR_SWATCH);
                                 break;
                             }
                         }
                     }
-                    colorItem->setValue(displayValue + " " + ult::CHECKMARK_SYMBOL);
+                    colorItem->setValue(COLOR_SWATCH + " " + ult::CHECKMARK_SYMBOL);
                     lastSelectedListItem = colorItem;
                     return true;
                 }
@@ -1194,8 +1272,10 @@ private:
 
     void addColorItem(tsl::elm::List* list, const std::string& label,
                       const std::string& key, const std::string& def) {
-        auto* item = new tsl::elm::ListItem(label);
-        item->setValue(getColorName(getCurrentColor(key, def)));
+        const std::string currentColor = getCurrentColor(key, def);
+        auto* item = new ColorSwatchListItem(label);
+        item->setValue(COLOR_SWATCH);
+        item->setSwatchColor(hexToSwatchColor(extractColorWithoutAlpha(currentColor)));
         item->setClickListener([this, label, key, def](uint64_t keys) {
             if (keys & KEY_A) {
                 tsl::changeTo<ColorSelector>(modeName, label, key, def);
@@ -1210,8 +1290,9 @@ private:
                            const std::string& key, const std::string& def,
                            const std::string& alphaLabel) {
         const std::string currentColor = getCurrentColor(key, def);
-        auto* colorItem = new tsl::elm::ListItem(colorLabel);
-        colorItem->setValue(getColorName(currentColor));
+        auto* colorItem = new ColorSwatchListItem(colorLabel);
+        colorItem->setValue(COLOR_SWATCH);
+        colorItem->setSwatchColor(hexToSwatchColor(extractColorWithoutAlpha(currentColor)));
         colorItem->setClickListener([this, colorLabel, key, def](uint64_t keys) {
             if (keys & KEY_A) {
                 tsl::changeTo<ColorSelector>(modeName, colorLabel, key, def);
@@ -1244,6 +1325,8 @@ public:
             addColorWithAlpha(list, "Background Color", "background_color",       "#0009", "Background Alpha");
             if (flags.isMini || flags.isMicro || flags.isFPSCounter || flags.isFPSGraph || flags.isGameRes)
                 addColorWithAlpha(list, "Focus Color",  "focus_background_color", "#000F", "Focus Alpha");
+        } else {
+            addColorWithAlpha(list, "Background Color", "background_color",       "#0009", "Background Alpha");
         }
 
         addColorItem(list, "Text Color", "text_color", "#FFFF");

@@ -2330,6 +2330,7 @@ struct FullSettings {
     bool showRDSD;
     bool useDynamicColors;
     bool disableScreenshots;
+    uint16_t backgroundColor;
     uint16_t separatorColor;
     uint16_t catColor1;
     uint16_t catColor2;
@@ -3757,6 +3758,7 @@ ALWAYS_INLINE void GetConfigSettings(FullSettings* settings) {
     settings->showRDSD = true;
     settings->useDynamicColors = true;
     settings->disableScreenshots = false;
+    convertStrToRGBA4444("#0009", &(settings->backgroundColor));
     convertStrToRGBA4444("#888F", &(settings->separatorColor));
     convertStrToRGBA4444("#8FFF", &(settings->catColor1));
     convertStrToRGBA4444("#8CFF", &(settings->catColor2));
@@ -3856,6 +3858,13 @@ ALWAYS_INLINE void GetConfigSettings(FullSettings* settings) {
         key = it->second;
         convertToUpper(key);
         settings->disableScreenshots = (key != "FALSE");
+    }
+
+    it = section.find("background_color");
+    if (it != section.end()) {
+        temp = 0;
+        if (convertStrToRGBA4444(it->second, &temp))
+            settings->backgroundColor = temp;
     }
 
     it = section.find("separator_color");

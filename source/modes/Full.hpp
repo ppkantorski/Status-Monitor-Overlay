@@ -56,10 +56,12 @@ private:
     bool runOnce = true;
 
     bool originalUseRightAlignment = ult::useRightAlignment;
+    tsl::Color originalBackgroundColor = tsl::defaultBackgroundColor;
 public:
     FullOverlay() { 
         disableJumpTo = true;
         GetConfigSettings(&settings);
+        tsl::defaultBackgroundColor = tsl::Color(settings.backgroundColor); // apply Full's bg color to the tesla draw path
         mutexInit(&mutex_BatteryChecker);
         mutexInit(&mutex_Misc);
         tsl::hlp::requestForeground(false);
@@ -91,6 +93,7 @@ public:
         CloseThreads();
         fixForeground = true;
         ult::useRightAlignment = originalUseRightAlignment;
+        tsl::defaultBackgroundColor = originalBackgroundColor; // restore for non-full modes
         if (settings.disableScreenshots) {
             tsl::gfx::Renderer::get().addScreenshotStacks();
         }
