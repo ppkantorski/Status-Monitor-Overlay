@@ -579,7 +579,7 @@ public:
                             width += dw + temp_w;
                         }
 
-                    } else if (key == "GPU" || (key == "RAM" && settings.showRAMLoad && (R_SUCCEEDED(sysclkCheck) || R_SUCCEEDED(hocclkCheck)))) {
+                    } else if (key == "GPU" || (key == "RAM" && settings.showRAMLoad)) {
                         // Component-based width: measure each piece once, sum by actual row topology.
                         const bool splitVDDQ_A  = key == "RAM" && settings.showStackedVDDQ &&
                                                   settings.realVolts && settings.showVDD2 &&
@@ -601,9 +601,10 @@ public:
                         // bw_left_load_stacked: BW NOT stacked (inline) + load IS stacked.
                         // BW draws as a separate LEFT column before the triple-stack divider + stacked-load block.
                         // Width = bw_w + dw + max(top_w, bot_w).
+                        // CPU/GPU split data: from sys-clk IPC when available, otherwise from ACTMON MC_CPU
+                        // back-fill into ramLoad[] (see Utils.hpp Misc thread). Either way the data is present.
                         const bool bw_left_load_stacked = bw_active && !settings.showStackedRAMBandwidth &&
-                                                          settings.showRAMLoadCPUGPU && settings.showStackedRAMLoadCPUGPU &&
-                                                          (R_SUCCEEDED(sysclkCheck) || R_SUCCEEDED(hocclkCheck));
+                                                          settings.showRAMLoadCPUGPU && settings.showStackedRAMLoadCPUGPU;
                         const bool bw_inline = bw_active && !settings.showStackedRAMBandwidth;
                         const uint32_t bw_w = bw_active ? mw("44.4 GB/s") : 0u;
                         const uint32_t data_w = [&]() -> uint32_t {
@@ -631,8 +632,7 @@ public:
                             // Bottom row is "100%@4444.4" (RAM total + freq).
                             const bool bw_stacked_load_stacked = settings.showStackedRAMBandwidth &&
                                                                   settings.showRAMLoadCPUGPU &&
-                                                                  settings.showStackedRAMLoadCPUGPU &&
-                                                                  (R_SUCCEEDED(sysclkCheck) || R_SUCCEEDED(hocclkCheck));
+                                                                  settings.showStackedRAMLoadCPUGPU;
                             if (bw_stacked_load_stacked) {
                                 //const uint32_t top_whole = mw(std::string("44.4 GB/s") + ult::DIVIDER_SYMBOL + "[100% 44%]");
                                 //const uint32_t top_sum   = bw_w + dw + mw("[100% 44%]");
@@ -752,7 +752,7 @@ public:
                                 }
                             }
                         }
-                    } else if (key == "RAM" && (!settings.showRAMLoad || (R_FAILED(sysclkCheck) && R_FAILED(hocclkCheck)))) {
+                    } else if (key == "RAM" && !settings.showRAMLoad) {
                         // RAM without clock/load: component-based width.
                         auto mwR = [&](const std::string& s) -> uint32_t {
                             return renderer->getTextDimensions(s.c_str(), false, fontsize).first;
@@ -1049,8 +1049,7 @@ public:
                                                       ((settings.showVDDQ && isMariko && !settings.showVDD2) ||
                                                        (settings.showVDD2 && !settings.showVDDQ));
                         const bool wantRAMLoadCPUGPUSplit = settings.showRAMLoad && settings.showRAMLoadCPUGPU &&
-                                                      settings.showStackedRAMLoadCPUGPU &&
-                                                      (R_SUCCEEDED(sysclkCheck) || R_SUCCEEDED(hocclkCheck));
+                                                      settings.showStackedRAMLoadCPUGPU;
                         // BW stacked: BW occupies the top row, RAM content the bottom row,
                         // reusing the RAM_SLOAD_TOP/BOT infrastructure for right-alignment + volts.
                         // VDDQ split and RAM temp split are right-side decorations — orthogonal to row
@@ -3641,65 +3640,47 @@ public:
                              RAM_Hz / 1000000, (RAM_Hz / 100000) % 10);
                 }
             } else {
-                unsigned ramLoadInt;
-                
-                if (R_SUCCEEDED(sysclkCheck) || R_SUCCEEDED(hocclkCheck)) {
-                    ramLoadInt = (ramLoad[SysClkRamLoad_All] + 5) / 10;
-                    
-                    if (settings.showRAMLoadCPUGPU) {
-                        unsigned ramCpuLoadInt = (ramLoad[SysClkRamLoad_Cpu] + 5) / 10;
-                        int RAM_GPU_Load = ramLoad[SysClkRamLoad_All] - ramLoad[SysClkRamLoad_Cpu];
-                        unsigned ramGpuLoadInt = (unsigned)(RAM_GPU_Load > 0 ? (RAM_GPU_Load + 5) / 10 : 0);
-                        const uint32_t useHz = (settings.realFrequencies && realRAM_Hz) ? realRAM_Hz : (uint32_t)RAM_Hz;
-                        const unsigned ramMHz   = useHz / 1000000;
-                        const unsigned ramMHz10 = (useHz / 100000) % 10;
-                        // Pad single-digit RAM load values with '#' sentinel (same as CPU mkPad).
-                        // '#' is drawn transparent at render time so bracket width stays fixed.
-                        auto mkPadR = [](unsigned v, char (&buf)[4]) -> const char* {
-                            if (v < 10) {
-                                buf[0] = kPadSentinelMini; buf[1] = '0' + (char)v; buf[2] = '%'; buf[3] = '\0';
-                                return buf;
-                            }
-                            snprintf(buf, sizeof(buf), "%u%%", v);
+                // RAM load. ramLoad[] is populated regardless of sysmodule presence:
+                //   - With sys-clk/hoc-clk IPC: filled from sysclkCTX/hocclkCTX in Misc thread.
+                //   - Without any sysmodule: back-filled from ACTMON MC_ALL + MC_CPU in Misc thread
+                //     (same EMC bus-utilisation metric, computed identically to sys-clk's t210.c).
+                // CPU/GPU split: ramLoad[Cpu] is the CPU's memory traffic permille; GPU is the
+                // derived remainder (All - Cpu), exactly how sys-clk reports it internally.
+                const unsigned ramLoadInt = (ramLoad[SysClkRamLoad_All] + 5) / 10;
+
+                if (settings.showRAMLoadCPUGPU) {
+                    unsigned ramCpuLoadInt = (ramLoad[SysClkRamLoad_Cpu] + 5) / 10;
+                    int RAM_GPU_Load = ramLoad[SysClkRamLoad_All] - ramLoad[SysClkRamLoad_Cpu];
+                    unsigned ramGpuLoadInt = (unsigned)(RAM_GPU_Load > 0 ? (RAM_GPU_Load + 5) / 10 : 0);
+                    const uint32_t useHz = (settings.realFrequencies && realRAM_Hz) ? realRAM_Hz : (uint32_t)RAM_Hz;
+                    const unsigned ramMHz   = useHz / 1000000;
+                    const unsigned ramMHz10 = (useHz / 100000) % 10;
+                    // Pad single-digit RAM load values with '#' sentinel (same as CPU mkPad).
+                    // '#' is drawn transparent at render time so bracket width stays fixed.
+                    auto mkPadR = [](unsigned v, char (&buf)[4]) -> const char* {
+                        if (v < 10) {
+                            buf[0] = kPadSentinelMini; buf[1] = '0' + (char)v; buf[2] = '%'; buf[3] = '\0';
                             return buf;
-                        };
-                        char _rb0[4], _rb1[4];
-                        const char* rp0 = mkPadR(ramCpuLoadInt, _rb0);
-                        const char* rp1 = mkPadR(ramGpuLoadInt, _rb1);
-                        if (!settings.showStackedRAMLoadCPUGPU) {
-                            // SBS: [cpu% gpu%]total%@freq on one line
-                            snprintf(MINI_RAM_var_compressed_c, sizeof(MINI_RAM_var_compressed_c),
-                                     "[%s %s] %u%%@%u.%u",
-                                     rp0, rp1, ramLoadInt, ramMHz, ramMHz10);
-                        } else {
-                            // Split: [cpu% gpu%] top, total%@freq bottom
-                            snprintf(MINI_RAM_var_compressed_c, sizeof(MINI_RAM_var_compressed_c),
-                                     "[%s %s]", rp0, rp1);
-                            snprintf(MINI_RAM_load_bot_c, sizeof(MINI_RAM_load_bot_c),
-                                     "%u%%@%u.%u", ramLoadInt, ramMHz, ramMHz10);
                         }
+                        snprintf(buf, sizeof(buf), "%u%%", v);
+                        return buf;
+                    };
+                    char _rb0[4], _rb1[4];
+                    const char* rp0 = mkPadR(ramCpuLoadInt, _rb0);
+                    const char* rp1 = mkPadR(ramGpuLoadInt, _rb1);
+                    if (!settings.showStackedRAMLoadCPUGPU) {
+                        // SBS: [cpu% gpu%]total%@freq on one line
+                        snprintf(MINI_RAM_var_compressed_c, sizeof(MINI_RAM_var_compressed_c),
+                                 "[%s %s] %u%%@%u.%u",
+                                 rp0, rp1, ramLoadInt, ramMHz, ramMHz10);
                     } else {
-                        if (settings.realFrequencies && realRAM_Hz) {
-                            snprintf(MINI_RAM_var_compressed_c, sizeof(MINI_RAM_var_compressed_c),
-                                     "%u%%@%hu.%hhu", ramLoadInt,
-                                     realRAM_Hz / 1000000, (realRAM_Hz / 100000) % 10);
-                        } else {
-                            snprintf(MINI_RAM_var_compressed_c, sizeof(MINI_RAM_var_compressed_c),
-                                     "%u%%@%hu.%hhu", ramLoadInt,
-                                     RAM_Hz / 1000000, (RAM_Hz / 100000) % 10);
-                        }
+                        // Split: [cpu% gpu%] top, total%@freq bottom
+                        snprintf(MINI_RAM_var_compressed_c, sizeof(MINI_RAM_var_compressed_c),
+                                 "[%s %s]", rp0, rp1);
+                        snprintf(MINI_RAM_load_bot_c, sizeof(MINI_RAM_load_bot_c),
+                                 "%u%%@%u.%u", ramLoadInt, ramMHz, ramMHz10);
                     }
                 } else {
-                    const uint64_t RAM_Total_all = RAM_Total_application_u + RAM_Total_applet_u + 
-                                                   RAM_Total_system_u + RAM_Total_systemunsafe_u;
-                    const uint64_t RAM_Used_all = RAM_Used_application_u + RAM_Used_applet_u + 
-                                                  RAM_Used_system_u + RAM_Used_systemunsafe_u;
-                    // Round to nearest by adding half-divisor before dividing — matches the
-                    // (value + 5) / 10 pattern used by the IPC RAM load path above.
-                    ramLoadInt = (RAM_Total_all > 0)
-                        ? (unsigned)((RAM_Used_all * 100 + RAM_Total_all / 2) / RAM_Total_all)
-                        : 0;
-                    
                     if (settings.realFrequencies && realRAM_Hz) {
                         snprintf(MINI_RAM_var_compressed_c, sizeof(MINI_RAM_var_compressed_c),
                                  "%u%%@%hu.%hhu", ramLoadInt,
@@ -3722,8 +3703,7 @@ public:
             //     VDDQ and RAM temp splits are right-side decorations; they never block BW stacking.
             if (MINI_RAM_bw_c[0]) {
                 const bool dat_wantRAMLoadCPUGPUSplit = settings.showRAMLoad && settings.showRAMLoadCPUGPU &&
-                                                  settings.showStackedRAMLoadCPUGPU &&
-                                                  (R_SUCCEEDED(sysclkCheck) || R_SUCCEEDED(hocclkCheck));
+                                                  settings.showStackedRAMLoadCPUGPU;
                 // bwOnOwnRow: stacked BW is on, and load-CPU/GPU-split is not already consuming both rows.
                 // VDDQ split and RAM temp split are right-side column decorations — they are orthogonal
                 // to BW row layout and must NOT block BW from taking the top row.
@@ -4059,8 +4039,7 @@ public:
                                             ((settings.showVDDQ && isMariko && !settings.showVDD2) ||
                                              (settings.showVDD2 && !settings.showVDDQ));
                 const bool ramLoadSplit_t = settings.showRAMLoad && settings.showRAMLoadCPUGPU &&
-                                            settings.showStackedRAMLoadCPUGPU &&
-                                            (R_SUCCEEDED(sysclkCheck) || R_SUCCEEDED(hocclkCheck));
+                                            settings.showStackedRAMLoadCPUGPU;
                 // wantAnySplit mirrors the label-building predicate: fires for load-split OR BW-stacked.
                 // VDDQ/temp splits are right-side decorations — they must NOT block BW stacking.
                 const bool wantBWStackedSplit_t = settings.showRAMBandwidth && settings.showStackedRAMBandwidth &&

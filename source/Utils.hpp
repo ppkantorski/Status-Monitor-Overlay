@@ -226,7 +226,9 @@ uint32_t realCPU_Hz = 0;
 uint32_t realGPU_Hz = 0;
 uint32_t realRAM_Hz = 0;
 uint32_t ramLoad[SysClkRamLoad_EnumMax];
-uint32_t ramBW_MBs = 0;  // RAM bandwidth in MB/s from ACTMON hardware (direct read)
+uint32_t ramBW_MBs = 0;      // Total RAM bandwidth in MB/s from ACTMON MC_ALL (direct read)
+uint32_t ramBW_MBs_cpu = 0;  // CPU-only RAM bandwidth in MB/s from ACTMON MC_CPU (direct read)
+                             // GPU bandwidth is the derived remainder: ramBW_MBs - ramBW_MBs_cpu.
 uint32_t realCPU_mV = 0; 
 uint32_t realGPU_mV = 0; 
 uint32_t realRAM_mV = 0; 
@@ -462,14 +464,19 @@ static void Read() {
 // ─────────────────────────────────────────────────────────────────────────────
 //  ACTMON – RAM bandwidth reading via direct ACTMON hardware access.
 //
-//  Reads the MC_ALL activity monitor average count and converts to MB/s.
-//  The formula is: bw_MB_s = avg_count * 16 / 20000
+//  Reads the MC_ALL and MC_CPU activity monitor average counts and converts to MB/s.
+//  MC_ALL measures total memory bus traffic; MC_CPU measures CPU-only traffic.
+//  GPU bandwidth is the derived remainder (MC_ALL − MC_CPU), mirroring sys-clk-hoc.
+//
+//  Formula: bw_MB_s = avg_count * 16 / 20000  (EMC freq cancels out)
 //  (derived from: bw = emc_freq_khz * 16 * load_permille/1000000, where
 //   load_permille = avg_count * 1000 / (emc_freq_khz * ACTMON_PERIOD_MS),
 //   ACTMON_PERIOD_MS = 20 — the EMC freq cancels out)
 //
-//  If MC_ALL is not yet active we enable it (needs EMC freq for init_avg).
-//  We use a 1-second re-init throttle to avoid hammering on failure.
+//  Devices are lazily enabled — if MC_ALL/MC_CPU isn't yet active we enable it
+//  (needs EMC freq for init_avg). 1-second re-init throttle avoids hammering on
+//  failure. Both devices share the same period register; writing it idempotently
+//  is harmless because the value is identical regardless of which device triggered.
 //
 //  Requires ovll.json kernel_capabilities:
 //    0x6000C000 (ACTMON, 4KB) read+write
@@ -488,7 +495,8 @@ static constexpr u32 ACTMON_DEV_SIZE    = 0x40;
 // ACTMON global registers (relative to ACTMON_BASE)
 static constexpr u32 GLB_STATUS        = 0x00;
 static constexpr u32 GLB_PERIOD_CTRL   = 0x04;
-static constexpr u32 MCALL_MON_ACT     = 1u << 9;
+static constexpr u32 MCCPU_MON_ACT     = 1u << 8;   // MC_CPU device active bit in GLB_STATUS
+static constexpr u32 MCALL_MON_ACT     = 1u << 9;   // MC_ALL device active bit in GLB_STATUS
 static constexpr u32 GLB_PERIOD_USEC   = 1u << 8;
 
 // ACTMON_PERIOD: 20 ms sample window (same as hoc-clk)
@@ -496,9 +504,10 @@ static constexpr u32 ACTMON_PERIOD_MS  = 20;
 // GLB_PERIOD_CTRL value: sample = (period_ms - 1) & 0xFF, no USEC bit (ms mode)
 static constexpr u32 GLB_PERIOD_VAL    = (ACTMON_PERIOD_MS - 1) & 0xFF;
 
-// Device enum index for MC_ALL (0-based within ACTMON_DEV_BASE):
+// Device enum indices (0-based within ACTMON_DEV_BASE):
 // CPU=0 BPMP=1 AHB=2 APB=3 CPU_FREQ=4 MC_ALL=5 MC_CPU=6
 static constexpr u32 DEV_MC_ALL        = 5;
+static constexpr u32 DEV_MC_CPU        = 6;
 
 // Device register offsets within one device block (u32 slots)
 static constexpr u32 DEV_CTRL          = 0x00;
@@ -550,8 +559,8 @@ static bool MapPA(u64& va, u64 pa) {
 
 // Compute ACTMON_BASE virtual address
 static inline u64 ActmonBase()  { return vActmon + ACTMON_BASE_OFF; }
-// Compute device register base for MC_ALL
-static inline u64 DevBase()     { return ActmonBase() + ACTMON_DEV_OFF + DEV_MC_ALL * ACTMON_DEV_SIZE; }
+// Compute device register base for a given device index (5 = MC_ALL, 6 = MC_CPU)
+static inline u64 DevBase(u32 devIdx) { return ActmonBase() + ACTMON_DEV_OFF + devIdx * ACTMON_DEV_SIZE; }
 
 // Attempt one-time IO mapping
 static bool TryMap() {
@@ -596,19 +605,21 @@ static u32 MeasureEmcKHz() {
     return (u32)(((u64)cnt * pto_osc / pto_win) / 1000);
 }
 
-// Enable MC_ALL device in ACTMON (only called when not already active)
-static void EnableMcAll(u32 emc_freq_khz) {
+// Enable a single ACTMON device (MC_ALL or MC_CPU) — only called when not already active.
+// Both devices use the same period, weight, K-value, and init_avg formula as sys-clk-hoc.
+// GLB_PERIOD_CTRL is written idempotently here; the value is the same regardless of which
+// device triggered the enable.
+static void EnableDev(u32 devIdx, u32 emc_freq_khz) {
     u64 base = ActmonBase();
     // Set global period (20 ms, millisecond mode — no USEC bit)
     Wr(base, GLB_PERIOD_CTRL, GLB_PERIOD_VAL);
-    // Enable MC_ALL device
-    u64 dev = DevBase();
+    u64 dev = DevBase(devIdx);
     Wr(dev, DEV_INIT_AVG,     (u32)emc_freq_khz * ACTMON_PERIOD_MS / 2);
     Wr(dev, DEV_COUNT_WEIGHT, 256u * 4u);
     Wr(dev, DEV_CTRL,         DEV_CTRL_ENB | DEV_CTRL_ENB_PER | DEV_CTRL_K_VAL3);
 }
 
-// Read RAM bandwidth in MB/s. Returns 0 if hardware not ready.
+// Read total RAM bandwidth in MB/s from MC_ALL device. Returns 0 if hardware not ready.
 // Formula: bw_MB_s = avg_count * 16 / 20000  (EMC freq cancels out exactly)
 static u32 Read() {
     if (!TryMap()) return 0;
@@ -617,11 +628,28 @@ static u32 Read() {
         // Device not running — enable it using RAM_Hz (global, set by clkrst/pcv)
         u32 emc_khz = RAM_Hz / 1000;
         if (!emc_khz) return 0;
-        EnableMcAll(emc_khz);
+        EnableDev(DEV_MC_ALL, emc_khz);
         return 0;  // Return 0 this cycle; avg will warm up next poll
     }
-    u32 avg = Rd(DevBase(), DEV_AVG_COUNT);
+    u32 avg = Rd(DevBase(DEV_MC_ALL), DEV_AVG_COUNT);
     // bw_MB_s = avg * 16 / (ACTMON_PERIOD_MS * 1000)
+    return (u32)(((u64)avg * 16u) / (ACTMON_PERIOD_MS * 1000u));
+}
+
+// Read CPU-only RAM bandwidth in MB/s from MC_CPU device. Returns 0 if hardware not ready.
+// Same formula and sample period as Read(); the only difference is which ACTMON device.
+// GPU bandwidth is the derived remainder: Read() - ReadCpu().
+// Assumes TryMap() has already succeeded (cheap path — guarded again here for safety).
+static u32 ReadCpu() {
+    if (!TryMap()) return 0;
+    u64 base = ActmonBase();
+    if (!(Rd(base, GLB_STATUS) & MCCPU_MON_ACT)) {
+        u32 emc_khz = RAM_Hz / 1000;
+        if (!emc_khz) return 0;
+        EnableDev(DEV_MC_CPU, emc_khz);
+        return 0;
+    }
+    u32 avg = Rd(DevBase(DEV_MC_CPU), DEV_AVG_COUNT);
     return (u32)(((u64)avg * 16u) / (ACTMON_PERIOD_MS * 1000u));
 }
 
@@ -1041,9 +1069,42 @@ void Misc(void*) {
         // Non-HOC: read CPU/GPU/MEM die temps directly from SOCTHERM hardware
         if (!usingHOC()) Soctherm::Read();
 
-        // Read RAM bandwidth directly from ACTMON hardware (always available)
-        ramBW_MBs = Actmon::Read();
-        
+        // Read RAM bandwidth directly from ACTMON hardware (always available).
+        // Two separate hardware devices: MC_ALL = total, MC_CPU = CPU-only.
+        // GPU bandwidth is the derived remainder (mirrors sys-clk-hoc).
+        ramBW_MBs     = Actmon::Read();
+        ramBW_MBs_cpu = Actmon::ReadCpu();
+
+        // No sysmodule: back-fill ramLoad[All] and ramLoad[Cpu] from ACTMON so consumers
+        // see live EMC bus-utilisation values — the same metric sys-clk/hoc-clk would
+        // supply via IPC. Stored in permille (0-1000) to match the IPC contract.
+        // ramLoad[All] tracks MC_ALL; ramLoad[Cpu] tracks MC_CPU. The display path
+        // derives the GPU portion as (All - Cpu) just like sys-clk does internally.
+        // Formula (see Actmon header): load_permille = bw_MB_s * 62_500_000 / RAM_Hz
+        // All arithmetic in uint64_t — no ULL literal (uint64_t is unsigned long on AArch64).
+        if (R_FAILED(sysclkCheck) && R_FAILED(hocclkCheck)) {
+            if (RAM_Hz > 0) {
+                if (ramBW_MBs > 0) {
+                    const uint64_t permille = ((uint64_t)ramBW_MBs * (uint64_t)62500000 + (uint64_t)(RAM_Hz / 2)) / (uint64_t)RAM_Hz;
+                    ramLoad[SysClkRamLoad_All] = (uint32_t)(permille > 1000 ? 1000 : permille);
+                } else {
+                    ramLoad[SysClkRamLoad_All] = 0;
+                }
+                if (ramBW_MBs_cpu > 0) {
+                    const uint64_t permille_cpu = ((uint64_t)ramBW_MBs_cpu * (uint64_t)62500000 + (uint64_t)(RAM_Hz / 2)) / (uint64_t)RAM_Hz;
+                    // Clamp CPU to All to keep the derived GPU (All - Cpu) non-negative.
+                    uint32_t cpu_perm = (uint32_t)(permille_cpu > 1000 ? 1000 : permille_cpu);
+                    if (cpu_perm > ramLoad[SysClkRamLoad_All]) cpu_perm = ramLoad[SysClkRamLoad_All];
+                    ramLoad[SysClkRamLoad_Cpu] = cpu_perm;
+                } else {
+                    ramLoad[SysClkRamLoad_Cpu] = 0;
+                }
+            } else {
+                ramLoad[SysClkRamLoad_All] = 0;
+                ramLoad[SysClkRamLoad_Cpu] = 0;
+            }
+        }
+
         // Read voltages directly if not using EOS
         if (canReadVoltages) {
             RgltrSession session;
@@ -1272,8 +1333,11 @@ void Misc3(void*) {
         // Non-HOC: read CPU/GPU/MEM die temps directly from SOCTHERM hardware
         if (!usingHOC()) Soctherm::Read();
 
-        // Read RAM bandwidth directly from ACTMON hardware (always available)
-        ramBW_MBs = Actmon::Read();
+        // Read RAM bandwidth directly from ACTMON hardware (always available).
+        // ReadCpu returns 0 if RAM_Hz is unset (Misc3 doesn't populate RAM_Hz via clkrst),
+        // which is harmless — the lazy device-enable simply skips this tick.
+        ramBW_MBs     = Actmon::Read();
+        ramBW_MBs_cpu = Actmon::ReadCpu();
         
         // Read voltages directly if not using EOS
         if (canReadVoltages) {

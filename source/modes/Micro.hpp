@@ -533,8 +533,7 @@ public:
         batIsSplit = hasBat && settings.showStackedBAT;
         // DTC stacked: split user's dtcFormat at DIVIDER_SYMBOL into 2 rows
         dtcIsSplit = hasDtc && settings.showDTC && settings.showStackedDTC;
-        ramLoadIsSplit = hasRam && settings.showRAMLoad && settings.showRAMLoadCPUGPU && settings.showStackedRAMLoadCPUGPU &&
-                       (R_SUCCEEDED(sysclkCheck) || R_SUCCEEDED(hocclkCheck));
+        ramLoadIsSplit = hasRam && settings.showRAMLoad && settings.showRAMLoadCPUGPU && settings.showStackedRAMLoadCPUGPU;
         // GPU die temp split: volt on top row, GPU temp on bottom row
         gpuIsSplit = hasGpu && settings.showGPUTemp && settings.showStackedGPUTemp && settings.realVolts;
         // RAM temp split: VDDQ-only Mariko → VDDQ top row, RAM temp bottom row
@@ -2425,21 +2424,12 @@ public:
             const float RAM_Used_all_f = (RAM_Used_application_u + RAM_Used_applet_u + RAM_Used_system_u + RAM_Used_systemunsafe_u) / (1024.0f * 1024.0f * 1024.0f);
             snprintf(MICRO_RAM_all_c, sizeof(MICRO_RAM_all_c), "%.0f%.0fGB", RAM_Used_all_f, RAM_Total_all_f);
         } else {
-            // User wants percentage display
-            if (R_SUCCEEDED(sysclkCheck) || R_SUCCEEDED(hocclkCheck)) {
-                // Use IPC RAM load if available
-                snprintf(MICRO_RAM_all_c, sizeof(MICRO_RAM_all_c), "%hu%%",
-                         (ramLoad[SysClkRamLoad_All] + 5) / 10);
-            } else {
-                const uint64_t RAM_Total_all = RAM_Total_application_u + RAM_Total_applet_u + RAM_Total_system_u + RAM_Total_systemunsafe_u;
-                const uint64_t RAM_Used_all = RAM_Used_application_u + RAM_Used_applet_u + RAM_Used_system_u + RAM_Used_systemunsafe_u;
-                // Round to nearest by adding half-divisor before dividing — matches the
-                // (value + 5) / 10 pattern used by the IPC RAM load path above.
-                const unsigned ramLoadPercent = (RAM_Total_all > 0)
-                    ? (unsigned)((RAM_Used_all * 100 + RAM_Total_all / 2) / RAM_Total_all)
-                    : 0;
-                snprintf(MICRO_RAM_all_c, sizeof(MICRO_RAM_all_c), "%u%%", ramLoadPercent);
-            }
+            // User wants percentage display. ramLoad[All] is populated regardless of sysmodule:
+            //   - With sys-clk/hoc-clk IPC: filled from sysclkCTX/hocclkCTX in Misc thread.
+            //   - Without any sysmodule: back-filled from ACTMON MC_ALL in Misc thread
+            //     (same EMC bus-utilisation metric, computed identically to sys-clk's t210.c).
+            snprintf(MICRO_RAM_all_c, sizeof(MICRO_RAM_all_c), "%hu%%",
+                     (ramLoad[SysClkRamLoad_All] + 5) / 10);
         }
 
         const char* ramDiff = "@";
@@ -2482,8 +2472,10 @@ public:
                 snprintf(RAM_bw_c, sizeof(RAM_bw_c), "0.00 GB/s");
             }
         }
-        if (settings.showRAMLoad && settings.showRAMLoadCPUGPU &&
-            (R_SUCCEEDED(sysclkCheck) || R_SUCCEEDED(hocclkCheck))) {
+        if (settings.showRAMLoad && settings.showRAMLoadCPUGPU) {
+            // ramLoad[All] and ramLoad[Cpu] are populated from sys-clk IPC when available,
+            // otherwise from ACTMON MC_ALL + MC_CPU back-fill (see Utils.hpp Misc thread).
+            // GPU portion is the derived remainder (All - Cpu), matching sys-clk's internal model.
             const unsigned cpuL = (ramLoad[SysClkRamLoad_Cpu] + 5) / 10;
             const int gpuRaw = ramLoad[SysClkRamLoad_All] - ramLoad[SysClkRamLoad_Cpu];
             const unsigned gpuL = (unsigned)(gpuRaw > 0 ? (gpuRaw + 5) / 10 : 0);
@@ -2525,8 +2517,7 @@ public:
         {
             const bool _hasRam = (settings.show.find("RAM") != std::string::npos);
             ramLoadIsSplit = _hasRam && settings.showRAMLoad && settings.showRAMLoadCPUGPU &&
-                             settings.showStackedRAMLoadCPUGPU &&
-                             (R_SUCCEEDED(sysclkCheck) || R_SUCCEEDED(hocclkCheck));
+                             settings.showStackedRAMLoadCPUGPU;
             ramBWIsSplit   = _hasRam && settings.showRAMBandwidth && settings.showStackedRAMBandwidth &&
                              !ramLoadIsSplit;
         }
