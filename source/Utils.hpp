@@ -251,19 +251,40 @@ uint8_t refreshRate = 0;
 //  TSENSOR_CLKEN.  After that the hardware updates SENSOR_TEMP1/2 every
 //  measurement cycle and we just read them.
 //
-//  CAR is NOT touched — HOS already runs the SOCTHERM clock and we must not
-//  disturb the clock controller.  Sleep detection uses TSENSOR_CLKEN readback
-//  instead of the CAR registers HOC uses.
+//  Sleep/wake safety — IMPORTANT:
+//    HOS places SOCTHERM into reset and clock-gates it on system sleep, and
+//    restores it some time after wake.  Touching SOCTHERM (read or write)
+//    while it is in reset or its clock is gated causes the AXI transaction
+//    to never complete — the thread hangs holding mutex_Misc, which then
+//    blocks the render thread on mutexLock and freezes the whole UI.
+//    HOS sysmodules (sys-clk-hoc, sys-clk) avoid this by checking the
+//    SOC_THERM bits in the CAR (Clock And Reset) controller BEFORE every
+//    access — CAR itself is always-on and always safe to read.  We do the
+//    same: IsDisabledThroughSleep() reads two CAR registers and Read() /
+//    StartSensors() bail out cleanly when SOCTHERM is gated/reset.
+//    This is the same check ReadTSensors() performs in tsensor/soctherm.cpp
+//    of the hoc-clk sysmodule (CLK_RST_CONTROLLER_RST_DEVICES_U bit 14 /
+//    CLK_RST_CONTROLLER_CLK_OUT_ENB_U bit 14 — SOC_THERM clock id 78).
 //
 //  Requires ovll.json kernel_capabilities:
 //    0x700E2000 (SOCTHERM, 4KB) read+write
 //    0x7000F000 (FUSE,     4KB) read-only
+//    0x60006000 (CAR,      4KB) read-only (already mapped by Actmon)
 // ─────────────────────────────────────────────────────────────────────────────
 namespace Soctherm {
 
 // Physical base addresses
 static constexpr u64 PA_SOC  = 0x700E2000;
 static constexpr u64 PA_FUSE = 0x7000F000;
+static constexpr u64 PA_CAR  = 0x60006000;
+
+// CAR (Clock And Reset) register offsets used for SOCTHERM sleep detection.
+// SOC_THERM is CAR clock id 78 → _U register set, bit 14.
+// These offsets/bits match exactly what hoc-clk sysmodule's
+// tsensor/soctherm.cpp uses in IsDisabledThroughSleep().
+static constexpr u32 CAR_RST_DEVICES_U   = 0x00C;
+static constexpr u32 CAR_CLK_OUT_ENB_U   = 0x018;
+static constexpr u32 CAR_SOC_THERM_BIT   = 1u << 14;
 
 // SOCTHERM register offsets
 static constexpr u32 CFG0             = 0x00;
@@ -346,6 +367,7 @@ static constexpr TSens mS[] = {
 
 static u64  vSoc  = 0;
 static u64  vFuse = 0;
+static u64  vCar  = 0;
 static u32  cal[8] = {};
 static bool ready = false;
 
@@ -360,6 +382,18 @@ static bool MapPA(u64& va, u64 pa) {
     } else {
         return R_SUCCEEDED(svcLegacyQueryIoMapping(&va, pa, 0x1000));
     }
+}
+
+// True iff SOCTHERM is currently in reset OR its CAR clock gate is off.
+// In either case the peripheral does not respond on the AXI bus and any
+// SOCTHERM read/write will hang the requesting thread.  Caller must hold
+// off all SOCTHERM access until this returns false.  Reading CAR is always
+// safe — CAR is always-on.
+// Mirrors tsensor::IsDisabledThroughSleep() in the hoc-clk sysmodule.
+static bool IsDisabledThroughSleep() {
+    if (!vCar) return true;  // CAR not mapped → cannot verify → assume unsafe
+    return (Rd(vCar, CAR_RST_DEVICES_U) & CAR_SOC_THERM_BIT)
+        || !(Rd(vCar, CAR_CLK_OUT_ENB_U) & CAR_SOC_THERM_BIT);
 }
 
 static s32  Sext32(u32 v, int idx) { u8 sh = 31-idx; return (s32)(v<<sh)>>sh; }
@@ -402,7 +436,13 @@ static void EnSensor(const TSens& s, u32 c) {
     Wr(vSoc, s.base + CFG2, c);
 }
 
+// Configure all sensors and enable TSENSOR_CLKEN.  Caller MUST verify
+// SOCTHERM is not in reset / clock-gated before calling — this function
+// performs read-modify-write on SENSOR_PDIV and SENSOR_HOTSPOT_OFF, which
+// would hang the bus if the peripheral is off.  Guarded defensively here
+// as well in case of a future caller that forgets.
 static void StartSensors() {
+    if (IsDisabledThroughSleep()) return;
     if (isMariko) {
         for (u32 i = 0; i < 6; ++i) EnSensor(mS[i], cal[i]);
         Wr(vSoc, SENSOR_PDIV,
@@ -420,10 +460,20 @@ static void StartSensors() {
 }
 
 // One-time init: map hardware, compute fuse calibration, enable sensors.
+// Safe to call repeatedly — bails out early if SOCTHERM is currently in
+// reset or clock-gated (e.g. immediately post-boot or post-wake). Caller
+// (Read) will retry on each poll cycle until init completes successfully.
 static void Initialize() {
     if (ready) return;
-    if (!MapPA(vSoc,  PA_SOC))  return;
-    if (!MapPA(vFuse, PA_FUSE)) { vSoc = 0; return; }
+    // Map each region lazily.  Use a local then assign only on success so
+    // a failed MapPA cannot leave the global in a garbage state.
+    if (!vSoc)  { u64 tmp = 0; if (!MapPA(tmp, PA_SOC))  return; vSoc  = tmp; }
+    if (!vFuse) { u64 tmp = 0; if (!MapPA(tmp, PA_FUSE)) return; vFuse = tmp; }
+    if (!vCar)  { u64 tmp = 0; if (!MapPA(tmp, PA_CAR))  return; vCar  = tmp; }
+
+    // Do not touch SOCTHERM if it's currently gated (boot/wake window).
+    // We'll try again on the next Read() call.
+    if (IsDisabledThroughSleep()) return;
 
     // Read per-chip fuse calibration (HOS clock is already on — no CAR writes needed)
     u32 fc  = Rd(vFuse, FUSE_COMMON);
@@ -442,10 +492,33 @@ static void Initialize() {
 }
 
 // Called each poll cycle.
-// Sleep detection: if TSENSOR_CLKEN was cleared (e.g. sleep/wake), re-enable.
+//
+// Sleep/wake handling:
+//   1. CAR-based gate: if SOCTHERM is in reset or its clock is off, return
+//      immediately WITHOUT touching SOCTHERM.  This is the same approach
+//      the hoc-clk sysmodule uses; it's the only way to avoid hanging on a
+//      bus transaction to a powered-down peripheral.
+//   2. If init was deferred (e.g. SOCTHERM was gated at thread start),
+//      try to finish it now that the hardware is available.
+//   3. Otherwise read SENSOR_TEMP1/TEMP2 normally.  If the kernel cleared
+//      TSENSOR_CLKEN during sleep but SOCTHERM is back online, re-run
+//      StartSensors() to re-enable the measurement clock.
 static void Read() {
-    if (!ready || !vSoc) return;
+    // CAR must be mapped before we can safely probe SOCTHERM.  If Initialize
+    // didn't get a chance to map it (e.g. very first call), do it now.
+    if (!vCar) { u64 tmp = 0; if (!MapPA(tmp, PA_CAR)) return; vCar = tmp; }
+
+    // Bail out cleanly while SOCTHERM is in reset / clock-gated.
+    if (IsDisabledThroughSleep()) return;
+
+    // Finish deferred init if needed (mapping succeeded but sensors were
+    // not configured because SOCTHERM was gated).
+    if (!ready) { Initialize(); if (!ready) return; }
+
+    // Sensors lose TSENSOR_CLKEN across sleep.  Re-enable when needed.
+    // Safe to write SOCTHERM here — the CAR check above proved it's up.
     if (Rd(vSoc, TSENSOR_CLKEN) != TSENSOR_ENABLE) { StartSensors(); return; }
+
     u32 t1 = Rd(vSoc, SENSOR_TEMP1);
     u32 t2 = Rd(vSoc, SENSOR_TEMP2);
     if (!t1 && !t2) return; // sensors still warming up; keep last values
@@ -1063,17 +1136,24 @@ void Misc(void*) {
                 componentCPU_mC = (uint32_t)hocclkCTX.stable.temps[HocClkThermalSensor_CPU];
                 componentGPU_mC = (uint32_t)hocclkCTX.stable.temps[HocClkThermalSensor_GPU];
                 componentRAM_mC = (uint32_t)hocclkCTX.stable.temps[HocClkThermalSensor_MEM];
+                // RAM bandwidth from hoc-clk IPC (pre-calculated MB/s values, indices 6-7 in stable).
+                // HocClkPartLoad_RamBWAll = 6, HocClkPartLoad_RamBWCpu = 7, both < HocClkPartLoadStable_EnumMax (10).
+                ramBW_MBs     = hocclkCTX.stable.partLoad[HocClkPartLoad_RamBWAll];
+                ramBW_MBs_cpu = hocclkCTX.stable.partLoad[HocClkPartLoad_RamBWCpu];
             }
         }
 
         // Non-HOC: read CPU/GPU/MEM die temps directly from SOCTHERM hardware
         if (!usingHOC()) Soctherm::Read();
 
-        // Read RAM bandwidth directly from ACTMON hardware (always available).
+        // Read RAM bandwidth from ACTMON hardware only when hoc-clk IPC is not available.
+        // When hoc-clk is active, ramBW_MBs/ramBW_MBs_cpu are already populated above.
         // Two separate hardware devices: MC_ALL = total, MC_CPU = CPU-only.
         // GPU bandwidth is the derived remainder (mirrors sys-clk-hoc).
-        ramBW_MBs     = Actmon::Read();
-        ramBW_MBs_cpu = Actmon::ReadCpu();
+        if (R_FAILED(hocclkCheck)) {
+            ramBW_MBs     = Actmon::Read();
+            ramBW_MBs_cpu = Actmon::ReadCpu();
+        }
 
         // No sysmodule: back-fill ramLoad[All] and ramLoad[Cpu] from ACTMON so consumers
         // see live EMC bus-utilisation values — the same metric sys-clk/hoc-clk would
@@ -1327,6 +1407,10 @@ void Misc3(void*) {
                 componentCPU_mC = (uint32_t)hocclkCTX.stable.temps[HocClkThermalSensor_CPU];
                 componentGPU_mC = (uint32_t)hocclkCTX.stable.temps[HocClkThermalSensor_GPU];
                 componentRAM_mC = (uint32_t)hocclkCTX.stable.temps[HocClkThermalSensor_MEM];
+
+                // HocClkPartLoad_RamBWAll = 6, HocClkPartLoad_RamBWCpu = 7, both < HocClkPartLoadStable_EnumMax (10).
+                ramBW_MBs     = hocclkCTX.stable.partLoad[HocClkPartLoad_RamBWAll];
+                ramBW_MBs_cpu = hocclkCTX.stable.partLoad[HocClkPartLoad_RamBWCpu];
             }
         }
 
@@ -1347,9 +1431,12 @@ void Misc3(void*) {
             pcvGetClockRate(PcvModule_EMC, &RAM_Hz);
         }
 
-        // Read RAM bandwidth directly from ACTMON hardware (always available).
-        ramBW_MBs     = Actmon::Read();
-        ramBW_MBs_cpu = Actmon::ReadCpu();
+        // Read RAM bandwidth from ACTMON hardware only when hoc-clk IPC is not available.
+        // When hoc-clk is active, ramBW_MBs/ramBW_MBs_cpu are already populated above.
+        if (R_FAILED(hocclkCheck)) {
+            ramBW_MBs     = Actmon::Read();
+            ramBW_MBs_cpu = Actmon::ReadCpu();
+        }
 
         // No sysmodule: back-fill ramLoad[] from ACTMON so FPS_Graph sees live
         // EMC bus-utilisation values — the same metric sys-clk/hoc-clk supplies
