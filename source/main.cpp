@@ -441,11 +441,6 @@ public:
             }
             i2cCheck = i2cInitialize();
 
-            SaltySD = CheckPort();
-
-            if (SaltySD) {
-                LoadSharedMemoryAndRefreshRate();
-            }
             if (sysclkIpcRunning() && R_SUCCEEDED(sysclkIpcInitialize())) {
                 uint32_t sysClkApiVer = 0;
                 sysclkIpcGetAPIVersion(&sysClkApiVer);
@@ -477,6 +472,10 @@ public:
             splExit();
 
         });
+        SaltySD = CheckPort();
+        if (SaltySD) {
+            LoadSharedMemoryAndRefreshRate();
+        }
         Hinted = envIsSyscallHinted(0x6F);
     }
 
@@ -538,11 +537,6 @@ public:
                 psmService = psmGetServiceSession();
             }
 
-            SaltySD = CheckPort();
-
-            if (SaltySD) {
-                LoadSharedMemory();
-            }
             if (sysclkIpcRunning() && R_SUCCEEDED(sysclkIpcInitialize())) {
                 uint32_t sysClkApiVer = 0;
                 sysclkIpcGetAPIVersion(&sysClkApiVer);
@@ -573,6 +567,10 @@ public:
             }
             splExit();
         });
+        SaltySD = CheckPort();
+        if (SaltySD) {
+            LoadSharedMemory();
+        }
         Hinted = envIsSyscallHinted(0x6F);
     }
 
@@ -638,11 +636,6 @@ public:
                 psmService = psmGetServiceSession();
             }
 
-            SaltySD = CheckPort();
-
-            if (SaltySD) {
-                LoadSharedMemory();
-            }
             if (sysclkIpcRunning() && R_SUCCEEDED(sysclkIpcInitialize())) {
                 uint32_t sysClkApiVer = 0;
                 sysclkIpcGetAPIVersion(&sysClkApiVer);
@@ -741,11 +734,6 @@ public:
                 psmService = psmGetServiceSession();
             }
 
-            SaltySD = CheckPort();
-
-            if (SaltySD) {
-                LoadSharedMemoryAndRefreshRate();
-            }
             if (sysclkIpcRunning() && R_SUCCEEDED(sysclkIpcInitialize())) {
                 uint32_t sysClkApiVer = 0;
                 sysclkIpcGetAPIVersion(&sysClkApiVer);
@@ -776,6 +764,10 @@ public:
             }
             splExit();
         });
+        SaltySD = CheckPort();
+        if (SaltySD) {
+            LoadSharedMemoryAndRefreshRate();
+        }
         Hinted = envIsSyscallHinted(0x6F);
     }
 
@@ -837,11 +829,6 @@ public:
                 psmService = psmGetServiceSession();
             }
 
-            SaltySD = CheckPort();
-
-            if (SaltySD) {
-                LoadSharedMemoryAndRefreshRate();
-            }
             if (sysclkIpcRunning() && R_SUCCEEDED(sysclkIpcInitialize())) {
                 uint32_t sysClkApiVer = 0;
                 sysclkIpcGetAPIVersion(&sysClkApiVer);
@@ -872,6 +859,10 @@ public:
             }
             splExit();
         });
+        SaltySD = CheckPort();
+        if (SaltySD) {
+            LoadSharedMemoryAndRefreshRate();
+        }
         Hinted = envIsSyscallHinted(0x6F);
     }
 
@@ -933,11 +924,6 @@ public:
                 psmService = psmGetServiceSession();
             }
 
-            SaltySD = CheckPort();
-
-            if (SaltySD) {
-                LoadSharedMemoryAndRefreshRate();
-            }
             if (sysclkIpcRunning() && R_SUCCEEDED(sysclkIpcInitialize())) {
                 uint32_t sysClkApiVer = 0;
                 sysclkIpcGetAPIVersion(&sysClkApiVer);
@@ -968,6 +954,10 @@ public:
             }
             splExit();
         });
+        SaltySD = CheckPort();
+        if (SaltySD) {
+            LoadSharedMemoryAndRefreshRate();
+        }
         Hinted = envIsSyscallHinted(0x6F);
     }
 
@@ -1030,11 +1020,6 @@ public:
                 psmService = psmGetServiceSession();
             }
 
-            SaltySD = CheckPort();
-
-            if (SaltySD) {
-                LoadSharedMemoryAndRefreshRate();
-            }
             if (sysclkIpcRunning() && R_SUCCEEDED(sysclkIpcInitialize())) {
                 uint32_t sysClkApiVer = 0;
                 sysclkIpcGetAPIVersion(&sysClkApiVer);
@@ -1065,6 +1050,10 @@ public:
             }
             splExit();
         });
+        SaltySD = CheckPort();
+        if (SaltySD) {
+            LoadSharedMemoryAndRefreshRate();
+        }
         Hinted = envIsSyscallHinted(0x6F);
     }
 
