@@ -646,6 +646,17 @@ static bool TryMap() {
     return true;
 }
 
+// Public accessor: returns Actmon's already-mapped CAR virtual address, or 0
+// if mapping hasn't succeeded yet.  Triggers TryMap() so callers can rely on
+// "either I get a valid pointer or the hardware genuinely isn't available".
+// Used by other namespaces (e.g. RealClocks) to avoid duplicate IO mappings
+// of the same physical region, which can fail silently if the kernel imposes
+// per-process limits on how many times a given PA can be queried.
+static u64 GetCar() {
+    if (!mapped) (void)TryMap();
+    return vCar;
+}
+
 // Use PTO counter to measure EMC frequency in kHz (same method as hoc-clk).
 // Returns 0 on failure. Takes ~0.5 ms due to the measurement window.
 // We fall back to the global RAM_Hz if PTO is unavailable.
@@ -727,6 +738,243 @@ static u32 ReadCpu() {
 }
 
 } // namespace Actmon
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+//  RealClocks – CPU / GPU / EMC real-frequency measurement (non-IPC path)
+//
+//  When sys-clk-hoc or hoc-clk IPC is present, realCPU/GPU/RAM_Hz are pulled
+//  straight from the sysmodule context. When no IPC is available, this
+//  namespace measures the same three clocks directly off the hardware, using
+//  the same method the hoc-clk sysmodule uses internally (see
+//  Source/hoc-clk/sysmodule/src/soc/t210.c).
+//
+//  Measurement method:
+//    CPU : CAR PTO counter on CCLK_G_DIV2 (id 0x13), multiplier 2
+//    EMC : CAR PTO counter on EMC          (id 0x24), multiplier 1
+//    GPU : direct read of GPCPLL coefficient registers in the GPU MMIO,
+//          divider-decoded to a frequency (no PTO involved).
+//
+//  Sleep/wake safety:
+//    CAR itself is always-on, so CPU and EMC PTO measurements are always
+//    safe to perform.  The GPU is a different story — it is clock-gated
+//    and held in reset across sleep, and reads to its MMIO region while
+//    it is gated will hang the AXI bus (identical failure mode to SOCTHERM
+//    pre-fix).  We gate every GPU read on CLK_OUT_ENB_X / RST_DEVICES_X
+//    bit 24 (GPU3D clock id 184), exactly as t210.c does at line 224.
+//
+//  Cost:
+//    Each PTO measurement is ~510 µs of svcSleepThread + 4 brief CAR
+//    writes.  Doing this every 100 ms Misc cycle would add ~1 ms of
+//    mutex-held work per poll, which is more than necessary — we rate-limit
+//    to one update per second (sysmodule pattern, WAIT_NS = 1 s in t210.c).
+//
+//  Graceful degradation:
+//    GPU mapping at 0x57000000 requires a kernel-capability the overlay
+//    manifest may or may not grant.  If the mapping fails, GPU read is
+//    permanently skipped and realGPU_Hz stays 0 — consumers already treat
+//    `if (realGPU_Hz)` as a presence check, so the UI falls back cleanly
+//    to the target GPU_Hz value just as it does without any IPC at all.
+//
+//  Requires ovll.json kernel_capabilities:
+//    0x60006000 (CAR, 4 KB)   read+write  (already mapped by Actmon)
+//    0x57000000 (GPU, 16 MB)  read-only   (OPTIONAL — without it, only
+//                                          CPU and EMC real freqs report)
+// ─────────────────────────────────────────────────────────────────────────────
+namespace RealClocks {
+
+// Physical bases
+static constexpr u64 PA_CAR = 0x60006000ULL;
+static constexpr u64 PA_GPU = 0x57000000ULL;
+static constexpr u64 SZ_CAR = 0x1000ULL;
+static constexpr u64 SZ_GPU = 0x01000000ULL;
+
+// CAR register offsets — PTO (Peripheral Test Output) controller
+static constexpr u32 PTO_CLK_CNT_CNTL   = 0x60;
+static constexpr u32 PTO_CLK_CNT_STATUS = 0x64;
+static constexpr u32 PTO_CNT_EN         = 1u << 9;
+static constexpr u32 PTO_CNT_RST        = 1u << 10;
+static constexpr u32 PTO_CLK_ENABLE     = 1u << 13;
+static constexpr u32 PTO_SRC_SEL_SHIFT  = 14;
+static constexpr u32 PTO_DIV_SEL_DIV1   = 1u << 23;
+static constexpr u32 PTO_CLK_CNT_BUSY   = 1u << 31;
+static constexpr u32 PTO_CLK_CNT_MASK   = 0xFFFFFFu;
+
+// PTO clock-source ids (Tegra210 TRM)
+static constexpr u32 CLK_PTO_CCLK_G_DIV2 = 0x13;
+static constexpr u32 CLK_PTO_EMC         = 0x24;
+
+// CAR _X register offsets — used to verify GPU is not gated/reset.
+// GPU3D is Tegra210 CAR clock id 184 → _X register, bit 184 - 160 = 24.
+static constexpr u32 CAR_CLK_OUT_ENB_X = 0x280;
+static constexpr u32 CAR_RST_DEVICES_X = 0x28C;
+static constexpr u32 CAR_GPU_BIT       = 1u << 24;
+
+// GPU MMIO — GPCPLL coefficient register inside the GPU trim block.
+// Relative to PA_GPU base, the GPCPLL coefficient lives at 0x137000 + 0x04.
+// We only ever read one 32-bit register (divm | divn << 8 | divp << 16).
+static constexpr u32 GPU_TRIM_GPCPLL_COEFF = 0x137000u + 0x4u;
+
+// GPU PLL reference oscillator: 38.4 MHz (Tegra X1 spec)
+static constexpr u32 GPU_PLL_OSC_HZ = 38'400'000u;
+
+// Rate-limit: at most one full measurement update per second, same as
+// hoc-clk's t210.c WAIT_NS.  Each PTO measurement is ~510 µs of work,
+// and we do two of them (CPU + EMC) plus a fast GPU register read.
+static constexpr u64 UPDATE_INTERVAL_NS = 1'000'000'000ULL;
+
+static u64  vCar    = 0;
+static u64  vGpu    = 0;
+static bool gpuMapTried = false;  // set true after first attempt, success or fail
+static u64  lastUpdateTick = 0;   // armGetSystemTick() of last successful update
+
+template<typename T=u32> static T    Rd(u64 b, u32 o)    { return *reinterpret_cast<volatile T*>(b+o); }
+template<typename T=u32> static void Wr(u64 b, u32 o, T v){ *reinterpret_cast<volatile T*>(b+o) = v;   }
+
+static bool MapPA(u64& va, u64 pa, u64 size) {
+    if (hosversionAtLeast(10,0,0)) {
+        u64 sz = 0;
+        return R_SUCCEEDED(svcQueryMemoryMapping(&va, &sz, pa, size));
+    } else {
+        return R_SUCCEEDED(svcLegacyQueryIoMapping(&va, pa, size));
+    }
+}
+
+// True iff GPU3D is currently in reset OR its CAR clock gate is off.
+// In either case the GPU MMIO region does not respond on the AXI bus and
+// any GPU register read will hang the requesting thread.  Mirrors the
+// gpu_enabled check in hoc-clk sysmodule t210.c::_clock_update_freqs.
+// CAR reads are always safe.
+static bool IsGpuDisabled() {
+    if (!vCar) return true;
+    const u32 enb = Rd(vCar, CAR_CLK_OUT_ENB_X);
+    const u32 rst = Rd(vCar, CAR_RST_DEVICES_X);
+    return !(enb & CAR_GPU_BIT) || (rst & CAR_GPU_BIT);
+}
+
+// One PTO measurement.  Returns frequency in Hz at the PTO clock source,
+// already multiplied to compensate for any pre-divider.  Returns 0 on
+// failure (CAR not mapped, or counter never finishes).
+// Identical sequence to hoc-clk t210.c::_clock_get_dev_freq.
+static u32 MeasureHz(u32 srcId, u32 multiplier) {
+    if (!vCar) return 0;
+    const u32 pto_win = 16;
+    const u32 pto_osc = 32768;
+    const u32 val = (srcId << PTO_SRC_SEL_SHIFT) | PTO_DIV_SEL_DIV1
+                  | PTO_CLK_ENABLE | (pto_win - 1);
+
+    // Arm the counter with three short setup writes (gives the source
+    // mux time to settle and the counter to reset cleanly).
+    Wr(vCar, PTO_CLK_CNT_CNTL, val);
+    (void)Rd(vCar, PTO_CLK_CNT_CNTL);
+    svcSleepThread(2000);
+
+    Wr(vCar, PTO_CLK_CNT_CNTL, val | PTO_CNT_RST);
+    (void)Rd(vCar, PTO_CLK_CNT_CNTL);
+    svcSleepThread(2000);
+
+    Wr(vCar, PTO_CLK_CNT_CNTL, val);
+    (void)Rd(vCar, PTO_CLK_CNT_CNTL);
+    svcSleepThread(2000);
+
+    // Start the count.
+    Wr(vCar, PTO_CLK_CNT_CNTL, val | PTO_CNT_EN);
+    (void)Rd(vCar, PTO_CLK_CNT_CNTL);
+
+    // Window duration: 1 s * pto_win / pto_osc  ≈ 488 µs, +14 µs slack.
+    svcSleepThread((uint64_t)1'000'000'000ULL * pto_win / pto_osc + 14000);
+
+    // Wait out the BUSY bit, bounded so we can't spin forever.
+    u32 iters = 100;
+    while ((Rd(vCar, PTO_CLK_CNT_STATUS) & PTO_CLK_CNT_BUSY) && iters--) {
+        svcSleepThread(10000);
+    }
+    const u32 cnt = Rd(vCar, PTO_CLK_CNT_STATUS) & PTO_CLK_CNT_MASK;
+
+    // Disarm.
+    Wr(vCar, PTO_CLK_CNT_CNTL, 0);
+    (void)Rd(vCar, PTO_CLK_CNT_CNTL);
+    svcSleepThread(2000);
+
+    // freq_hz = cnt * multiplier * pto_osc / pto_win
+    return (u32)(((u64)cnt * multiplier * pto_osc) / pto_win);
+}
+
+// Decode GPCPLL coefficient register into a frequency in Hz.
+// Layout: bits [7:0]=divm  [15:8]=divn  [21:16]=divp
+// f_gpu = osc * divn / (divm * divp * 2)   (the /2 is fixed downstream)
+// Same math as hoc-clk t210.c lines 241-245.
+static u32 DecodeGpcPllHz(u32 coeff) {
+    const u32 divm = coeff & 0xFFu;
+    const u32 divn = (coeff >> 8) & 0xFFu;
+    const u32 divp = (coeff >> 16) & 0x3Fu;
+    if (!divm || !divp) return 0;  // guard against transient zero reads
+    return (u32)((u64)GPU_PLL_OSC_HZ * divn / ((u64)divm * divp) / 2u);
+}
+
+// Try to map CAR/GPU on first call. CAR is shared with Actmon — we reuse
+// Actmon's mapping rather than calling svcQueryMemoryMapping ourselves for
+// the same PA, because the kernel can silently refuse duplicate queries of
+// the same physical region from the same process.  Actmon's mapping is the
+// canonical one (its success is observable: RAM bandwidth depends on it),
+// so reusing it guarantees consistency.
+// GPU mapping at 0x57000000 is best-effort — many overlay manifests don't
+// permit it, in which case realGPU_Hz remains 0 and the display falls back
+// to the target GPU_Hz value.
+static bool EnsureMapped() {
+    if (!vCar) {
+        vCar = Actmon::GetCar();   // shares Actmon's mapping — never re-queried
+        if (!vCar) return false;   // Actmon couldn't map CAR either; nothing we can do
+    }
+    if (!vGpu && !gpuMapTried) {
+        gpuMapTried = true;  // only attempt once — failure is permanent
+        u64 tmp = 0;
+        if (MapPA(tmp, PA_GPU, SZ_GPU)) vGpu = tmp;
+    }
+    return true;
+}
+
+// Called from the Misc thread on the no-IPC fallback path.
+// Updates realCPU_Hz / realRAM_Hz / realGPU_Hz at most once per second.
+// Safe to call every Misc poll cycle (~100 ms) — internal rate-limit
+// makes 9 out of every 10 calls a no-op fast-path that touches no MMIO.
+//
+// On sleep/wake the GPU may be gated; in that case realGPU_Hz is left
+// untouched (keeps the last known value, same as the IPC path would).
+static void Update() {
+    if (!EnsureMapped()) return;  // CAR could not be mapped — give up.
+
+    const u64 now = armGetSystemTick();
+    // First call always proceeds (lastUpdateTick == 0 → diff = now, large).
+    if (lastUpdateTick != 0 &&
+        armTicksToNs(now - lastUpdateTick) < UPDATE_INTERVAL_NS) {
+        return;
+    }
+    lastUpdateTick = now;
+
+    // CPU and EMC: PTO is part of CAR which is always-on, so these are
+    // always safe even immediately post-wake.  Both return Hz.
+    const u32 cpuHz = MeasureHz(CLK_PTO_CCLK_G_DIV2, 2);
+    const u32 emcHz = MeasureHz(CLK_PTO_EMC, 1);
+    if (cpuHz) realCPU_Hz = cpuHz;
+    if (emcHz) realRAM_Hz = emcHz;
+
+    // GPU: only read if the GPU MMIO is mapped AND the GPU is currently
+    // clocked & out of reset.  If gated (sleep/wake window, or rare
+    // hardware power-gate during idle), leave realGPU_Hz alone — the
+    // sysmodule IPC path behaves the same way ("don't update" is correct
+    // behaviour, not "report zero").
+    if (vGpu && !IsGpuDisabled()) {
+        const u32 coeff = Rd(vGpu, GPU_TRIM_GPCPLL_COEFF);
+        const u32 gpuHz = DecodeGpcPllHz(coeff);
+        if (gpuHz) realGPU_Hz = gpuHz;
+    }
+}
+
+} // namespace RealClocks
 
 
 int compare (const void* elem1, const void* elem2) {
@@ -1153,6 +1401,19 @@ void Misc(void*) {
         if (R_FAILED(hocclkCheck)) {
             ramBW_MBs     = Actmon::Read();
             ramBW_MBs_cpu = Actmon::ReadCpu();
+        }
+
+        // No clk sysmodule: measure real CPU/GPU/EMC clocks directly off the
+        // hardware (CAR PTO counters + GPU GPCPLL coefficient register).  When
+        // either IPC is available the real-freq fields are already populated
+        // above from the sysmodule context, so we skip this path.
+        // Update() is internally rate-limited to one full measurement per
+        // second, so calling it every Misc cycle (~100 ms) is a fast no-op
+        // 9 times out of 10.  GPU read is sleep/reset-gated; if the GPU is
+        // gated post-wake, realGPU_Hz keeps its prior value (same behaviour
+        // as the IPC path would have when the sysmodule rejects a read).
+        if (R_FAILED(sysclkCheck) && R_FAILED(hocclkCheck)) {
+            RealClocks::Update();
         }
 
         // No sysmodule: back-fill ramLoad[All] and ramLoad[Cpu] from ACTMON so consumers
