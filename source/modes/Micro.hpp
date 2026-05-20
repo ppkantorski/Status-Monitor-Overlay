@@ -163,7 +163,11 @@ private:
     // class member LEvent without leventCreate causes uninitialized handle corruption
     // on the 2nd/3rd open when heap memory is reused with stale content.
     // swipeFlipPending is the one-way signal from poll thread → handleInput.
+    // plusFocusActive is set by the poll thread while Plus is held long enough
+    // to activate focus/reposition mode; cleared by the poll thread on release.
     std::atomic<bool> swipeFlipPending{false};
+    std::atomic<bool> plusFocusActive{false};   // true while Plus-hold focus mode is live
+    bool plusFocusWasActive = false;             // edge-detect: was active last handleInput frame
     bool swipeClearOnRelease = false;
     Thread swipePollThread;
     
@@ -217,21 +221,35 @@ private:
     // signalled → thread exits immediately.
     // On swipe trigger: stops the frame limiter (isRendering=false + leventSignal) and
     // sets swipeFlipPending. handleInput re-enables the limiter via swipeClearOnRelease.
+    // Plus-hold focus mode: sets plusFocusActive after a 1-second hold; cleared on release.
+    // While active, handleInput switches to focusBackgroundColor and handles joystick flips.
     static void swipePollFunc(void* arg) {
         auto* self = static_cast<MicroOverlay*>(arg);
 
-        static constexpr u64 POLL_NS         = 32'000'000ULL;  // 32 ms sleep / exit check
-        static constexpr u64 SWIPE_WINDOW_NS = 150'000'000ULL; // 150 ms gesture window
-        static constexpr int SWIPE_DIST_PX   = 84;             // framebuffer pixels
+        static constexpr u64 POLL_NS              = 32'000'000ULL;   // 32 ms sleep / exit check
+        static constexpr u64 SWIPE_WINDOW_NS      = 150'000'000ULL;  // 150 ms gesture window
+        static constexpr int SWIPE_DIST_PX        = 84;              // framebuffer pixels
+        static constexpr u64 PLUS_HOLD_NS         = 1'000'000'000ULL; // 1 s hold to activate
+
+        // HID setup — same as Mini's touch poll thread: allow P1 + Handheld.
+        const HidNpadIdType id_list[2] = { HidNpadIdType_No1, HidNpadIdType_Handheld };
+        hidSetSupportedNpadIdType(id_list, 2);
+        padConfigureInput(2, HidNpadStyleSet_NpadStandard | HidNpadStyleTag_NpadSystemExt);
+        PadState pad_p1;
+        PadState pad_handheld;
+        padInitialize(&pad_p1,       HidNpadIdType_No1);
+        padInitialize(&pad_handheld, HidNpadIdType_Handheld);
 
         HidTouchScreenState state = {0};
         bool touching             = false;
         int  initialY             = 0;
         u64  touchStartNs         = 0;
+        u64  plusHoldStart        = 0;
 
         do {
             const u64 nowNs = armTicksToNs(armGetSystemTick());
 
+            // ── Touch-swipe-to-flip ───────────────────────────────────────────
             if (hidGetTouchScreenStates(&state, 1) && state.count > 0) {
                 const int ty = static_cast<int>(state.touches[0].y);
 
@@ -261,6 +279,34 @@ private:
             } else {
                 // No touch — reset so the next finger-down starts a fresh gesture
                 touching = false;
+            }
+
+            // ── Plus-hold focus mode ──────────────────────────────────────────
+            padUpdate(&pad_p1);
+            padUpdate(&pad_handheld);
+            const u64 keysHeld = padGetButtons(&pad_p1) | padGetButtons(&pad_handheld);
+            const bool plusOnly = (keysHeld & KEY_PLUS) && !(keysHeld & ~KEY_PLUS & ALL_KEYS_MASK);
+
+            if (plusOnly) {
+                if (plusHoldStart == 0) plusHoldStart = nowNs;
+                if (!self->plusFocusActive.load(std::memory_order_acquire) &&
+                    (nowNs - plusHoldStart) >= PLUS_HOLD_NS) {
+                    // Hold threshold reached — activate focus mode and stop the
+                    // frame limiter so handleInput can render at full speed.
+                    self->plusFocusActive.store(true, std::memory_order_release);
+                    if (isRendering) {
+                        isRendering = false;
+                        leventSignal(&renderingStopEvent);
+                    }
+                    triggerOnFeedback();
+                }
+            } else {
+                if (self->plusFocusActive.load(std::memory_order_acquire)) {
+                    // Plus released while focus mode was active — deactivate.
+                    self->plusFocusActive.store(false, std::memory_order_release);
+                    triggerOffFeedback(true);
+                }
+                plusHoldStart = 0;
             }
 
         } while (!leventWait(&microSwipeExitEvent, POLL_NS));
@@ -600,7 +646,11 @@ public:
                 const int32_t barY = settings.setPosBottom
                     ? (int32_t)tsl::cfg::FramebufferHeight - barH
                     : 0;
-                renderer->drawRect(0, barY, tsl::cfg::FramebufferWidth, barH, a(settings.backgroundColor));
+                // Use focus background color while Plus-hold reposition mode is active.
+                const uint16_t barBgColor = plusFocusActive.load(std::memory_order_acquire)
+                    ? settings.focusBackgroundColor
+                    : settings.backgroundColor;
+                renderer->drawRect(0, barY, tsl::cfg::FramebufferWidth, barH, a(barBgColor));
             }
 
             
@@ -2941,6 +2991,67 @@ public:
     }
     
     virtual bool handleInput(u64 keysDown, u64 keysHeld, const HidTouchState &touchPos, HidAnalogStickState joyStickPosLeft, HidAnalogStickState joyStickPosRight) override {
+        // ── Plus-hold focus/reposition mode ───────────────────────────────────
+        // The poll thread sets plusFocusActive after a 1-second Plus hold and
+        // stops the frame limiter. Here we:
+        //   1. Re-enable the frame limiter the frame after focus mode ends.
+        //   2. While active, map left-joystick full-up/down to position flips
+        //      (same logic as swipeFlipPending: toggle setPosBottom, move layer,
+        //       force re-init, then wait for one drawn frame before re-enabling).
+        {
+            const bool focusNow = plusFocusActive.load(std::memory_order_acquire);
+
+            if (focusNow) {
+                // Frame limiter is already stopped by the poll thread.
+                // Check left joystick for top/bottom snap.
+                static constexpr int JOYSTICK_SNAP_THRESHOLD = 28000; // ~85 % of 32767
+                static bool joystickFlipArmed = true; // re-arm once stick returns to center
+
+                const int jy = joyStickPosLeft.y;
+                const bool stickAtBottom = (jy <= -JOYSTICK_SNAP_THRESHOLD);
+                const bool stickAtTop    = (jy >=  JOYSTICK_SNAP_THRESHOLD);
+                const bool stickNeutral  = (abs(jy) < JOYSTICK_SNAP_THRESHOLD / 2);
+
+                if (stickNeutral) {
+                    joystickFlipArmed = true; // stick returned to center; allow next flip
+                }
+
+                if (joystickFlipArmed && (stickAtBottom || stickAtTop)) {
+                    // Only flip if the position would actually change.
+                    const bool wantBottom = stickAtBottom;
+                    if (wantBottom != settings.setPosBottom) {
+                        settings.setPosBottom = wantBottom;
+                        ult::setIniFileValue(configIniPath, "micro", "layer_height_align",
+                                             settings.setPosBottom ? "bottom" : "top");
+
+                        if (ult::limitedMemory) {
+                            if (settings.setPosBottom) {
+                                const auto [hUScan, vUScan] = tsl::gfx::getUnderscanPixels();
+                                const float bottomVI = 1080.0f - static_cast<float>(tsl::cfg::FramebufferHeight) * 1.5f;
+                                tsl::gfx::Renderer::get().setLayerPos(0u,
+                                    static_cast<uint32_t>(std::max(0.0f, bottomVI - static_cast<float>(vUScan))));
+                            } else {
+                                tsl::gfx::Renderer::get().setLayerPos(0u, 0u);
+                            }
+                        }
+
+                        Initialized       = false;
+                        layout.calculated = false;
+                        renderDataDirty   = true;
+                        triggerMoveFeedback();
+                    }
+                    joystickFlipArmed = false; // require stick to return to center before next flip
+                }
+            }
+
+            // Edge: focus mode just deactivated → re-enable frame limiter.
+            if (!focusNow && plusFocusWasActive) {
+                isRendering = true;
+                leventClear(&renderingStopEvent);
+            }
+            plusFocusWasActive = focusNow;
+        }
+
         // ── Swipe-to-flip: re-enable rendering after position transition ──────
         // Poll thread stopped the frame limiter when the swipe fired. Once the
         // flip is applied and one frame is drawn with the new position, re-enable.

@@ -2434,6 +2434,7 @@ struct MicroSettings {
     size_t dockedFontSize;
     uint8_t alignTo;
     uint16_t backgroundColor;
+    uint16_t focusBackgroundColor;  // bar color while Plus is held (focus/reposition mode)
     uint16_t separatorColor;
     uint16_t catColor;
     uint16_t textColor;
@@ -3027,6 +3028,7 @@ ALWAYS_INLINE void GetConfigSettings(MicroSettings* settings) {
     settings->dockedFontSize = 15;
     settings->alignTo = 1; // CENTER
     convertStrToRGBA4444("#0009", &(settings->backgroundColor));
+    convertStrToRGBA4444("#000F", &(settings->focusBackgroundColor));
     convertStrToRGBA4444("#2DFF", &(settings->separatorColor));
     convertStrToRGBA4444("#2DFF", &(settings->catColor));
     convertStrToRGBA4444("#FFFF", &(settings->textColor));
@@ -3313,6 +3315,13 @@ ALWAYS_INLINE void GetConfigSettings(MicroSettings* settings) {
             settings->backgroundColor = temp;
     }
     
+    it = section.find("focus_background_color");
+    if (it != section.end()) {
+        temp = 0;
+        if (convertStrToRGBA4444(it->second, &temp))
+            settings->focusBackgroundColor = temp;
+    }
+
     it = section.find("separator_color");
     if (it != section.end()) {
         temp = 0;
