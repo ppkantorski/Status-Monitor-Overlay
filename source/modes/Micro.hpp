@@ -212,7 +212,7 @@ private:
         layout.calculated = true;
     }
 
-    // Poll thread: wakes every ~64 ms via leventWait (same pattern as gpuLoadThread /
+    // Poll thread: wakes every ~32 ms via leventWait (same pattern as gpuLoadThread /
     // BatteryChecker in Utils.hpp). leventWait returns true when microSwipeExitEvent is
     // signalled → thread exits immediately.
     // On swipe trigger: stops the frame limiter (isRendering=false + leventSignal) and
@@ -220,7 +220,7 @@ private:
     static void swipePollFunc(void* arg) {
         auto* self = static_cast<MicroOverlay*>(arg);
 
-        static constexpr u64 POLL_NS         = 64'000'000ULL;  // 64 ms sleep / exit check
+        static constexpr u64 POLL_NS         = 32'000'000ULL;  // 32 ms sleep / exit check
         static constexpr u64 SWIPE_WINDOW_NS = 150'000'000ULL; // 150 ms gesture window
         static constexpr int SWIPE_DIST_PX   = 84;             // framebuffer pixels
 

@@ -92,7 +92,8 @@ public:
             
             u64 plusHoldStart = 0;
             u64 touchHoldStart = 0;
-            static constexpr u64 HOLD_THRESHOLD_NS = 500'000'000ULL;
+            static constexpr u64 TOUCH_HOLD_THRESHOLD_NS = 500'000'000ULL;  // 500ms
+            static constexpr u64 PLUS_HOLD_THRESHOLD_NS  = 1'000'000'000ULL; // 1s
         
             HidTouchScreenState state = {0};
             bool inputDetected;
@@ -143,7 +144,7 @@ public:
                                 inputDetected = true;
                             } else {
                                 if (touchHoldStart == 0) touchHoldStart = now;
-                                if (now - touchHoldStart >= HOLD_THRESHOLD_NS) {
+                                if (now - touchHoldStart >= TOUCH_HOLD_THRESHOLD_NS) {
                                     inputDetected = true;
                                     overlay->buttonState.touchDragActive.exchange(true, std::memory_order_acq_rel);
                                 }
@@ -171,7 +172,7 @@ public:
                         if (plusHoldStart == 0) {
                             plusHoldStart = now;
                         }
-                        if (now - plusHoldStart >= HOLD_THRESHOLD_NS) {
+                        if (now - plusHoldStart >= PLUS_HOLD_THRESHOLD_NS) {
                             inputDetected = true;
                             overlay->buttonState.plusDragActive.exchange(true, std::memory_order_acq_rel);
                         }
