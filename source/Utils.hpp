@@ -1333,11 +1333,48 @@ void Misc3(void*) {
         // Non-HOC: read CPU/GPU/MEM die temps directly from SOCTHERM hardware
         if (!usingHOC()) Soctherm::Read();
 
+        // Read EMC frequency so ACTMON can enable its device and so the back-fill
+        // formula below has a valid divisor. Only EMC is needed here — CPU/GPU
+        // frequencies are not used in Misc3's display path.
+        if (R_SUCCEEDED(clkrstCheck)) {
+            ClkrstSession clkSession;
+            if (R_SUCCEEDED(clkrstOpenSession(&clkSession, PcvModuleId_EMC, 3))) {
+                clkrstGetClockRate(&clkSession, &RAM_Hz);
+                clkrstCloseSession(&clkSession);
+            }
+        }
+        else if (R_SUCCEEDED(pcvCheck)) {
+            pcvGetClockRate(PcvModule_EMC, &RAM_Hz);
+        }
+
         // Read RAM bandwidth directly from ACTMON hardware (always available).
-        // ReadCpu returns 0 if RAM_Hz is unset (Misc3 doesn't populate RAM_Hz via clkrst),
-        // which is harmless — the lazy device-enable simply skips this tick.
         ramBW_MBs     = Actmon::Read();
         ramBW_MBs_cpu = Actmon::ReadCpu();
+
+        // No sysmodule: back-fill ramLoad[] from ACTMON so FPS_Graph sees live
+        // EMC bus-utilisation values — the same metric sys-clk/hoc-clk supplies
+        // via IPC. Identical logic to Misc; see that block for formula derivation.
+        if (R_FAILED(sysclkCheck) && R_FAILED(hocclkCheck)) {
+            if (RAM_Hz > 0) {
+                if (ramBW_MBs > 0) {
+                    const uint64_t permille = ((uint64_t)ramBW_MBs * (uint64_t)62500000 + (uint64_t)(RAM_Hz / 2)) / (uint64_t)RAM_Hz;
+                    ramLoad[SysClkRamLoad_All] = (uint32_t)(permille > 1000 ? 1000 : permille);
+                } else {
+                    ramLoad[SysClkRamLoad_All] = 0;
+                }
+                if (ramBW_MBs_cpu > 0) {
+                    const uint64_t permille_cpu = ((uint64_t)ramBW_MBs_cpu * (uint64_t)62500000 + (uint64_t)(RAM_Hz / 2)) / (uint64_t)RAM_Hz;
+                    uint32_t cpu_perm = (uint32_t)(permille_cpu > 1000 ? 1000 : permille_cpu);
+                    if (cpu_perm > ramLoad[SysClkRamLoad_All]) cpu_perm = ramLoad[SysClkRamLoad_All];
+                    ramLoad[SysClkRamLoad_Cpu] = cpu_perm;
+                } else {
+                    ramLoad[SysClkRamLoad_Cpu] = 0;
+                }
+            } else {
+                ramLoad[SysClkRamLoad_All] = 0;
+                ramLoad[SysClkRamLoad_Cpu] = 0;
+            }
+        }
         
         // Read voltages directly if not using EOS
         if (canReadVoltages) {

@@ -547,15 +547,20 @@ public:
         const double cpu_usage2 = (1.0 - (static_cast<double>(safe2) / systemtickfrequency_impl)) * 100.0;
         const double cpu_usage3 = (1.0 - (static_cast<double>(safe3) / systemtickfrequency_impl)) * 100.0;
         
-        // Compute max core load (the highest usage)
-        const double cpu_usageM = std::max({cpu_usage0, cpu_usage1, cpu_usage2, cpu_usage3});
-        
+        // Compute max core load (the highest usage), clamped to [0, 100]
+        const double cpu_usageM = std::max(0.0, std::min(100.0,
+            std::max({cpu_usage0, cpu_usage1, cpu_usage2, cpu_usage3})));
+
+        // Clamp GPU (tenths, 0–1000) and RAM (permille, 0–1000) before display
+        const uint32_t gpu_clamped = std::min(GPU_Load_u, (uint32_t)1000);
+        const uint32_t ram_clamped = std::min(ramLoad[SysClkRamLoad_All], (uint32_t)1000);
+
         // Format output strings
         snprintf(CPU_Load_c, sizeof(CPU_Load_c), "%.1f%%", cpu_usageM);
-        snprintf(GPU_Load_c, sizeof(GPU_Load_c), "%d.%d%%", GPU_Load_u / 10, GPU_Load_u % 10);
-        snprintf(RAM_Load_c, sizeof(RAM_Load_c), "%hu.%hhu%%",
-                 ramLoad[SysClkRamLoad_All] / 10,
-                 ramLoad[SysClkRamLoad_All] % 10);
+        snprintf(GPU_Load_c, sizeof(GPU_Load_c), "%u.%u%%", gpu_clamped / 10, gpu_clamped % 10);
+        snprintf(RAM_Load_c, sizeof(RAM_Load_c), "%u.%u%%",
+                 ram_clamped / 10,
+                 ram_clamped % 10);
         
         mutexUnlock(&mutex_Misc);
     
