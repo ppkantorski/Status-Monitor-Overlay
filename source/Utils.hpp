@@ -51,6 +51,7 @@ Thread t7;
 uint64_t systemtickfrequency = 19200000;
 
 LEvent threadexit;
+LEvent microSwipeExitEvent;  // global so it is zero-initialized like threadexit; leventCreate not needed
 PwmChannelSession g_ICon;
 const std::string folderpath = "sdmc:/switch/.overlays/";
 

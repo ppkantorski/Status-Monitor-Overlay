@@ -157,6 +157,15 @@ private:
 
     bool skipOnce = true;
     bool runOnce = true;
+
+    // Swipe-to-flip position detection.
+    // microSwipeExitEvent is a global (zero-initialized like threadexit) — using a
+    // class member LEvent without leventCreate causes uninitialized handle corruption
+    // on the 2nd/3rd open when heap memory is reused with stale content.
+    // swipeFlipPending is the one-way signal from poll thread → handleInput.
+    std::atomic<bool> swipeFlipPending{false};
+    bool swipeClearOnRelease = false;
+    Thread swipePollThread;
     
     // Fixed spacing system - calculate actual widths at render time
     struct LayoutMetrics {
@@ -203,6 +212,60 @@ private:
         layout.calculated = true;
     }
 
+    // Poll thread: wakes every ~64 ms via leventWait (same pattern as gpuLoadThread /
+    // BatteryChecker in Utils.hpp). leventWait returns true when microSwipeExitEvent is
+    // signalled → thread exits immediately.
+    // On swipe trigger: stops the frame limiter (isRendering=false + leventSignal) and
+    // sets swipeFlipPending. handleInput re-enables the limiter via swipeClearOnRelease.
+    static void swipePollFunc(void* arg) {
+        auto* self = static_cast<MicroOverlay*>(arg);
+
+        static constexpr u64 POLL_NS         = 64'000'000ULL;  // 64 ms sleep / exit check
+        static constexpr u64 SWIPE_WINDOW_NS = 150'000'000ULL; // 150 ms gesture window
+        static constexpr int SWIPE_DIST_PX   = 84;             // framebuffer pixels
+
+        HidTouchScreenState state = {0};
+        bool touching             = false;
+        int  initialY             = 0;
+        u64  touchStartNs         = 0;
+
+        do {
+            const u64 nowNs = armTicksToNs(armGetSystemTick());
+
+            if (hidGetTouchScreenStates(&state, 1) && state.count > 0) {
+                const int ty = static_cast<int>(state.touches[0].y);
+
+                if (!touching) {
+                    // Finger just placed — record origin
+                    touching     = true;
+                    initialY     = ty;
+                    touchStartNs = nowNs;
+                } else if (!self->swipeFlipPending.load(std::memory_order_acquire)) {
+                    // Gesture in progress, no flip queued yet — check thresholds
+                    const u64 elapsed = nowNs - touchStartNs;
+                    if (elapsed <= SWIPE_WINDOW_NS) {
+                        const int  deltaY   = ty - initialY;
+                        const bool atTop    = !self->settings.setPosBottom;
+                        const bool atBottom =  self->settings.setPosBottom;
+                        if ((atTop    && deltaY >=  SWIPE_DIST_PX) ||
+                            (atBottom && deltaY <= -SWIPE_DIST_PX)) {
+                            if (isRendering) {
+                                isRendering = false;
+                                leventSignal(&renderingStopEvent);
+                            }
+                            self->swipeFlipPending.store(true, std::memory_order_release);
+                            triggerMoveFeedback();
+                        }
+                    }
+                }
+            } else {
+                // No touch — reset so the next finger-down starts a fresh gesture
+                touching = false;
+            }
+
+        } while (!leventWait(&microSwipeExitEvent, POLL_NS));
+    }
+
 public:
     MicroOverlay() { 
         tsl::hlp::requestForeground(false);
@@ -238,6 +301,12 @@ public:
         //alphabackground = 0x0;
         deactivateOriginalFooter = true;
         StartThreads();
+
+        // Start swipe-to-flip poll thread.
+        // leventClear ensures the exit event starts non-signalled before threadStart.
+        leventClear(&microSwipeExitEvent);
+        threadCreate(&swipePollThread, swipePollFunc, this, nullptr, 0x1000, 0x2c, -2);
+        threadStart(&swipePollThread);
         
         // Pre-allocate render items vector
         //renderItems.reserve(8);
@@ -307,6 +376,9 @@ public:
     }
     
     ~MicroOverlay() {
+        leventSignal(&microSwipeExitEvent);
+        threadWaitForExit(&swipePollThread);
+        threadClose(&swipePollThread);
         CloseThreads();
         fixForeground = true;
         FullMode = true;
@@ -2878,6 +2950,42 @@ public:
     }
     
     virtual bool handleInput(u64 keysDown, u64 keysHeld, const HidTouchState &touchPos, HidAnalogStickState joyStickPosLeft, HidAnalogStickState joyStickPosRight) override {
+        // ── Swipe-to-flip: re-enable rendering after position transition ──────
+        // Poll thread stopped the frame limiter when the swipe fired. Once the
+        // flip is applied and one frame is drawn with the new position, re-enable.
+        if (swipeClearOnRelease && !isRendering) {
+            swipeClearOnRelease = false;
+            isRendering = true;
+            leventClear(&renderingStopEvent);
+        }
+
+        // ── Swipe-to-flip: apply position change ──────────────────────────────
+        // Poll thread sets swipeFlipPending; consumed here (main thread) so all
+        // settings/render state mutations are safe and single-threaded.
+        if (swipeFlipPending.exchange(false, std::memory_order_acq_rel)) {
+            settings.setPosBottom = !settings.setPosBottom;
+            ult::setIniFileValue(configIniPath, "micro", "layer_height_align",
+                                 settings.setPosBottom ? "bottom" : "top");
+
+            // limitedMemory: VI layer must move to the correct screen half.
+            if (ult::limitedMemory) {
+                if (settings.setPosBottom) {
+                    const auto [hUScan, vUScan] = tsl::gfx::getUnderscanPixels();
+                    const float bottomVI = 1080.0f - static_cast<float>(tsl::cfg::FramebufferHeight) * 1.5f;
+                    tsl::gfx::Renderer::get().setLayerPos(0u,
+                        static_cast<uint32_t>(std::max(0.0f, bottomVI - static_cast<float>(vUScan))));
+                } else {
+                    tsl::gfx::Renderer::get().setLayerPos(0u, 0u);
+                }
+            }
+
+            // Force full re-init: base_y, barY, gridTopY/singleItemY/gridBotY all
+            // depend on setPosBottom and are recomputed on the next draw frame.
+            Initialized       = false;
+            layout.calculated = false;
+            renderDataDirty   = true;
+            swipeClearOnRelease = true;
+        }
         if (isKeyComboPressed(keysHeld, keysDown)) {
             isRendering = false;
             leventSignal(&renderingStopEvent);
