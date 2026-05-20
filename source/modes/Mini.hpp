@@ -1119,16 +1119,16 @@ public:
                             labelText = "BAT";
                         }
                         flags |= 32;
-                    } else if (key == "FPS" && !(flags & 64) && GameRunning) {
+                    } else if (key == "FPS" && !(flags & 64) && GameRunning && FPSavg != 254) {
                         shouldAdd = true;
                         labelText = "FPS";
                         flags |= 64;
-                    } else if (key == "RES" && !(flags & 128) && GameRunning) {
+                    } else if (key == "RES" && !(flags & 128) && GameRunning && m_resolutionOutput[0].width) {
                         shouldAdd = true;
                         labelText = "RES";
                         flags |= 128;
                         resolutionShow = true;
-                    } else if (key == "READ" && !(flags & 512) && GameRunning) {
+                    } else if (key == "READ" && !(flags & 512) && GameRunning && NxFps) {
                         shouldAdd = true;
                         labelText = "READ";
                         flags |= 512;
