@@ -171,6 +171,7 @@ private:
     int topPadding, bottomPadding;
     int cachedBaselineOffset = 0;  // ascent pixels; used for currentY start
     int cachedDescentAbs     = 0;  // descent pixels below baseline; used for last-row glyph bottom
+    uint32_t drawCachedHeight = 0; // authoritative height from draw path; read by handleInput for maxY clamp
     bool isDragging = false;
 
     bool skipOnce = true;
@@ -1347,6 +1348,7 @@ public:
                 
                 needsRecalc = false;
             }
+            drawCachedHeight = cachedHeight; // keep member in sync for handleInput maxY clamp
             
             // Fast rendering using cached values
             const uint32_t margin = (fontsize * 4);
@@ -4322,7 +4324,10 @@ public:
         const int overlayWidth = settings.showLabels 
             ? (margin + rectangleWidth + (fontsize / 3))
             : (rectangleWidth + (fontsize / 3) * 2 + leftPadding);
-        const int overlayHeight = cachedOverlayHeight;
+        // Use drawCachedHeight (the draw-path height) for clamping — cachedOverlayHeight is a
+        // separate estimate that omits descentAbs and split compressions, so using it causes
+        // maxY to be too large and the clipping guard pulls the rect back, leaving a gap.
+        const int overlayHeight = (drawCachedHeight > 0) ? (int)drawCachedHeight : (int)cachedOverlayHeight;
         
         // Screen boundaries for clamping
         const int minX = -cachedBaseX + framePadding;

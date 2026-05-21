@@ -229,7 +229,7 @@ private:
         static constexpr u64 POLL_NS              = 32'000'000ULL;   // 32 ms sleep / exit check
         static constexpr u64 SWIPE_WINDOW_NS      = 150'000'000ULL;  // 150 ms gesture window
         static constexpr int SWIPE_DIST_PX        = 84;              // framebuffer pixels
-        static constexpr int SWIPE_EDGE_PX        = 16;              // touch must start within 16 px of top/bottom edge
+        static constexpr int SWIPE_EDGE_PX        = 32;              // touch must start within 16 px of top/bottom edge
         static constexpr int SCREEN_HEIGHT_PX     = 720;             // framebuffer height
         static constexpr u64 PLUS_HOLD_NS         = 1'000'000'000ULL; // 1 s hold to activate
 
