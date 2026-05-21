@@ -1407,14 +1407,9 @@ void Misc(void*) {
         // hardware (CAR PTO counters + GPU GPCPLL coefficient register).  When
         // either IPC is available the real-freq fields are already populated
         // above from the sysmodule context, so we skip this path.
-        // Update() is internally rate-limited to one full measurement per
-        // second, so calling it every Misc cycle (~100 ms) is a fast no-op
-        // 9 times out of 10.  GPU read is sleep/reset-gated; if the GPU is
-        // gated post-wake, realGPU_Hz keeps its prior value (same behaviour
-        // as the IPC path would have when the sysmodule rejects a read).
-        if (R_FAILED(sysclkCheck) && R_FAILED(hocclkCheck)) {
-            RealClocks::Update();
-        }
+        // NOTE: Update() is called OUTSIDE mutex_Misc (below) — the sysmodule
+        // likewise holds no lock during PTO measurement, which involves
+        // svcSleepThread calls that must not block the mutex_Misc critical section.
 
         // No sysmodule: back-fill ramLoad[All] and ramLoad[Cpu] from ACTMON so consumers
         // see live EMC bus-utilisation values — the same metric sys-clk/hoc-clk would
@@ -1576,7 +1571,17 @@ void Misc(void*) {
         }
         
         mutexUnlock(&mutex_Misc);
-        
+
+        // Real-clock PTO measurement runs OUTSIDE the mutex — exactly as the
+        // sysmodule does it. Each MeasureHz call sleeps ~510 µs via svcSleepThread;
+        // holding mutex_Misc across those sleeps blocked Micro's draw CS for up to
+        // ~1.5 ms once per second and caused the intermittent close-time hang.
+        // realCPU/GPU/RAM_Hz are u32 globals; AArch64 word stores are naturally
+        // atomic, and one-cycle stale values are fine for display.
+        if (R_FAILED(sysclkCheck) && R_FAILED(hocclkCheck)) {
+            RealClocks::Update();
+        }
+
     } while (!leventWait(&threadexit, timeout_ns));
     
     // Cleanup voltage reading if initialized
