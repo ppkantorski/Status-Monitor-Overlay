@@ -1178,6 +1178,7 @@ public:
         isBackgroundColor = (key == "background_color" || key == "focus_background_color" ||
                             (flags.isFPSGraph && (key == "fps_counter_color" || key == "dashed_line_color")));
         isTextBasedColor  = (key == "text_color" || key == "separator_color" || key == "cat_color" ||
+                            key == "cat_color_1" || key == "cat_color_2" ||
                             (flags.isFPSGraph && (key == "border_color" || key == "max_fps_text_color" ||
                              key == "min_fps_text_color" || key == "main_line_color" ||
                              key == "rounded_line_color" || key == "perfect_line_color")));
