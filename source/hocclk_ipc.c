@@ -42,6 +42,7 @@ bool hocclkIpcRunning()
     if (!running)
     {
         smUnregisterService(smEncodeName(HOCCLK_IPC_SERVICE_NAME));
+        svcCloseHandle(handle);
     }
 
   return running;

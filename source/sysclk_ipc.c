@@ -25,6 +25,7 @@ bool sysclkIpcRunning()
     if (!running)
     {
         smUnregisterService(smEncodeName(SYSCLK_IPC_SERVICE_NAME));
+        svcCloseHandle(handle);
     }
 
   return running;
