@@ -644,9 +644,9 @@ public:
         } else if (flags.isFull) {
             list->addItem(new tsl::elm::CategoryHeader("Global"));
             addToggle(list, "Disable Screenshots", "disable_screenshots", false);
-            addToggle(list, "Real Freqs",          "show_real_freqs",     true);
-            addToggle(list, "Deltas",              "show_deltas",         true);
-            addToggle(list, "Target Freqs",        "show_target_freqs",   true);
+            addToggle(list, "Real Frequencies",    "show_real_freqs",     true);
+            addToggle(list, "Target Frequencies",  "show_target_freqs",   true);
+            addToggle(list, "Frequency Deltas",    "show_deltas",         true);
             addToggle(list, "FPS",                 "show_fps",            true);
             addToggle(list, "RES",                 "show_res",            true);
             addToggle(list, "Read Speed",          "show_read_speed",     true);
@@ -664,22 +664,22 @@ public:
             addToggle(list, "Dynamic Temp Colors", "use_dynamic_colors",  true);
 
             list->addItem(new tsl::elm::CategoryHeader("CPU"));
-            addToggle(list,         "Full CPU",              "show_full_cpu",              false);
-            addToggle(list,         "Full CPU Max Core 0-2", "show_full_cpu_max_core_012", false);
-            addToggle(list, "Stacked Full CPU",      "show_stacked_full_cpu", false);
-            addToggle(list,         "CPU Temp",              "show_cpu_temp",              false);
-            addToggle(list, "Stacked CPU Temp",      "show_stacked_cpu_temp", false);
-            addToggle(list,         "Voltage At End",        "voltage_at_end_cpu",         false);
+            addToggle(list, "Full CPU",              "show_full_cpu",              false);
+            addToggle(list, "Full CPU Max Core 0-2", "show_full_cpu_max_core_012", false);
+            addToggle(list, "Stacked Full CPU",      "show_stacked_full_cpu",      false);
+            addToggle(list, "CPU Temp",              "show_cpu_temp",              false);
+            addToggle(list, "Stacked CPU Temp",      "show_stacked_cpu_temp",      false);
+            addToggle(list, "Voltage At End",        "voltage_at_end_cpu",         false);
 
             list->addItem(new tsl::elm::CategoryHeader("GPU"));
-            addToggle(list,         "GPU Temp",         "show_gpu_temp",              false);
+            addToggle(list, "GPU Temp",         "show_gpu_temp",         false);
             addToggle(list, "Stacked GPU Temp", "show_stacked_gpu_temp", false);
-            addToggle(list,         "Voltage At End",   "voltage_at_end_gpu",         false);
+            addToggle(list, "Voltage At End",   "voltage_at_end_gpu",    false);
 
             list->addItem(new tsl::elm::CategoryHeader("RAM"));
-            addToggle(list,         "RAM Bandwidth",         "show_ram_bandwidth",               false);
-            addToggle(list, "Stacked RAM Bandwidth", "show_stacked_ram_bandwidth",  false);
-            addToggle(list,         "RAM Load CPU/GPU", "show_RAM_load_CPU_GPU",      false);
+            addToggle(list, "RAM Bandwidth",         "show_ram_bandwidth",               false);
+            addToggle(list, "Stacked RAM Bandwidth", "show_stacked_ram_bandwidth",       false);
+            addToggle(list, "RAM Load CPU/GPU", "show_RAM_load_CPU_GPU",                 false);
             addToggle(list, "Stacked RAM Load CPU/GPU", "show_stacked_ram_load_cpu_gpu", false);
 
             if (isMariko)
@@ -690,9 +690,9 @@ public:
             if (isMariko)
                 addToggle(list, "Stacked VDD2/VDDQ", "show_stacked_vddq", true);
 
-            addToggle(list,         "RAM Temp",         "show_ram_temp",              false);
+            addToggle(list, "RAM Temp",         "show_ram_temp",         false);
             addToggle(list, "Stacked RAM Temp", "show_stacked_ram_temp", false);
-            addToggle(list,         "Voltage At End",   "voltage_at_end_ram",         false);
+            addToggle(list, "Voltage At End",   "voltage_at_end_ram",    false);
 
             list->addItem(new tsl::elm::CategoryHeader("TMP"));
             {
@@ -727,9 +727,9 @@ public:
                     addToggle(list, "Stacked Temps", "show_stacked_temps", true);
             }
 
-            addToggle(list, "SOC Voltage", "show_soc_voltage", false);
+            addToggle(list, "SOC Voltage",     "show_soc_voltage",     false);
             addToggle(list, "Stacked Fan/SOC", "show_stacked_fan_soc", true);
-            addToggle(list, "Voltage At End", "voltage_at_end_tmp", false);
+            addToggle(list, "Voltage At End",  "voltage_at_end_tmp",   false);
 
             list->addItem(new tsl::elm::CategoryHeader("RES"));
             addToggle(list, "Full Resolution", "show_full_res", true);
@@ -743,8 +743,8 @@ public:
             addToggle(list, "Stacked", "show_stacked_bat", false);
 
             list->addItem(new tsl::elm::CategoryHeader("DTC"));
-            addToggle(list,         "Use DTC Symbol", "use_dtc_symbol",         true);
-            addToggle(list, "Stacked",        "show_stacked_dtc",  false);
+            addToggle(list, "Use DTC Symbol", "use_dtc_symbol",   true);
+            addToggle(list, "Stacked",        "show_stacked_dtc", false);
 
         } else if (flags.isGameRes) {
             list->addItem(new tsl::elm::CategoryHeader("Global"));
