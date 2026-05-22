@@ -4081,3 +4081,141 @@ ALWAYS_INLINE void GetConfigSettings(ResolutionSettings* settings) {
         settings->disableScreenshots = (key != "FALSE");
     }
 }
+
+// =============================================================================
+// DIVIDER SCISSOR HELPERS (shared between Mini and Micro)
+//
+// The DIVIDER_SYMBOL glyph (U+E031, PUA) has alpha-blended edges. When three
+// are stacked vertically at the same x with overlapping pixel rows, the overlap
+// regions double-blend and produce a visibly darker shade. These helpers draw
+// each divider with a tight scissor band so the three glyphs meet exactly at
+// the midpoint between their visual centers — no overlap, no shading artifact.
+//
+// Layout convention (libtesla: larger Y is lower on screen):
+//
+//   topY     ┊  (top divider — clipped above the upper cut)
+//            ┊
+//            ┊──── cut at midpoint between top and center glyph centers
+//            ┊
+//   centerY  ┊  (center divider — clipped between the two cuts)
+//            ┊
+//            ┊──── cut at midpoint between center and bot glyph centers
+//            ┊
+//   botY     ┊  (bot divider — clipped below the lower cut)
+//
+// The cut Y is: ((Yupper + Ylower) / 2) + bounds[1] + glyphHeight/2
+// (bounds[1] is negative — it's the y-offset from baseline to glyph top.)
+//
+// Scissor stack note (tesla.hpp): enableScissoring/disableScissoring are a
+// simple push/pop stack; only the top entry is consulted by the renderer.
+// Every enable MUST be paired with a disable on every path.
+// =============================================================================
+namespace divider_scissor {
+
+    // Decode the first Unicode codepoint from a UTF-8 string.
+    // Used to pass ult::DIVIDER_SYMBOL to FontManager::getOrCreateGlyph()
+    // without hardcoding the private-use codepoint value here.
+    static inline uint32_t firstCodepoint(const std::string& utf8) {
+        if (utf8.empty()) return 0;
+        const unsigned char* s = reinterpret_cast<const unsigned char*>(utf8.data());
+        if (s[0] < 0x80u)                    return s[0];
+        if ((s[0] & 0xE0u) == 0xC0u && utf8.size() >= 2)
+            return ((s[0] & 0x1Fu) << 6)  | (s[1] & 0x3Fu);
+        if ((s[0] & 0xF0u) == 0xE0u && utf8.size() >= 3)
+            return ((s[0] & 0x0Fu) << 12) | ((s[1] & 0x3Fu) << 6)  | (s[2] & 0x3Fu);
+        if ((s[0] & 0xF8u) == 0xF0u && utf8.size() >= 4)
+            return ((s[0] & 0x07u) << 18) | ((s[1] & 0x3Fu) << 12) | ((s[2] & 0x3Fu) << 6) | (s[3] & 0x3Fu);
+        return 0;
+    }
+
+    // Fetch the divider glyph's vertical-center offset from its baseline Y,
+    // plus the horizontal scissor bounds needed to fully cover its pixels.
+    // Returns false if the glyph could not be obtained (caller should fall
+    // back to drawing without scissoring in that unlikely case).
+    static inline bool getDividerScissorMetrics(uint32_t fontsize,
+                                                 int& outCenterOffsetY,
+                                                 int& outLeftPad,
+                                                 int& outFullWidth) {
+        const uint32_t cp = firstCodepoint(ult::DIVIDER_SYMBOL);
+        if (!cp) return false;
+        auto glyph = tsl::gfx::FontManager::getOrCreateGlyph(cp, false, fontsize);
+        if (!glyph) return false;
+        // bounds[1] is negative (above baseline); height is positive.
+        // Visual vertical center of the rasterised glyph relative to baseline:
+        outCenterOffsetY = glyph->bounds[1] + glyph->height / 2;
+        // Horizontal extent of the rasterised pixels (relative to draw x):
+        outLeftPad   = glyph->bounds[0];   // may be negative
+        outFullWidth = glyph->width;
+        if (outFullWidth < 1) outFullWidth = 1;
+        return true;
+    }
+
+    // Compute the screen-Y at which to cut between two adjacent dividers
+    // (Yupper < Ylower in screen space). This is the midpoint between their
+    // visual glyph centers. Pixels with screen-y < cut belong to the upper
+    // divider; pixels with screen-y >= cut belong to the lower.
+    static inline int computeDividerCutY(int Yupper, int Ylower, int centerOffsetY) {
+        return ((Yupper + Ylower) / 2) + centerOffsetY;
+    }
+
+    // Sentinel "no cut on this side" values used by drawDividerScissored.
+    static constexpr int kNoUpperCut = -1000000;
+    static constexpr int kNoLowerCut =  1000000;
+
+    // Draws one divider at (x, baselineY) clipped to screen-y rows
+    // [cutAbove, cutBelow). Pass cutAbove == kNoUpperCut for "no upper cut"
+    // and cutBelow == kNoLowerCut for "no lower cut". The horizontal scissor
+    // extent is computed from the glyph's bitmap bounds so the glyph is
+    // never accidentally clipped on its sides.
+    static inline void drawDividerScissored(tsl::gfx::Renderer* renderer,
+                                            int x, int baselineY,
+                                            int cutAbove, int cutBelow,
+                                            uint32_t fontsize,
+                                            const tsl::Color& color,
+                                            int leftPad, int fullWidth) {
+        const int fbH = (int)tsl::cfg::FramebufferHeight;
+        int yLo = (cutAbove <= kNoUpperCut) ? 0   : cutAbove;
+        int yHi = (cutBelow >= kNoLowerCut) ? fbH : cutBelow;
+        if (yLo < 0)   yLo = 0;
+        if (yHi > fbH) yHi = fbH;
+        if (yHi <= yLo) return;  // nothing visible — skip draw entirely
+
+        const int fbW = (int)tsl::cfg::FramebufferWidth;
+        int xLo = x + leftPad - 1;
+        int xHi = x + leftPad + fullWidth + 1;
+        if (xLo < 0)   xLo = 0;
+        if (xHi > fbW) xHi = fbW;
+        if (xHi <= xLo) return;
+
+        renderer->enableScissoring((u32)xLo, (u32)yLo,
+                                   (u32)(xHi - xLo), (u32)(yHi - yLo));
+        renderer->drawString(ult::DIVIDER_SYMBOL, false,
+                             (float)x, (float)baselineY, fontsize, color);
+        renderer->disableScissoring();
+    }
+
+    // High-level helper: draws three dividers at the same x at three distinct
+    // baseline Y values (topY < centerY < botY in screen space). Each draw is
+    // scissored to a clean non-overlapping band so the three glyphs meet at
+    // the midpoint between their visual centers.
+    static inline void drawDividerStack3(tsl::gfx::Renderer* renderer,
+                                         int x,
+                                         int topY, int centerY, int botY,
+                                         uint32_t fontsize,
+                                         const tsl::Color& color) {
+        int centerOff = 0, leftPad = 0, fullW = 0;
+        if (!getDividerScissorMetrics(fontsize, centerOff, leftPad, fullW)) {
+            // Fallback: draw without scissoring (preserves prior behaviour).
+            renderer->drawString(ult::DIVIDER_SYMBOL, false, (float)x, (float)topY,    fontsize, color);
+            renderer->drawString(ult::DIVIDER_SYMBOL, false, (float)x, (float)centerY, fontsize, color);
+            renderer->drawString(ult::DIVIDER_SYMBOL, false, (float)x, (float)botY,    fontsize, color);
+            return;
+        }
+        const int cutTC = computeDividerCutY(topY,    centerY, centerOff);
+        const int cutCB = computeDividerCutY(centerY, botY,    centerOff);
+        drawDividerScissored(renderer, x, topY,    kNoUpperCut, cutTC,       fontsize, color, leftPad, fullW);
+        drawDividerScissored(renderer, x, centerY, cutTC,       cutCB,       fontsize, color, leftPad, fullW);
+        drawDividerScissored(renderer, x, botY,    cutCB,       kNoLowerCut, fontsize, color, leftPad, fullW);
+    }
+
+} // namespace divider_scissor

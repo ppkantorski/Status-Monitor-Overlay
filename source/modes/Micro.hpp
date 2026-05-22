@@ -1,71 +1,4 @@
 class MainMenu;
-
-namespace micro_divider_scissor {
-    // ─────────────────────────────────────────────────────────────────────────
-    // 3-DIVIDER STACK SCISSORING HELPERS (ported from Mini)
-    // Prevents alpha-blend doubling when 3 DIVIDER_SYMBOL glyphs are stacked
-    // vertically at the same X with overlapping pixel rows.
-    // ─────────────────────────────────────────────────────────────────────────
-    static inline bool getDividerScissorMetrics(uint32_t fontsize,
-                                                 int& outCenterOffsetY,
-                                                 int& outLeftPad,
-                                                 int& outFullWidth) {
-        const uint32_t cp = 0xE031;
-        auto glyph = tsl::gfx::FontManager::getOrCreateGlyph(cp, false, fontsize);
-        if (!glyph) return false;
-        outCenterOffsetY = glyph->bounds[1] + glyph->height / 2;
-        outLeftPad   = glyph->bounds[0];
-        outFullWidth = glyph->width;
-        if (outFullWidth < 1) outFullWidth = 1;
-        return true;
-    }
-    static inline int computeDividerCutY(int Yupper, int Ylower, int centerOffsetY) {
-        return ((Yupper + Ylower) / 2) + centerOffsetY;
-    }
-    static constexpr int kNoUpperCut = -1000000;
-    static constexpr int kNoLowerCut =  1000000;
-    static inline void drawDividerScissored(tsl::gfx::Renderer* renderer,
-                                            int x, int baselineY,
-                                            int cutAbove, int cutBelow,
-                                            uint32_t fontsize,
-                                            const tsl::Color& color,
-                                            int leftPad, int fullWidth) {
-        const int fbH = (int)tsl::cfg::FramebufferHeight;
-        int yLo = (cutAbove <= kNoUpperCut) ? 0   : cutAbove;
-        int yHi = (cutBelow >= kNoLowerCut) ? fbH : cutBelow;
-        if (yLo < 0)   yLo = 0;
-        if (yHi > fbH) yHi = fbH;
-        if (yHi <= yLo) return;
-        const int fbW = (int)tsl::cfg::FramebufferWidth;
-        int xLo = x + leftPad - 1;
-        int xHi = x + leftPad + fullWidth + 1;
-        if (xLo < 0)   xLo = 0;
-        if (xHi > fbW) xHi = fbW;
-        if (xHi <= xLo) return;
-        renderer->enableScissoring((u32)xLo, (u32)yLo, (u32)(xHi - xLo), (u32)(yHi - yLo));
-        renderer->drawString(ult::DIVIDER_SYMBOL, false, (float)x, (float)baselineY, fontsize, color);
-        renderer->disableScissoring();
-    }
-    static inline void drawDividerStack3(tsl::gfx::Renderer* renderer,
-                                         int x,
-                                         int topY, int centerY, int botY,
-                                         uint32_t fontsize,
-                                         const tsl::Color& color) {
-        int centerOff = 0, leftPad = 0, fullW = 0;
-        if (!getDividerScissorMetrics(fontsize, centerOff, leftPad, fullW)) {
-            renderer->drawString(ult::DIVIDER_SYMBOL, false, (float)x, (float)topY,    fontsize, color);
-            renderer->drawString(ult::DIVIDER_SYMBOL, false, (float)x, (float)centerY, fontsize, color);
-            renderer->drawString(ult::DIVIDER_SYMBOL, false, (float)x, (float)botY,    fontsize, color);
-            return;
-        }
-        const int cutTC = computeDividerCutY(topY,    centerY, centerOff);
-        const int cutCB = computeDividerCutY(centerY, botY,    centerOff);
-        drawDividerScissored(renderer, x, topY,    kNoUpperCut, cutTC,       fontsize, color, leftPad, fullW);
-        drawDividerScissored(renderer, x, centerY, cutTC,       cutCB,       fontsize, color, leftPad, fullW);
-        drawDividerScissored(renderer, x, botY,    cutCB,       kNoLowerCut, fontsize, color, leftPad, fullW);
-    }
-} // namespace micro_divider_scissor
-
 // Sentinel character prepended to single-digit percentages so fixed-width bracket
 // strings like "[#4% #8%]" keep a stable pixel width across 1- and 2-digit values.
 // The renderer draws this character transparent (cpuPadChars / cpuPadTransparent).
@@ -1403,13 +1336,13 @@ public:
                         const bool tmpHasVolt = SOC_volt_c[0] != 0;
                         const bool tmpFanIsTop = settings.voltageAtEndTMP;
                         int tmpSplitCOff = 0, tmpSplitLP = 0, tmpSplitFW = 0;
-                        const bool tmpSplitScOK = micro_divider_scissor::getDividerScissorMetrics(
+                        const bool tmpSplitScOK = divider_scissor::getDividerScissorMetrics(
                             fontsize, tmpSplitCOff, tmpSplitLP, tmpSplitFW);
                         int tmpCutTC = 0, tmpCutCB = 0;
                         if (tmpSplitScOK) {
-                            tmpCutTC = micro_divider_scissor::computeDividerCutY(
+                            tmpCutTC = divider_scissor::computeDividerCutY(
                                 (int)gridTopY, (int)singleItemY, tmpSplitCOff);
-                            tmpCutCB = micro_divider_scissor::computeDividerCutY(
+                            tmpCutCB = divider_scissor::computeDividerCutY(
                                 (int)singleItemY, (int)gridBotY, tmpSplitCOff);
                         }
                         const uint32_t tmpDivW = renderer->getTextDimensions(ult::DIVIDER_SYMBOL, false, fontsize).first;
@@ -1419,14 +1352,14 @@ public:
                             const bool hasTmpTopRow = tmpFanIsTop ? tmpHasFan : tmpHasVolt;
                             const bool hasTmpBotRow = tmpFanIsTop ? tmpHasVolt : tmpHasFan;
                             if (tmpSplitScOK && hasTmpTopRow && hasTmpBotRow) {
-                                micro_divider_scissor::drawDividerScissored(renderer, (int)fanColX, (int)singleItemY,
+                                divider_scissor::drawDividerScissored(renderer, (int)fanColX, (int)singleItemY,
                                     tmpCutTC, tmpCutCB, fontsize, (settings.separatorColor), tmpSplitLP, tmpSplitFW);
                             } else if (tmpSplitScOK && hasTmpTopRow) {
-                                micro_divider_scissor::drawDividerScissored(renderer, (int)fanColX, (int)singleItemY,
-                                    tmpCutTC, micro_divider_scissor::kNoLowerCut, fontsize, (settings.separatorColor), tmpSplitLP, tmpSplitFW);
+                                divider_scissor::drawDividerScissored(renderer, (int)fanColX, (int)singleItemY,
+                                    tmpCutTC, divider_scissor::kNoLowerCut, fontsize, (settings.separatorColor), tmpSplitLP, tmpSplitFW);
                             } else if (tmpSplitScOK && hasTmpBotRow) {
-                                micro_divider_scissor::drawDividerScissored(renderer, (int)fanColX, (int)singleItemY,
-                                    micro_divider_scissor::kNoUpperCut, tmpCutCB, fontsize, (settings.separatorColor), tmpSplitLP, tmpSplitFW);
+                                divider_scissor::drawDividerScissored(renderer, (int)fanColX, (int)singleItemY,
+                                    divider_scissor::kNoUpperCut, tmpCutCB, fontsize, (settings.separatorColor), tmpSplitLP, tmpSplitFW);
                             } else {
                                 renderer->drawString(ult::DIVIDER_SYMBOL, false, (float)fanColX, (float)singleItemY, fontsize, (settings.separatorColor));
                             }
@@ -1436,11 +1369,11 @@ public:
                         if (tmpHasFan) {
                             if (tmpSplitScOK) {
                                 if (tmpFanIsTop)
-                                    micro_divider_scissor::drawDividerScissored(renderer, (int)fanColX, (int)gridTopY,
-                                        micro_divider_scissor::kNoUpperCut, tmpCutTC, fontsize, (settings.separatorColor), tmpSplitLP, tmpSplitFW);
+                                    divider_scissor::drawDividerScissored(renderer, (int)fanColX, (int)gridTopY,
+                                        divider_scissor::kNoUpperCut, tmpCutTC, fontsize, (settings.separatorColor), tmpSplitLP, tmpSplitFW);
                                 else
-                                    micro_divider_scissor::drawDividerScissored(renderer, (int)fanColX, (int)gridBotY,
-                                        tmpCutCB, micro_divider_scissor::kNoLowerCut, fontsize, (settings.separatorColor), tmpSplitLP, tmpSplitFW);
+                                    divider_scissor::drawDividerScissored(renderer, (int)fanColX, (int)gridBotY,
+                                        tmpCutCB, divider_scissor::kNoLowerCut, fontsize, (settings.separatorColor), tmpSplitLP, tmpSplitFW);
                             } else {
                                 renderer->drawString(ult::DIVIDER_SYMBOL, false, (float)fanColX, (float)fanDrawY, fontsize, (settings.separatorColor));
                             }
@@ -1490,11 +1423,11 @@ public:
                             if (tmpHasVolt) {
                                 if (tmpSplitScOK) {
                                     if (!tmpFanIsTop)
-                                        micro_divider_scissor::drawDividerScissored(renderer, (int)fanColX, (int)gridTopY,
-                                            micro_divider_scissor::kNoUpperCut, tmpCutTC, fontsize, (settings.separatorColor), tmpSplitLP, tmpSplitFW);
+                                        divider_scissor::drawDividerScissored(renderer, (int)fanColX, (int)gridTopY,
+                                            divider_scissor::kNoUpperCut, tmpCutTC, fontsize, (settings.separatorColor), tmpSplitLP, tmpSplitFW);
                                     else
-                                        micro_divider_scissor::drawDividerScissored(renderer, (int)fanColX, (int)gridBotY,
-                                            tmpCutCB, micro_divider_scissor::kNoLowerCut, fontsize, (settings.separatorColor), tmpSplitLP, tmpSplitFW);
+                                        divider_scissor::drawDividerScissored(renderer, (int)fanColX, (int)gridBotY,
+                                            tmpCutCB, divider_scissor::kNoLowerCut, fontsize, (settings.separatorColor), tmpSplitLP, tmpSplitFW);
                                 } else {
                                     renderer->drawString(ult::DIVIDER_SYMBOL, false, (float)fanColX, (float)voltDrawY, fontsize, (settings.separatorColor));
                                 }
@@ -1561,7 +1494,7 @@ public:
                                     const size_t dl = ult::DIVIDER_SYMBOL.length();
                                     // Left side is 2-row (top+bot temps) -> 3-tall connector before fan/volt,
                                     // mirroring Mini TMP_TOP lines 1243-1250.
-                                    micro_divider_scissor::drawDividerStack3(renderer, rx, gridTopY, singleItemY, gridBotY, fontsize, (settings.separatorColor));
+                                    divider_scissor::drawDividerStack3(renderer, rx, gridTopY, singleItemY, gridBotY, fontsize, (settings.separatorColor));
                                     rx += renderer->getTextDimensions(ult::DIVIDER_SYMBOL, false, fontsize).first;
                                     const std::string ad = rest.substr(dv + dl);
                                     const bool gridHasVolt = settings.realVolts && settings.showSOCVoltage && SOC_volt_c[0];
@@ -1731,12 +1664,12 @@ public:
                         const uint32_t divX = current_x + bwLeftW;
                         {
                             int cOff=0, lP=0, fW=0;
-                            if (micro_divider_scissor::getDividerScissorMetrics(fontsize, cOff, lP, fW)) {
-                                const int cutTC = micro_divider_scissor::computeDividerCutY((int)gridTopY, (int)singleItemY, cOff);
-                                const int cutCB = micro_divider_scissor::computeDividerCutY((int)singleItemY, (int)gridBotY, cOff);
-                                micro_divider_scissor::drawDividerScissored(renderer, (int)divX, (int)gridTopY,   micro_divider_scissor::kNoUpperCut, cutTC, fontsize, (settings.separatorColor), lP, fW);
-                                micro_divider_scissor::drawDividerScissored(renderer, (int)divX, (int)singleItemY, cutTC, cutCB, fontsize, (settings.separatorColor), lP, fW);
-                                micro_divider_scissor::drawDividerScissored(renderer, (int)divX, (int)gridBotY,   cutCB, micro_divider_scissor::kNoLowerCut, fontsize, (settings.separatorColor), lP, fW);
+                            if (divider_scissor::getDividerScissorMetrics(fontsize, cOff, lP, fW)) {
+                                const int cutTC = divider_scissor::computeDividerCutY((int)gridTopY, (int)singleItemY, cOff);
+                                const int cutCB = divider_scissor::computeDividerCutY((int)singleItemY, (int)gridBotY, cOff);
+                                divider_scissor::drawDividerScissored(renderer, (int)divX, (int)gridTopY,   divider_scissor::kNoUpperCut, cutTC, fontsize, (settings.separatorColor), lP, fW);
+                                divider_scissor::drawDividerScissored(renderer, (int)divX, (int)singleItemY, cutTC, cutCB, fontsize, (settings.separatorColor), lP, fW);
+                                divider_scissor::drawDividerScissored(renderer, (int)divX, (int)gridBotY,   cutCB, divider_scissor::kNoLowerCut, fontsize, (settings.separatorColor), lP, fW);
                             } else {
                                 renderer->drawString(ult::DIVIDER_SYMBOL, false, divX, gridTopY,    fontsize, (settings.separatorColor));
                                 renderer->drawString(ult::DIVIDER_SYMBOL, false, divX, singleItemY, fontsize, (settings.separatorColor));
@@ -1820,10 +1753,10 @@ public:
                     // all three rows scissored; re-drawing center here would double the glyph.
                     if (!ramLoadIsSplit && !ramBWIsSplit) {
                         int cOff=0,lP=0,fW=0;
-                        if (micro_divider_scissor::getDividerScissorMetrics(fontsize,cOff,lP,fW)) {
-                            const int cutTC = ramSplitHasTop ? micro_divider_scissor::computeDividerCutY((int)gridTopY,(int)singleItemY,cOff) : micro_divider_scissor::kNoUpperCut;
-                            const int cutCB = ramSplitHasBot ? micro_divider_scissor::computeDividerCutY((int)singleItemY,(int)gridBotY,cOff) : micro_divider_scissor::kNoLowerCut;
-                            micro_divider_scissor::drawDividerScissored(renderer,(int)voltColX,(int)singleItemY,cutTC,cutCB,fontsize,(settings.separatorColor),lP,fW);
+                        if (divider_scissor::getDividerScissorMetrics(fontsize,cOff,lP,fW)) {
+                            const int cutTC = ramSplitHasTop ? divider_scissor::computeDividerCutY((int)gridTopY,(int)singleItemY,cOff) : divider_scissor::kNoUpperCut;
+                            const int cutCB = ramSplitHasBot ? divider_scissor::computeDividerCutY((int)singleItemY,(int)gridBotY,cOff) : divider_scissor::kNoLowerCut;
+                            divider_scissor::drawDividerScissored(renderer,(int)voltColX,(int)singleItemY,cutTC,cutCB,fontsize,(settings.separatorColor),lP,fW);
                         } else {
                             renderer->drawString(ult::DIVIDER_SYMBOL, false, voltColX, singleItemY, fontsize, (settings.separatorColor));
                         }
@@ -1914,14 +1847,14 @@ public:
                                 voltStartX += renderer->getTextDimensions(ram_temp_c, false, fontsize).first;
                                 // Right-fork at voltStartX: scissored 3-stack (center + top + bot)
                                 { int cOff=0,lP=0,fW=0;
-                                  if (micro_divider_scissor::getDividerScissorMetrics(fontsize,cOff,lP,fW)) {
+                                  if (divider_scissor::getDividerScissorMetrics(fontsize,cOff,lP,fW)) {
                                     const bool rfHasTop = vdd2_only_c[0] != 0;
                                     const bool rfHasBot = vddq_only_c[0] != 0;
-                                    const int cutTC = rfHasTop ? micro_divider_scissor::computeDividerCutY((int)gridTopY,(int)singleItemY,cOff) : micro_divider_scissor::kNoUpperCut;
-                                    const int cutCB = rfHasBot ? micro_divider_scissor::computeDividerCutY((int)singleItemY,(int)gridBotY,cOff) : micro_divider_scissor::kNoLowerCut;
-                                    micro_divider_scissor::drawDividerScissored(renderer,(int)voltStartX,(int)singleItemY,cutTC,cutCB,fontsize,(settings.separatorColor),lP,fW);
-                                    if (rfHasTop) micro_divider_scissor::drawDividerScissored(renderer,(int)voltStartX,(int)gridTopY,micro_divider_scissor::kNoUpperCut,cutTC,fontsize,(settings.separatorColor),lP,fW);
-                                    if (rfHasBot) micro_divider_scissor::drawDividerScissored(renderer,(int)voltStartX,(int)gridBotY,cutCB,micro_divider_scissor::kNoLowerCut,fontsize,(settings.separatorColor),lP,fW);
+                                    const int cutTC = rfHasTop ? divider_scissor::computeDividerCutY((int)gridTopY,(int)singleItemY,cOff) : divider_scissor::kNoUpperCut;
+                                    const int cutCB = rfHasBot ? divider_scissor::computeDividerCutY((int)singleItemY,(int)gridBotY,cOff) : divider_scissor::kNoLowerCut;
+                                    divider_scissor::drawDividerScissored(renderer,(int)voltStartX,(int)singleItemY,cutTC,cutCB,fontsize,(settings.separatorColor),lP,fW);
+                                    if (rfHasTop) divider_scissor::drawDividerScissored(renderer,(int)voltStartX,(int)gridTopY,divider_scissor::kNoUpperCut,cutTC,fontsize,(settings.separatorColor),lP,fW);
+                                    if (rfHasBot) divider_scissor::drawDividerScissored(renderer,(int)voltStartX,(int)gridBotY,cutCB,divider_scissor::kNoLowerCut,fontsize,(settings.separatorColor),lP,fW);
                                   } else {
                                     renderer->drawString(ult::DIVIDER_SYMBOL, false, voltStartX, singleItemY, fontsize, (settings.separatorColor));
                                   }
@@ -1966,13 +1899,13 @@ public:
                     const bool cpuHasTemp = cpu_temp_c[0] != 0;
                     // Scissor metrics
                     int cpuSplitCOff = 0, cpuSplitLP = 0, cpuSplitFW = 0;
-                    const bool cpuSplitScOK = micro_divider_scissor::getDividerScissorMetrics(
+                    const bool cpuSplitScOK = divider_scissor::getDividerScissorMetrics(
                         fontsize, cpuSplitCOff, cpuSplitLP, cpuSplitFW);
                     // Always compute cuts in screen-ascending order (gridTopY < singleItemY < gridBotY).
                     const int cpuSplitCutTC = cpuSplitScOK
-                        ? micro_divider_scissor::computeDividerCutY((int)gridTopY, (int)singleItemY, cpuSplitCOff) : 0;
+                        ? divider_scissor::computeDividerCutY((int)gridTopY, (int)singleItemY, cpuSplitCOff) : 0;
                     const int cpuSplitCutCB = cpuSplitScOK
-                        ? micro_divider_scissor::computeDividerCutY((int)singleItemY, (int)gridBotY, cpuSplitCOff) : 0;
+                        ? divider_scissor::computeDividerCutY((int)singleItemY, (int)gridBotY, cpuSplitCOff) : 0;
                     // Center divider lambda: cuts toward whichever physical rows are present.
                     // voltIsOnTop = volt occupies gridTopY row (!voltageAtEndCPU).
                     const bool cpuVoltIsOnTop = !settings.voltageAtEndCPU;
@@ -1980,14 +1913,14 @@ public:
                     const bool cpuHasBotRow = cpuVoltIsOnTop ? cpuHasTemp : cpuHasVolt;
                     auto cpuDrawCenterDiv = [&](uint32_t dx) {
                         if (cpuSplitScOK && cpuHasTopRow && cpuHasBotRow) {
-                            micro_divider_scissor::drawDividerScissored(renderer, (int)dx, (int)singleItemY,
+                            divider_scissor::drawDividerScissored(renderer, (int)dx, (int)singleItemY,
                                 cpuSplitCutTC, cpuSplitCutCB, fontsize, (settings.separatorColor), cpuSplitLP, cpuSplitFW);
                         } else if (cpuSplitScOK && cpuHasTopRow) {
-                            micro_divider_scissor::drawDividerScissored(renderer, (int)dx, (int)singleItemY,
-                                cpuSplitCutTC, micro_divider_scissor::kNoLowerCut, fontsize, (settings.separatorColor), cpuSplitLP, cpuSplitFW);
+                            divider_scissor::drawDividerScissored(renderer, (int)dx, (int)singleItemY,
+                                cpuSplitCutTC, divider_scissor::kNoLowerCut, fontsize, (settings.separatorColor), cpuSplitLP, cpuSplitFW);
                         } else if (cpuSplitScOK && cpuHasBotRow) {
-                            micro_divider_scissor::drawDividerScissored(renderer, (int)dx, (int)singleItemY,
-                                micro_divider_scissor::kNoUpperCut, cpuSplitCutCB, fontsize, (settings.separatorColor), cpuSplitLP, cpuSplitFW);
+                            divider_scissor::drawDividerScissored(renderer, (int)dx, (int)singleItemY,
+                                divider_scissor::kNoUpperCut, cpuSplitCutCB, fontsize, (settings.separatorColor), cpuSplitLP, cpuSplitFW);
                         } else {
                             renderer->drawString(ult::DIVIDER_SYMBOL, false, dx, (float)singleItemY, fontsize, (settings.separatorColor));
                         }
@@ -1995,8 +1928,8 @@ public:
                     // Top-row divider lambda (always at gridTopY, scissored to top band)
                     auto cpuDrawTopRowDiv = [&](uint32_t dx) {
                         if (cpuSplitScOK) {
-                            micro_divider_scissor::drawDividerScissored(renderer, (int)dx, (int)gridTopY,
-                                micro_divider_scissor::kNoUpperCut, cpuSplitCutTC, fontsize, (settings.separatorColor), cpuSplitLP, cpuSplitFW);
+                            divider_scissor::drawDividerScissored(renderer, (int)dx, (int)gridTopY,
+                                divider_scissor::kNoUpperCut, cpuSplitCutTC, fontsize, (settings.separatorColor), cpuSplitLP, cpuSplitFW);
                         } else {
                             renderer->drawString(ult::DIVIDER_SYMBOL, false, dx, (float)cpuVoltY, fontsize, (settings.separatorColor));
                         }
@@ -2004,8 +1937,8 @@ public:
                     // Bot-row divider lambda (always at gridBotY, scissored to bottom band)
                     auto cpuDrawBotRowDiv = [&](uint32_t dx) {
                         if (cpuSplitScOK) {
-                            micro_divider_scissor::drawDividerScissored(renderer, (int)dx, (int)gridBotY,
-                                cpuSplitCutCB, micro_divider_scissor::kNoLowerCut, fontsize, (settings.separatorColor), cpuSplitLP, cpuSplitFW);
+                            divider_scissor::drawDividerScissored(renderer, (int)dx, (int)gridBotY,
+                                cpuSplitCutCB, divider_scissor::kNoLowerCut, fontsize, (settings.separatorColor), cpuSplitLP, cpuSplitFW);
                         } else {
                             renderer->drawString(ult::DIVIDER_SYMBOL, false, dx, (float)cpuTempY, fontsize, (settings.separatorColor));
                         }
@@ -2050,7 +1983,7 @@ public:
                         // Center connector: 3-tall when volt/temp content will follow, scissored
                         const bool cpuFullWillDraw = cpu_temp_c[0] || (settings.realVolts && CPU_volt_c[0]);
                         if (cpuFullWillDraw) {
-                            micro_divider_scissor::drawDividerStack3(renderer, (int)bracketsRightX,
+                            divider_scissor::drawDividerStack3(renderer, (int)bracketsRightX,
                                 (int)gridTopY, (int)singleItemY, (int)gridBotY, fontsize, (settings.separatorColor));
                         } else {
                             renderer->drawString(ult::DIVIDER_SYMBOL, false, (uint32_t)bracketsRightX,
@@ -2115,41 +2048,41 @@ public:
                     const bool gpuHasTemp = gpu_temp_c[0] != 0;
                     // Scissor metrics
                     int gpuSplitCOff = 0, gpuSplitLP = 0, gpuSplitFW = 0;
-                    const bool gpuSplitScOK = micro_divider_scissor::getDividerScissorMetrics(
+                    const bool gpuSplitScOK = divider_scissor::getDividerScissorMetrics(
                         fontsize, gpuSplitCOff, gpuSplitLP, gpuSplitFW);
                     const int gpuSplitCutTC = gpuSplitScOK
-                        ? micro_divider_scissor::computeDividerCutY((int)gridTopY, (int)singleItemY, gpuSplitCOff) : 0;
+                        ? divider_scissor::computeDividerCutY((int)gridTopY, (int)singleItemY, gpuSplitCOff) : 0;
                     const int gpuSplitCutCB = gpuSplitScOK
-                        ? micro_divider_scissor::computeDividerCutY((int)singleItemY, (int)gridBotY, gpuSplitCOff) : 0;
+                        ? divider_scissor::computeDividerCutY((int)singleItemY, (int)gridBotY, gpuSplitCOff) : 0;
                     const bool gpuVoltIsOnTop = !settings.voltageAtEndGPU;
                     const bool gpuHasTopRow = gpuVoltIsOnTop ? gpuHasVolt : gpuHasTemp;
                     const bool gpuHasBotRow = gpuVoltIsOnTop ? gpuHasTemp : gpuHasVolt;
                     auto gpuDrawCenterDiv = [&](uint32_t dx) {
                         if (gpuSplitScOK && gpuHasTopRow && gpuHasBotRow) {
-                            micro_divider_scissor::drawDividerScissored(renderer, (int)dx, (int)singleItemY,
+                            divider_scissor::drawDividerScissored(renderer, (int)dx, (int)singleItemY,
                                 gpuSplitCutTC, gpuSplitCutCB, fontsize, (settings.separatorColor), gpuSplitLP, gpuSplitFW);
                         } else if (gpuSplitScOK && gpuHasTopRow) {
-                            micro_divider_scissor::drawDividerScissored(renderer, (int)dx, (int)singleItemY,
-                                gpuSplitCutTC, micro_divider_scissor::kNoLowerCut, fontsize, (settings.separatorColor), gpuSplitLP, gpuSplitFW);
+                            divider_scissor::drawDividerScissored(renderer, (int)dx, (int)singleItemY,
+                                gpuSplitCutTC, divider_scissor::kNoLowerCut, fontsize, (settings.separatorColor), gpuSplitLP, gpuSplitFW);
                         } else if (gpuSplitScOK && gpuHasBotRow) {
-                            micro_divider_scissor::drawDividerScissored(renderer, (int)dx, (int)singleItemY,
-                                micro_divider_scissor::kNoUpperCut, gpuSplitCutCB, fontsize, (settings.separatorColor), gpuSplitLP, gpuSplitFW);
+                            divider_scissor::drawDividerScissored(renderer, (int)dx, (int)singleItemY,
+                                divider_scissor::kNoUpperCut, gpuSplitCutCB, fontsize, (settings.separatorColor), gpuSplitLP, gpuSplitFW);
                         } else {
                             renderer->drawString(ult::DIVIDER_SYMBOL, false, dx, (float)singleItemY, fontsize, (settings.separatorColor));
                         }
                     };
                     auto gpuDrawTopRowDiv = [&](uint32_t dx) {
                         if (gpuSplitScOK) {
-                            micro_divider_scissor::drawDividerScissored(renderer, (int)dx, (int)gridTopY,
-                                micro_divider_scissor::kNoUpperCut, gpuSplitCutTC, fontsize, (settings.separatorColor), gpuSplitLP, gpuSplitFW);
+                            divider_scissor::drawDividerScissored(renderer, (int)dx, (int)gridTopY,
+                                divider_scissor::kNoUpperCut, gpuSplitCutTC, fontsize, (settings.separatorColor), gpuSplitLP, gpuSplitFW);
                         } else {
                             renderer->drawString(ult::DIVIDER_SYMBOL, false, dx, (float)gpuVoltY, fontsize, (settings.separatorColor));
                         }
                     };
                     auto gpuDrawBotRowDiv = [&](uint32_t dx) {
                         if (gpuSplitScOK) {
-                            micro_divider_scissor::drawDividerScissored(renderer, (int)dx, (int)gridBotY,
-                                gpuSplitCutCB, micro_divider_scissor::kNoLowerCut, fontsize, (settings.separatorColor), gpuSplitLP, gpuSplitFW);
+                            divider_scissor::drawDividerScissored(renderer, (int)dx, (int)gridBotY,
+                                gpuSplitCutCB, divider_scissor::kNoLowerCut, fontsize, (settings.separatorColor), gpuSplitLP, gpuSplitFW);
                         } else {
                             renderer->drawString(ult::DIVIDER_SYMBOL, false, dx, (float)gpuTempY, fontsize, (settings.separatorColor));
                         }
@@ -2193,41 +2126,41 @@ public:
                     const bool rtsHasTemp = ram_temp_c[0] != 0;
                     // Scissor metrics
                     int rtsSplitCOff = 0, rtsSplitLP = 0, rtsSplitFW = 0;
-                    const bool rtsSplitScOK = micro_divider_scissor::getDividerScissorMetrics(
+                    const bool rtsSplitScOK = divider_scissor::getDividerScissorMetrics(
                         fontsize, rtsSplitCOff, rtsSplitLP, rtsSplitFW);
                     const int rtsSplitCutTC = rtsSplitScOK
-                        ? micro_divider_scissor::computeDividerCutY((int)gridTopY, (int)singleItemY, rtsSplitCOff) : 0;
+                        ? divider_scissor::computeDividerCutY((int)gridTopY, (int)singleItemY, rtsSplitCOff) : 0;
                     const int rtsSplitCutCB = rtsSplitScOK
-                        ? micro_divider_scissor::computeDividerCutY((int)singleItemY, (int)gridBotY, rtsSplitCOff) : 0;
+                        ? divider_scissor::computeDividerCutY((int)singleItemY, (int)gridBotY, rtsSplitCOff) : 0;
                     const bool rtsVoltIsOnTop = !settings.voltageAtEndRAM;
                     const bool rtsHasTopRow = rtsVoltIsOnTop ? rtsHasVolt : rtsHasTemp;
                     const bool rtsHasBotRow = rtsVoltIsOnTop ? rtsHasTemp : rtsHasVolt;
                     auto rtsDrawCenterDiv = [&](uint32_t dx) {
                         if (rtsSplitScOK && rtsHasTopRow && rtsHasBotRow) {
-                            micro_divider_scissor::drawDividerScissored(renderer, (int)dx, (int)singleItemY,
+                            divider_scissor::drawDividerScissored(renderer, (int)dx, (int)singleItemY,
                                 rtsSplitCutTC, rtsSplitCutCB, fontsize, (settings.separatorColor), rtsSplitLP, rtsSplitFW);
                         } else if (rtsSplitScOK && rtsHasTopRow) {
-                            micro_divider_scissor::drawDividerScissored(renderer, (int)dx, (int)singleItemY,
-                                rtsSplitCutTC, micro_divider_scissor::kNoLowerCut, fontsize, (settings.separatorColor), rtsSplitLP, rtsSplitFW);
+                            divider_scissor::drawDividerScissored(renderer, (int)dx, (int)singleItemY,
+                                rtsSplitCutTC, divider_scissor::kNoLowerCut, fontsize, (settings.separatorColor), rtsSplitLP, rtsSplitFW);
                         } else if (rtsSplitScOK && rtsHasBotRow) {
-                            micro_divider_scissor::drawDividerScissored(renderer, (int)dx, (int)singleItemY,
-                                micro_divider_scissor::kNoUpperCut, rtsSplitCutCB, fontsize, (settings.separatorColor), rtsSplitLP, rtsSplitFW);
+                            divider_scissor::drawDividerScissored(renderer, (int)dx, (int)singleItemY,
+                                divider_scissor::kNoUpperCut, rtsSplitCutCB, fontsize, (settings.separatorColor), rtsSplitLP, rtsSplitFW);
                         } else {
                             renderer->drawString(ult::DIVIDER_SYMBOL, false, dx, (float)singleItemY, fontsize, (settings.separatorColor));
                         }
                     };
                     auto rtsDrawTopRowDiv = [&](uint32_t dx) {
                         if (rtsSplitScOK) {
-                            micro_divider_scissor::drawDividerScissored(renderer, (int)dx, (int)gridTopY,
-                                micro_divider_scissor::kNoUpperCut, rtsSplitCutTC, fontsize, (settings.separatorColor), rtsSplitLP, rtsSplitFW);
+                            divider_scissor::drawDividerScissored(renderer, (int)dx, (int)gridTopY,
+                                divider_scissor::kNoUpperCut, rtsSplitCutTC, fontsize, (settings.separatorColor), rtsSplitLP, rtsSplitFW);
                         } else {
                             renderer->drawString(ult::DIVIDER_SYMBOL, false, dx, (float)rtsVoltY, fontsize, (settings.separatorColor));
                         }
                     };
                     auto rtsDrawBotRowDiv = [&](uint32_t dx) {
                         if (rtsSplitScOK) {
-                            micro_divider_scissor::drawDividerScissored(renderer, (int)dx, (int)gridBotY,
-                                rtsSplitCutCB, micro_divider_scissor::kNoLowerCut, fontsize, (settings.separatorColor), rtsSplitLP, rtsSplitFW);
+                            divider_scissor::drawDividerScissored(renderer, (int)dx, (int)gridBotY,
+                                rtsSplitCutCB, divider_scissor::kNoLowerCut, fontsize, (settings.separatorColor), rtsSplitLP, rtsSplitFW);
                         } else {
                             renderer->drawString(ult::DIVIDER_SYMBOL, false, dx, (float)rtsTempY, fontsize, (settings.separatorColor));
                         }
@@ -2338,7 +2271,7 @@ public:
                         // Draw all three rows of the triple-stack divider at once using
                         // drawDividerStack3 so every row is scissored to its own band and
                         // no alpha-blended edges bleed into adjacent rows (mirrors Mini).
-                        micro_divider_scissor::drawDividerStack3(renderer,
+                        divider_scissor::drawDividerStack3(renderer,
                             (int)rLoadVoltColX,
                             (int)gridTopY, (int)singleItemY, (int)gridBotY,
                             fontsize, (settings.separatorColor));
