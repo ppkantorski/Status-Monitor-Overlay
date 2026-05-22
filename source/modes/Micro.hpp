@@ -180,6 +180,125 @@ private:
         uint32_t side_margin = 8;          // Left/right edge padding — set to label_data_gap in calculateLayoutMetrics
         bool calculated = false;
     } layout;
+
+    // -------- Width anti-flicker damper --------
+    // Per-item-type rolling-max width with periodic decay. Grows instantly (so new
+    // rows like FPS/RES, or values getting wider, are never clipped); shrinks only
+    // when the high-water mark of an observation window stays below the held width
+    // for a full window. This kills the sub-pixel jitter that makes the entire row
+    // shift left/right as numeric values fluctuate by 1px, while still allowing the
+    // layout to genuinely tighten when a metric moves to a smaller regime.
+    //
+    // Damping is applied ONLY to total_width (the value that drives item_positions).
+    // label_width / data_width / volt_width are left untouched so the internal cell
+    // layout math (current_x advances) keeps working unchanged.
+    //
+    // Keyed by item.type (0..9). regime_fp guards against layout-mode flips (e.g.
+    // ramBWIsSplit toggling) which change the total_width formula: when the fp
+    // changes, the damper resets so the new regime takes effect immediately.
+    struct WidthDamper {
+        uint32_t sticky_width = 0;   // currently held (displayed) width
+        uint32_t recent_max   = 0;   // high-water mark within the current window
+        uint16_t frames_held  = 0;   // frames elapsed in current observation window
+        uint32_t regime_fp    = 0;   // fingerprint of split-mode flags relevant to this item
+    };
+    static constexpr size_t kNumItemTypes = 10;        // item.type values 0..9
+    // Hold the max width for ~1.5 real seconds before allowing shrink.
+    // Computed from TeslaFPS (the actual overlay refresh rate, e.g. 3 Hz default)
+    // so the window is always ~1.5s regardless of the user's refresh rate setting.
+    static constexpr float kDampWindowSeconds = 1.5f;
+    inline uint16_t dampWindowFrames() const {
+        const uint8_t fps = (TeslaFPS > 0) ? TeslaFPS : 1;
+        // At least 2 frames so a single-frame spike is always held for one full cycle.
+        const uint16_t frames = static_cast<uint16_t>(kDampWindowSeconds * fps + 0.5f);
+        return (frames < 2) ? 2 : frames;
+    }
+    WidthDamper widthDampers[kNumItemTypes] = {};
+
+    // Build a fingerprint of layout-affecting flags for a given item.type.
+    // Only bits that change THIS item's total_width formula are mixed in, so a
+    // flip of (say) gpuIsSplit does not pointlessly reset the CPU damper.
+    inline uint32_t computeRegimeFp(uint8_t itemType) const {
+        uint32_t fp = 0;
+        switch (itemType) {
+            case 0: // CPU
+                fp = (cpuIsSplit ? 1u : 0u)
+                   | (cpuFullIsSplit ? 2u : 0u);
+                break;
+            case 1: // GPU
+                fp = (gpuIsSplit ? 1u : 0u);
+                break;
+            case 2: // RAM
+                fp = (ramIsSplit ? 1u : 0u)
+                   | (ramTempSplit ? 2u : 0u)
+                   | (ramLoadIsSplit ? 4u : 0u)
+                   | (ramBWIsSplit ? 8u : 0u);
+                break;
+            case 4: // TMP
+                fp = (tmpIsGrid ? 1u : 0u)
+                   | (tmpIsSplit ? 2u : 0u);
+                break;
+            case 6: // BAT
+                fp = (batIsSplit ? 1u : 0u);
+                break;
+            case 8: // DTC
+                fp = (dtcIsSplit ? 1u : 0u);
+                break;
+            default: // SOC(3), FPS(5), RES(7), READ(9) — no split modes
+                fp = 0;
+                break;
+        }
+        return fp;
+    }
+
+    // Apply rolling-max damper to a freshly-measured width for the given item type.
+    // Returns the damped (display) width. Always >= raw, so text is never clipped.
+    inline uint32_t dampItemWidth(uint8_t itemType, uint32_t raw) {
+        if (itemType >= kNumItemTypes) return raw;
+        WidthDamper& d = widthDampers[itemType];
+
+        // Regime change (a split flag flipped) — formula for total_width changed,
+        // any held value is meaningless. Snap to the new raw and start fresh.
+        const uint32_t fp = computeRegimeFp(itemType);
+        if (fp != d.regime_fp) {
+            d.regime_fp    = fp;
+            d.sticky_width = raw;
+            d.recent_max   = raw;
+            d.frames_held  = 0;
+            return raw;
+        }
+
+        // Grow instantly — never clip text. Reset the window when we grow so the
+        // new peak gets a full window of observation before any potential shrink.
+        if (raw > d.sticky_width) {
+            d.sticky_width = raw;
+            d.recent_max   = raw;
+            d.frames_held  = 0;
+            return d.sticky_width;
+        }
+
+        // Track high-water mark inside the current window and advance.
+        if (raw > d.recent_max) d.recent_max = raw;
+        d.frames_held++;
+
+        // Window closed: collapse the held width down to whatever the peak was.
+        // If the metric truly shrank for a full window, sticky_width tightens to
+        // that smaller peak. If it ever briefly touched the old width during the
+        // window, recent_max held it and we don't shrink at all.
+        if (d.frames_held >= dampWindowFrames()) {
+            d.sticky_width = d.recent_max;
+            d.recent_max   = raw;  // start the next window from the current raw
+            d.frames_held  = 0;
+        }
+
+        return d.sticky_width;
+    }
+
+    // Reset all dampers (called on overlay (re)initialization so a freshly-opened
+    // overlay doesn't carry stale widths from a previous session).
+    inline void resetWidthDampers() {
+        for (auto& d : widthDampers) d = WidthDamper{};
+    }
     
     inline const char* getDifferenceSymbol(int32_t /*delta*/) {
         return "@";
@@ -635,6 +754,7 @@ public:
                 Initialized = true;
                 renderDataDirty = true;
                 layout.calculated = false; // Force recalculation
+                resetWidthDampers();       // clear sticky widths from any prior session
                 tsl::hlp::requestForeground(false);
             }
             
@@ -960,6 +1080,15 @@ public:
                         item_layout.data_width  = maxW;
                     }
                 }
+
+                // ---- Anti-flicker damping ----
+                // Damp ONLY total_width. label_width / data_width / volt_width are used
+                // by the draw loop to advance current_x inside the cell, so they must
+                // reflect the live text exactly. The damper enforces sticky_width >= raw,
+                // so the cell footprint is always large enough to contain the text — any
+                // slack appears as a few px of extra space at the right edge of the cell,
+                // not as clipped text. Item positions downstream use this damped value.
+                item_layout.total_width = dampItemWidth(item.type, item_layout.total_width);
 
                 item_layouts.push_back(item_layout);
                 total_main_width += item_layout.total_width;
