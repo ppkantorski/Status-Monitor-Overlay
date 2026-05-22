@@ -160,6 +160,16 @@ FieldDescriptor fd = 0;
 uint32_t GPU_Load_u = 0;
 bool GPULoadPerFrame = true;
 
+// Cached at init — never changes at runtime.
+// isHocClkNative  : hoc:clk service present (native hoc-clk, exposes GPU load via IPC)
+// isSysClkHoc     : sys:clk present AND version string contains "hoc" (sys-clk-hoc)
+// isSysClkPlain   : sys:clk present, no "hoc" in version string (vanilla sys-clk)
+// isUsingEOSorHOC : either of the above two sys:clk variants — reads extended fields
+bool g_isHocClkNative  = false;
+bool g_isSysClkHoc     = false;
+bool g_isSysClkPlain   = false;
+bool g_isUsingEOSorHOC = false;
+
 //NX-FPS
 
 struct resolutionCalls {
@@ -1244,9 +1254,16 @@ void gpuLoadThread(void*) {
     #define gpu_samples_average 8
     uint32_t gpu_load_array[gpu_samples_average] = {0};
     size_t i = 0;
-    if (!GPULoadPerFrame && R_SUCCEEDED(nvCheck)) do {
+    // Only run the averaged-ioctl path when neither HOC sysmodule is available.
+    // When sys-clk-hoc or hoc-clk is present, GPU load is read from the IPC
+    // context (partLoad[HocClkPartLoad_GPU]) which is already an 8-sample average
+    // computed at 60fps inside the sysmodule — no need to duplicate that work here.
+    // Only skip when hoc-clk (native) is present — it exposes GPU load via IPC.
+    // sys-clk-hoc uses the sys:clk wire format which has no GPU load field,
+    // so the ioctl must still run for that path.
+    if (!GPULoadPerFrame && R_SUCCEEDED(nvCheck) && R_FAILED(hocclkCheck)) do {
         u32 temp;
-        if (R_SUCCEEDED(nvIoctl(fd, NVGPU_GPU_IOCTL_PMU_GET_GPU_LOAD, &temp))) {
+        if (R_SUCCEEDED(nvIoctl(fd, NVGPU_GPU_IOCTL_PMU_GET_GPU_LOAD, &temp)) && temp > 0) {
             gpu_load_array[i++ % gpu_samples_average] = temp;
             GPU_Load_u = std::accumulate(&gpu_load_array[0], &gpu_load_array[gpu_samples_average], 0) / gpu_samples_average;
         }
@@ -1262,19 +1279,26 @@ std::string getVersionString() {
     return std::string(buf);
 }
 
-bool usingEOS() {
-    const std::string versionString = getVersionString();
-    return versionString.find("hoc") != std::string::npos;
+// Called once from main.cpp after sysclkCheck/hocclkCheck are finalized.
+// Caches module-detection so per-loop usingHOC()/usingEOS() never make IPC calls.
+void initModuleDetection() {
+    g_isHocClkNative = R_SUCCEEDED(hocclkCheck);
+
+    if (R_SUCCEEDED(sysclkCheck)) {
+        const std::string ver = getVersionString();
+        g_isSysClkHoc   = (ver.find("hoc") != std::string::npos);
+        g_isSysClkPlain = !g_isSysClkHoc;
+    } else {
+        g_isSysClkHoc   = false;
+        g_isSysClkPlain = false;
+    }
+    // Any sys:clk or hoc:clk variant exposes extended volt/temp fields
+    g_isUsingEOSorHOC = g_isHocClkNative || g_isSysClkHoc || g_isSysClkPlain;
 }
 
-
-bool usingHOC() {
-    // If hoc-clk (hoc:clk) is connected, we are in HOC mode
-    if (R_SUCCEEDED(hocclkCheck)) return true;
-    // Otherwise check if sys-clk-hoc (sys:clk) reports "hoc" in its version string
-    const std::string versionString = getVersionString();
-    return versionString.find("hoc") != std::string::npos;
-}
+// Zero-cost wrappers — cached bools, no IPC after initModuleDetection() is called.
+inline bool usingEOS()  { return g_isSysClkHoc || g_isSysClkPlain; }
+inline bool usingHOC()  { return g_isHocClkNative || g_isSysClkHoc; }
 
 
 // === ULTRA-FAST VOLTAGE READING ===
@@ -1290,7 +1314,7 @@ static constexpr PowerDomainId domains[] = {
 // Stuff that doesn't need multithreading
 void Misc(void*) {
     const uint64_t timeout_ns = TeslaFPS < 10 ? (1'000'000'000 / TeslaFPS) : 100'000'000;
-    const bool isUsingEOSorHOC = usingEOS() || usingHOC();
+    const bool isUsingEOSorHOC = g_isUsingEOSorHOC;  // cached at init — no IPC cost
     
     // Initialize voltage reading if needed
     bool canReadVoltages = false;
@@ -1364,6 +1388,8 @@ void Misc(void*) {
                 realRAM_Hz = hocclkCTX.stable.realFreqs[HocClkModule_MEM];
                 ramLoad[SysClkRamLoad_All] = hocclkCTX.stable.partLoad[HocClkPartLoad_EMC];
                 ramLoad[SysClkRamLoad_Cpu] = hocclkCTX.stable.partLoad[HocClkPartLoad_EMCCpu];
+                // GPU load: use the sysmodule's 8-sample 60fps average, not a raw ioctl snapshot.
+                GPU_Load_u = hocclkCTX.stable.partLoad[HocClkPartLoad_GPU];
                 if (realVoltsPolling) {
                     realCPU_mV = hocclkCTX.stable.voltages[HocClkVoltage_CPU];
                     realGPU_mV = hocclkCTX.stable.voltages[HocClkVoltage_GPU];
@@ -1539,9 +1565,20 @@ void Misc(void*) {
             }
         }
         
-        // GPU Load
-        if (R_SUCCEEDED(nvCheck) && GPULoadPerFrame) {
-            nvIoctl(fd, NVGPU_GPU_IOCTL_PMU_GET_GPU_LOAD, &GPU_Load_u);
+        // GPU Load — ioctl fallback. Suppressed only when hoc-clk (native) is active,
+        // because sys-clk-hoc's sys:clk wire has no GPU load field and still needs the ioctl.
+        // Uses a lightweight 4-sample EMA (alpha=0.4) so a single outlier frame
+        // (PMU spike or clock-gate boundary read) can't immediately slam the display
+        // to 0% or 99%. Zeros are discarded — a gated GPU sample is not a real load reading.
+        if (R_SUCCEEDED(nvCheck) && GPULoadPerFrame && R_FAILED(hocclkCheck)) {
+            static u32 gpu_ema = 0;
+            u32 gpu_sample = 0;
+            if (R_SUCCEEDED(nvIoctl(fd, NVGPU_GPU_IOCTL_PMU_GET_GPU_LOAD, &gpu_sample)) && gpu_sample > 0) {
+                // EMA: new = 0.4*sample + 0.6*prev  (integer, scaled *10 to keep precision)
+                gpu_ema = (4u * gpu_sample + 6u * (gpu_ema ? gpu_ema : gpu_sample)) / 10u;
+                GPU_Load_u = gpu_ema;
+            }
+            // If sample == 0 (GPU clock-gated): keep last EMA value — not a real zero.
         }
         
         // FPS - with proper null checks
@@ -1611,7 +1648,7 @@ void Misc2(void*) {
 }
 
 void Misc3(void*) {
-    const bool isUsingEOSorHOC = usingEOS() || usingHOC();
+    const bool isUsingEOSorHOC = g_isUsingEOSorHOC;  // cached at init — no IPC cost
     
     // Initialize voltage reading if needed
     bool canReadVoltages = false;
@@ -1653,6 +1690,8 @@ void Misc3(void*) {
             if (R_SUCCEEDED(hocclkIpcGetCurrentContext(&hocclkCTX))) {
                 ramLoad[SysClkRamLoad_All] = hocclkCTX.stable.partLoad[HocClkPartLoad_EMC];
                 ramLoad[SysClkRamLoad_Cpu] = hocclkCTX.stable.partLoad[HocClkPartLoad_EMCCpu];
+                // GPU load: use the sysmodule's 8-sample 60fps average, not a raw ioctl snapshot.
+                GPU_Load_u = hocclkCTX.stable.partLoad[HocClkPartLoad_GPU];
                 if (realVoltsPolling) {
                     realCPU_mV = hocclkCTX.stable.voltages[HocClkVoltage_CPU];
                     realGPU_mV = hocclkCTX.stable.voltages[HocClkVoltage_GPU];
@@ -1815,9 +1854,16 @@ void Misc3(void*) {
             }
         }
         
-        // GPU Load
-        if (R_SUCCEEDED(nvCheck)) {
-            nvIoctl(fd, NVGPU_GPU_IOCTL_PMU_GET_GPU_LOAD, &GPU_Load_u);
+        // GPU Load — ioctl fallback. Suppressed only when hoc-clk (native) is active.
+        // Same EMA smoothing as the per-frame Misc path — prevents a single gated or
+        // spiked sample from instantly clobbering the display value.
+        if (R_SUCCEEDED(nvCheck) && R_FAILED(hocclkCheck)) {
+            static u32 gpu_ema3 = 0;
+            u32 gpu_sample = 0;
+            if (R_SUCCEEDED(nvIoctl(fd, NVGPU_GPU_IOCTL_PMU_GET_GPU_LOAD, &gpu_sample)) && gpu_sample > 0) {
+                gpu_ema3 = (4u * gpu_sample + 6u * (gpu_ema3 ? gpu_ema3 : gpu_sample)) / 10u;
+                GPU_Load_u = gpu_ema3;
+            }
         }
         
         mutexUnlock(&mutex_Misc);
@@ -1906,6 +1952,10 @@ void CheckCore(void* idletick_ptr) {
 
 //Start reading all stats
 void StartThreads() {
+    // Cache module-detection bools once, before any thread reads them.
+    // sysclkCheck / hocclkCheck are finalized by initServices() before StartThreads() is called.
+    initModuleDetection();
+
     // Clear the thread exit event for new threads
     leventClear(&threadexit);
 
