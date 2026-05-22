@@ -524,7 +524,7 @@ public:
                         const bool cpuFullSplit = settings.showFullCPU && settings.showStackedFullCPU;
                         // Common sub-widths used across multiple branches.
                         const uint32_t dw      = renderer->getTextDimensions(ult::DIVIDER_SYMBOL, false, fontsize).first;
-                        const uint32_t volt_w  = settings.realVolts ? renderer->getTextDimensions("444 mV", false, fontsize).first : 0;
+                        const uint32_t volt_w  = settings.realVolts ? renderer->getTextDimensions("4444 mV", false, fontsize).first : 0;
                         const uint32_t temp_w  = settings.showCPUTemp ? renderer->getTextDimensions("88°C", false, fontsize).first : 0;
                         if (cpuFullSplit) {
                             // Stacked full-CPU split: two rows (brackets top, freq bottom).
