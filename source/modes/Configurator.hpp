@@ -654,7 +654,7 @@ public:
 
         } else if (flags.isMini || flags.isMicro) {
             list->addItem(new tsl::elm::CategoryHeader("Global"));
-            addToggle(list, "Use 1080p Docked",   "use_1080p_docked",   false);
+            addToggle(list, "1080p Docked",   "use_1080p_docked",   false);
             addToggle(list, "Disable Screenshots", "disable_screenshots", false);
 
             if (flags.isMini)
