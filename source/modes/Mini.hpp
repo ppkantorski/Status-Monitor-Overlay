@@ -200,6 +200,12 @@ public:
             size_t actualEntryCount;
         
             while (overlay->touchPollRunning.load(std::memory_order_acquire)) {
+                // Sleep gate: touch panel is off during sleep — no input is
+                // possible and polling hidGetTouchScreenStates wastes CPU.
+                // Block here until the system wakes; touchPollRunning is
+                // re-checked at the top of the loop on resume.
+                if (tsl::hlp::waitWhileSleeping()) continue;
+
                 // Only poll when rendering and not dragging
                 {
                     inputDetected = false;

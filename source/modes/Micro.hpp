@@ -301,6 +301,12 @@ private:
         u64  plusHoldStart        = 0;
 
         do {
+            // Sleep gate: swipe and button input are impossible while the
+            // system is sleeping and the display is off.  Block here until
+            // wake; the while condition checks microSwipeExitEvent on resume
+            // so shutdown during sleep still exits cleanly within one POLL_NS.
+            if (tsl::hlp::waitWhileSleeping(POLL_NS)) continue;
+
             const u64 nowNs = armTicksToNs(armGetSystemTick());
 
             // ── Touch-swipe-to-flip ───────────────────────────────────────────

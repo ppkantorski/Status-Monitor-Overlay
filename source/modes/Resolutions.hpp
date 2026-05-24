@@ -86,6 +86,9 @@ public:
             
         
             while (overlay->touchPollRunning.load(std::memory_order_acquire)) {
+                // Sleep gate: touch panel is off during sleep — block until wake.
+                if (tsl::hlp::waitWhileSleeping()) continue;
+
                 // Only poll when rendering and not dragging
                 {
                     overlay->inputDetected.store(false, std::memory_order_release);

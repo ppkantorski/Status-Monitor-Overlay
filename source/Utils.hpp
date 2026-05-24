@@ -620,6 +620,16 @@ static constexpr u32 PTO_CLK_CNT_BUSY   = 1u << 31;
 static constexpr u32 PTO_CLK_CNT_MASK   = 0xFFFFFF;
 static constexpr u32 CLK_PTO_EMC        = 0x24;
 
+// CAR register offsets for ACTMON clock-gate / reset check.
+// ACTMON is CAR peripheral clock id 119 (Tegra210). Clock IDs 96–127 live
+// in the _V register set:  RST_DEVICES_V = 0x358, CLK_OUT_ENB_V = 0x360.
+// Bit within the register is 119-96 = 23.
+// HOS gates ACTMON during sleep (same as SOCTHERM); touching the
+// ACTMON MMIO region while it is gated hangs the AXI bus.
+static constexpr u32 CAR_RST_DEVICES_V  = 0x358;
+static constexpr u32 CAR_CLK_OUT_ENB_V  = 0x360;
+static constexpr u32 CAR_ACTMON_BIT     = 1u << 23;
+
 static u64  vActmon = 0;
 static u64  vCar    = 0;
 static bool mapped  = false;
@@ -629,6 +639,17 @@ template<typename T=u32>
 static T Rd(u64 base, u32 off) { return *reinterpret_cast<volatile T*>(base + off); }
 template<typename T=u32>
 static void Wr(u64 base, u32 off, T v) { *reinterpret_cast<volatile T*>(base + off) = v; }
+
+// True iff ACTMON is currently in reset OR its CAR clock gate is off.
+// HOS gates ACTMON during sleep exactly as it does SOCTHERM; any Rd/Wr
+// to the ACTMON MMIO region while gated hangs the AXI bus.  CAR itself
+// is always-on and always safe to read.
+// Mirrors the IsDisabledThroughSleep() pattern in the Soctherm namespace.
+static bool IsActmonDisabled() {
+    if (!vCar) return true;  // CAR not mapped → cannot verify → assume unsafe
+    return (Rd(vCar, CAR_RST_DEVICES_V) & CAR_ACTMON_BIT)
+        || !(Rd(vCar, CAR_CLK_OUT_ENB_V) & CAR_ACTMON_BIT);
+}
 
 // Helper: map a physical address
 static bool MapPA(u64& va, u64 pa) {
@@ -717,6 +738,7 @@ static void EnableDev(u32 devIdx, u32 emc_freq_khz) {
 // Formula: bw_MB_s = avg_count * 16 / 20000  (EMC freq cancels out exactly)
 static u32 Read() {
     if (!TryMap()) return 0;
+    if (IsActmonDisabled()) return 0;  // ACTMON gated during sleep — don't touch MMIO
     u64 base = ActmonBase();
     if (!(Rd(base, GLB_STATUS) & MCALL_MON_ACT)) {
         // Device not running — enable it using RAM_Hz (global, set by clkrst/pcv)
@@ -736,6 +758,7 @@ static u32 Read() {
 // Assumes TryMap() has already succeeded (cheap path — guarded again here for safety).
 static u32 ReadCpu() {
     if (!TryMap()) return 0;
+    if (IsActmonDisabled()) return 0;  // ACTMON gated during sleep — don't touch MMIO
     u64 base = ActmonBase();
     if (!(Rd(base, GLB_STATUS) & MCCPU_MON_ACT)) {
         u32 emc_khz = RAM_Hz / 1000;
@@ -1075,6 +1098,11 @@ Mutex mutex_Misc = {0};
 
 void CheckIfGameRunning(void*) {
     do {
+        // Halt during shallow sleep — the foreground application cannot
+        // change while the system is asleep, so pmdmnt IPC + shared-memory
+        // scan are pure waste.
+        if (tsl::hlp::waitWhileSleeping()) continue;
+
         mutexLock(&mutex_Misc);
         if (!check && R_FAILED(pmdmntGetApplicationProcessId(&PID))) {
             GameRunning = false;
@@ -1152,7 +1180,19 @@ void BatteryChecker(void*) {
     uint64_t tick_TTE = svcGetSystemTick();
     uint64_t nanoseconds = 1000;
     do {
+        // Halt during shallow sleep — I2C reads to MAX17050 and PSM IPC are
+        // slow even when awake; doing them every 500ms during sleep is
+        // wasted I2C bus activity and PSM sysmodule wakes for no display.
+        // Battery readings during sleep aren't useful since the overlay can't
+        // render them anyway.  Resumes on wake via libultrahand's PSC handler.
+        if (tsl::hlp::waitWhileSleeping()) continue;
+
         mutexLock(&mutex_BatteryChecker);
+        // Re-check after acquiring the lock: sleep can be entered in the
+        // narrow window between the guard above and here.  The render thread
+        // also takes mutex_BatteryChecker; releasing immediately prevents it
+        // from stalling on mutexLock while I2C calls would block mid-suspend.
+        if (tsl::hlp::isSystemSleeping()) { mutexUnlock(&mutex_BatteryChecker); continue; }
         const uint64_t startTick = svcGetSystemTick();
 
         psmGetBatteryChargeInfoFields(psmService, &_batteryChargeInfoFields);
@@ -1262,6 +1302,11 @@ void gpuLoadThread(void*) {
     // sys-clk-hoc uses the sys:clk wire format which has no GPU load field,
     // so the ioctl must still run for that path.
     if (!GPULoadPerFrame && R_SUCCEEDED(nvCheck) && R_FAILED(hocclkCheck)) do {
+        // Halt during shallow sleep — the GPU is powered down and
+        // NVGPU_GPU_IOCTL_PMU_GET_GPU_LOAD would either fail or return stale
+        // data while costing a full IPC round-trip into nvservices.  Resumes
+        // immediately on wake via libultrahand's PSC handler.
+        if (tsl::hlp::waitWhileSleeping()) continue;
         u32 temp;
         if (R_SUCCEEDED(nvIoctl(fd, NVGPU_GPU_IOCTL_PMU_GET_GPU_LOAD, &temp)) && temp > 0) {
             gpu_load_array[i++ % gpu_samples_average] = temp;
@@ -1330,7 +1375,18 @@ void Misc(void*) {
     if (!usingHOC()) Soctherm::Initialize();
     
     do {
+        // Halt during shallow sleep — the IPC calls below (clkrst, sysclk,
+        // hocclk) plus the direct SOCTHERM reads are all wasted work while
+        // the SoC is power-managed.  Run the guard before taking the mutex
+        // so we don't hold it across the sleep wait.
+        if (tsl::hlp::waitWhileSleeping()) continue;
+
         mutexLock(&mutex_Misc);
+        // Re-check after acquiring the lock: sleep may have been entered in
+        // the window between the guard above and here.  Bail out immediately
+        // so we don't hold the mutex across blocking IPC calls while the
+        // target sysmodules are suspending.
+        if (tsl::hlp::isSystemSleeping()) { mutexUnlock(&mutex_Misc); continue; }
         
         // CPU, GPU and RAM Frequency
         if (R_SUCCEEDED(clkrstCheck)) {
@@ -1346,6 +1402,15 @@ void Misc(void*) {
             if (R_SUCCEEDED(clkrstOpenSession(&clkSession, PcvModuleId_EMC, 3))) {
                 clkrstGetClockRate(&clkSession, &RAM_Hz);
                 clkrstCloseSession(&clkSession);
+            }
+            // hoc-clk pattern: if EMC has dropped below the sleep floor (~665 MHz),
+            // the system entered sleep between our guard check and now.  Bail out
+            // exactly as hoc-clk's WaitForNextTick() does — avoids calling anything
+            // else (clkrst, sysclk, SOCTHERM, ACTMON) on a suspended SoC.
+            if (RAM_Hz > 0 && RAM_Hz <= 665'000'000U) {
+                mutexUnlock(&mutex_Misc);
+                tsl::hlp::waitWhileSleeping();
+                continue;
             }
         }
         else if (R_SUCCEEDED(pcvCheck)) {
@@ -1616,7 +1681,11 @@ void Misc(void*) {
         // realCPU/GPU/RAM_Hz are u32 globals; AArch64 word stores are naturally
         // atomic, and one-cycle stale values are fine for display.
         if (R_FAILED(sysclkCheck) && R_FAILED(hocclkCheck)) {
-            RealClocks::Update();
+            // waitWhileSleeping() at the top of the loop skips the mutex body,
+            // but RealClocks::Update runs AFTER mutexUnlock — outside that guard.
+            // Add an explicit check here: if sleep was entered during the body
+            // (rare race window), skip the PTO measurement entirely.
+            if (!tsl::hlp::isSystemSleeping()) RealClocks::Update();
         }
 
     } while (!leventWait(&threadexit, timeout_ns));
@@ -1630,6 +1699,12 @@ void Misc(void*) {
 void Misc2(void*) {
     u32 dummy = 0;
     do {
+        // Halt during shallow sleep — all the calls below are IPC into
+        // audsnoop, mmu (multimedia clocks), and nifm (network) sysmodules.
+        // None of them produce meaningful new data while sleeping, and each
+        // wake costs both this thread's CPU and the target sysmodule's.
+        if (tsl::hlp::waitWhileSleeping()) continue;
+
         //DSP
         if (R_SUCCEEDED(audsnoopCheck)) audsnoopGetDspUsage(&DSP_Load_u);
 
@@ -1660,7 +1735,14 @@ void Misc3(void*) {
     }
     
     do {
+        // Halt during shallow sleep — sys-clk-hoc/hoc-clk IPC and rgltr
+        // voltage reads are wasted while the SoC is power-managed.
+        if (tsl::hlp::waitWhileSleeping()) continue;
+
         mutexLock(&mutex_Misc);
+        // Re-check after acquiring the lock — bail out if sleep entered
+        // between the guard and here to avoid blocking IPC during suspend.
+        if (tsl::hlp::isSystemSleeping()) { mutexUnlock(&mutex_Misc); continue; }
         
         // Get sys-clk data (sys-clk-hoc: sys:clk service)
         if (R_SUCCEEDED(sysclkCheck)) {
@@ -1730,6 +1812,12 @@ void Misc3(void*) {
             if (R_SUCCEEDED(clkrstOpenSession(&clkSession, PcvModuleId_EMC, 3))) {
                 clkrstGetClockRate(&clkSession, &RAM_Hz);
                 clkrstCloseSession(&clkSession);
+            }
+            // hoc-clk sentinel: EMC below sleep floor means sleep was entered mid-IPC.
+            if (RAM_Hz > 0 && RAM_Hz <= 665'000'000U) {
+                mutexUnlock(&mutex_Misc);
+                tsl::hlp::waitWhileSleeping();
+                continue;
             }
         }
         else if (R_SUCCEEDED(pcvCheck)) {
@@ -1939,6 +2027,13 @@ void CheckCore(void* idletick_ptr) {
     const uint64_t timeout_ns = 1'000'000'000ULL / TeslaFPS;
     std::atomic<uint64_t>* idletick = (std::atomic<uint64_t>*)idletick_ptr;
     while (true) {
+        // Sleep gate: idle-tick deltas measured during sleep are meaningless.
+        // Use a finite timeout matching the normal cadence so a threadexit
+        // signal that arrives while sleeping is caught within one cycle.
+        if (tsl::hlp::waitWhileSleeping(timeout_ns)) {
+            if (!leventWait(&threadexit, 0)) continue; // still running
+            return; // threadexit was signalled while sleeping
+        }
         uint64_t idletick_a;
         uint64_t idletick_b;
         svcGetInfo(&idletick_b, InfoType_IdleTickCount, INVALID_HANDLE, -1);
