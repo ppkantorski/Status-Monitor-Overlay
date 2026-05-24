@@ -9,6 +9,7 @@
 //static tsl::elm::HeaderOverlayFrame* rootFrame = nullptr;
 static bool skipMain = false;
 static std::string lastSelectedItem;
+inline std::string originalLaunchArgs; // flattened argv[1..] minus --silentLaunch; used by Mini for silent dock-transition relaunch
 
 #include "modes/FPS_Counter.hpp"
 #include "modes/FPS_Graph.hpp"
@@ -1157,10 +1158,10 @@ inline void setupMode(const std::string& modeType = "") {
     } else if (modeType == "mini") {
         ult::windowedLayerPixelPerfect = false; // reset; setup1080pIfEnabled sets true if eligible
         if (!setup1080pIfEnabled("mini")) {
-            // Non-1080p mini: only set 1280x720 when expandedMemory.
+            // Non-1080p mini: only set 1280x720 when not limitedMemory.
             // limitedMemory falls through to the stock 448x720 default —
             // setting 1280x720 on a 4MB heap crashes the overlay loader.
-            if (ult::expandedMemory) {
+            if (!ult::limitedMemory) {
                 ult::DefaultFramebufferWidth = 1280;
                 ult::DefaultFramebufferHeight = 720;
             }
@@ -1168,7 +1169,7 @@ inline void setupMode(const std::string& modeType = "") {
     } else if (modeType == "fps_counter") {
         ult::windowedLayerPixelPerfect = false; // reset; setup1080pIfEnabled sets true if eligible
         if (!setup1080pIfEnabled("fps-counter")) {
-            if (ult::expandedMemory) {
+            if (!ult::limitedMemory) {
                 ult::DefaultFramebufferWidth = 1280;
                 ult::DefaultFramebufferHeight = 720;
             }
@@ -1257,6 +1258,17 @@ int main(int argc, char **argv) {
     
     systemtickfrequency = armGetSystemTickFreq();
     ParseIniFile(); // parse INI from file
+
+    // Stash a flattened copy of the launch args (argv[1..]) so modes like Mini
+    // can relaunch with the same arguments.  --silentLaunch is stripped here so
+    // it never propagates automatically — modes add it explicitly when needed.
+    {
+        for (int a = 1; a < argc; ++a) {
+            if (strcmp(argv[a], "--silentLaunch") == 0) continue;
+            if (!originalLaunchArgs.empty()) originalLaunchArgs += ' ';
+            originalLaunchArgs += argv[a];
+        }
+    }
     
     if (argc > 0) {
         filename = argv[0]; // set global
@@ -1334,7 +1346,7 @@ int main(int argc, char **argv) {
                     skipMain = true;
                     ult::windowedLayerPixelPerfect = false; // reset before 1080p check
                     if (!setup1080pIfEnabled("mini")) {
-                        if (ult::expandedMemory) {
+                        if (!ult::limitedMemory) {
                             ult::DefaultFramebufferWidth = 1280;
                             ult::DefaultFramebufferHeight = 720;
                         }
@@ -1367,7 +1379,7 @@ int main(int argc, char **argv) {
                     skipMain = true;
                     ult::windowedLayerPixelPerfect = false; // reset before 1080p check
                     if (!setup1080pIfEnabled("fps-counter")) {
-                        if (ult::expandedMemory) {
+                        if (!ult::limitedMemory) {
                             ult::DefaultFramebufferWidth = 1280;
                             ult::DefaultFramebufferHeight = 720;
                         }

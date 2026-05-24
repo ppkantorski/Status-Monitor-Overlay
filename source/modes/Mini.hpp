@@ -53,6 +53,21 @@ private:
     int    _frameOffsetX1080 = 0; // content offset within 832px buffer (updated by updateLayerPos)
     int    _frameOffsetY1080 = 0; // content Y offset within 554px buffer for limited 1080p (updated by updateLayerPos)
 
+    // Dock-state-change auto-relaunch state.  When use_1080p_docked is enabled
+    // in the INI, the framebuffer dimensions chosen by setup1080pIfEnabled
+    // depend on whether the console is docked at launch.  If the user docks/
+    // undocks while the overlay is open we re-launch with the same arguments
+    // plus --silentLaunch so the transition looks like the overlay just
+    // auto-adjusts itself (no haptic/sound on this one launch).
+    //
+    //   wasDockedAtLaunch  — dock state captured by the constructor; used as
+    //                        the reference for detecting a transition.
+    //   relaunchRequested  — one-shot guard so we never queue two relaunches
+    //                        in the same session (the close path takes a few
+    //                        frames to actually exit; this prevents thrash).
+    bool wasDockedAtLaunch = false;
+    bool relaunchRequested = false;
+
     struct ButtonState {
         std::atomic<bool> plusDragActive{false};
         std::atomic<bool> touchDragActive{false};
@@ -182,6 +197,14 @@ public:
             fontsize = settings.handheldFontSize;
             performanceMode = ApmPerformanceMode_Normal;
         }
+
+        // Capture dock state at launch.  update() polls apm each frame and triggers a
+        // silent self-relaunch when the live state differs from this snapshot AND the
+        // use_1080p_docked INI flag is enabled — that's the only configuration where
+        // framebuffer dimensions actually depend on dock state, so it's the only one
+        // that needs a relaunch.  is1080p already implies docked so we can reuse it;
+        // otherwise we trust the performanceMode set above.
+        wasDockedAtLaunch = is1080p || (performanceMode == ApmPerformanceMode_Boost);
 
         if (settings.disableScreenshots) {
             tsl::gfx::Renderer::get().removeScreenshotStacks();
@@ -3437,6 +3460,76 @@ public:
     
         // Handle performance mode changes
         apmGetPerformanceMode(&performanceMode);
+
+        // ── Dock-state-change auto-relaunch ──────────────────────────────
+        // If use_1080p_docked is enabled, framebuffer dimensions chosen by
+        // setup1080pIfEnabled at boot depend on whether the console was docked.
+        // When the user docks/undocks while Mini is open we silently re-launch
+        // with the same arguments (plus --silentLaunch so the entry+exit
+        // feedback is suppressed for this one launch only) — the overlay
+        // appears to auto-adjust itself.
+        //
+        // Gated by:
+        //   - performanceMode is a definite Normal or Boost (not Invalid; ignore
+        //     transient indeterminate readings during the dock transition)
+        //   - dock state differs from launch (something to react to)
+        //   - use_1080p_docked is true in the [mini] INI section (only
+        //     configuration where dock state actually changes the framebuffer)
+        //   - relaunchRequested is false (one-shot guard so we don't queue two
+        //     relaunches while the close path is still draining)
+        if (!relaunchRequested &&
+            (performanceMode == ApmPerformanceMode_Normal ||
+             performanceMode == ApmPerformanceMode_Boost)) {
+
+            const bool isDockedNow = (performanceMode == ApmPerformanceMode_Boost);
+            if (isDockedNow != wasDockedAtLaunch) {
+                const std::string val = ult::parseValueFromIniSection(
+                    configIniPath, "mini", "use_1080p_docked");
+                bool wants1080p = false;
+                if (!val.empty()) {
+                    std::string upper = val;
+                    for (char& c : upper) c = (char)std::toupper((unsigned char)c);
+                    wants1080p = (upper != "FALSE");
+                }
+                if (wants1080p) {
+                    relaunchRequested = true;
+
+                    // IMPORTANT: setNextOverlay (which calls envSetNextLoad) MUST be
+                    // called BEFORE launchingOverlay is set to true.  Setting
+                    // launchingOverlay first can cause the render loop to call
+                    // exitLaunching() and break before envSetNextLoad ever runs,
+                    // leaving no next-load registered — the overlay closes with
+                    // nothing to launch.
+
+                    // 1. Register the next load first.
+                    // Build the overlay path reliably: filepath may not be set
+                    // when launched via --direct (setupMode is skipped in that
+                    // path), so derive it from folderpath + filename directly,
+                    // matching what setupMode would have produced.
+                    std::string ovlPath = filepath;
+                    if (ovlPath.empty()) {
+                        ovlPath = folderpath + filename;
+                    }
+                    std::string newArgs;
+                    if (!originalLaunchArgs.empty()) {
+                        newArgs = originalLaunchArgs + " --silentLaunch";
+                    } else {
+                        newArgs = "--silentLaunch";
+                    }
+                    tsl::setNextOverlay(ovlPath, newArgs);
+
+                    // 2. Suppress this overlay's exit feedback.
+                    skipClosingExitFeedback = true;
+
+                    // 3. Signal the loop to exit (safe — envSetNextLoad already set).
+                    launchComboHasTriggered.store(true, std::memory_order_release);
+                    ult::launchingOverlay.store(true, std::memory_order_release);
+                    tsl::Overlay::get()->close();
+                    return; // skip the rest of update() this frame; we're exiting
+                }
+            }
+        }
+
         if (performanceMode == ApmPerformanceMode_Normal) {
             if (fontsize != settings.handheldFontSize) {
                 Initialized = false;
