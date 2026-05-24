@@ -2522,6 +2522,8 @@ struct MiniSettings {
     std::string dtcFormat2;  // bottom half (== ult::OPTION_SYMBOL means "None" — no bottom half, no divider)
     size_t handheldFontSize;
     size_t dockedFontSize;
+    size_t docked1080pFontSize;  // font size used when use1080pDocked is true and console is docked
+    bool use1080pDocked;         // when docked: use 1080p pixel-perfect layer + docked1080pFontSize
     size_t spacing;
     uint16_t backgroundColor;
     uint16_t focusBackgroundColor;
@@ -2583,6 +2585,8 @@ struct MicroSettings {
     bool showStackedDTC;   // true = split DTC at DIVIDER_SYMBOL into 2 stacked rows; false = single line
     size_t handheldFontSize;
     size_t dockedFontSize;
+    size_t docked1080pFontSize;  // font size used when use1080pDocked is true and console is docked
+    bool use1080pDocked;         // when docked: use 1080p pixel-perfect layer + docked1080pFontSize
     uint8_t alignTo;
     uint16_t backgroundColor;
     uint16_t focusBackgroundColor;  // bar color while Plus is held (focus/reposition mode)
@@ -2609,6 +2613,8 @@ struct FpsCounterSettings {
     uint8_t refreshRate;
     size_t handheldFontSize;
     size_t dockedFontSize;
+    size_t docked1080pFontSize;  // font size used when use1080pDocked is true and console is docked
+    bool use1080pDocked;         // when docked: use 1080p pixel-perfect layer + docked1080pFontSize
     uint16_t backgroundColor;
     uint16_t focusBackgroundColor;
     uint16_t textColor;
@@ -2694,6 +2700,8 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
     settings->dtcFormat  = settings->dtcFormat1 + ult::DIVIDER_SYMBOL + settings->dtcFormat2;
     settings->handheldFontSize = 15;
     settings->dockedFontSize = 15;
+    settings->docked1080pFontSize = 22;  // ~15 × 1.5 — visually matches 720p docked size
+    settings->use1080pDocked = false;
     settings->spacing = 8;
     convertStrToRGBA4444("#0009", &(settings->backgroundColor));
     convertStrToRGBA4444("#000F", &(settings->focusBackgroundColor));
@@ -2765,9 +2773,10 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
     }
     
     // Process font sizes with shared bounds
-    static constexpr long minFontSize = 8;
-    static constexpr long maxFontSize = 22;
-    
+    static constexpr long minFontSize    = 8;
+    static constexpr long maxFontSize    = 22;  // 720p cap
+    static constexpr long max1080pFont   = 33;  // 1080p pixel-perfect cap (~1.5× 720p max)
+
     it = section.find("handheld_font_size");
     if (it != section.end()) {
         settings->handheldFontSize = std::clamp(atol(it->second.c_str()), minFontSize, maxFontSize);
@@ -2776,6 +2785,18 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
     it = section.find("docked_font_size");
     if (it != section.end()) {
         settings->dockedFontSize = std::clamp(atol(it->second.c_str()), minFontSize, maxFontSize);
+    }
+
+    it = section.find("docked_1080p_font_size");
+    if (it != section.end()) {
+        settings->docked1080pFontSize = std::clamp(atol(it->second.c_str()), minFontSize, max1080pFont);
+    }
+
+    it = section.find("use_1080p_docked");
+    if (it != section.end()) {
+        key = it->second;
+        convertToUpper(key);
+        settings->use1080pDocked = (key != "FALSE");
     }
 
     it = section.find("spacing");
@@ -3177,6 +3198,8 @@ ALWAYS_INLINE void GetConfigSettings(MicroSettings* settings) {
     settings->showStackedDTC = false;
     settings->handheldFontSize = 15;
     settings->dockedFontSize = 15;
+    settings->docked1080pFontSize = 22;  // ~15 × 1.5 — visually matches 720p docked size
+    settings->use1080pDocked = false;
     settings->alignTo = 1; // CENTER
     convertStrToRGBA4444("#0009", &(settings->backgroundColor));
     convertStrToRGBA4444("#000F", &(settings->focusBackgroundColor));
@@ -3445,9 +3468,10 @@ ALWAYS_INLINE void GetConfigSettings(MicroSettings* settings) {
     }
     
     // Process font sizes with shared bounds
-    static constexpr long minFontSize = 8;
-    static constexpr long maxFontSize = 18;
-    
+    static constexpr long minFontSize    = 8;
+    static constexpr long maxFontSize    = 18;  // 720p cap
+    static constexpr long max1080pFont   = 27;  // 1080p pixel-perfect cap (~1.5× 720p max)
+
     it = section.find("handheld_font_size");
     if (it != section.end()) {
         settings->handheldFontSize = std::clamp(atol(it->second.c_str()), minFontSize, maxFontSize);
@@ -3456,6 +3480,18 @@ ALWAYS_INLINE void GetConfigSettings(MicroSettings* settings) {
     it = section.find("docked_font_size");
     if (it != section.end()) {
         settings->dockedFontSize = std::clamp(atol(it->second.c_str()), minFontSize, maxFontSize);
+    }
+
+    it = section.find("docked_1080p_font_size");
+    if (it != section.end()) {
+        settings->docked1080pFontSize = std::clamp(atol(it->second.c_str()), minFontSize, max1080pFont);
+    }
+
+    it = section.find("use_1080p_docked");
+    if (it != section.end()) {
+        key = it->second;
+        convertToUpper(key);
+        settings->use1080pDocked = (key != "FALSE");
     }
     
     // Process colors
@@ -3616,6 +3652,8 @@ ALWAYS_INLINE void GetConfigSettings(FpsCounterSettings* settings) {
     // Initialize defaults
     settings->handheldFontSize = 40;
     settings->dockedFontSize = 40;
+    settings->docked1080pFontSize = 60;  // ~40 × 1.5 — visually matches 720p docked size
+    settings->use1080pDocked = false;
     convertStrToRGBA4444("#0009", &(settings->backgroundColor));
     convertStrToRGBA4444("#000F", &(settings->focusBackgroundColor));
     convertStrToRGBA4444("#8CFF", &(settings->textColor));
@@ -3654,9 +3692,10 @@ ALWAYS_INLINE void GetConfigSettings(FpsCounterSettings* settings) {
     const auto& section = sectionIt->second;
     
     // Process font sizes with shared bounds
-    static constexpr long minFontSize = 8;
-    static constexpr long maxFontSize = 150;
-    
+    static constexpr long minFontSize    = 8;
+    static constexpr long maxFontSize    = 150;  // 720p cap
+    static constexpr long max1080pFont   = 225;  // 1080p pixel-perfect cap (~1.5× 720p max)
+
     auto it = section.find("handheld_font_size");
     if (it != section.end()) {
         settings->handheldFontSize = std::clamp(atol(it->second.c_str()), minFontSize, maxFontSize);
@@ -3665,6 +3704,18 @@ ALWAYS_INLINE void GetConfigSettings(FpsCounterSettings* settings) {
     it = section.find("docked_font_size");
     if (it != section.end()) {
         settings->dockedFontSize = std::clamp(atol(it->second.c_str()), minFontSize, maxFontSize);
+    }
+
+    it = section.find("docked_1080p_font_size");
+    if (it != section.end()) {
+        settings->docked1080pFontSize = std::clamp(atol(it->second.c_str()), minFontSize, max1080pFont);
+    }
+
+    it = section.find("use_1080p_docked");
+    if (it != section.end()) {
+        key = it->second;
+        convertToUpper(key);
+        settings->use1080pDocked = (key != "FALSE");
     }
     
     // Process colors

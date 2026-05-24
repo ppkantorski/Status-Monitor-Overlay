@@ -654,6 +654,7 @@ public:
 
         } else if (flags.isMini || flags.isMicro) {
             list->addItem(new tsl::elm::CategoryHeader("Global"));
+            addToggle(list, "Use 1080p Docked",   "use_1080p_docked",   false);
             addToggle(list, "Disable Screenshots", "disable_screenshots", false);
 
             if (flags.isMini)
@@ -752,6 +753,7 @@ public:
 
         } else if (flags.isFPSCounter) {
             list->addItem(new tsl::elm::CategoryHeader("Global"));
+            addToggle(list, "Use 1080p Docked",   "use_1080p_docked",   false);
             addToggle(list, "Disable Screenshots", "disable_screenshots", false);
             addToggle(list, "Integer FPS",         "integer_fps",         false);
         }
@@ -1055,9 +1057,18 @@ private:
 public:
     FontSizeSelector(const std::string& mode, const std::string& type)
         : modeName(mode), fontType(type), flags(mode) {
-        title = fontType;
-        title[0] = std::toupper(title[0]);
-        title += " Font Size";
+        // Build a human-readable title for the header and back-navigation jump.
+        if (fontType == "handheld")
+            title = "Handheld Font Size";
+        else if (fontType == "docked")
+            title = "Docked Font Size";
+        else if (fontType == "docked_1080p")
+            title = "1080p Docked Font Size";
+        else {
+            title = fontType;
+            title[0] = std::toupper(title[0]);
+            title += " Font Size";
+        }
     }
     ~FontSizeSelector() { lastSelectedListItem = nullptr; }
 
@@ -1068,11 +1079,23 @@ public:
         const std::string section = modeToSection(modeName);
         const std::string keyName = fontType + "_font_size";
         const std::string currentValue = ult::parseValueFromIniSection(configIniPath, section, keyName);
-        const int defaultSize = flags.isFPSCounter ? 40 : 15;
+
+        // Default sizes per type; 1080p defaults are ~1.5× the 720p docked defaults.
+        int defaultSize;
+        if (fontType == "docked_1080p")
+            defaultSize = flags.isFPSCounter ? 60 : 22;
+        else
+            defaultSize = flags.isFPSCounter ? 40 : 15;
+
         const int currentSize = currentValue.empty() ? defaultSize : atoi(currentValue.c_str());
 
         const int minSize = 8;
-        const int maxSize = flags.isFPSCounter ? 150 : (flags.isMini ? 22 : 18);
+        // 1080p allows larger values since 1px = 1px (no 1.5× VI scale).
+        int maxSize;
+        if (fontType == "docked_1080p")
+            maxSize = flags.isFPSCounter ? 225 : (flags.isMini ? 33 : 27);
+        else
+            maxSize = flags.isFPSCounter ? 150 : (flags.isMini ? 22 : 18);
 
         for (int size = minSize; size <= maxSize; size++) {
             auto* sizeItem = new tsl::elm::MiniListItem(std::to_string(size) + " pt");
@@ -1121,11 +1144,13 @@ public:
         list->addItem(new tsl::elm::CategoryHeader("Font Sizes"));
 
         const std::string section = modeToSection(modeName);
-        const int defaultSize = flags.isFPSCounter ? 40 : 15;
+        const int defaultSize      = flags.isFPSCounter ? 40 : 15;
+        const int default1080pSize = flags.isFPSCounter ? 60 : 22;
 
-        auto makeItem = [&](const std::string& label, const std::string& key, const std::string& type) {
+        auto makeItem = [&](const std::string& label, const std::string& key,
+                            const std::string& type, int defSz) {
             const std::string val = ult::parseValueFromIniSection(configIniPath, section, key);
-            const int sz = val.empty() ? defaultSize : atoi(val.c_str());
+            const int sz = val.empty() ? defSz : atoi(val.c_str());
             auto* item = new tsl::elm::ListItem(label);
             item->setValue(std::to_string(sz) + " pt");
             item->setClickListener([this, type](uint64_t keys) {
@@ -1138,8 +1163,9 @@ public:
             list->addItem(item);
         };
 
-        makeItem("Handheld Font Size", "handheld_font_size", "handheld");
-        makeItem("Docked Font Size",   "docked_font_size",   "docked");
+        makeItem("Handheld",     "handheld_font_size",     "handheld",    defaultSize);
+        makeItem("Docked",       "docked_font_size",       "docked",      defaultSize);
+        makeItem("1080p Docked", "docked_1080p_font_size", "docked_1080p", default1080pSize);
 
         list->jumpToItem(jumpItemName, jumpItemValue, jumpItemExactMatch);
         clearJump();

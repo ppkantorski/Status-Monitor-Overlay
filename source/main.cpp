@@ -1097,7 +1097,53 @@ bool checkOverlayFile(const std::string& filename) {
     return stat(filename.c_str(), &buffer) == 0;
 }
 
-// Helper function to setup micro mode paths
+// Returns true and configures the framebuffer for 1080p pixel-perfect mode if:
+//   - the mode's use_1080p_docked INI key is true
+//   - the console is currently docked
+//   - we have enough heap (expandedMemory, i.e. 8 MB+)
+// Otherwise leaves framebuffer settings untouched and returns false.
+// Safe to call before tsl::loop<> — uses only ult::parseValueFromIniSection
+// (file read, no services) and ult::consoleIsDocked() (applet query, no apm).
+//
+// Framebuffer dimensions in 1080p mode: 832×1080
+//
+//   Why 832×1080?
+//   The overlay framebuffer area must not exceed the equivalent of the standard
+//   1280×720 budget (921,600 pixels).  For 1080p pixel-perfect we choose a
+//   full-height strip so the layer is always anchored at both top AND bottom —
+//   this guarantees the layer appears in screenshots and never gets clipped by
+//   the compositor:
+//
+//     832 × 1080 = 921,240 px  ≈  1280 × 720 = 921,600 px  ✓
+//
+//   Memory: 832×1080×2 bytes×2 buffers ≈ 3.7 MB — well within 8 MB heap.
+//
+//   The layer is placed at VI position (x, 0) with size 832×1080, and x is
+//   adjusted when the user drags the overlay so it stays within (0..1088)
+//   (1920 − 832).  frameOffsetX (stored in 0..1280 logical space) maps to
+//   VI x via:  viX = round(frameOffsetX × 1.5)  clamped to [0, 1088].
+static bool setup1080pIfEnabled(const std::string& iniSection) {
+    //if (!ult::expandedMemory) return false;
+    if (!ult::consoleIsDocked()) return false;
+    const std::string val = ult::parseValueFromIniSection(configIniPath, iniSection, "use_1080p_docked");
+    if (val.empty()) return false;
+    std::string upper = val;
+    for (char& c : upper) c = (char)std::toupper((unsigned char)c);
+    if (upper == "FALSE") return false;
+    // 832×1080 pixel-perfect strip: full height (top+bottom always anchored),
+    // same pixel budget as the standard 1280×720 framebuffer.
+    ult::windowedLayerPixelPerfect = true;
+    if (!ult::limitedMemory) {
+        ult::DefaultFramebufferWidth   = 832;
+        ult::DefaultFramebufferHeight  = 1080;
+    } else {
+        ult::DefaultFramebufferWidth   = 832;
+        ult::DefaultFramebufferHeight  = 554;
+    }
+    return true;
+}
+
+// Helper function to setup mode framebuffer and filepath
 inline void setupMode(const std::string& modeType = "") {
 
     if (modeType == "micro") {
@@ -1108,6 +1154,25 @@ inline void setupMode(const std::string& modeType = "") {
             ult::DefaultFramebufferWidth = 1280;
             ult::DefaultFramebufferHeight = 360;
         }
+    } else if (modeType == "mini") {
+        ult::windowedLayerPixelPerfect = false; // reset; setup1080pIfEnabled sets true if eligible
+        if (!setup1080pIfEnabled("mini")) {
+            // Non-1080p mini: only set 1280x720 when expandedMemory.
+            // limitedMemory falls through to the stock 448x720 default —
+            // setting 1280x720 on a 4MB heap crashes the overlay loader.
+            if (ult::expandedMemory) {
+                ult::DefaultFramebufferWidth = 1280;
+                ult::DefaultFramebufferHeight = 720;
+            }
+        } // else 1080p dims set by setup1080pIfEnabled
+    } else if (modeType == "fps_counter") {
+        ult::windowedLayerPixelPerfect = false; // reset; setup1080pIfEnabled sets true if eligible
+        if (!setup1080pIfEnabled("fps-counter")) {
+            if (ult::expandedMemory) {
+                ult::DefaultFramebufferWidth = 1280;
+                ult::DefaultFramebufferHeight = 720;
+            }
+        } // else 1080p dims set by setup1080pIfEnabled
     } else {
         if (!ult::limitedMemory) {
             ult::DefaultFramebufferWidth = 1280;
@@ -1264,12 +1329,15 @@ int main(int argc, char **argv) {
                 FullMode = false;
                 lastMode = "mini";
                 if (!directLaunch) {
-                    setupMode();
+                    setupMode("mini");
                 } else {
                     skipMain = true;
-                    if (!ult::limitedMemory) {
-                        ult::DefaultFramebufferWidth = 1280;
-                        ult::DefaultFramebufferHeight = 720;
+                    ult::windowedLayerPixelPerfect = false; // reset before 1080p check
+                    if (!setup1080pIfEnabled("mini")) {
+                        if (ult::expandedMemory) {
+                            ult::DefaultFramebufferWidth = 1280;
+                            ult::DefaultFramebufferHeight = 720;
+                        }
                     }
                 }
                 return tsl::loop<MiniEntryOverlay>(argc, argv);
@@ -1294,12 +1362,15 @@ int main(int argc, char **argv) {
                 FullMode = false;
                 lastMode = "fps_counter";
                 if (!directLaunch) {
-                    setupMode();
+                    setupMode("fps_counter");
                 } else {
                     skipMain = true;
-                    if (!ult::limitedMemory) {
-                        ult::DefaultFramebufferWidth = 1280;
-                        ult::DefaultFramebufferHeight = 720;
+                    ult::windowedLayerPixelPerfect = false; // reset before 1080p check
+                    if (!setup1080pIfEnabled("fps-counter")) {
+                        if (ult::expandedMemory) {
+                            ult::DefaultFramebufferWidth = 1280;
+                            ult::DefaultFramebufferHeight = 720;
+                        }
                     }
                 }
                 return tsl::loop<FPSCounterEntryOverlay>(argc, argv);

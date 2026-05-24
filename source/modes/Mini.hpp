@@ -46,8 +46,12 @@ private:
     bool runOnce = true;
 
     size_t framePadding = 10;
-    static constexpr int screenWidth = 1280;
-    static constexpr int screenHeight = 720;
+    int    cornerRadius = 16;
+    float  displayScale = 1.0f;  // 1.5 in 1080p pixel-perfect docked mode, 1.0 otherwise
+    int    screenWidth  = 1280;  // framebuffer coordinate space (720p: 1280, 1080p: 832)
+    int    screenHeight = 720;   // framebuffer coordinate space (720p: 720,  1080p: 1080)
+    int    _frameOffsetX1080 = 0; // content offset within 832px buffer (updated by updateLayerPos)
+    int    _frameOffsetY1080 = 0; // content Y offset within 554px buffer for limited 1080p (updated by updateLayerPos)
 
     struct ButtonState {
         std::atomic<bool> plusDragActive{false};
@@ -58,6 +62,73 @@ private:
     std::atomic<bool> touchPollRunning{false};
     
     void updateLayerPos() {
+        if (ult::windowedLayerPixelPerfect) {
+            // --- X: sliding-window (same for both full and limited 1080p) ---
+            // contentViX is where the left edge of *content* lands in VI 1920-space.
+            // We shift by -framePadding so the layer starts framePadding px before
+            // the content, giving natural left padding. viX clamped to [0, maxLayerX].
+            const int contentViX = (int)(frameOffsetX * 1.5f + 0.5f);
+            const int maxLayerX  = (int)tsl::cfg::ScreenWidth - (int)tsl::cfg::LayerWidth;
+            const int layerViX   = std::max(0, std::min(contentViX - (int)framePadding, maxLayerX));
+            _frameOffsetX1080 = contentViX - layerViX;
+
+            if (!ult::limitedMemory) {
+                // Full 1080p: layer is 832x1080 at Y=0 — always top+bottom anchored.
+                tsl::gfx::Renderer::get().setLayerPos(layerViX, 0);
+                return;
+            }
+
+            // --- Limited 1080p (832x554 framebuffer) ---
+            // VI display: 1920x1080.  Layer: 832x554 (or expanded by underscan).
+            // maxLayerY = ScreenHeight - LayerHeight (live values — tesla.hpp's
+            // underscan correction expands cfg::LayerHeight beyond 554, so this
+            // shrinks below 526 when underscan is active).  Using stale constants
+            // here would silently fail the setLayerPos guard, producing the
+            // invisible-wall feeling during drag.
+            //
+            // Y uses the SAME sliding-window model as X — the layer slides between
+            // VI y=0 and y=maxLayerY as the user drags, and _frameOffsetY1080 absorbs
+            // the remainder so screenY = layerViY + _frameOffsetY1080 = contentViY is
+            // ALWAYS continuous (no jump anywhere along the drag).
+            //
+            //   contentViY = frameOffsetY * 1.5  (user drags in 1280x720 logical space)
+            //   layerViY   = clamp(contentViY - framePadding, 0, maxLayerY)
+            //   bufferY    = contentViY - layerViY      (always in [0, 554))
+            //
+            // Anchor properties:
+            //   contentViY <= framePadding              -> layerViY = 0         (top anchored)
+            //   contentViY >= maxLayerY + framePadding  -> layerViY = maxLayerY (bottom anchored)
+            //   in between                              -> neither edge anchored
+            //
+            // The unanchored middle zone is the same tradeoff X already accepts —
+            // screenshots may not capture the overlay when it's positioned in the
+            // exact middle of the screen, but the visual movement is seamless.
+            //
+            // Exception: if the content is taller than the 554px buffer (drawCachedHeight
+            // plus padding > 554), the sliding window can't safely fit — center the
+            // layer (layerViY = maxLayerY/2) so content renders from the top of the
+            // buffer. This briefly breaks screenshot capture but avoids drawing outside
+            // the framebuffer.
+            const int maxLayerY      = (int)tsl::cfg::ScreenHeight - (int)tsl::cfg::LayerHeight;
+            const int centeredLayerY = std::max(0, maxLayerY / 2);
+            const int contentViY     = (int)(frameOffsetY * 1.5f + 0.5f);
+            int layerViY;
+            const int contentH = (int)drawCachedHeight + 2 * (int)framePadding;
+            const bool fitsInBuffer = (contentH <= 554);
+            if (!fitsInBuffer) {
+                // Content too tall to anchor — center the layer vertically.
+                layerViY = centeredLayerY;
+                _frameOffsetY1080 = contentViY - centeredLayerY;
+            } else {
+                // Sliding window: layer follows the content, clamped to [0, maxLayerY].
+                layerViY = std::max(0, std::min(contentViY - (int)framePadding, maxLayerY));
+                _frameOffsetY1080 = contentViY - layerViY;
+            }
+            // Safety clamp to valid buffer range.
+            _frameOffsetY1080 = std::max(0, std::min(_frameOffsetY1080, 553));
+            tsl::gfx::Renderer::get().setLayerPos(layerViX, layerViY);
+            return;
+        }
         if (!ult::limitedMemory) return;
         const int pos = std::max(std::min(
             (int)(frameOffsetX * 1.5f + 0.5f) - tsl::impl::currentUnderscanPixels.first,
@@ -75,11 +146,42 @@ public:
         strcpy(Battery_c, "-.-- W-.-% [--:--]"); // Default display
 
         GetConfigSettings(&settings);
-        apmGetPerformanceMode(&performanceMode);
-        if (performanceMode == ApmPerformanceMode_Normal) {
+        // NOTE: apm is not yet initialized when the constructor runs (initServices() is called
+        // after new MiniOverlay()). We defer the apm-based font selection to update().
+        // For the initial font, use the docked/handheld state we already know from the
+        // framebuffer setup that main() performed before tsl::loop<>.
+
+        // Determine if we are running in 1080p pixel-perfect docked mode.
+        // ult::windowedLayerPixelPerfect is set by main() before tsl::loop<> based on
+        // the use_1080p_docked INI key + consoleIsDocked + expandedMemory guard.
+        //
+        // In 1080p mode the framebuffer is 832×1080 (same pixel budget as 1280×720).
+        // The VI layer is an 832×1080 strip placed at (viX, 0) — full screen height,
+        // so the layer is always top+bottom anchored for screenshots.
+        // Dragging only moves the layer horizontally (viX = frameOffsetX × 1.5).
+        const bool is1080p = ult::windowedLayerPixelPerfect;
+        // In limited-memory 1080p: framebuffer is 832×554 (half of 1080, fits in 4MB heap).
+        // The layer slides vertically between top-anchor (Y=0) and bottom-anchor (Y=526)
+        // so one edge is always anchored for screenshots.
+        // In full 1080p: framebuffer is 832×1080 — full height, always anchored top+bottom.
+        const bool isLimited1080p = is1080p && ult::limitedMemory;
+        displayScale = is1080p ? 1.5f : 1.0f;
+        screenWidth  = is1080p ?  832 : 1280;   // framebuffer width in 1080p mode
+        screenHeight = isLimited1080p ? 554 : (is1080p ? 1080 : 720);
+
+        // is1080p implies docked (setup1080pIfEnabled requires consoleIsDocked).
+        // For the non-1080p case, consoleIsDocked() is safe to call here (applet type
+        // is AppletType_None but the underlying query doesn't need apm session).
+        if (is1080p) {
+            fontsize = settings.docked1080pFontSize;
+            performanceMode = ApmPerformanceMode_Boost; // docked — will be confirmed by apm in update()
+        } else if (ult::consoleIsDocked()) {
+            fontsize = settings.dockedFontSize;
+            performanceMode = ApmPerformanceMode_Boost;
+        } else {
             fontsize = settings.handheldFontSize;
+            performanceMode = ApmPerformanceMode_Normal;
         }
-        else fontsize = settings.dockedFontSize;
 
         if (settings.disableScreenshots) {
             tsl::gfx::Renderer::get().removeScreenshotStacks();
@@ -89,9 +191,16 @@ public:
         //alphabackground = 0x0;
         frameOffsetX = settings.frameOffsetX;
         frameOffsetY = settings.frameOffsetY;
-        framePadding = settings.framePadding;
-        topPadding = 5;
-        bottomPadding = 5;
+        // Scale all framebuffer-pixel measurements so 1080p mode looks identical
+        // to 720p mode (both render the same visual pixel density on screen).
+        // In 720p mode displayScale=1.0 so the multiplications are no-ops.
+        framePadding     = (size_t)(settings.framePadding * displayScale + 0.5f);
+        topPadding       = (int)(5.0f * displayScale + 0.5f);
+        bottomPadding    = (int)(5.0f * displayScale + 0.5f);
+        cornerRadius     = (int)(16.0f * displayScale + 0.5f);
+        // Scale spacing so row gaps match 720p visual proportions in 1080p pixel-perfect mode.
+        // settings is a local copy so writing back here is safe and covers all 56 usages below.
+        settings.spacing = (int)(settings.spacing * displayScale + 0.5f);
         cachedBaselineOffset = (int)fontsize;  // updated to true ascent once font is loaded
         cachedDescentAbs     = 0;              // updated to true descent once font is loaded
 
@@ -1240,8 +1349,68 @@ public:
             
             int _frameOffsetX;
             
+            // drawY: the Y coordinate used for all draw calls.
+            // In limited 1080p, this is the buffer-space Y (_frameOffsetY1080-derived);
+            // in all other modes it equals frameOffsetY.
+            int drawY = frameOffsetY;
+
+            // In 1080p pixel-perfect mode (832×1080 framebuffer, full-height layer):
+            //   - frameOffsetX is in logical 1280-space (0..1280), same range as 720p.
+            //   - Content VI position = frameOffsetX * 1.5 (0..1920).
+            //   - The 832px layer slides within [0, 1088] VI; content slides within [0, 1088] buffer.
+            //   - _frameOffsetX1080 is set by updateLayerPos() as contentViX - layerViX.
+            //   - Y moves freely within the 1080px buffer (layer is full height).
+            if (ult::windowedLayerPixelPerfect) {
+                // Clamp frameOffsetX: must be >= ceil(framePadding/1.5) so contentViX >= framePadding.
+                const int minFrameX1080 = ((int)framePadding * 2 + 2) / 3;
+                frameOffsetX = std::max(minFrameX1080, std::min(frameOffsetX, 1280));
+
+                if (ult::limitedMemory) {
+                    // Limited 1080p (832x554): frameOffsetY is in 720 logical space (0..720).
+                    // updateLayerPos() maps it to _frameOffsetY1080 (0..553) and picks the
+                    // correct VI Y anchor.  Clamp frameOffsetY using the same dead-zone-
+                    // eliminating formula handleInput uses:
+                    //   maxFrameY = (maxLayerY + maxBufY) / 1.5
+                    // where maxLayerY = ScreenHeight - LayerHeight (live, so it shrinks
+                    // when underscan expands cfg::LayerHeight) and maxBufY is the
+                    // buffer-space ceiling for bufferY.  Without the live maxLayerY here,
+                    // a stale frameOffsetY from INI or a drag-delta race could leave the
+                    // rect briefly pinned at the bottom edge while holding up.
+                    const int minFrameY720    = (int)((framePadding / 1.5f) + 0.5f);
+                    const int maxLayerY1080dp = (int)tsl::cfg::ScreenHeight - (int)tsl::cfg::LayerHeight;
+                    const int maxBufY1080dp   = screenHeight - (int)framePadding - (int)cachedHeight;
+                    const int maxFrameY720    = (int)((maxLayerY1080dp + std::max(0, maxBufY1080dp)) / 1.5f);
+                    frameOffsetY = std::max(minFrameY720, std::min(frameOffsetY, std::max(minFrameY720, maxFrameY720)));
+
+                    // Update layer position (sets _frameOffsetX1080, _frameOffsetY1080, viX, viY).
+                    updateLayerPos();
+
+                    // X: clamp sliding offset so content stays within 832px buffer.
+                    const int maxBufX = screenWidth - (int)overlayWidth - (int)framePadding;
+                    _frameOffsetX = std::max((int)framePadding, std::min(_frameOffsetX1080, std::max(0, maxBufX)));
+                    // Y: clamp sliding offset so content stays within 554px buffer.
+                    const int maxBufY = screenHeight - (int)framePadding - (int)cachedHeight;
+                    // Use _frameOffsetY1080 as the Y draw coordinate; do NOT overwrite frameOffsetY
+                    // (it stores the logical 720-space position and must not be corrupted).
+                    const int _drawOffsetY = std::max((int)framePadding, std::min(_frameOffsetY1080, std::max((int)framePadding, maxBufY)));
+                    drawY = _drawOffsetY;
+                } else {
+                    // Full 1080p (832x1080): frameOffsetY moves freely within the 1080px buffer.
+                    const int minFrameY = (int)framePadding;
+                    const int maxFrameY = screenHeight - (int)framePadding - (int)cachedHeight;
+                    frameOffsetY = std::max(minFrameY, std::min(frameOffsetY, std::max(minFrameY, maxFrameY)));
+
+                    // Update layer position and get content X offset within buffer.
+                    updateLayerPos();
+
+                    const int maxBufX = screenWidth - (int)overlayWidth - (int)framePadding;
+                    _frameOffsetX = std::max((int)framePadding, std::min(_frameOffsetX1080, std::max(0, maxBufX)));
+                }
+                clippingOffsetX = 0;
+                clippingOffsetY = 0;
+            }
             // In limited memory mode, correct frameOffsetX first, then calculate _frameOffsetX
-            if (ult::limitedMemory) {
+            else if (ult::limitedMemory) {
                 // Calculate valid range for frameOffsetX (in full 1280px coordinate space)
                 const int minFrameX = framePadding - cachedBaseX;
                 const int maxFrameX = screenWidth - framePadding - overlayWidth - cachedBaseX;
@@ -1280,20 +1449,20 @@ public:
                 }
                 
                 // Check Y bounds and calculate clipping offset  
-                if (cachedBaseY + frameOffsetY < int(framePadding)) {
-                    clippingOffsetY = framePadding - (cachedBaseY + frameOffsetY);
-                } else if ((cachedBaseY + frameOffsetY + cachedHeight) > screenHeight - framePadding) {
-                    clippingOffsetY = (screenHeight - framePadding) - (cachedBaseY + frameOffsetY + cachedHeight);
+                if (cachedBaseY + drawY < int(framePadding)) {
+                    clippingOffsetY = framePadding - (cachedBaseY + drawY);
+                } else if ((cachedBaseY + drawY + cachedHeight) > screenHeight - framePadding) {
+                    clippingOffsetY = (screenHeight - framePadding) - (cachedBaseY + drawY + cachedHeight);
                 }
             }
             
             // Apply to all drawing calls
             renderer->drawRoundedRectSingleThreaded(
                 cachedBaseX + _frameOffsetX + clippingOffsetX, 
-                cachedBaseY + frameOffsetY + clippingOffsetY, 
+                cachedBaseY + drawY + clippingOffsetY, 
                 overlayWidth, 
                 cachedHeight, 
-                16, 
+                cornerRadius, 
                 a(bgColor)
             );
                         
@@ -1410,7 +1579,7 @@ public:
                 if (!isTmpDualRow && settings.showLabels && !labelLines[labelIndex].empty()) {
                     labelWidth = renderer->getTextDimensions(labelLines[labelIndex], false, fontsize).first;
                     labelCenterX = cachedBaseX + (margin / 2) - (labelWidth / 2);
-                    renderer->drawString(labelLines[labelIndex], false, labelCenterX + _frameOffsetX + clippingOffsetX, currentY + frameOffsetY + clippingOffsetY, fontsize, settings.catColor);
+                    renderer->drawString(labelLines[labelIndex], false, labelCenterX + _frameOffsetX + clippingOffsetX, currentY + drawY + clippingOffsetY, fontsize, settings.catColor);
                 }
                 
                 // Determine rendering method based on label type
@@ -1419,7 +1588,7 @@ public:
                 const int baseX = settings.showLabels 
                     ? (cachedBaseX + margin + _frameOffsetX + clippingOffsetX)
                     : (cachedBaseX + (fontsize / 3) + leftPadding + _frameOffsetX + clippingOffsetX);
-                const int baseY = currentY + frameOffsetY + clippingOffsetY;
+                const int baseY = currentY + drawY + clippingOffsetY;
                 
                 if (labelIndex < labelLines.size() && labelLines[labelIndex] == "SOC") {
                     // SOC temperature rendering with gradient
@@ -1582,7 +1751,7 @@ public:
                         const uint32_t tmpLblW = renderer->getTextDimensions(tmpLbl, false, fontsize).first;
                         const uint32_t tmpLblX = cachedBaseX + (margin / 2) - (tmpLblW / 2);
                         renderer->drawString(tmpLbl, false, tmpLblX + _frameOffsetX + clippingOffsetX,
-                            centerY + frameOffsetY + clippingOffsetY, fontsize, settings.catColor);
+                            centerY + drawY + clippingOffsetY, fontsize, settings.catColor);
                     }
                     //if (settings.showFanPercentage) {
                     //    const int fanDuty = safeFanDuty((int)Rotation_Duty);
@@ -1591,13 +1760,13 @@ public:
                     //    // Draw fan at the X where it would naturally fall after the SOC/PCB/Skin temps
                     //    const int fanX = baseX + (int)renderer->getTextDimensions(std::string(skin_temperature_c), false, fontsize).first;
                     //    renderer->drawStringWithColoredSections(std::string(fanStr), false, specialChars,
-                    //        fanX, centerY + frameOffsetY + clippingOffsetY, fontsize,
+                    //        fanX, centerY + drawY + clippingOffsetY, fontsize,
                     //        settings.textColor, settings.separatorColor);
                     //}
 
                     // Fan and voltage are both drawn centered between the two rows
                     if (settings.showFanPercentage || (settings.realVolts && settings.showSOCVoltage && MINI_SOC_volt_c[0])) {
-                        const int fanY = centerY + frameOffsetY + clippingOffsetY;
+                        const int fanY = centerY + drawY + clippingOffsetY;
                         // Anchor starts right after the SOC/PCB/Skin temp text
                         const int fanX = baseX + (int)renderer->getTextDimensions(std::string(skin_temperature_c), false, fontsize).first;
                         int afterContentX = fanX;
@@ -3275,11 +3444,17 @@ public:
                 cachedBaselineOffset = (int)fontsize;
                 cachedDescentAbs     = 0;
             }
-        }
-        else if (performanceMode == ApmPerformanceMode_Boost) {
-            if (fontsize != settings.dockedFontSize) {
+        } else if (performanceMode == ApmPerformanceMode_Boost || performanceMode == ApmPerformanceMode_Invalid) {
+            // ApmPerformanceMode_Invalid can occur on the very first update() call while
+            // apm session is still settling. Treat it as docked (same as Boost) since
+            // we are in docked mode if windowedLayerPixelPerfect is set, and the
+            // constructor already seeded performanceMode = Boost for that path.
+            const size_t targetFont = ult::windowedLayerPixelPerfect
+                                      ? settings.docked1080pFontSize
+                                      : settings.dockedFontSize;
+            if (fontsize != targetFont) {
                 Initialized = false;
-                fontsize = settings.dockedFontSize;
+                fontsize = targetFont;
                 cachedBaselineOffset = (int)fontsize;
                 cachedDescentAbs     = 0;
             }
@@ -4137,8 +4312,9 @@ public:
         //const u64 currentTime = armTicksToNs(armGetSystemTick());
         
         // Better touch detection - check if coordinates are within reasonable screen bounds
+        // Touch coordinates are always in 1280×720 touch space regardless of framebuffer mode.
         const bool currentTouchDetected = (touchPos.x > 0 && touchPos.y > 0 && 
-                                    touchPos.x < screenWidth && touchPos.y < screenHeight);
+                                    touchPos.x < 1280 && touchPos.y < 720);
         
         // Debounce touch detection
         //if (currentTouchDetected && !oldTouchDetected) {
@@ -4203,11 +4379,63 @@ public:
         // maxY to be too large and the clipping guard pulls the rect back, leaving a gap.
         const int overlayHeight = (drawCachedHeight > 0) ? (int)drawCachedHeight : (int)cachedOverlayHeight;
         
-        // Screen boundaries for clamping
-        const int minX = -cachedBaseX + framePadding;
-        const int maxX = screenWidth - overlayWidth - cachedBaseX - framePadding;
-        const int minY = -cachedBaseY + framePadding;
-        const int maxY = screenHeight - overlayHeight - cachedBaseY - framePadding;
+        // Screen boundaries for clamping.
+        // frameOffsetX is in logical 1280-space. updateLayerPos() clamps layerViX to
+        // [0, maxLayerX] and lets _frameOffsetX1080 absorb the remainder (sliding window).
+        // The visual right limit is where _frameOffsetX1080 == maxBufX, i.e.
+        //   contentViX = maxLayerX + maxBufX  →  maxX = (maxLayerX + maxBufX) / 1.5
+        // Capping at exactly this value eliminates the dead zone where the user has to
+        // hold left before anything moves after reaching the right edge.
+        const int maxLayerX1080 = (int)tsl::cfg::ScreenWidth - (int)tsl::cfg::LayerWidth;
+        const int maxBufX1080   = screenWidth - (int)overlayWidth - (int)framePadding;
+        const int minX = ult::windowedLayerPixelPerfect
+                       ? ((int)(framePadding) * 2 + 2) / 3
+                       : (-cachedBaseX + (int)framePadding);
+        const int maxX = ult::windowedLayerPixelPerfect
+                       ? std::max(minX, (int)((maxLayerX1080 + std::max(0, maxBufX1080)) / 1.5f))
+                       : (screenWidth - (int)overlayWidth - cachedBaseX - (int)framePadding);
+        // For limited 1080p: frameOffsetY is in 720 logical space (0..720).
+        // screenHeight is 554 (the buffer height) which would clamp incorrectly.
+        // Use the 720 logical space for Y clamping; updateLayerPos handles the mapping.
+        const int logicalScreenH = (ult::windowedLayerPixelPerfect && ult::limitedMemory) ? 720 : screenHeight;
+        const int logicalOverlayH = (ult::windowedLayerPixelPerfect && ult::limitedMemory)
+            ? (int)((overlayHeight / 1.5f) + 0.5f)  // convert buffer px back to 720 logical space
+            : overlayHeight;
+        const int logicalPadding = (ult::windowedLayerPixelPerfect && ult::limitedMemory)
+            ? (int)((framePadding / 1.5f) + 0.5f)
+            : (int)framePadding;
+        const int minY = -cachedBaseY + logicalPadding;
+        // maxY: same dead-zone-eliminating formula X uses.  Content visually stops
+        // moving when bufferY = maxBufY AND layerViY = maxLayerY (both saturated).
+        // At that point contentViY = maxLayerY + maxBufY, so the right limit in
+        // 720-logical space is (maxLayerY + maxBufY) / 1.5.
+        //
+        // This matters specifically under underscan: tesla.hpp expands cfg::LayerHeight
+        // beyond 554, which shrinks maxLayerY below 526.  The static formula
+        // (logicalScreenH - logicalOverlayH - logicalPadding) doesn't see that shrink
+        // and lets frameOffsetY travel past the visual stopping point — producing the
+        // brief "stuck at the bottom" feeling when holding up out of the bottom edge.
+        const int maxLayerY1080 = (int)tsl::cfg::ScreenHeight - (int)tsl::cfg::LayerHeight;
+        const int maxBufY1080   = screenHeight - (int)framePadding - (int)overlayHeight;
+        const int maxY = (ult::windowedLayerPixelPerfect && ult::limitedMemory)
+            ? std::max(minY, (int)((maxLayerY1080 + std::max(0, maxBufY1080)) / 1.5f))
+            : (logicalScreenH - logicalOverlayH - cachedBaseY - logicalPadding);
+
+        // Y-axis movement-rate normalization.
+        //
+        // The joystick and touch handlers accumulate movement in frameOffsetY units, but
+        // 1 unit of frameOffsetY produces a different number of display pixels per mode:
+        //
+        //   Non-1080p (full or limited):  frameOffsetY is in 720-space, VI scales 1.5x   -> 1.5 disp px / unit
+        //   Limited 1080p (832x554):      frameOffsetY in 720-logical, *1.5 -> contentViY -> 1.5 disp px / unit
+        //   Full 1080p (832x1080):        frameOffsetY in 1080-framebuffer, VI 1:1       -> 1.0 disp px / unit  (odd one out)
+        //
+        // X is always 1.5 disp px / unit because frameOffsetX is always in 1280-logical.
+        // Without this scale, full 1080p Y feels ~33% slower than X (and slower than Y in
+        // every other mode), which is exactly the inconsistency the user feels when
+        // toggling between modes.  Multiplying Y deltas by 1.5 in full 1080p only makes
+        // the visible rate match across all modes and both axes.
+        const float yMovementScale = (ult::windowedLayerPixelPerfect && !ult::limitedMemory) ? 1.5f : 1.0f;
         
         const bool plusDragReady = buttonState.plusDragActive.load(std::memory_order_acquire);
 
@@ -4232,7 +4460,12 @@ public:
             const int touchX = touchPos.x;
             const int touchY = touchPos.y;
             const int deltaX = touchX - initialTouchPos.x;
-            const int deltaY = touchY - initialTouchPos.y;
+            // Scale Y delta so the rect tracks the finger 1:1 in display pixels across
+            // all modes.  See yMovementScale comment above for the reasoning.
+            const int rawDeltaY = touchY - initialTouchPos.y;
+            const int deltaY = (yMovementScale == 1.0f)
+                             ? rawDeltaY
+                             : (int)(rawDeltaY * yMovementScale + (rawDeltaY >= 0 ? 0.5f : -0.5f));
             
             // Check if we've moved enough to consider this a drag
             if (!hasMoved) {
@@ -4307,7 +4540,10 @@ public:
                 static float accumulatedY = 0.0f;
                 
                 accumulatedX += (float)activeJoystick.x * currentSensitivity;
-                accumulatedY += -(float)activeJoystick.y * currentSensitivity;
+                // Scale Y by yMovementScale so the full 1080p mode (which is 1:1 with VI
+                // and would otherwise feel ~33% slower in Y than every other mode) moves
+                // at the same visible rate as X and as Y in the other modes.
+                accumulatedY += -(float)activeJoystick.y * currentSensitivity * yMovementScale;
                 
                 // Extract integer movement and keep fractional part
                 const int deltaX = (int)accumulatedX;
