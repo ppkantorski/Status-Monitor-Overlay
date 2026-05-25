@@ -7,6 +7,7 @@ private:
     ResolutionSettings settings;
     bool skipOnce = true;
     bool runOnce = true;
+    u64 lastDataUpdateTick = 0;
 
     // Repositioning variables (matching Mini)
     int frameOffsetX = 0;
@@ -336,7 +337,11 @@ public:
 
     virtual void update() override {
 
-        if (gameStart && NxFps) {
+        const u64 _nowTick = armGetSystemTick();
+        const bool shouldUpdateData = (_nowTick - lastDataUpdateTick) >= (systemtickfrequency / settings.refreshRate);
+        if (shouldUpdateData) lastDataUpdateTick = _nowTick;
+
+        if (shouldUpdateData && gameStart && NxFps) {
             if (!resolutionLookup) {
                 NxFps -> renderCalls[0].calls = 0xFFFF;
                 resolutionLookup = 1;

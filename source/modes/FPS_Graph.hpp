@@ -7,6 +7,7 @@ private:
     FpsGraphSettings settings;
     uint64_t systemtickfrequency_impl = systemtickfrequency;
     uint32_t cnt = 0;
+    u64 lastDataUpdateTick = 0;
     char CPU_Load_c[12] = "    -";
     char GPU_Load_c[12] = "    -";
     char RAM_Load_c[12] = "    -";
@@ -485,6 +486,11 @@ public:
         ///FPS
         stats temp = {0, false};
         static uint64_t lastFrame = 0;
+
+        const u64 _nowTick = armGetSystemTick();
+        const bool shouldUpdateData = (_nowTick - lastDataUpdateTick) >= (systemtickfrequency / settings.refreshRate);
+        if (shouldUpdateData) {
+            lastDataUpdateTick = _nowTick;
         
         if (settings.useIntegerFPS)
             snprintf(FPSavg_c, sizeof FPSavg_c, "%d", (int)round(FPSavg));
@@ -520,6 +526,8 @@ public:
             }
             FPSavg_c[0] = 0;
         }
+
+        } // end shouldUpdateData
 
         if (cnt)
             return;

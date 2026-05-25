@@ -27,6 +27,11 @@ private:
     char mini_ram_temp_c[16] = "";    // RAM die temp string e.g. "45°C"
     char MINI_RAM_load_bot_c[32] = ""; // RAM load split row 2: "total%@freq"
     char MINI_RAM_bw_c[16] = "";       // RAM bandwidth string e.g. "2.2GB/s" (ACTMON direct)
+    char MINI_CPU_compressed_c[42] = "";
+    char MINI_GPU_Load_c[20] = "";
+    char MINI_RAM_var_compressed_c[35] = "";
+    char MINI_RAM_volt_c[32] = "";
+    char MINI_MEM_RAM_c[32] = "";
 
     uint32_t rectangleWidth;
     char Variables[512];
@@ -44,6 +49,7 @@ private:
 
     bool skipOnce = true;
     bool runOnce = true;
+    u64  lastDataUpdateTick = 0;  // tick of last sensor data format; used to gate updates when frame limiter is off
 
     size_t framePadding = 10;
     int    cornerRadius = 16;
@@ -3577,14 +3583,23 @@ public:
             return std::find(showKeys.begin(), showKeys.end(), key) != showKeys.end();
         };
     
+        // Throttle data formatting to the user-specified refresh rate even when
+        // the frame limiter is off (e.g. during drag/reposition).  The render
+        // loop may call update() at vsync speed (~60 fps) while isDragging,
+        // but we only rebuild the display strings at 1/refreshRate intervals.
+        const u64 nowTick = armGetSystemTick();
+        const u64 pollIntervalTicks = systemtickfrequency / settings.refreshRate;
+        const bool shouldUpdateData = (nowTick - lastDataUpdateTick) >= pollIntervalTicks;
+        if (shouldUpdateData) lastDataUpdateTick = nowTick;
+
+        if (shouldUpdateData) {
         mutexLock(&mutex_Misc);
     
-        // Variables to store formatted strings
-        char MINI_CPU_compressed_c[42] = "";
-        char MINI_GPU_Load_c[20] = "";
-        char MINI_RAM_var_compressed_c[35] = "";
-        char MINI_RAM_volt_c[32] = "";
-        char MINI_MEM_RAM_c[32] = "";
+        MINI_CPU_compressed_c[0] = '\0';
+        MINI_GPU_Load_c[0] = '\0';
+        MINI_RAM_var_compressed_c[0] = '\0';
+        MINI_RAM_volt_c[0] = '\0';
+        MINI_MEM_RAM_c[0] = '\0';
         MINI_SOC_volt_c[0] = '\0';  // reset each frame
         MINI_CPU_volt_c[0] = '\0';  // reset each frame
         MINI_GPU_volt_c[0] = '\0';  // reset each frame
@@ -4132,7 +4147,8 @@ public:
             
             mutexUnlock(&mutex_BatteryChecker);
         }
-    
+        } // end shouldUpdateData
+
         // Build Variables string
         char Temp[512] = "";
         uint16_t flags = 0;

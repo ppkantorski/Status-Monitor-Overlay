@@ -90,6 +90,7 @@ private:
 
     bool skipOnce = true;
     bool runOnce = true;
+    u64  lastDataUpdateTick = 0;  // tick of last sensor data format; used to gate updates when frame limiter is off
 
     // Swipe-to-flip position detection.
     // microSwipeExitEvent is a global (zero-initialized like threadexit) — using a
@@ -2490,6 +2491,16 @@ public:
             }
         }
 
+        // Throttle data formatting to the user-specified refresh rate even when
+        // the frame limiter is off (e.g. during drag/reposition).  The render
+        // loop may call update() at vsync speed (~60 fps) while repositioning,
+        // but we only rebuild the display strings at 1/refreshRate intervals.
+        const u64 nowTick = armGetSystemTick();
+        const u64 pollIntervalTicks = systemtickfrequency / settings.refreshRate;
+        const bool shouldUpdateData = (nowTick - lastDataUpdateTick) >= pollIntervalTicks;
+        if (shouldUpdateData) lastDataUpdateTick = nowTick;
+
+        if (shouldUpdateData) {
         // CPU usage calculations - optimized with fewer conditionals
         const double inv_freq = 1.0 / systemtickfrequency_impl;
         
@@ -3152,6 +3163,7 @@ public:
         }
 
         mutexUnlock(&mutex_Misc);
+        } // end shouldUpdateData
 
         //static bool skipOnce = true;
     

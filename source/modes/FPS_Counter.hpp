@@ -29,6 +29,8 @@ private:
     // Authoritative rendered height — set each draw; used by handleInput for maxY clamp.
     size_t drawCachedHeight = 0;
 
+    u64 lastDataUpdateTick = 0;
+
     bool originalUseRightAlignment = ult::useRightAlignment;
     
     struct ButtonState {
@@ -471,10 +473,15 @@ public:
         else if (performanceMode == ApmPerformanceMode_Boost) {
             fontsize = settings.dockedFontSize;
         }
-        if (settings.useIntegerFPS) {
-            snprintf(FPSavg_c, sizeof FPSavg_c, "%d", (int)round(useOldFPSavg ? FPSavg_old : FPSavg));
-        } else {
-            snprintf(FPSavg_c, sizeof FPSavg_c, "%2.1f", useOldFPSavg ? FPSavg_old : FPSavg);
+        const u64 _nowTick = armGetSystemTick();
+        const bool shouldUpdateData = (_nowTick - lastDataUpdateTick) >= (systemtickfrequency / settings.refreshRate);
+        if (shouldUpdateData) {
+            lastDataUpdateTick = _nowTick;
+            if (settings.useIntegerFPS) {
+                snprintf(FPSavg_c, sizeof FPSavg_c, "%d", (int)round(useOldFPSavg ? FPSavg_old : FPSavg));
+            } else {
+                snprintf(FPSavg_c, sizeof FPSavg_c, "%2.1f", useOldFPSavg ? FPSavg_old : FPSavg);
+            }
         }
     
         if (!skipOnce) {
