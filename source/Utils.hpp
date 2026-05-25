@@ -2496,6 +2496,7 @@ struct MiniSettings {
     bool showFullCPUMaxCore012; // true = brackets show [max(c0,c1,c2) c3] instead of [c0 c1 c2 c3]
     bool showStackedFullCPU; // true = brackets top, freq bottom (stacked); false = [brackets]@freq inline
     bool showFullResolution;
+    bool showPrimaryResolution;
     bool showFanPercentage;
     bool showSOCVoltage;
     bool showStackedFanSOC;  // true = fan row1, volt row2 (stacked); false = fan+volt inline
@@ -2556,6 +2557,7 @@ struct MicroSettings {
     bool showFullCPUMaxCore012; // true = brackets show [max(c0,c1,c2) c3] instead of [c0 c1 c2 c3]
     bool showStackedFullCPU; // true = brackets top, freq bottom (stacked); false = [brackets]@freq inline
     bool showFullResolution;
+    bool showPrimaryResolution;
     bool showSOCVoltage;
     bool showStackedFanSOC;  // true = fan row1, volt row2 (stacked); false = fan+volt inline
     bool showStackedVDDQ;   // true = VDD2 row1, VDDQ row2 stacked (Mariko only); false = VDD2+VDDQ inline
@@ -2673,6 +2675,7 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
     settings->showFullCPUMaxCore012 = false;
     settings->showStackedFullCPU = false;
     settings->showFullResolution = true;
+    settings->showPrimaryResolution = false;
     settings->showFanPercentage = true;
     settings->useDynamicColors = true;
     settings->showFullCPU = false;
@@ -2873,6 +2876,13 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
         key = it->second;
         convertToUpper(key);
         settings->showFullResolution = !(key == "FALSE");
+    }
+
+    it = section.find("show_primary_res");
+    if (it != section.end()) {
+        key = it->second;
+        convertToUpper(key);
+        settings->showPrimaryResolution = (key == "TRUE");
     }
 
     it = section.find("show_soc_voltage");
@@ -3169,6 +3179,7 @@ ALWAYS_INLINE void GetConfigSettings(MicroSettings* settings) {
     settings->showFullCPUMaxCore012 = false;
     settings->showStackedFullCPU = false;
     settings->showFullResolution = false;
+    settings->showPrimaryResolution = false;
     settings->showSOCVoltage = true;
     settings->showStackedFanSOC = true;  // default: fan+volt stacked
     settings->showStackedVDDQ = true;   // default: VDD2+VDDQ stacked
@@ -3293,6 +3304,13 @@ ALWAYS_INLINE void GetConfigSettings(MicroSettings* settings) {
         key = it->second;
         convertToUpper(key);
         settings->showFullResolution = (key == "TRUE");
+    }
+
+    it = section.find("show_primary_res");
+    if (it != section.end()) {
+        key = it->second;
+        convertToUpper(key);
+        settings->showPrimaryResolution = (key == "TRUE");
     }
 
     it = section.find("show_soc_voltage");

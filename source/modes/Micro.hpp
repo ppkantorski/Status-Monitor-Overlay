@@ -98,6 +98,10 @@ private:
     // swipeFlipPending is the one-way signal from poll thread → handleInput.
     // plusFocusActive is set by the poll thread while Plus is held long enough
     // to activate focus/reposition mode; cleared by the poll thread on release.
+    // Dock-state-change auto-relaunch (mirrors Mini — see Mini.hpp for full comments).
+    bool wasDockedAtLaunch = false;
+    bool relaunchRequested = false;
+
     std::atomic<bool> swipeFlipPending{false};
     std::atomic<bool> plusFocusActive{false};   // true while Plus-hold focus mode is live
     bool plusFocusWasActive = false;             // edge-detect: was active last handleInput frame
@@ -374,6 +378,34 @@ private:
                 plusHoldStart = 0;
             }
 
+            // ── Underscan-change layer-position correction ────────────────────
+            // When underscan engages/changes while Micro is open, tesla.hpp's
+            // background poller calls updateLayerSize() which expands
+            // cfg::LayerHeight.  For setPosBottom=true the layer Y must be
+            // recomputed to stay flush with the bottom of the TV's visible area.
+            // Top alignment is always Y=0 and needs no correction.
+            //
+            // After updateLayerSize(), cfg::LayerHeight already includes the
+            // underscan expansion, so:
+            //   layerY = 1080 - cfg::LayerHeight
+            // is the correct bottom-aligned position in both 1080p (1:1 VI scale)
+            // and limited-memory 1280-wide (1.5× VI scale) modes — the scale is
+            // already baked into cfg::LayerHeight by updateLayerSize().
+            if (self->settings.setPosBottom) {
+                static auto lastUnderscanPixels = std::make_pair(0, 0);
+                if (lastUnderscanPixels != tsl::impl::currentUnderscanPixels) {
+                    // Single call — no loop. Micro is always edge-pinned (Y=0 or
+                    // Y=1080-LayerH), so one updateLayerSize() + one setLayerPos()
+                    // is the complete correction. A second call would produce a
+                    // transitional frame between the two passes, causing flicker.
+                    tsl::gfx::Renderer::get().updateLayerSize();
+                    const uint32_t layerH = static_cast<uint32_t>(tsl::cfg::LayerHeight);
+                    const uint32_t layerY = (layerH < 1080u) ? (1080u - layerH) : 0u;
+                    tsl::gfx::Renderer::get().setLayerPos(0u, layerY);
+                    lastUnderscanPixels = tsl::impl::currentUnderscanPixels;
+                }
+            }
+
         } while (!leventWait(&microSwipeExitEvent, POLL_NS));
     }
 
@@ -383,22 +415,51 @@ public:
         disableJumpTo = true;
         //tsl::initializeUltrahandSettings();
         GetConfigSettings(&settings);
-        apmGetPerformanceMode(&performanceMode);
-        if (performanceMode == ApmPerformanceMode_Normal) {
-            fontsize = settings.handheldFontSize;
-        }
-        else fontsize = settings.dockedFontSize;
 
-        if (ult::limitedMemory && settings.setPosBottom) {
-            const auto [horizontalUnderscanPixels, verticalUnderscanPixels] = tsl::gfx::getUnderscanPixels();
-            // VI space is always 1080 units tall. At handheld 720p (1.5x scale):
-            //   layerY = 1080 - FramebufferHeight * 1.5  (bottom-aligns the layer)
-            const float bottomVI = 1080.0f - static_cast<float>(tsl::cfg::FramebufferHeight) * 1.5f;
-            // Clamp to 0 before casting: bottomVI is only 540 for a 360-row FB, so
-            // large underscan values can make the result negative — casting a negative
-            // float to uint32_t is UB and will crash on AArch64.
-            tsl::gfx::Renderer::get().setLayerPos(0u,
-                static_cast<uint32_t>(std::max(0.0f, bottomVI - verticalUnderscanPixels)));
+        // Determine 1080p docked mode.  ult::windowedLayerPixelPerfect is set by
+        // main() via setup1080pIfEnabled("micro", 1920,480, 1920,240) before
+        // tsl::loop<>.  In 1080p mode the framebuffer is 1920×480 (non-limited)
+        // or 1920×240 (limited) — full display width, reduced height so the bar
+        // covers only the top or bottom fraction of the screen.
+        const bool is1080p = ult::windowedLayerPixelPerfect;
+
+        // Initial font: prefer framebuffer-mode knowledge from main();
+        // apm is not yet initialised when the constructor runs.
+        apmGetPerformanceMode(&performanceMode);
+        if (is1080p) {
+            fontsize = settings.docked1080pFontSize;
+            performanceMode = ApmPerformanceMode_Boost; // confirmed docked
+        } else if (performanceMode == ApmPerformanceMode_Normal) {
+            fontsize = settings.handheldFontSize;
+        } else {
+            fontsize = settings.dockedFontSize;
+        }
+
+        // Capture dock state for the auto-relaunch guard in update().
+        wasDockedAtLaunch = is1080p || (performanceMode == ApmPerformanceMode_Boost);
+
+        // Layer position for setPosBottom.
+        // In 1080p mode the VI layer is 1920px wide (full display width) and
+        // FramebufferHeight * (1920/FramebufferWidth) px tall in VI space.
+        // For 1920-wide framebuffer VI scale is 1:1 horizontally; vertically
+        // the layer height in VI units = FramebufferHeight (1:1 for 1920-wide).
+        //   bottomVI = 1080 - cfg::FramebufferHeight   (VI units from top)
+        // For the standard limited-memory 1280-wide framebuffer, scale is 1.5×:
+        //   bottomVI = 1080 - FramebufferHeight * 1.5
+        if (settings.setPosBottom) {
+            if (is1080p || ult::limitedMemory) {
+                // cfg::LayerHeight already includes any underscan expansion applied
+                // by updateLayerSize() before the overlay was constructed, so
+                //   layerY = 1080 - cfg::LayerHeight
+                // is correct for both 1080p (1:1 VI scale, 1920-wide) and the
+                // legacy limited-memory 1280-wide (1.5× scale) path.
+                // Clamp to 0 so we never pass a wrapped uint32_t on AArch64.
+                const uint32_t layerH = static_cast<uint32_t>(tsl::cfg::LayerHeight);
+                const uint32_t layerY = (layerH < 1080u) ? (1080u - layerH) : 0u;
+                tsl::gfx::Renderer::get().setLayerPos(0u, layerY);
+            }
+            // Non-limited non-1080p: full 1280×720 framebuffer fills entire VI;
+            // setPosBottom is handled purely by draw-path base_y — no layer move needed.
         }
 
         if (settings.disableScreenshots) {
@@ -2371,7 +2432,50 @@ public:
         //}
 
         apmGetPerformanceMode(&performanceMode);
-        if (performanceMode == ApmPerformanceMode_Normal) {
+
+        // ── Dock-state-change auto-relaunch (mirrors Mini) ────────────────
+        // When use_1080p_docked is enabled, dock↔undock while Micro is open
+        // triggers a silent self-relaunch so framebuffer dimensions update.
+        if (!relaunchRequested &&
+            (performanceMode == ApmPerformanceMode_Normal ||
+             performanceMode == ApmPerformanceMode_Boost)) {
+            const bool isDockedNow = (performanceMode == ApmPerformanceMode_Boost);
+            if (isDockedNow != wasDockedAtLaunch) {
+                const std::string val = ult::parseValueFromIniSection(
+                    configIniPath, "micro", "use_1080p_docked");
+                bool wants1080p = false;
+                if (!val.empty()) {
+                    std::string upper = val;
+                    for (char& c : upper) c = (char)std::toupper((unsigned char)c);
+                    wants1080p = (upper != "FALSE");
+                }
+                if (wants1080p) {
+                    relaunchRequested = true;
+                    std::string ovlPath = filepath;
+                    if (ovlPath.empty()) ovlPath = folderpath + filename;
+                    std::string newArgs;
+                    if (!originalLaunchArgs.empty())
+                        newArgs = originalLaunchArgs + " --silentLaunch";
+                    else
+                        newArgs = "--silentLaunch";
+                    tsl::setNextOverlay(ovlPath, newArgs);
+                    skipClosingExitFeedback = true;
+                    launchComboHasTriggered.store(true, std::memory_order_release);
+                    ult::launchingOverlay.store(true, std::memory_order_release);
+                    tsl::Overlay::get()->close();
+                    return;
+                }
+            }
+        }
+
+        if (ult::windowedLayerPixelPerfect) {
+            // In 1080p mode font is fixed at docked1080pFontSize — relaunch handles transitions.
+            if (fontsize != settings.docked1080pFontSize) {
+                Initialized = false;
+                layout.calculated = false;
+                fontsize = settings.docked1080pFontSize;
+            }
+        } else if (performanceMode == ApmPerformanceMode_Normal) {
             if (fontsize != settings.handheldFontSize) {
                 Initialized = false;
                 layout.calculated = false; // Recalculate layout for new font size
@@ -2995,8 +3099,9 @@ public:
                 
                 // Format resolution string
                 if (m_resolutionOutput[0].width) {
+                    const bool primaryOnly = settings.showPrimaryResolution;
                     if (settings.showFullResolution) {
-                        if (!m_resolutionOutput[1].width) {
+                        if (!m_resolutionOutput[1].width || primaryOnly) {
                             snprintf(RES_var_compressed_c, sizeof(RES_var_compressed_c), "%dx%d", 
                                 m_resolutionOutput[0].width, m_resolutionOutput[0].height);
                         }
@@ -3006,7 +3111,7 @@ public:
                                 m_resolutionOutput[1].width, m_resolutionOutput[1].height);
                         }
                     } else {
-                        if (!m_resolutionOutput[1].width) {
+                        if (!m_resolutionOutput[1].width || primaryOnly) {
                             snprintf(RES_var_compressed_c, sizeof(RES_var_compressed_c), "%dp", 
                                 m_resolutionOutput[0].height);
                         }
@@ -3099,14 +3204,17 @@ public:
                         ult::setIniFileValue(configIniPath, "micro", "layer_height_align",
                                              settings.setPosBottom ? "bottom" : "top");
 
-                        if (ult::limitedMemory) {
-                            if (settings.setPosBottom) {
-                                const auto [hUScan, vUScan] = tsl::gfx::getUnderscanPixels();
-                                const float bottomVI = 1080.0f - static_cast<float>(tsl::cfg::FramebufferHeight) * 1.5f;
-                                tsl::gfx::Renderer::get().setLayerPos(0u,
-                                    static_cast<uint32_t>(std::max(0.0f, bottomVI - static_cast<float>(vUScan))));
-                            } else {
-                                tsl::gfx::Renderer::get().setLayerPos(0u, 0u);
+                        {
+                            const bool need1080pPos = ult::windowedLayerPixelPerfect;
+                            const bool needLimitPos = !need1080pPos && ult::limitedMemory;
+                            if (need1080pPos || needLimitPos) {
+                                if (settings.setPosBottom) {
+                                    const uint32_t layerH = static_cast<uint32_t>(tsl::cfg::LayerHeight);
+                                    const uint32_t layerY = (layerH < 1080u) ? (1080u - layerH) : 0u;
+                                    tsl::gfx::Renderer::get().setLayerPos(0u, layerY);
+                                } else {
+                                    tsl::gfx::Renderer::get().setLayerPos(0u, 0u);
+                                }
                             }
                         }
 
@@ -3144,15 +3252,19 @@ public:
             ult::setIniFileValue(configIniPath, "micro", "layer_height_align",
                                  settings.setPosBottom ? "bottom" : "top");
 
-            // limitedMemory: VI layer must move to the correct screen half.
-            if (ult::limitedMemory) {
-                if (settings.setPosBottom) {
-                    const auto [hUScan, vUScan] = tsl::gfx::getUnderscanPixels();
-                    const float bottomVI = 1080.0f - static_cast<float>(tsl::cfg::FramebufferHeight) * 1.5f;
-                    tsl::gfx::Renderer::get().setLayerPos(0u,
-                        static_cast<uint32_t>(std::max(0.0f, bottomVI - static_cast<float>(vUScan))));
-                } else {
-                    tsl::gfx::Renderer::get().setLayerPos(0u, 0u);
+            // Move VI layer to the correct screen half when the layer doesn't
+            // fill the full display height (limited-memory or 1080p modes).
+            {
+                const bool need1080pPos = ult::windowedLayerPixelPerfect;
+                const bool needLimitPos = !need1080pPos && ult::limitedMemory;
+                if (need1080pPos || needLimitPos) {
+                    if (settings.setPosBottom) {
+                        const uint32_t layerH = static_cast<uint32_t>(tsl::cfg::LayerHeight);
+                        const uint32_t layerY = (layerH < 1080u) ? (1080u - layerH) : 0u;
+                        tsl::gfx::Renderer::get().setLayerPos(0u, layerY);
+                    } else {
+                        tsl::gfx::Renderer::get().setLayerPos(0u, 0u);
+                    }
                 }
             }
 

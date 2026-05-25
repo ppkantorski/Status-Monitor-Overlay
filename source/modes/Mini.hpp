@@ -897,7 +897,12 @@ public:
                         width = renderer->getTextDimensions("144.4", false, fontsize).first;
                     } else if (key == "RES") {
                         //dimensions = renderer->drawString("3840x21603840x2160", false, 0, 0, fontsize, renderer->a(0x0000));
-                        if (settings.showFullResolution)
+                        if (settings.showPrimaryResolution) {
+                            if (settings.showFullResolution)
+                                width = renderer->getTextDimensions("3840x2160", false, fontsize).first;
+                            else
+                                width = renderer->getTextDimensions("2160p", false, fontsize).first;
+                        } else if (settings.showFullResolution)
                             width = renderer->getTextDimensions("3840x21603840x2160", false, fontsize).first;
                         else
                             width = renderer->getTextDimensions("2160p2160p", false, fontsize).first;
@@ -4305,13 +4310,14 @@ public:
                     
                     
                     // Format based on whether we show full resolution or just height (p)
+                    const bool primaryOnly = settings.showPrimaryResolution;
                     if (settings.showFullResolution) {
-                        if (!w1 || !h1)
+                        if (!w1 || !h1 || primaryOnly)
                             snprintf(Temp_s, sizeof(Temp_s), "%dx%d", w0 ? w0 : w1, h0 ? h0 : h1);
                         else
                             snprintf(Temp_s, sizeof(Temp_s), "%dx%d%dx%d", w0, h0, w1, h1);
                     } else {
-                        if (!w1 || !h1)
+                        if (!w1 || !h1 || primaryOnly)
                             snprintf(Temp_s, sizeof(Temp_s), "%dp", h0 ? h0 : h1);
                         else
                             snprintf(Temp_s, sizeof(Temp_s), "%dp%dp", h0, h1);

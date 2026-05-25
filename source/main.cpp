@@ -1123,7 +1123,12 @@ bool checkOverlayFile(const std::string& filename) {
 //   adjusted when the user drags the overlay so it stays within (0..1088)
 //   (1920 − 832).  frameOffsetX (stored in 0..1280 logical space) maps to
 //   VI x via:  viX = round(frameOffsetX × 1.5)  clamped to [0, 1088].
-static bool setup1080pIfEnabled(const std::string& iniSection) {
+// Optional width/height overrides let modes like Micro request different
+// 1080p dimensions (1920x480 / 1920x240) without affecting mini/fps-counter.
+// Pass 0,0 (the defaults) to use the standard 832×1080 / 832×554 dimensions.
+static bool setup1080pIfEnabled(const std::string& iniSection,
+                                 uint32_t fullWidth  = 0, uint32_t fullHeight  = 0,
+                                 uint32_t limitWidth = 0, uint32_t limitHeight = 0) {
     //if (!ult::expandedMemory) return false;
     if (!ult::consoleIsDocked()) return false;
     const std::string val = ult::parseValueFromIniSection(configIniPath, iniSection, "use_1080p_docked");
@@ -1131,15 +1136,13 @@ static bool setup1080pIfEnabled(const std::string& iniSection) {
     std::string upper = val;
     for (char& c : upper) c = (char)std::toupper((unsigned char)c);
     if (upper == "FALSE") return false;
-    // 832×1080 pixel-perfect strip: full height (top+bottom always anchored),
-    // same pixel budget as the standard 1280×720 framebuffer.
     ult::windowedLayerPixelPerfect = true;
     if (!ult::limitedMemory) {
-        ult::DefaultFramebufferWidth   = 832;
-        ult::DefaultFramebufferHeight  = 1080;
+        ult::DefaultFramebufferWidth  = (fullWidth  > 0) ? fullWidth  : 832;
+        ult::DefaultFramebufferHeight = (fullHeight > 0) ? fullHeight : 1080;
     } else {
-        ult::DefaultFramebufferWidth   = 832;
-        ult::DefaultFramebufferHeight  = 554;
+        ult::DefaultFramebufferWidth  = (limitWidth  > 0) ? limitWidth  : 832;
+        ult::DefaultFramebufferHeight = (limitHeight > 0) ? limitHeight : 554;
     }
     return true;
 }
@@ -1148,12 +1151,16 @@ static bool setup1080pIfEnabled(const std::string& iniSection) {
 inline void setupMode(const std::string& modeType = "") {
 
     if (modeType == "micro") {
-        if (!ult::limitedMemory) {
-            ult::DefaultFramebufferWidth = 1280;
-            ult::DefaultFramebufferHeight = 720;
-        } else {
-            ult::DefaultFramebufferWidth = 1280;
-            ult::DefaultFramebufferHeight = 360;
+        ult::windowedLayerPixelPerfect = false; // reset; setup1080pIfEnabled sets true if eligible
+        if (!setup1080pIfEnabled("micro", 1920, 480, 1920, 240)) {
+            // Non-1080p micro: 1280x720 (non-limited) or 1280x360 (limited)
+            if (!ult::limitedMemory) {
+                ult::DefaultFramebufferWidth  = 1280;
+                ult::DefaultFramebufferHeight = 720;
+            } else {
+                ult::DefaultFramebufferWidth  = 1280;
+                ult::DefaultFramebufferHeight = 360;
+            }
         }
     } else if (modeType == "mini") {
         ult::windowedLayerPixelPerfect = false; // reset; setup1080pIfEnabled sets true if eligible
@@ -1325,13 +1332,15 @@ int main(int argc, char **argv) {
                     setupMode(lastMode);
                 } else {
                     skipMain = true;
-
-                    if (!ult::limitedMemory) {
-                        ult::DefaultFramebufferWidth = 1280;
-                        ult::DefaultFramebufferHeight = 720;
-                    } else {
-                        ult::DefaultFramebufferWidth = 1280;
-                        ult::DefaultFramebufferHeight = 360;
+                    ult::windowedLayerPixelPerfect = false; // reset before 1080p check
+                    if (!setup1080pIfEnabled("micro", 1920, 480, 1920, 240)) {
+                        if (!ult::limitedMemory) {
+                            ult::DefaultFramebufferWidth  = 1280;
+                            ult::DefaultFramebufferHeight = 720;
+                        } else {
+                            ult::DefaultFramebufferWidth  = 1280;
+                            ult::DefaultFramebufferHeight = 360;
+                        }
                     }
                 }
                 return tsl::loop<MicroMode>(argc, argv);

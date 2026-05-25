@@ -14,9 +14,20 @@ private:
     int frameOffsetY = 0;
     bool isDragging = false;
     size_t framePadding = 10;
-    static constexpr int screenWidth = 1280;
-    static constexpr int screenHeight = 720;
     static constexpr int border = 8;
+
+    float  displayScale   = 1.0f;  // 1.5 in 1080p pixel-perfect mode, 1.0 otherwise
+    int    screenWidth    = 1280;  // framebuffer coordinate space
+    int    screenHeight   = 720;
+    int    _frameOffsetX1080 = 0; // content X offset within 832px buffer (updated by updateLayerPos)
+    int    _frameOffsetY1080 = 0; // content Y offset within buffer (updated by updateLayerPos)
+
+    // Dock-state-change auto-relaunch (mirrors Mini logic — see Mini.hpp for full comments).
+    bool wasDockedAtLaunch = false;
+    bool relaunchRequested = false;
+
+    // Authoritative rendered height — set each draw; used by handleInput for maxY clamp.
+    size_t drawCachedHeight = 0;
 
     bool originalUseRightAlignment = ult::useRightAlignment;
     
@@ -34,6 +45,38 @@ private:
     size_t actualTotalHeight = 0;
 
     void updateLayerPos() {
+        if (ult::windowedLayerPixelPerfect) {
+            // X: sliding-window — mirrors Mini exactly.
+            const int contentViX = (int)(frameOffsetX * 1.5f + 0.5f);
+            const int maxLayerX  = (int)tsl::cfg::ScreenWidth - (int)tsl::cfg::LayerWidth;
+            const int layerViX   = std::max(0, std::min(contentViX - (int)framePadding, maxLayerX));
+            _frameOffsetX1080    = contentViX - layerViX;
+
+            if (!ult::limitedMemory) {
+                // Full 1080p: 832x1080 layer pinned at Y=0 — always top+bottom anchored.
+                tsl::gfx::Renderer::get().setLayerPos(layerViX, 0);
+                return;
+            }
+
+            // Limited 1080p: 832x554 framebuffer, layer slides vertically.
+            // Use live cfg values so underscan expansion is reflected correctly.
+            const int maxLayerY      = (int)tsl::cfg::ScreenHeight - (int)tsl::cfg::LayerHeight;
+            const int centeredLayerY = std::max(0, maxLayerY / 2);
+            const int contentViY     = (int)(frameOffsetY * 1.5f + 0.5f);
+            int layerViY;
+            const int contentH   = (int)drawCachedHeight + 2 * (int)framePadding;
+            const bool fitsInBuffer = (contentH <= 554);
+            if (!fitsInBuffer) {
+                layerViY          = centeredLayerY;
+                _frameOffsetY1080 = contentViY - centeredLayerY;
+            } else {
+                layerViY          = std::max(0, std::min(contentViY - (int)framePadding, maxLayerY));
+                _frameOffsetY1080 = contentViY - layerViY;
+            }
+            _frameOffsetY1080 = std::max(0, std::min(_frameOffsetY1080, 553));
+            tsl::gfx::Renderer::get().setLayerPos(layerViX, layerViY);
+            return;
+        }
         if (!ult::limitedMemory) return;
         const int pos = std::max(std::min(
             (int)(frameOffsetX * 1.5f + 0.5f) - tsl::impl::currentUnderscanPixels.first,
@@ -47,19 +90,37 @@ public:
         tsl::hlp::requestForeground(false);
         disableJumpTo = true;
         GetConfigSettings(&settings);
+
+        // Determine 1080p mode — mirrors Mini constructor logic exactly.
+        // ult::windowedLayerPixelPerfect is set by main() via setup1080pIfEnabled
+        // before tsl::loop<> is called.
+        const bool is1080p      = ult::windowedLayerPixelPerfect;
+        const bool isLimited1080p = is1080p && ult::limitedMemory;
+        displayScale = is1080p ? 1.5f : 1.0f;
+        screenWidth  = is1080p ?  832 : 1280;
+        screenHeight = isLimited1080p ? 554 : (is1080p ? 1080 : 720);
+
+        // Initial font: use framebuffer-mode knowledge from main(); apm is not yet
+        // initialised when the constructor runs.
         apmGetPerformanceMode(&performanceMode);
-        if (performanceMode == ApmPerformanceMode_Normal) {
+        if (is1080p) {
+            fontsize = settings.docked1080pFontSize;
+            performanceMode = ApmPerformanceMode_Boost;
+        } else if (performanceMode == ApmPerformanceMode_Normal) {
             fontsize = settings.handheldFontSize;
-        }
-        else if (performanceMode == ApmPerformanceMode_Boost) {
+        } else {
             fontsize = settings.dockedFontSize;
         }
-        
+
+        // Capture dock state for the auto-relaunch guard in update().
+        wasDockedAtLaunch = is1080p || (performanceMode == ApmPerformanceMode_Boost);
+
         // Load saved frame offsets
         frameOffsetX = settings.frameOffsetX;
         frameOffsetY = settings.frameOffsetY;
-        framePadding = settings.framePadding;
-        
+        // Scale framePadding so it represents the same visual size across modes.
+        framePadding = (size_t)(settings.framePadding * displayScale + 0.5f);
+
         updateLayerPos();
         
         FullMode = false;
@@ -264,48 +325,69 @@ public:
             //int posX = frameOffsetX;
             //int posY = frameOffsetY;
 
-            int _frameOffsetX;
             int posX, posY;
-            
-            // In limited memory mode, correct frameOffsetX first, then calculate display position
-            if (ult::limitedMemory) {
-                // Calculate valid range for frameOffsetX (in full 1280px coordinate space)
-                const int minFrameX = framePadding;
-                const int maxFrameX = screenWidth - framePadding - totalWidth;
-                
-                // Clamp frameOffsetX to valid bounds
-                if (frameOffsetX < minFrameX) {
-                    frameOffsetX = minFrameX;
-                } else if (frameOffsetX > maxFrameX) {
-                    frameOffsetX = maxFrameX;
+
+            // Store rendered height for handleInput maxY clamp.
+            drawCachedHeight = totalHeight;
+
+            if (ult::windowedLayerPixelPerfect) {
+                // 1080p pixel-perfect mode.
+                // updateLayerPos() computes _frameOffsetX1080 / _frameOffsetY1080 so
+                // screenPos = layerViPos + bufferOffset = contentViPos (seamless).
+                // Clamp frameOffsetX (720-logical) then let updateLayerPos derive buffer coords.
+                const int minFrameX = (int)((framePadding * 2 + 2) / 3);
+                const int maxLayerX1080 = (int)tsl::cfg::ScreenWidth - (int)tsl::cfg::LayerWidth;
+                const int maxBufX1080   = screenWidth - (int)totalWidth - (int)framePadding;
+                const int maxFrameX = std::max(minFrameX,
+                    (int)((maxLayerX1080 + std::max(0, maxBufX1080)) / 1.5f));
+                frameOffsetX = std::max(minFrameX, std::min(maxFrameX, frameOffsetX));
+
+                if (!ult::limitedMemory) {
+                    // Full 1080p: Y runs 0..1080 in framebuffer space.
+                    const int minFrameY = (int)framePadding;
+                    const int maxFrameY = screenHeight - (int)framePadding - (int)totalHeight;
+                    frameOffsetY = std::max(minFrameY, std::min(maxFrameY, frameOffsetY));
+                } else {
+                    // Limited 1080p: Y is in 720-logical space, updateLayerPos maps to buffer.
+                    const int maxLayerY1080 = (int)tsl::cfg::ScreenHeight - (int)tsl::cfg::LayerHeight;
+                    const int maxBufY1080   = screenHeight - (int)framePadding - (int)totalHeight;
+                    const int minFrameY720  = (int)(framePadding / 1.5f + 0.5f);
+                    const int maxFrameY720  = std::max(minFrameY720,
+                        (int)((maxLayerY1080 + std::max(0, maxBufY1080)) / 1.5f));
+                    frameOffsetY = std::max(minFrameY720, std::min(maxFrameY720, frameOffsetY));
                 }
-                
-                // Check Y bounds
-                const int minFrameY = framePadding;
-                const int maxFrameY = screenHeight - framePadding - totalHeight;
-                
-                if (frameOffsetY < minFrameY) {
-                    frameOffsetY = minFrameY;
-                } else if (frameOffsetY > maxFrameY) {
-                    frameOffsetY = maxFrameY;
+
+                updateLayerPos();
+
+                posX = std::max((int)framePadding,
+                    std::min(_frameOffsetX1080, screenWidth - (int)totalWidth - (int)framePadding));
+                if (!ult::limitedMemory) {
+                    posY = frameOffsetY; // 1:1 with framebuffer in full 1080p
+                } else {
+                    posY = std::max((int)framePadding,
+                        std::min(_frameOffsetY1080, screenHeight - (int)totalHeight - (int)framePadding));
                 }
-                
-                // Now calculate _frameOffsetX for the 448px layer
-                _frameOffsetX = std::max(0, frameOffsetX - (1280-448));
-                
-                // Calculate position with corrected frame offsets
+            } else if (ult::limitedMemory) {
+                // Legacy limited-memory mode (448px wide layer, 720p).
+                const int minFrameX = (int)framePadding;
+                const int maxFrameX = 1280 - (int)framePadding - (int)totalWidth;
+                frameOffsetX = std::max(minFrameX, std::min(maxFrameX, frameOffsetX));
+
+                const int minFrameY = (int)framePadding;
+                const int maxFrameY = screenHeight - (int)framePadding - (int)totalHeight;
+                frameOffsetY = std::max(minFrameY, std::min(maxFrameY, frameOffsetY));
+
+                // Map from full 1280px coordinate space to 448px buffer.
+                const int _frameOffsetX = std::max(0, frameOffsetX - (1280 - 448));
                 posX = _frameOffsetX;
                 posY = frameOffsetY;
-                
-                // Update layer position
                 updateLayerPos();
             } else {
-                // Non-limited memory mode - use original logic with clamping
-                _frameOffsetX = frameOffsetX;
-                
-                // Clamp to screen bounds (accounting for total size including border)
-                posX = std::max(int(framePadding), std::min(_frameOffsetX, static_cast<int>(screenWidth - totalWidth - framePadding)));
-                posY = std::max(int(framePadding), std::min(frameOffsetY, static_cast<int>(screenHeight - totalHeight - framePadding)));
+                // Full 720p (non-limited, non-1080p).
+                posX = std::max((int)framePadding,
+                    std::min(frameOffsetX, screenWidth - (int)totalWidth - (int)framePadding));
+                posY = std::max((int)framePadding,
+                    std::min(frameOffsetY, screenHeight - (int)totalHeight - (int)framePadding));
             }
             
             // Draw the rounded rectangle (background)
@@ -345,7 +427,45 @@ public:
 
     virtual void update() override {
         apmGetPerformanceMode(&performanceMode);
-        if (performanceMode == ApmPerformanceMode_Normal) {
+
+        // ── Dock-state-change auto-relaunch (mirrors Mini) ────────────────
+        if (!relaunchRequested &&
+            (performanceMode == ApmPerformanceMode_Normal ||
+             performanceMode == ApmPerformanceMode_Boost)) {
+            const bool isDockedNow = (performanceMode == ApmPerformanceMode_Boost);
+            if (isDockedNow != wasDockedAtLaunch) {
+                const std::string val = ult::parseValueFromIniSection(
+                    configIniPath, "fps-counter", "use_1080p_docked");
+                bool wants1080p = false;
+                if (!val.empty()) {
+                    std::string upper = val;
+                    for (char& c : upper) c = (char)std::toupper((unsigned char)c);
+                    wants1080p = (upper != "FALSE");
+                }
+                if (wants1080p) {
+                    relaunchRequested = true;
+                    std::string ovlPath = filepath;
+                    if (ovlPath.empty()) ovlPath = folderpath + filename;
+                    std::string newArgs;
+                    if (!originalLaunchArgs.empty())
+                        newArgs = originalLaunchArgs + " --silentLaunch";
+                    else
+                        newArgs = "--silentLaunch";
+                    tsl::setNextOverlay(ovlPath, newArgs);
+                    skipClosingExitFeedback = true;
+                    launchComboHasTriggered.store(true, std::memory_order_release);
+                    ult::launchingOverlay.store(true, std::memory_order_release);
+                    tsl::Overlay::get()->close();
+                    return;
+                }
+            }
+        }
+
+        if (ult::windowedLayerPixelPerfect) {
+            // In 1080p mode the font size is fixed at docked1080pFontSize regardless of
+            // live dock state — the relaunch above handles the actual mode transition.
+            fontsize = settings.docked1080pFontSize;
+        } else if (performanceMode == ApmPerformanceMode_Normal) {
             fontsize = settings.handheldFontSize;
         }
         else if (performanceMode == ApmPerformanceMode_Boost) {
@@ -383,8 +503,8 @@ public:
         static bool hasMoved = false;
     
         // Touch detection
-        const bool currentTouchDetected = (touchPos.x > 0 && touchPos.y > 0 && 
-                                    touchPos.x < screenWidth && touchPos.y < screenHeight);
+        const bool currentTouchDetected = ((int)touchPos.x > 0 && (int)touchPos.y > 0 &&
+                                    (int)touchPos.x < screenWidth && (int)touchPos.y < screenHeight);
         
         static bool clearOnRelease = false;
         
@@ -412,11 +532,34 @@ public:
             totalHeight = innerHeight + (2 * border);
         }
         
-        // Screen boundaries for clamping (accounting for total size)
-        const int minX = framePadding;
-        const int maxX = screenWidth - totalWidth - framePadding;
-        const int minY = framePadding;
-        const int maxY = screenHeight - totalHeight - framePadding;
+        // Screen boundaries for clamping — sliding-window-aware, mirrors Mini.
+        const int maxLayerX1080 = (int)tsl::cfg::ScreenWidth - (int)tsl::cfg::LayerWidth;
+        const int maxBufX1080   = screenWidth - (int)totalWidth - (int)framePadding;
+        const int minX = ult::windowedLayerPixelPerfect
+                       ? ((int)(framePadding * 2 + 2) / 3)
+                       : (int)framePadding;
+        const int maxX = ult::windowedLayerPixelPerfect
+                       ? std::max(minX, (int)((maxLayerX1080 + std::max(0, maxBufX1080)) / 1.5f))
+                       : (screenWidth - (int)totalWidth - (int)framePadding);
+
+        // Y bounds — use 720-logical space for limited 1080p (same as Mini).
+        const int logicalScreenH  = (ult::windowedLayerPixelPerfect && ult::limitedMemory) ? 720 : screenHeight;
+        const int overlayHeight   = (drawCachedHeight > 0) ? (int)drawCachedHeight : (int)totalHeight;
+        const int logicalOverlayH = (ult::windowedLayerPixelPerfect && ult::limitedMemory)
+                                  ? (int)(overlayHeight / 1.5f + 0.5f) : overlayHeight;
+        const int logicalPadding  = (ult::windowedLayerPixelPerfect && ult::limitedMemory)
+                                  ? (int)(framePadding / 1.5f + 0.5f) : (int)framePadding;
+        const int minY = logicalPadding;
+        const int maxLayerY1080   = (int)tsl::cfg::ScreenHeight - (int)tsl::cfg::LayerHeight;
+        const int maxBufY1080     = screenHeight - (int)framePadding - overlayHeight;
+        const int maxY = (ult::windowedLayerPixelPerfect && ult::limitedMemory)
+                       ? std::max(minY, (int)((maxLayerY1080 + std::max(0, maxBufY1080)) / 1.5f))
+                       : (logicalScreenH - logicalOverlayH - logicalPadding);
+
+        // Y-movement rate normalisation — identical to Mini (see Mini.hpp for full comment).
+        // Full 1080p is 1:1 with VI (1 frameOffsetY unit = 1 display px), while every
+        // other mode produces 1.5 display px per unit.  Scale Y by 1.5 in full 1080p only.
+        const float yMovementScale = (ult::windowedLayerPixelPerfect && !ult::limitedMemory) ? 1.5f : 1.0f;
 
         const bool plusDragReady = buttonState.plusDragActive.load(std::memory_order_acquire);
 
@@ -439,8 +582,11 @@ public:
             // Continue touch dragging
             const int touchX = touchPos.x;
             const int touchY = touchPos.y;
-            const int deltaX = touchX - initialTouchPos.x;
-            const int deltaY = touchY - initialTouchPos.y;
+            const int deltaX    = touchX - initialTouchPos.x;
+            const int rawDeltaY = touchY - initialTouchPos.y;
+            const int deltaY    = (yMovementScale == 1.0f)
+                                ? rawDeltaY
+                                : (int)(rawDeltaY * yMovementScale + (rawDeltaY >= 0 ? 0.5f : -0.5f));
             
             // Check if we've moved enough to consider this a drag
             if (!hasMoved) {
@@ -505,7 +651,7 @@ public:
                 static float accumulatedY = 0.0f;
                 
                 accumulatedX += (float)activeJoystick.x * currentSensitivity;
-                accumulatedY += -(float)activeJoystick.y * currentSensitivity;
+                accumulatedY += -(float)activeJoystick.y * currentSensitivity * yMovementScale;
                 
                 const int deltaX = (int)accumulatedX;
                 const int deltaY = (int)accumulatedY;

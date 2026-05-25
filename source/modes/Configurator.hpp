@@ -734,6 +734,7 @@ public:
 
             list->addItem(new tsl::elm::CategoryHeader("RES"));
             addToggle(list, "Full Resolution", "show_full_res", true);
+            addToggle(list, "Primary Only",    "show_primary_res", false);
 
             list->addItem(new tsl::elm::CategoryHeader("FPS"));
             addToggle(list, "Integer FPS", "integer_fps", false);
