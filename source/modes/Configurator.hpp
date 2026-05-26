@@ -430,7 +430,7 @@ public:
 
         const std::string section = modeToSection(modeName);
         std::string currentColor = ult::parseValueFromIniSection(configIniPath, section, colorKey);
-        if (currentColor.empty()) currentColor = "#0009";
+        if (currentColor.empty()) currentColor = "#000B";
         const std::string currentAlpha = extractAlphaFromColor(currentColor);
 
         static const std::pair<std::string, char> alphaOptions[16] = {
@@ -447,7 +447,7 @@ public:
             alphaItem->setClickListener([this, alphaItem, option, section](uint64_t keys) {
                 if (keys & KEY_A) {
                     std::string color = ult::parseValueFromIniSection(configIniPath, section, colorKey);
-                    if (color.empty()) color = "#0009";
+                    if (color.empty()) color = "#000B";
                     ult::setIniFileValue(configIniPath, section, colorKey, setAlphaInColor(color, option.second));
                     selectItem(lastSelectedListItem, alphaItem, ult::CHECKMARK_SYMBOL);
                     return true;
@@ -1349,17 +1349,17 @@ public:
         list->addItem(new tsl::elm::CategoryHeader("Colors"));
 
         if (!flags.isFull) {
-            addColorWithAlpha(list, "Background Color", "background_color",       "#0009", "Background Alpha");
+            addColorWithAlpha(list, "Background Color", "background_color",       "#000B", "Background Alpha");
             if (flags.isMini || flags.isMicro || flags.isFPSCounter || flags.isFPSGraph || flags.isGameRes)
                 addColorWithAlpha(list, "Focus Color",  "focus_background_color", "#000F", "Focus Alpha");
         } else {
-            addColorWithAlpha(list, "Background Color", "background_color",       "#0009", "Background Alpha");
+            addColorWithAlpha(list, "Background Color", "background_color",       "#000B", "Background Alpha");
         }
 
         addColorItem(list, "Text Color", "text_color", "#FFFF");
 
         if (flags.isFPSGraph) {
-            addColorItem(list, "Category Color", "cat_color", "#0F0F");
+            addColorItem(list, "Category Color", "cat_color", "#2DFF");
 
             struct FPSGraphColorSetting {
                 const char* name; const char* key; const char* def; bool hasAlpha;
