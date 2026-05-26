@@ -430,7 +430,7 @@ public:
 
         const std::string section = modeToSection(modeName);
         std::string currentColor = ult::parseValueFromIniSection(configIniPath, section, colorKey);
-        if (currentColor.empty()) currentColor = "#000B";
+        if (currentColor.empty()) currentColor = "#000A";
         const std::string currentAlpha = extractAlphaFromColor(currentColor);
 
         static const std::pair<std::string, char> alphaOptions[16] = {
@@ -447,7 +447,7 @@ public:
             alphaItem->setClickListener([this, alphaItem, option, section](uint64_t keys) {
                 if (keys & KEY_A) {
                     std::string color = ult::parseValueFromIniSection(configIniPath, section, colorKey);
-                    if (color.empty()) color = "#000B";
+                    if (color.empty()) color = "#000A";
                     ult::setIniFileValue(configIniPath, section, colorKey, setAlphaInColor(color, option.second));
                     selectItem(lastSelectedListItem, alphaItem, ult::CHECKMARK_SYMBOL);
                     return true;
@@ -1349,11 +1349,11 @@ public:
         list->addItem(new tsl::elm::CategoryHeader("Colors"));
 
         if (!flags.isFull) {
-            addColorWithAlpha(list, "Background Color", "background_color",       "#000B", "Background Alpha");
+            addColorWithAlpha(list, "Background Color", "background_color",       "#000A", "Background Alpha");
             if (flags.isMini || flags.isMicro || flags.isFPSCounter || flags.isFPSGraph || flags.isGameRes)
                 addColorWithAlpha(list, "Focus Color",  "focus_background_color", "#000F", "Focus Alpha");
         } else {
-            addColorWithAlpha(list, "Background Color", "background_color",       "#000B", "Background Alpha");
+            addColorWithAlpha(list, "Background Color", "background_color",       "#000A", "Background Alpha");
         }
 
         addColorItem(list, "Text Color", "text_color", "#FFFF");
