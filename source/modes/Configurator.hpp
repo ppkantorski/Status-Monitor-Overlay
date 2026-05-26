@@ -547,8 +547,8 @@ public:
 
         std::string currentValue = ult::parseValueFromIniSection(configIniPath, section, iniKey);
         if (currentValue.empty()) {
-            if (slot == 1) currentValue = isMiniMode ? std::string("%a, %b %d") : std::string("%H:%M");
-            else           currentValue = std::string("%l:%M:%S %p");
+            if (slot == 1) currentValue = std::string("%a, %b %d");
+            else           currentValue = isMiniMode ? std::string("%I:%M %p")  : ult::OPTION_SYMBOL;
         }
 
         if (slot == 2) {
@@ -1646,8 +1646,8 @@ private:
                 else
                     value = (slot == 1) ? legacy : ult::OPTION_SYMBOL;
             } else {
-                if (slot == 1) value = flags.isMini ? std::string("%a, %b %d") : std::string("%H:%M");
-                else           value = std::string("%l:%M:%S %p");
+                if (slot == 1) value = std::string("%a, %b %d");
+                else           value = flags.isMini ? std::string("%I:%M %p")  : ult::OPTION_SYMBOL;
             }
         }
         return getDTCFormatName(value);
