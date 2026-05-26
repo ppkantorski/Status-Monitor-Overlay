@@ -233,6 +233,13 @@ public:
         cachedBaselineOffset = (int)fontsize;  // updated to true ascent once font is loaded
         cachedDescentAbs     = 0;              // updated to true descent once font is loaded
 
+        // Clamp frameOffsetY so the first updateLayerPos() call already places the layer
+        // at the correct Y. Without this, a frameOffsetY of 0 causes the layer/content
+        // to draw at Y=0 on the very first frame before the draw-path clamp runs.
+        // The minimum valid Y is framePadding in all modes (limited 1080p uses a looser
+        // logical-space minimum, but framePadding is always a safe lower bound).
+        if (frameOffsetY < (int)framePadding) frameOffsetY = (int)framePadding;
+
         //if (ult::limitedMemory) {
         //    tsl::gfx::Renderer::get().setLayerPos(std::max(std::min((int)(frameOffsetX*1.5 + 0.5) - tsl::impl::currentUnderscanPixels.first, 1280-32 - tsl::impl::currentUnderscanPixels.first), 0), 0);
         //}
