@@ -2703,10 +2703,10 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
     settings->dtcFormat  = settings->dtcFormat1 + ult::DIVIDER_SYMBOL + settings->dtcFormat2;
     settings->handheldFontSize = 15;
     settings->dockedFontSize = 15;
-    settings->docked1080pFontSize = 22;  // ~15 × 1.5 — visually matches 720p docked size
-    settings->use1080pDocked = false;
+    settings->docked1080pFontSize = 20;  // ~15 × 1.5 — visually matches 720p docked size
+    settings->use1080pDocked = true;
     settings->spacing = 8;
-    convertStrToRGBA4444("#0009", &(settings->backgroundColor));
+    convertStrToRGBA4444("#000B", &(settings->backgroundColor));
     convertStrToRGBA4444("#000F", &(settings->focusBackgroundColor));
     convertStrToRGBA4444("#2DFF", &(settings->separatorColor));
     convertStrToRGBA4444("#2DFF", &(settings->catColor));
@@ -2726,9 +2726,9 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
     settings->refreshRate = 3;
     settings->disableScreenshots = false;
     //settings->setPos = 0;
-    settings->frameOffsetX = 6;
+    settings->frameOffsetX = 4;
     settings->frameOffsetY = 6;
-    settings->framePadding = 6;
+    settings->framePadding = 4;
 
     // Open and read file efficiently
     FILE* configFile = fopen(configIniPath, "r");
@@ -3200,19 +3200,19 @@ ALWAYS_INLINE void GetConfigSettings(MicroSettings* settings) {
     settings->decimalVDD2 = false;
     settings->showDTC = true;
     settings->useDTCSymbol = true;
-    settings->useIntegerFPS = false;
-    settings->dtcFormat1 = "%H:%M";
-    settings->dtcFormat2 = ult::OPTION_SYMBOL; // "None" — single-line, no second format
-    settings->dtcFormat  = settings->dtcFormat1; // no divider, no format2 (matches dtcFormat2 == OPTION_SYMBOL)
-    settings->invertBatteryDisplay = false;
+    settings->useIntegerFPS = true;
+    settings->dtcFormat1 = "%a, %b %d";
+    settings->dtcFormat2 = "%l:%M:%S %p";
+    settings->dtcFormat  = settings->dtcFormat1 + ult::DIVIDER_SYMBOL + settings->dtcFormat2;
+    settings->invertBatteryDisplay = true;
     settings->showStackedBAT = false;
     settings->showStackedDTC = false;
     settings->handheldFontSize = 15;
     settings->dockedFontSize = 15;
-    settings->docked1080pFontSize = 22;  // ~15 × 1.5 — visually matches 720p docked size
-    settings->use1080pDocked = false;
+    settings->docked1080pFontSize = 20;  // ~15 × 1.5 — visually matches 720p docked size
+    settings->use1080pDocked = true;
     settings->alignTo = 1; // CENTER
-    convertStrToRGBA4444("#0009", &(settings->backgroundColor));
+    convertStrToRGBA4444("#000B", &(settings->backgroundColor));
     convertStrToRGBA4444("#000F", &(settings->focusBackgroundColor));
     convertStrToRGBA4444("#2DFF", &(settings->separatorColor));
     convertStrToRGBA4444("#2DFF", &(settings->catColor));
@@ -3229,9 +3229,9 @@ ALWAYS_INLINE void GetConfigSettings(MicroSettings* settings) {
     settings->setPosBottom = false;
     settings->disableScreenshots = false;
     settings->refreshRate = 3;
-    settings->horizontalPadding = 12;
-    settings->verticalPadding   = 6;
-    settings->labelPadding      = 0;  // 0 = auto (font-size-based)
+    settings->horizontalPadding = 8;
+    settings->verticalPadding   = 5;
+    settings->labelPadding      = 8;
 
     // Open and read file efficiently
     FILE* configFile = fopen(configIniPath, "r");
@@ -3670,19 +3670,19 @@ ALWAYS_INLINE void GetConfigSettings(FpsCounterSettings* settings) {
     // Initialize defaults
     settings->handheldFontSize = 40;
     settings->dockedFontSize = 40;
-    settings->docked1080pFontSize = 60;  // ~40 × 1.5 — visually matches 720p docked size
-    settings->use1080pDocked = false;
-    convertStrToRGBA4444("#0009", &(settings->backgroundColor));
+    settings->docked1080pFontSize = 68;  // ~40 × 1.5 — visually matches 720p docked size
+    settings->use1080pDocked = true;
+    convertStrToRGBA4444("#000B", &(settings->backgroundColor));
     convertStrToRGBA4444("#000F", &(settings->focusBackgroundColor));
     convertStrToRGBA4444("#8CFF", &(settings->textColor));
     //settings->setPos = 0;
     settings->refreshRate = 5;
-    settings->useIntegerFPS = false;
+    settings->useIntegerFPS = true;
     settings->disableScreenshots = false;
 
-    settings->frameOffsetX = 10;
-    settings->frameOffsetY = 10;
-    settings->framePadding = 10;
+    settings->frameOffsetX = 4;
+    settings->frameOffsetY = 4;
+    settings->framePadding = 4;
 
     // Open and read file efficiently
     FILE* configFile = fopen(configIniPath, "r");
@@ -3817,7 +3817,7 @@ ALWAYS_INLINE void GetConfigSettings(FpsGraphSettings* settings) {
     // Initialize defaults
     settings->showInfo = true;
     //settings->setPos = 0;
-    convertStrToRGBA4444("#0009", &(settings->backgroundColor));
+    convertStrToRGBA4444("#000B", &(settings->backgroundColor));
     convertStrToRGBA4444("#000F", &(settings->focusBackgroundColor));
     convertStrToRGBA4444("#888C", &(settings->fpsColor));
     convertStrToRGBA4444("#2DFF", &(settings->borderColor));
@@ -3833,12 +3833,12 @@ ALWAYS_INLINE void GetConfigSettings(FpsGraphSettings* settings) {
 
     settings->refreshRate = 5;
     settings->useDynamicColors = true;
-    settings->useIntegerFPS = false;
+    settings->useIntegerFPS = true;
     settings->disableScreenshots = false;
 
-    settings->frameOffsetX = 6;
-    settings->frameOffsetY = 6;
-    settings->framePadding = 6;
+    settings->frameOffsetX = 12;
+    settings->frameOffsetY = 12;
+    settings->framePadding = 4;
 
 
     // Open and read file efficiently
@@ -4117,7 +4117,7 @@ ALWAYS_INLINE void GetConfigSettings(FullSettings* settings) {
 
 ALWAYS_INLINE void GetConfigSettings(ResolutionSettings* settings) {
     // Initialize defaults
-    convertStrToRGBA4444("#0009", &(settings->backgroundColor));
+    convertStrToRGBA4444("#000B", &(settings->backgroundColor));
     convertStrToRGBA4444("#000F", &(settings->focusBackgroundColor));
     convertStrToRGBA4444("#8FFF", &(settings->catColor));
     //convertStrToRGBA4444("#8CFF", &(settings->catColor2));
@@ -4126,9 +4126,9 @@ ALWAYS_INLINE void GetConfigSettings(ResolutionSettings* settings) {
     //ettings->setPos = 0;
     settings->disableScreenshots = false;
 
-    settings->frameOffsetX = 6;
-    settings->frameOffsetY = 6;
-    settings->framePadding = 6;
+    settings->frameOffsetX = 4;
+    settings->frameOffsetY = 4;
+    settings->framePadding = 4;
 
 
     // Open and read file efficiently
