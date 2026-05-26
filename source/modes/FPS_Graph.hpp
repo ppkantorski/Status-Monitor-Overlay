@@ -137,9 +137,10 @@ public:
                             totalHeight = content_height + (2 * border);
                         }
                         
-                        // Apply frame offsets (base position already includes border offset)
-                        const int overlayX = overlay->base_x + overlay->frameOffsetX - border;
-                        const int overlayY = overlay->base_y + overlay->frameOffsetY - border;
+                        // Apply frame offsets — in limitedMemory the layer slides to frameOffsetX,
+                        // so the overlay's logical screen position IS frameOffsetX/frameOffsetY.
+                        const int overlayX = overlay->base_x + overlay->frameOffsetX;
+                        const int overlayY = overlay->base_y + overlay->frameOffsetY;
                         
                         // Touch padding
                         const int touchPadding = 4;
@@ -312,8 +313,9 @@ public:
             // In limited memory mode, correct frameOffsetX first, then calculate display position
             if (ult::limitedMemory) {
                 // Calculate valid range for frameOffsetX (in full 1280px coordinate space)
-                const int minFrameX = framePadding - (base_x - border);
-                const int maxFrameX = screenWidth - framePadding - totalWidth - (base_x - border);
+                // Matches Mini: minFrameX = framePadding - cachedBaseX (cachedBaseX==base_x==0)
+                const int minFrameX = framePadding - base_x;
+                const int maxFrameX = screenWidth - framePadding - totalWidth - base_x;
                 
                 // Clamp frameOffsetX to valid bounds
                 if (frameOffsetX < minFrameX) {
@@ -322,9 +324,9 @@ public:
                     frameOffsetX = maxFrameX;
                 }
                 
-                // Check Y bounds
-                const int minFrameY = framePadding - (base_y - border);
-                const int maxFrameY = screenHeight - framePadding - totalHeight - (base_y - border);
+                // Check Y bounds (same correction — drop the erroneous +border offset)
+                const int minFrameY = framePadding - base_y;
+                const int maxFrameY = screenHeight - framePadding - totalHeight - base_y;
                 
                 if (frameOffsetY < minFrameY) {
                     frameOffsetY = minFrameY;
@@ -332,15 +334,16 @@ public:
                     frameOffsetY = maxFrameY;
                 }
                 
-                // Now calculate _frameOffsetX for the 448px layer
+                // Now calculate _frameOffsetX for the 448px layer (matches Mini)
                 _frameOffsetX = std::max(0, frameOffsetX - (1280-448));
-                
-                // Calculate position with corrected frame offsets
-                posX = base_x + _frameOffsetX - border;
-                posY = base_y + frameOffsetY - border;
                 
                 // Update layer position
                 updateLayerPos();
+                
+                // Draw at base_x + _frameOffsetX, matching Mini's cachedBaseX + _frameOffsetX.
+                // Do NOT subtract border — that pushes posX negative and breaks arc geometry.
+                posX = base_x + _frameOffsetX;
+                posY = base_y + frameOffsetY;
             } else {
                 // Non-limited memory mode - use original logic with clamping
                 _frameOffsetX = frameOffsetX;
@@ -630,11 +633,14 @@ public:
             totalHeight = content_height + (2 * border);
         }
         
-        // Screen boundaries for clamping (accounting for total size)
-        const int minX = -(base_x - border) + framePadding;
-        const int maxX = screenWidth - totalWidth - (base_x - border) - framePadding;
-        const int minY = -(base_y - border) + framePadding;
-        const int maxY = screenHeight - totalHeight - (base_y - border) - framePadding;
+        // Screen boundaries for clamping.
+        // limitedMemory: posX = _frameOffsetX (no border offset), frameOffsetX range = [framePadding, screenWidth-totalWidth-framePadding]
+        // non-limited:   posX = frameOffsetX - border, so add border to both ends of the range
+        const int borderOffset = ult::limitedMemory ? 0 : border;
+        const int minX = framePadding - base_x + borderOffset;
+        const int maxX = screenWidth - totalWidth - base_x - framePadding + borderOffset;
+        const int minY = framePadding - base_y + borderOffset;
+        const int maxY = screenHeight - totalHeight - base_y - framePadding + borderOffset;
 
         const bool plusDragReady = buttonState.plusDragActive.load(std::memory_order_acquire);
 
