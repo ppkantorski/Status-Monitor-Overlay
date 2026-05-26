@@ -2705,7 +2705,7 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
     settings->docked1080pFontSize = 20;  // ~15 × 1.5 — visually matches 720p docked size
     settings->use1080pDocked = true;
     settings->spacing = 8;
-    convertStrToRGBA4444("#000B", &(settings->backgroundColor));
+    convertStrToRGBA4444("#000A", &(settings->backgroundColor));
     convertStrToRGBA4444("#000F", &(settings->focusBackgroundColor));
     convertStrToRGBA4444("#2DFF", &(settings->separatorColor));
     convertStrToRGBA4444("#2DFF", &(settings->catColor));
@@ -3211,7 +3211,7 @@ ALWAYS_INLINE void GetConfigSettings(MicroSettings* settings) {
     settings->docked1080pFontSize = 20;  // ~15 × 1.5 — visually matches 720p docked size
     settings->use1080pDocked = true;
     settings->alignTo = 1; // CENTER
-    convertStrToRGBA4444("#000B", &(settings->backgroundColor));
+    convertStrToRGBA4444("#000A", &(settings->backgroundColor));
     convertStrToRGBA4444("#000F", &(settings->focusBackgroundColor));
     convertStrToRGBA4444("#2DFF", &(settings->separatorColor));
     convertStrToRGBA4444("#2DFF", &(settings->catColor));
@@ -3671,7 +3671,7 @@ ALWAYS_INLINE void GetConfigSettings(FpsCounterSettings* settings) {
     settings->dockedFontSize = 40;
     settings->docked1080pFontSize = 68;  // ~40 × 1.5 — visually matches 720p docked size
     settings->use1080pDocked = true;
-    convertStrToRGBA4444("#000B", &(settings->backgroundColor));
+    convertStrToRGBA4444("#000A", &(settings->backgroundColor));
     convertStrToRGBA4444("#000F", &(settings->focusBackgroundColor));
     convertStrToRGBA4444("#8CFF", &(settings->textColor));
     //settings->setPos = 0;
@@ -3816,7 +3816,7 @@ ALWAYS_INLINE void GetConfigSettings(FpsGraphSettings* settings) {
     // Initialize defaults
     settings->showInfo = true;
     //settings->setPos = 0;
-    convertStrToRGBA4444("#000B", &(settings->backgroundColor));
+    convertStrToRGBA4444("#000A", &(settings->backgroundColor));
     convertStrToRGBA4444("#000F", &(settings->focusBackgroundColor));
     convertStrToRGBA4444("#888C", &(settings->fpsColor));
     convertStrToRGBA4444("#2DFF", &(settings->borderColor));
@@ -4116,7 +4116,7 @@ ALWAYS_INLINE void GetConfigSettings(FullSettings* settings) {
 
 ALWAYS_INLINE void GetConfigSettings(ResolutionSettings* settings) {
     // Initialize defaults
-    convertStrToRGBA4444("#000B", &(settings->backgroundColor));
+    convertStrToRGBA4444("#000A", &(settings->backgroundColor));
     convertStrToRGBA4444("#000F", &(settings->focusBackgroundColor));
     convertStrToRGBA4444("#8FFF", &(settings->catColor));
     //convertStrToRGBA4444("#8CFF", &(settings->catColor2));
