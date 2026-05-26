@@ -667,7 +667,7 @@ public:
             list->addItem(new tsl::elm::CategoryHeader("CPU"));
             addToggle(list, "Full CPU",              "show_full_cpu",              true);
             addToggle(list, "Full CPU Max Core 0-2", "show_full_cpu_max_core_012", flags.isMini);
-            addToggle(list, "Stacked Full CPU",      "show_stacked_full_cpu",      false);
+            addToggle(list, "Stacked Full CPU",      "show_stacked_full_cpu",      flags.isMicro);
             addToggle(list, "CPU Temp",              "show_cpu_temp",              flags.isMicro);
             addToggle(list, "Stacked CPU Temp",      "show_stacked_cpu_temp",      true);
             addToggle(list, "Voltage At End",        "voltage_at_end_cpu",         flags.isMicro);

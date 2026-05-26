@@ -2678,7 +2678,6 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
     settings->showPrimaryResolution = false;
     settings->showFanPercentage = true;
     settings->useDynamicColors = true;
-    settings->showFullCPU = false;
     settings->showSOCVoltage = true;
     settings->showStackedFanSOC = true;
     settings->showStackedVDDQ = true;
@@ -2861,7 +2860,7 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
     if (it != section.end()) {
         key = it->second;
         convertToUpper(key);
-        settings->showFullCPUMaxCore012 = (key == "TRUE");
+        settings->showFullCPUMaxCore012 = !(key == "FALSE");
     }
 
     it = section.find("show_stacked_full_cpu");
@@ -3177,7 +3176,7 @@ ALWAYS_INLINE void GetConfigSettings(MicroSettings* settings) {
     settings->realVolts = true;
     settings->showFullCPU = true;
     settings->showFullCPUMaxCore012 = false;
-    settings->showStackedFullCPU = false;
+    settings->showStackedFullCPU = true;
     settings->showFullResolution = false;
     settings->showPrimaryResolution = true;
     settings->showSOCVoltage = true;
