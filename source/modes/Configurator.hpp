@@ -543,7 +543,7 @@ public:
         const std::string section = modeToSection(modeName);
         const std::string iniKey  = (slot == 2) ? "dtc_format_2" : "dtc_format_1";
         const std::string title   = (slot == 2) ? "DTC Format 2" : "DTC Format 1";
-        const bool isMiniMode     = (modeName == "Mini");
+        //const bool isMiniMode     = (modeName == "Mini");
 
         std::string currentValue = ult::parseValueFromIniSection(configIniPath, section, iniKey);
         if (currentValue.empty()) {
