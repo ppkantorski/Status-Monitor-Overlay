@@ -2671,8 +2671,8 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
     // Initialize defaults
     settings->realFrequencies = true;
     settings->realVolts = true;
-    settings->showFullCPU = false;
-    settings->showFullCPUMaxCore012 = false;
+    settings->showFullCPU = true;
+    settings->showFullCPUMaxCore012 = true;
     settings->showStackedFullCPU = false;
     settings->showFullResolution = true;
     settings->showPrimaryResolution = false;
@@ -2689,9 +2689,9 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
     settings->showStackedGPUTemp = true;
     settings->showStackedRAMTemp = true;
     settings->voltageAtEndCPU = false;
-    settings->voltageAtEndGPU = false;
+    settings->voltageAtEndGPU = true;
     settings->voltageAtEndRAM = false;
-    settings->voltageAtEndTMP = false;
+    settings->voltageAtEndTMP = true;
     settings->showVDDQ = true;
     settings->showVDD2 = true;
     settings->decimalVDD2 = false;
@@ -2699,7 +2699,7 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
     settings->useDTCSymbol = true;
     settings->useIntegerFPS = false;
     settings->dtcFormat1 = "%a, %b %d";
-    settings->dtcFormat2 = "%I:%M %p";
+    settings->dtcFormat2 = "%l:%M:%S %p";
     settings->dtcFormat  = settings->dtcFormat1 + ult::DIVIDER_SYMBOL + settings->dtcFormat2;
     settings->handheldFontSize = 15;
     settings->dockedFontSize = 15;
@@ -2715,9 +2715,9 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
     settings->showLabels = true;
     settings->showRAMLoad = true;
     settings->showRAMLoadCPUGPU = false;
-    settings->showStackedRAMLoadCPUGPU = false;
-    settings->showRAMBandwidth = false;
-    settings->showStackedRAMBandwidth = false;
+    settings->showStackedRAMLoadCPUGPU = true;
+    settings->showRAMBandwidth = true;
+    settings->showStackedRAMBandwidth = true;
     settings->showComponentTemps = true;
     settings->showSocPcbSkinTemps = true;
     settings->invertBatteryDisplay = true;
@@ -2726,8 +2726,8 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
     settings->refreshRate = 3;
     settings->disableScreenshots = false;
     //settings->setPos = 0;
-    settings->frameOffsetX = 4;
-    settings->frameOffsetY = 6;
+    settings->frameOffsetX = 0;
+    settings->frameOffsetY = 0;
     settings->framePadding = 4;
 
     // Open and read file efficiently
@@ -3175,27 +3175,27 @@ ALWAYS_INLINE void GetConfigSettings(MicroSettings* settings) {
     // Initialize defaults
     settings->realFrequencies = true;
     settings->realVolts = true;
-    settings->showFullCPU = false;
+    settings->showFullCPU = true;
     settings->showFullCPUMaxCore012 = false;
     settings->showStackedFullCPU = false;
     settings->showFullResolution = false;
-    settings->showPrimaryResolution = false;
+    settings->showPrimaryResolution = true;
     settings->showSOCVoltage = true;
     settings->showStackedFanSOC = true;  // default: fan+volt stacked
     settings->showStackedVDDQ = true;   // default: VDD2+VDDQ stacked
-    settings->showCPUTemp = false;
-    settings->showGPUTemp = false;
-    settings->showRAMTemp = false;
+    settings->showCPUTemp = true;
+    settings->showGPUTemp = true;
+    settings->showRAMTemp = true;
     settings->showStackedCPUTemp = true;
     settings->showStackedGPUTemp = true;
     settings->showStackedRAMTemp = true;
-    settings->voltageAtEndCPU = false;
-    settings->voltageAtEndGPU = false;
-    settings->voltageAtEndRAM = false;
-    settings->voltageAtEndTMP = false;
+    settings->voltageAtEndCPU = true;
+    settings->voltageAtEndGPU = true;
+    settings->voltageAtEndRAM = true;
+    settings->voltageAtEndTMP = true;
     settings->showFanPercentage = true;
     settings->useDynamicColors = true;
-    settings->showVDDQ = true;
+    settings->showVDDQ = false;
     settings->showVDD2 = true;
     settings->decimalVDD2 = false;
     settings->showDTC = true;
@@ -3205,8 +3205,8 @@ ALWAYS_INLINE void GetConfigSettings(MicroSettings* settings) {
     settings->dtcFormat2 = "%l:%M:%S %p";
     settings->dtcFormat  = settings->dtcFormat1 + ult::DIVIDER_SYMBOL + settings->dtcFormat2;
     settings->invertBatteryDisplay = true;
-    settings->showStackedBAT = false;
-    settings->showStackedDTC = false;
+    settings->showStackedBAT = true;
+    settings->showStackedDTC = true;
     settings->handheldFontSize = 15;
     settings->dockedFontSize = 15;
     settings->docked1080pFontSize = 20;  // ~15 × 1.5 — visually matches 720p docked size
@@ -3220,9 +3220,9 @@ ALWAYS_INLINE void GetConfigSettings(MicroSettings* settings) {
     settings->show = "FPS+CPU+GPU+RAM+TMP+BAT+DTC";
     settings->showRAMLoad = true;
     settings->showRAMLoadCPUGPU = false;
-    settings->showStackedRAMLoadCPUGPU = false;
-    settings->showRAMBandwidth = false;
-    settings->showStackedRAMBandwidth = false;
+    settings->showStackedRAMLoadCPUGPU = true;
+    settings->showRAMBandwidth = true;
+    settings->showStackedRAMBandwidth = true;
     settings->showComponentTemps = true;
     settings->showSocPcbSkinTemps = true;
     settings->showStackedTemps = true;
@@ -3680,8 +3680,8 @@ ALWAYS_INLINE void GetConfigSettings(FpsCounterSettings* settings) {
     settings->useIntegerFPS = true;
     settings->disableScreenshots = false;
 
-    settings->frameOffsetX = 4;
-    settings->frameOffsetY = 4;
+    settings->frameOffsetX = 0;
+    settings->frameOffsetY = 0;
     settings->framePadding = 4;
 
     // Open and read file efficiently
@@ -3836,8 +3836,8 @@ ALWAYS_INLINE void GetConfigSettings(FpsGraphSettings* settings) {
     settings->useIntegerFPS = true;
     settings->disableScreenshots = false;
 
-    settings->frameOffsetX = 12;
-    settings->frameOffsetY = 12;
+    settings->frameOffsetX = 0;
+    settings->frameOffsetY = 0;
     settings->framePadding = 4;
 
 
@@ -4126,8 +4126,8 @@ ALWAYS_INLINE void GetConfigSettings(ResolutionSettings* settings) {
     //ettings->setPos = 0;
     settings->disableScreenshots = false;
 
-    settings->frameOffsetX = 4;
-    settings->frameOffsetY = 4;
+    settings->frameOffsetX = 0;
+    settings->frameOffsetY = 0;
     settings->framePadding = 4;
 
 

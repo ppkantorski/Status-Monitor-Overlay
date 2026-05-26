@@ -1132,10 +1132,12 @@ static bool setup1080pIfEnabled(const std::string& iniSection,
     //if (!ult::expandedMemory) return false;
     if (!ult::consoleIsDocked()) return false;
     const std::string val = ult::parseValueFromIniSection(configIniPath, iniSection, "use_1080p_docked");
-    if (val.empty()) return false;
-    std::string upper = val;
-    for (char& c : upper) c = (char)std::toupper((unsigned char)c);
-    if (upper == "FALSE") return false;
+    // Missing key defaults to true — only an explicit "false" disables 1080p docked.
+    if (!val.empty()) {
+        std::string upper = val;
+        for (char& c : upper) c = (char)std::toupper((unsigned char)c);
+        if (upper == "FALSE") return false;
+    }
     ult::windowedLayerPixelPerfect = true;
     if (!ult::limitedMemory) {
         ult::DefaultFramebufferWidth  = (fullWidth  > 0) ? fullWidth  : 832;

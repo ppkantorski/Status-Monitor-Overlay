@@ -639,7 +639,7 @@ public:
             addToggle(list, "Disable Screenshots", "disable_screenshots", false);
             addToggle(list, "Info",                "show_info",           true);
             addToggle(list, "Dynamic Temp Colors", "use_dynamic_colors",  true);
-            addToggle(list, "Integer FPS",         "integer_fps",         false);
+            addToggle(list, "Integer FPS",         "integer_fps",         true);
 
         } else if (flags.isFull) {
             list->addItem(new tsl::elm::CategoryHeader("Global"));
@@ -654,7 +654,7 @@ public:
 
         } else if (flags.isMini || flags.isMicro) {
             list->addItem(new tsl::elm::CategoryHeader("Global"));
-            addToggle(list, "1080p Docked",   "use_1080p_docked",   false);
+            addToggle(list, "1080p Docked",   "use_1080p_docked",   true);
             addToggle(list, "Disable Screenshots", "disable_screenshots", false);
 
             if (flags.isMini)
@@ -665,41 +665,41 @@ public:
             addToggle(list, "Dynamic Temp Colors", "use_dynamic_colors",  true);
 
             list->addItem(new tsl::elm::CategoryHeader("CPU"));
-            addToggle(list, "Full CPU",              "show_full_cpu",              false);
-            addToggle(list, "Full CPU Max Core 0-2", "show_full_cpu_max_core_012", false);
+            addToggle(list, "Full CPU",              "show_full_cpu",              true);
+            addToggle(list, "Full CPU Max Core 0-2", "show_full_cpu_max_core_012", flags.isMini);
             addToggle(list, "Stacked Full CPU",      "show_stacked_full_cpu",      false);
-            addToggle(list, "CPU Temp",              "show_cpu_temp",              false);
-            addToggle(list, "Stacked CPU Temp",      "show_stacked_cpu_temp",      false);
-            addToggle(list, "Voltage At End",        "voltage_at_end_cpu",         false);
+            addToggle(list, "CPU Temp",              "show_cpu_temp",              flags.isMicro);
+            addToggle(list, "Stacked CPU Temp",      "show_stacked_cpu_temp",      true);
+            addToggle(list, "Voltage At End",        "voltage_at_end_cpu",         flags.isMicro);
 
             list->addItem(new tsl::elm::CategoryHeader("GPU"));
-            addToggle(list, "GPU Temp",         "show_gpu_temp",         false);
-            addToggle(list, "Stacked GPU Temp", "show_stacked_gpu_temp", false);
-            addToggle(list, "Voltage At End",   "voltage_at_end_gpu",    false);
+            addToggle(list, "GPU Temp",         "show_gpu_temp",         flags.isMicro);
+            addToggle(list, "Stacked GPU Temp", "show_stacked_gpu_temp", true);
+            addToggle(list, "Voltage At End",   "voltage_at_end_gpu",    true);
 
             list->addItem(new tsl::elm::CategoryHeader("RAM"));
-            addToggle(list, "RAM Bandwidth",         "show_ram_bandwidth",               false);
-            addToggle(list, "Stacked RAM Bandwidth", "show_stacked_ram_bandwidth",       false);
+            addToggle(list, "RAM Bandwidth",         "show_ram_bandwidth",               true);
+            addToggle(list, "Stacked RAM Bandwidth", "show_stacked_ram_bandwidth",       true);
             addToggle(list, "RAM Load CPU/GPU", "show_RAM_load_CPU_GPU",                 false);
-            addToggle(list, "Stacked RAM Load CPU/GPU", "show_stacked_ram_load_cpu_gpu", false);
+            addToggle(list, "Stacked RAM Load CPU/GPU", "show_stacked_ram_load_cpu_gpu", true);
 
             if (isMariko)
                 addToggle(list, "VDD2", "show_vdd2", true);
 
-            addToggle(list, "VDDQ", "show_vddq", false);
+            addToggle(list, "VDDQ", "show_vddq", flags.isMini);
 
             if (isMariko)
                 addToggle(list, "Stacked VDD2/VDDQ", "show_stacked_vddq", true);
 
-            addToggle(list, "RAM Temp",         "show_ram_temp",         false);
-            addToggle(list, "Stacked RAM Temp", "show_stacked_ram_temp", false);
-            addToggle(list, "Voltage At End",   "voltage_at_end_ram",    false);
+            addToggle(list, "RAM Temp",         "show_ram_temp",         flags.isMicro);
+            addToggle(list, "Stacked RAM Temp", "show_stacked_ram_temp", true);
+            addToggle(list, "Voltage At End",   "voltage_at_end_ram",    flags.isMicro);
 
             list->addItem(new tsl::elm::CategoryHeader("TMP"));
             {
                 // Mutual-exclusivity pair
                 auto* compTemps   = new tsl::elm::MiniToggleListItem("CPU/GPU/RAM Temps",
-                    readBool(section, "show_component_temps", false));
+                    readBool(section, "show_component_temps", true));
                 auto* socPcbTemps = new tsl::elm::MiniToggleListItem("SOC/PCB/Skin Temps",
                     readBool(section, "show_soc_pcb_skin_temps", true));
 
@@ -728,25 +728,24 @@ public:
                     addToggle(list, "Stacked Temps", "show_stacked_temps", true);
             }
 
-            addToggle(list, "SOC Voltage",     "show_soc_voltage",     false);
+            addToggle(list, "SOC Voltage",     "show_soc_voltage",     true);
             addToggle(list, "Stacked Fan/SOC", "show_stacked_fan_soc", true);
-            addToggle(list, "Voltage At End",  "voltage_at_end_tmp",   false);
+            addToggle(list, "Voltage At End",  "voltage_at_end_tmp",   true);
 
             list->addItem(new tsl::elm::CategoryHeader("RES"));
             addToggle(list, "Full Resolution", "show_full_res", true);
-            addToggle(list, "Primary Only",    "show_primary_res", false);
+            addToggle(list, "Primary Only",    "show_primary_res", flags.isMicro);
 
             list->addItem(new tsl::elm::CategoryHeader("FPS"));
-            addToggle(list, "Integer FPS", "integer_fps", false);
+            addToggle(list, "Integer FPS", "integer_fps", true);
 
             list->addItem(new tsl::elm::CategoryHeader("BAT"));
-            addToggle(list, "Invert Battery Display", "invert_battery_display",
-                      flags.isMini ? true : false);
-            addToggle(list, "Stacked", "show_stacked_bat", false);
+            addToggle(list, "Invert Battery Display", "invert_battery_display", true);
+            addToggle(list, "Stacked", "show_stacked_bat", flags.isMicro);
 
             list->addItem(new tsl::elm::CategoryHeader("DTC"));
             addToggle(list, "Use DTC Symbol", "use_dtc_symbol",   true);
-            addToggle(list, "Stacked",        "show_stacked_dtc", false);
+            addToggle(list, "Stacked",        "show_stacked_dtc", flags.isMicro);
 
         } else if (flags.isGameRes) {
             list->addItem(new tsl::elm::CategoryHeader("Global"));
@@ -754,9 +753,9 @@ public:
 
         } else if (flags.isFPSCounter) {
             list->addItem(new tsl::elm::CategoryHeader("Global"));
-            addToggle(list, "1080p Docked",   "use_1080p_docked",   false);
+            addToggle(list, "1080p Docked",   "use_1080p_docked",   true);
             addToggle(list, "Disable Screenshots", "disable_screenshots", false);
-            addToggle(list, "Integer FPS",         "integer_fps",         false);
+            addToggle(list, "Integer FPS",         "integer_fps",         true);
         }
 
         list->jumpToItem(jumpItemName, jumpItemValue, jumpItemExactMatch);
@@ -1486,8 +1485,25 @@ public:
                     hasNotTriggeredAnimation = false;
                 }
                 if (keys & KEY_A) {
-                    if (enabledElements.count(element)) enabledElements.erase(element);
-                    else                                 enabledElements.insert(element);
+                    // Dynamic elements (FPS, RES, READ) only render when a game is running,
+                    // so they don't count as "always visible". Block turning off an always-showing
+                    // element if it would leave no always-showing elements enabled.
+                    static const std::unordered_set<std::string> dynamicElements = {"FPS", "RES", "READ"};
+                    if (enabledElements.count(element)) {
+                        // Turning OFF — guard against leaving zero always-showing elements
+                        if (dynamicElements.count(element) == 0) {
+                            // Count always-showing elements that would remain enabled after removal
+                            int alwaysOnAfter = 0;
+                            for (const auto& e : enabledElements) {
+                                if (e != element && dynamicElements.count(e) == 0)
+                                    alwaysOnAfter++;
+                            }
+                            if (alwaysOnAfter == 0) return true; // Block: last always-showing element
+                        }
+                        enabledElements.erase(element);
+                    } else {
+                        enabledElements.insert(element);
+                    }
                     updateShowAndOrder();
                     jumpItemName = element; jumpItemValue = ""; jumpItemExactMatch = true;
                     hasNotTriggeredAnimation = true;
