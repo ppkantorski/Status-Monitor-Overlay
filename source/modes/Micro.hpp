@@ -107,6 +107,12 @@ private:
     std::atomic<bool> plusFocusActive{false};   // true while Plus-hold focus mode is live
     bool plusFocusWasActive = false;             // edge-detect: was active last handleInput frame
     bool swipeClearOnRelease = false;
+    // Deferred layer position: set true when setPosBottom changes so that
+    // setLayerPos() is called at the END of the next draw frame, after the
+    // buffer already shows the bar at the new base_y. Calling setLayerPos()
+    // on the same frame as Initialized=false causes a one-frame desync where
+    // the VI layer moves before the buffer has been redrawn.
+    bool pendingLayerPos = false;
     Thread swipePollThread;
     
     // Fixed spacing system - calculate actual widths at render time
@@ -2395,6 +2401,26 @@ public:
                     }
                 }
             }
+
+            // ── Deferred layer position ───────────────────────────────────────
+            // Applied here — after the buffer is fully drawn at the new base_y —
+            // so the VI layer only moves once the pixels are already correct.
+            // Doing this inside the draw lambda ensures the layer move and the
+            // freshly-drawn frame are presented atomically from the user's view.
+            if (pendingLayerPos) {
+                pendingLayerPos = false;
+                const bool need1080pPos = ult::windowedLayerPixelPerfect;
+                const bool needLimitPos = !need1080pPos && ult::limitedMemory;
+                if (need1080pPos || needLimitPos) {
+                    if (settings.setPosBottom) {
+                        const uint32_t layerH = static_cast<uint32_t>(tsl::cfg::LayerHeight);
+                        const uint32_t layerY = (layerH < 1080u) ? (1080u - layerH) : 0u;
+                        tsl::gfx::Renderer::get().setLayerPos(0u, layerY);
+                    } else {
+                        tsl::gfx::Renderer::get().setLayerPos(0u, 0u);
+                    }
+                }
+            }
         });
         
         tsl::elm::HeaderOverlayFrame* rootFrame = new tsl::elm::HeaderOverlayFrame("", "");
@@ -3220,13 +3246,10 @@ public:
                             const bool need1080pPos = ult::windowedLayerPixelPerfect;
                             const bool needLimitPos = !need1080pPos && ult::limitedMemory;
                             if (need1080pPos || needLimitPos) {
-                                if (settings.setPosBottom) {
-                                    const uint32_t layerH = static_cast<uint32_t>(tsl::cfg::LayerHeight);
-                                    const uint32_t layerY = (layerH < 1080u) ? (1080u - layerH) : 0u;
-                                    tsl::gfx::Renderer::get().setLayerPos(0u, layerY);
-                                } else {
-                                    tsl::gfx::Renderer::get().setLayerPos(0u, 0u);
-                                }
+                                // Defer setLayerPos to end of next draw frame so the
+                                // buffer is redrawn at the new base_y before the VI
+                                // layer moves — prevents one-frame desync flash.
+                                pendingLayerPos = true;
                             }
                         }
 
@@ -3270,13 +3293,10 @@ public:
                 const bool need1080pPos = ult::windowedLayerPixelPerfect;
                 const bool needLimitPos = !need1080pPos && ult::limitedMemory;
                 if (need1080pPos || needLimitPos) {
-                    if (settings.setPosBottom) {
-                        const uint32_t layerH = static_cast<uint32_t>(tsl::cfg::LayerHeight);
-                        const uint32_t layerY = (layerH < 1080u) ? (1080u - layerH) : 0u;
-                        tsl::gfx::Renderer::get().setLayerPos(0u, layerY);
-                    } else {
-                        tsl::gfx::Renderer::get().setLayerPos(0u, 0u);
-                    }
+                    // Defer setLayerPos to end of next draw frame so the
+                    // buffer is redrawn at the new base_y before the VI
+                    // layer moves — prevents one-frame desync flash.
+                    pendingLayerPos = true;
                 }
             }
 
