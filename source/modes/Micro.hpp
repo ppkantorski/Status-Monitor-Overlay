@@ -40,7 +40,10 @@ private:
     char DTC_c[32];
 
     static constexpr uint32_t margin = 4;
-    static constexpr int32_t gridGap = 4;  // pixels between grid rows in non-SBS mode
+    // Extra vertical gap between the two rows of a stacked/split metric, in pixels.
+    // Derived from settings.stackedSpacing (tenths of a space) once the font is loaded;
+    // see paddingToPx in calculateLayoutMetrics. Was a fixed 4 px before.
+    int32_t gridGap = 4;  // pixels between grid rows in non-SBS mode
 
     // Performance optimization members
     bool Initialized = false;
@@ -278,6 +281,10 @@ private:
         // Left/right gap from screen edge to text. The bar rectangle always spans the
         // full screen width; only the text is inset.
         layout.side_margin = paddingToPx(spaceW, settings.horizontalPadding);
+
+        // Extra vertical gap between the two rows of a stacked/split metric. Replaces
+        // the former fixed 4 px so stacked spacing scales with font size like the rest.
+        gridGap = (int32_t)paddingToPx(spaceW, settings.stackedSpacing);
 
         layout.calculated = true;
     }

@@ -2525,7 +2525,16 @@ struct MiniSettings {
     size_t dockedFontSize;
     size_t docked1080pFontSize;  // font size used when use1080pDocked is true and console is docked
     bool use1080pDocked;         // when docked: use 1080p pixel-perfect layer + docked1080pFontSize
-    size_t spacing;
+    // Mini space-unit paddings. Stored in TENTHS OF A SPACE (the pixel width of a
+    // single ' ' glyph at the current font size), so the overlay keeps a consistent
+    // appearance across font sizes / resolutions without a separate displayScale factor.
+    size_t spacing;              // vertical gap between rows; tenths of a space (range 2..30 -> 0.2..3.0 sp)
+    uint8_t horizontalPadding;   // trailing (right-side) interior gap between text and box edge; tenths of a space
+    uint8_t verticalPadding;     // top+bottom interior gap between text and box edges; tenths of a space
+    uint8_t cornerRadiusSp;      // background box corner radius; tenths of a space
+    uint8_t stackedSpacing;      // gap between the two rows of a stacked/split metric;
+                                 // tenths of a space; default 7 (0.7 sp). Replaces the old
+                                 // fixed spacing/2 used for split-row compression.
     uint16_t backgroundColor;
     uint16_t focusBackgroundColor;
     uint16_t separatorColor;
@@ -2617,6 +2626,8 @@ struct MicroSettings {
     uint8_t labelPadding;       // gap between an element label and its value; default 14 (1.4 sp)
     uint8_t elementPadding;     // min gap between one element (label+value) and the next
                                 // when aligned left or right; default 50 (5 sp)
+    uint8_t stackedSpacing;     // extra vertical gap between the two rows of a stacked/split
+                                // metric (beyond glyph height); tenths of a space; default 7 (0.7 sp)
 };
 
 struct FpsCounterSettings {
@@ -2712,7 +2723,11 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
     settings->dockedFontSize = 15;
     settings->docked1080pFontSize = 20;  // ~15 × 1.5 — visually matches 720p docked size
     settings->use1080pDocked = true;
-    settings->spacing = 8;
+    settings->spacing = 14;            // 1.4 sp
+    settings->horizontalPadding = 2;   // 0.2 sp (trailing/right-side text padding)
+    settings->verticalPadding = 30;    // 3.0 sp (top/bottom interior padding)
+    settings->cornerRadiusSp = 40;     // 4.0 sp
+    settings->stackedSpacing = 7;      // 0.7 sp (gap between stacked/split rows)
     convertStrToRGBA4444("#000A", &(settings->backgroundColor));
     convertStrToRGBA4444("#000F", &(settings->focusBackgroundColor));
     convertStrToRGBA4444("#2DFF", &(settings->separatorColor));
@@ -2809,9 +2824,28 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
         settings->use1080pDocked = (key != "FALSE");
     }
 
+    // Space-unit paddings (tenths of a space). spacing/horizontal/vertical: 2..30
+    // (0.2..3.0 sp). cornerRadius allowed a wider 0..80 (0..8.0 sp) since rounding
+    // can legitimately be larger than text padding.
     it = section.find("spacing");
     if (it != section.end()) {
-        settings->spacing = atol(it->second.c_str());
+        settings->spacing = (size_t)std::clamp(atoi(it->second.c_str()), 2, 30);
+    }
+    it = section.find("horizontal_padding");
+    if (it != section.end()) {
+        settings->horizontalPadding = (uint8_t)std::clamp(atoi(it->second.c_str()), 2, 30);
+    }
+    it = section.find("vertical_padding");
+    if (it != section.end()) {
+        settings->verticalPadding = (uint8_t)std::clamp(atoi(it->second.c_str()), 2, 30);
+    }
+    it = section.find("corner_radius");
+    if (it != section.end()) {
+        settings->cornerRadiusSp = (uint8_t)std::clamp(atoi(it->second.c_str()), 0, 80);
+    }
+    it = section.find("stacked_spacing");
+    if (it != section.end()) {
+        settings->stackedSpacing = (uint8_t)std::clamp(atoi(it->second.c_str()), 0, 30);
     }
     
     // Process colors
@@ -3240,6 +3274,7 @@ ALWAYS_INLINE void GetConfigSettings(MicroSettings* settings) {
     settings->verticalPadding   = 6;   // 0.6 sp
     settings->labelPadding      = 14;  // 1.4 sp
     settings->elementPadding    = 50;  // 5 sp
+    settings->stackedSpacing    = 7;   // 0.7 sp (gap between stacked/split rows)
 
     // Open and read file efficiently
     FILE* configFile = fopen(configIniPath, "r");
@@ -3679,6 +3714,10 @@ ALWAYS_INLINE void GetConfigSettings(MicroSettings* settings) {
         int ep = std::clamp(atoi(it->second.c_str()), 10, 100);
         ep = std::clamp(((ep + 5) / 10) * 10, 10, 100);  // snap to nearest whole space
         settings->elementPadding = (uint8_t)ep;
+    }
+    it = section.find("stacked_spacing");
+    if (it != section.end()) {
+        settings->stackedSpacing = (uint8_t)std::clamp(atoi(it->second.c_str()), 0, 30);
     }
 
 }

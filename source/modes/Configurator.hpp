@@ -1046,6 +1046,11 @@ public:
     MicroVPaddingConfig() : MicroPaddingConfigBase("vertical_padding", "Vertical Padding", "Vertical Padding") {}
 };
 
+class MicroStackedSpacingConfig : public MicroPaddingConfigBase<7, 0, 30, 1> {
+public:
+    MicroStackedSpacingConfig() : MicroPaddingConfigBase("stacked_spacing", "Stacked Spacing", "Stacked Spacing") {}
+};
+
 class MicroLabelPaddingConfig : public MicroPaddingConfigBase<14, 2, 30, 1> {
 public:
     MicroLabelPaddingConfig() : MicroPaddingConfigBase("label_padding", "Label Padding", "Label Padding") {}
@@ -1056,6 +1061,96 @@ protected:
     std::string formatLabel(int tenths) const override { return formatSpWhole(tenths); }
 public:
     MicroElementPaddingConfig() : MicroPaddingConfigBase("element_padding", "Element Padding", "Element Padding") {}
+};
+
+// =============================================================================
+// Mini Padding Configs (Horizontal / Vertical / Spacing / Corner Radius)
+// =============================================================================
+// Mirrors the Micro padding screens but writes to the [mini] ini section and
+// swaps back to the Mini configurator. All values are tenths of a space ("sp").
+//   Horizontal/Vertical/Spacing: 2..30 (0.2..3.0 sp, step 1 = 0.1 sp)
+//   Corner Radius:               0..80 (0..8.0 sp, step 2 = 0.2 sp)
+template<int DEFAULT, int MIN_T, int MAX_T, int STEP_T>
+class MiniPaddingConfigBase : public tsl::Gui {
+protected:
+    static constexpr int MIN_P  = MIN_T;
+    static constexpr int MAX_P  = MAX_T;
+    static constexpr int STEP_P = STEP_T;
+
+    int         currentPadding;
+    std::string iniKey;
+    std::string headerLabel;
+    std::string jumpLabel;
+
+    virtual std::string formatLabel(int tenths) const { return formatSpTenths(tenths); }
+
+public:
+    MiniPaddingConfigBase(const std::string& key, const std::string& header, const std::string& jump)
+        : iniKey(key), headerLabel(header), jumpLabel(jump) {
+        const std::string value = ult::parseValueFromIniSection(configIniPath, "mini", iniKey);
+        currentPadding = value.empty() ? DEFAULT : std::clamp(atoi(value.c_str()), MIN_P, MAX_P);
+        // Snap to the nearest valid step so a stray value still shows a checkmark.
+        currentPadding = MIN_P + ((currentPadding - MIN_P + (STEP_P / 2)) / STEP_P) * STEP_P;
+        currentPadding = std::clamp(currentPadding, MIN_P, MAX_P);
+    }
+    ~MiniPaddingConfigBase() { lastSelectedListItem = nullptr; }
+
+    virtual tsl::elm::Element* createUI() override {
+        auto* list = new tsl::elm::List();
+        list->addItem(new tsl::elm::CategoryHeader(headerLabel));
+        for (int p = MIN_P; p <= MAX_P; p += STEP_P) {
+            auto* item = new tsl::elm::MiniListItem(formatLabel(p));
+            if (p == currentPadding)
+                selectItem(lastSelectedListItem, item, ult::CHECKMARK_SYMBOL);
+            item->setClickListener([this, item, p](uint64_t keys) {
+                if (keys & KEY_A) {
+                    ult::setIniFileValue(configIniPath, "mini", iniKey, std::to_string(p));
+                    selectItem(lastSelectedListItem, item, ult::CHECKMARK_SYMBOL);
+                    return true;
+                }
+                return false;
+            });
+            list->addItem(item);
+        }
+        list->jumpToItem("", ult::CHECKMARK_SYMBOL, false);
+        return makeFrame("Mini " + ult::DIVIDER_SYMBOL + " Configuration", list);
+    }
+
+    virtual bool handleInput(u64 keysDown, u64 keysHeld, const HidTouchState &touchPos,
+                             HidAnalogStickState joyStickPosLeft, HidAnalogStickState joyStickPosRight) override {
+        if (keysDown & KEY_B) {
+            triggerExitFeedback();
+            jumpItemName = jumpLabel; jumpItemValue = ""; jumpItemExactMatch = false;
+            tsl::swapTo<ConfiguratorOverlay>(SwapDepth(2), "Mini");
+            return true;
+        }
+        return false;
+    }
+};
+
+class MiniHPaddingConfig : public MiniPaddingConfigBase<2, 2, 30, 1> {
+public:
+    MiniHPaddingConfig() : MiniPaddingConfigBase("horizontal_padding", "Horizontal Padding", "Horizontal Padding") {}
+};
+
+class MiniVPaddingConfig : public MiniPaddingConfigBase<30, 2, 30, 1> {
+public:
+    MiniVPaddingConfig() : MiniPaddingConfigBase("vertical_padding", "Vertical Padding", "Vertical Padding") {}
+};
+
+class MiniSpacingConfig : public MiniPaddingConfigBase<14, 2, 30, 1> {
+public:
+    MiniSpacingConfig() : MiniPaddingConfigBase("spacing", "Spacing", "Spacing") {}
+};
+
+class MiniStackedSpacingConfig : public MiniPaddingConfigBase<7, 0, 30, 1> {
+public:
+    MiniStackedSpacingConfig() : MiniPaddingConfigBase("stacked_spacing", "Stacked Spacing", "Stacked Spacing") {}
+};
+
+class MiniCornerRadiusConfig : public MiniPaddingConfigBase<40, 0, 80, 2> {
+public:
+    MiniCornerRadiusConfig() : MiniPaddingConfigBase("corner_radius", "Corner Radius", "Corner Radius") {}
 };
 
 // =============================================================================
@@ -1628,6 +1723,11 @@ private:
         return value.empty() ? 6 : std::clamp(atoi(value.c_str()), 2, 30);
     }
 
+    int getCurrentMicroStackedSpacing() const {
+        const std::string value = ult::parseValueFromIniSection(configIniPath, "micro", "stacked_spacing");
+        return value.empty() ? 7 : std::clamp(atoi(value.c_str()), 0, 30);
+    }
+
     int getCurrentMicroLabelPadding() const {
         const std::string value = ult::parseValueFromIniSection(configIniPath, "micro", "label_padding");
         return value.empty() ? 14 : std::clamp(atoi(value.c_str()), 2, 30);
@@ -1639,6 +1739,32 @@ private:
         const std::string value = ult::parseValueFromIniSection(configIniPath, "micro", "element_padding");
         const int ep = value.empty() ? 50 : std::clamp(atoi(value.c_str()), 10, 100);
         return std::clamp(((ep + 5) / 10) * 10, 10, 100);
+    }
+
+    // Mini space-unit paddings (tenths of a space). Defaults mirror MiniSettings.
+    int getCurrentMiniHPadding() const {
+        const std::string value = ult::parseValueFromIniSection(configIniPath, "mini", "horizontal_padding");
+        return value.empty() ? 2 : std::clamp(atoi(value.c_str()), 2, 30);
+    }
+
+    int getCurrentMiniVPadding() const {
+        const std::string value = ult::parseValueFromIniSection(configIniPath, "mini", "vertical_padding");
+        return value.empty() ? 30 : std::clamp(atoi(value.c_str()), 2, 30);
+    }
+
+    int getCurrentMiniSpacing() const {
+        const std::string value = ult::parseValueFromIniSection(configIniPath, "mini", "spacing");
+        return value.empty() ? 14 : std::clamp(atoi(value.c_str()), 2, 30);
+    }
+
+    int getCurrentMiniStackedSpacing() const {
+        const std::string value = ult::parseValueFromIniSection(configIniPath, "mini", "stacked_spacing");
+        return value.empty() ? 7 : std::clamp(atoi(value.c_str()), 0, 30);
+    }
+
+    int getCurrentMiniCornerRadius() const {
+        const std::string value = ult::parseValueFromIniSection(configIniPath, "mini", "corner_radius");
+        return value.empty() ? 40 : std::clamp(atoi(value.c_str()), 0, 80);
     }
 
     std::string getDTCFormatName(const std::string& formatStr) const {
@@ -1821,6 +1947,49 @@ public:
             list->addItem(framePadding);
         }
 
+        // Mini space-unit paddings (Horizontal / Vertical / Spacing / Corner Radius)
+        if (flags.isMini) {
+            auto* hPadding = new tsl::elm::ListItem("Horizontal Padding");
+            hPadding->setValue(formatSpTenths(getCurrentMiniHPadding()));
+            hPadding->setClickListener([this](uint64_t keys) {
+                if (keys & KEY_A) { tsl::changeTo<MiniHPaddingConfig>(); return true; }
+                return false;
+            });
+            list->addItem(hPadding);
+
+            auto* vPadding = new tsl::elm::ListItem("Vertical Padding");
+            vPadding->setValue(formatSpTenths(getCurrentMiniVPadding()));
+            vPadding->setClickListener([this](uint64_t keys) {
+                if (keys & KEY_A) { tsl::changeTo<MiniVPaddingConfig>(); return true; }
+                return false;
+            });
+            list->addItem(vPadding);
+
+            auto* spacing = new tsl::elm::ListItem("Spacing");
+            spacing->setValue(formatSpTenths(getCurrentMiniSpacing()));
+            spacing->setClickListener([this](uint64_t keys) {
+                if (keys & KEY_A) { tsl::changeTo<MiniSpacingConfig>(); return true; }
+                return false;
+            });
+            list->addItem(spacing);
+
+            auto* stackedSpacing = new tsl::elm::ListItem("Stacked Spacing");
+            stackedSpacing->setValue(formatSpTenths(getCurrentMiniStackedSpacing()));
+            stackedSpacing->setClickListener([this](uint64_t keys) {
+                if (keys & KEY_A) { tsl::changeTo<MiniStackedSpacingConfig>(); return true; }
+                return false;
+            });
+            list->addItem(stackedSpacing);
+
+            auto* cornerRadius = new tsl::elm::ListItem("Corner Radius");
+            cornerRadius->setValue(formatSpTenths(getCurrentMiniCornerRadius()));
+            cornerRadius->setClickListener([this](uint64_t keys) {
+                if (keys & KEY_A) { tsl::changeTo<MiniCornerRadiusConfig>(); return true; }
+                return false;
+            });
+            list->addItem(cornerRadius);
+        }
+
         // Mode-specific positioning
         if (flags.isMicro) {
             auto* textAlign = new tsl::elm::ListItem("Text Alignment");
@@ -1854,6 +2023,14 @@ public:
                 return false;
             });
             list->addItem(vPadding);
+
+            auto* stackedSpacing = new tsl::elm::ListItem("Stacked Spacing");
+            stackedSpacing->setValue(formatSpTenths(getCurrentMicroStackedSpacing()));
+            stackedSpacing->setClickListener([this](uint64_t keys) {
+                if (keys & KEY_A) { tsl::changeTo<MicroStackedSpacingConfig>(); return true; }
+                return false;
+            });
+            list->addItem(stackedSpacing);
 
             auto* lPadding = new tsl::elm::ListItem("Label Padding");
             lPadding->setValue(formatSpTenths(getCurrentMicroLabelPadding()));

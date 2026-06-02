@@ -41,7 +41,12 @@ private:
     ApmPerformanceMode performanceMode = ApmPerformanceMode_Invalid;
     uint64_t systemtickfrequency_impl = systemtickfrequency;
     int frameOffsetX, frameOffsetY;
-    int topPadding, bottomPadding;
+    int topPadding = 5, bottomPadding = 5;
+    int horizPadPx = 0;            // trailing (right-side) interior text padding in px (from settings.horizontalPadding)
+    int stackSpacingPx = 4;        // gap between the two rows of a stacked/split metric, px
+                                   // (from settings.stackedSpacing). Replaces the old spacing/2.
+    bool   spaceUnitsApplied = false; // true once sp paddings converted to px for current font
+    size_t spacingSp = 0;             // original spacing in tenths-of-a-space (settings.spacing gets overwritten with px)
     int cachedBaselineOffset = 0;  // ascent pixels; used for currentY start
     int cachedDescentAbs     = 0;  // descent pixels below baseline; used for last-row glyph bottom
     uint32_t drawCachedHeight = 0; // authoritative height from draw path; read by handleInput for maxY clamp
@@ -82,6 +87,39 @@ private:
     Thread touchPollThread;
     std::atomic<bool> touchPollRunning{false};
     
+    // Width (in pixels) of a single space glyph at the current font size. This is the
+    // unit for Mini's space-based paddings (spacing / horizontal / vertical / corner),
+    // so they stay visually consistent across font sizes without a displayScale factor.
+    // Falls back to a font-proportional estimate if the measurement is degenerate.
+    inline float miniSpaceWidthPx(tsl::gfx::Renderer *renderer) const {
+        const float w = (float)renderer->getTextDimensions(" ", false, fontsize).first;
+        return (w > 0.5f) ? w : (float)fontsize * 0.25f;
+    }
+
+    // Convert a padding setting (tenths of a space) into pixels at the current font size.
+    inline int miniPaddingToPx(float spaceW, unsigned tenths) const {
+        return (int)lround(spaceW * (float)tenths / 10.0f);
+    }
+
+    // Convert all space-unit paddings (tenths of a space) into pixels for the current
+    // font. Called from the width-measurement block where the renderer/font is ready.
+    // Idempotent: the original spacing-in-sp is preserved in spacingSp so repeated
+    // calls (e.g. after a font-size change) always recompute from the sp source.
+    void miniApplySpaceUnits(tsl::gfx::Renderer *renderer) {
+        if (!spaceUnitsApplied) {
+            spacingSp = settings.spacing;   // capture sp value before overwriting with px
+            spaceUnitsApplied = true;
+        }
+        const float spaceW = miniSpaceWidthPx(renderer);
+        settings.spacing = (size_t)std::max(0, miniPaddingToPx(spaceW, (unsigned)spacingSp));
+        horizPadPx       = miniPaddingToPx(spaceW, settings.horizontalPadding);
+        const int vPad   = miniPaddingToPx(spaceW, settings.verticalPadding);
+        topPadding       = vPad;
+        bottomPadding    = vPad;
+        cornerRadius     = miniPaddingToPx(spaceW, settings.cornerRadiusSp);
+        stackSpacingPx   = miniPaddingToPx(spaceW, settings.stackedSpacing);
+    }
+
     void updateLayerPos() {
         if (ult::windowedLayerPixelPerfect) {
             // --- X: sliding-window (same for both full and limited 1080p) ---
@@ -220,16 +258,12 @@ public:
         //alphabackground = 0x0;
         frameOffsetX = settings.frameOffsetX;
         frameOffsetY = settings.frameOffsetY;
-        // Scale all framebuffer-pixel measurements so 1080p mode looks identical
-        // to 720p mode (both render the same visual pixel density on screen).
-        // In 720p mode displayScale=1.0 so the multiplications are no-ops.
+        // framePadding stays a fixed pixel value (scaled for 1080p density). The
+        // space-unit paddings (spacing / horizontal / vertical / cornerRadius) are
+        // converted from tenths-of-a-space to pixels once the font is loaded, in the
+        // !Initialized width-measurement block below (miniApplySpaceUnits).
         framePadding     = (size_t)(settings.framePadding * displayScale + 0.5f);
-        topPadding       = (int)(5.0f * displayScale + 0.5f);
-        bottomPadding    = (int)(5.0f * displayScale + 0.5f);
-        cornerRadius     = (int)(16.0f * displayScale + 0.5f);
-        // Scale spacing so row gaps match 720p visual proportions in 1080p pixel-perfect mode.
-        // settings is a local copy so writing back here is safe and covers all 56 usages below.
-        settings.spacing = (int)(settings.spacing * displayScale + 0.5f);
+        spaceUnitsApplied = false;     // force (re)conversion of sp paddings on next layout
         cachedBaselineOffset = (int)fontsize;  // updated to true ascent once font is loaded
         cachedDescentAbs     = 0;              // updated to true descent once font is loaded
 
@@ -365,7 +399,7 @@ public:
                         const uint32_t margin = (overlay->fontsize * 4);
                         const int overlayX = overlay->frameOffsetX;
                         const int overlayY = overlay->frameOffsetY;
-                        const int overlayWidth = margin + overlay->rectangleWidth + (overlay->fontsize / 3);
+                        const int overlayWidth = margin + overlay->rectangleWidth + overlay->horizPadPx;
                         
                         // Calculate height from Variables string
                         actualEntryCount = 1;
@@ -992,6 +1026,13 @@ public:
                     }
                 }
                 {
+                    // Convert space-unit paddings (spacing / horizontal / vertical /
+                    // cornerRadius) to pixels now that the font is loaded. Sets
+                    // settings.spacing (px), horizPadPx, topPadding, bottomPadding,
+                    // and cornerRadius from their tenths-of-a-space settings.
+                    miniApplySpaceUnits(renderer);
+                }
+                {
                     // drawString(Y) places the baseline at Y.  We want the top and bottom gaps
                     // (inside the rounded rect) to be visually equal.
                     //
@@ -1190,22 +1231,23 @@ public:
                 const size_t actualEntryCount = labelLines.size();
                 
                 // Height layout (drawString puts baseline at Y):
-                //   currentY for row 1 = boxTop + ascent + spacing + topPadding
-                //     -> first glyph top pixel sits at: spacing + topPadding   (= top gap)
+                //   currentY for row 1 = boxTop + ascent + topPadding
+                //     -> first glyph top pixel sits at: topPadding   (= top gap)
                 //   each subsequent row advances by (fontsize + spacing)
-                //   last row's baseline   = boxTop + ascent + spacing + topPadding + (N-1)*(fontsize+spacing)
+                //   last row's baseline   = boxTop + ascent + topPadding + (N-1)*(fontsize+spacing)
                 //     -> last glyph bottom = last baseline + descentAbs
-                //   We want bottom gap == top gap == (spacing + bottomPadding), with bottomPadding == topPadding.
-                //   So: cachedHeight = last_glyph_bottom + spacing + bottomPadding
-                //                    = ascent + descentAbs + 2*spacing + topPadding + bottomPadding
+                //   We want bottom gap == top gap == bottomPadding, with bottomPadding == topPadding.
+                //   So: cachedHeight = last_glyph_bottom + bottomPadding
+                //                    = ascent + descentAbs + topPadding + bottomPadding
                 //                      + (N-1)*(fontsize+spacing)
+                //   spacing is now purely the inter-row gap; it no longer contributes to the
+                //   top/bottom edge gaps (those are controlled solely by Vertical Padding).
                 //   Using ascent+descentAbs (measured) instead of fontsize avoids the 1-2 px truncation
                 //   error stbtt's int-cast leaves in (ascent+descentAbs) vs fontsize -- that error was
                 //   leaking entirely into the bottom gap, making it visibly fatter than the top.
                 const int   firstRowExtent = cachedBaselineOffset + cachedDescentAbs;  // ascent + descentAbs
                 cachedHeight = (firstRowExtent
                               + ((fontsize + settings.spacing) * (actualEntryCount > 0 ? actualEntryCount - 1 : 0))
-                              + 2 * settings.spacing
                               + topPadding + bottomPadding);
 
 
@@ -1221,7 +1263,11 @@ public:
 
                 // Split-row compression handling
                 {
-                    const int splitCompression = settings.spacing / 2;
+                    // A stacked block occupies two row-slots in the height formula but its
+                    // two rows are only (fontsize + stackSpacingPx) apart, i.e. the bottom row
+                    // is pulled up by (spacing - stackSpacingPx) from its natural slot. Reclaim
+                    // exactly that slack from the box height so the bottom gap stays correct.
+                    const int splitCompression = (int)settings.spacing - stackSpacingPx;
                 
                     const auto hasKey = [&](const char* key) {
                         return std::find(showKeys.begin(), showKeys.end(), key) != showKeys.end();
@@ -1385,8 +1431,8 @@ public:
             
             const int leftPadding = settings.showLabels ? 0 : settings.spacing + bottomPadding;
             const uint32_t overlayWidth = settings.showLabels 
-                ? (margin + rectangleWidth + (fontsize / 3))
-                : (rectangleWidth + (fontsize / 3) * 2 + leftPadding);
+                ? (margin + rectangleWidth + horizPadPx)
+                : (rectangleWidth + horizPadPx + leftPadding);
             
             int _frameOffsetX;
             
@@ -1521,8 +1567,10 @@ public:
                 variableLines.push_back(variablesStr.substr(start));
             }
             
-            // Draw each label and variable line individually
-            uint32_t currentY = cachedBaseY + cachedBaselineOffset + settings.spacing + topPadding;
+            // Draw each label and variable line individually.
+            // Top gap is topPadding only (Vertical Padding); spacing is the inter-row
+            // gap and is no longer added at the top/bottom edges.
+            uint32_t currentY = cachedBaseY + cachedBaselineOffset + topPadding;
             size_t labelIndex = 0;
             
             static const std::vector<std::string> specialChars = {""};
@@ -1628,7 +1676,7 @@ public:
                 const int leftPadding = settings.showLabels ? 0 : settings.spacing + bottomPadding;
                 const int baseX = settings.showLabels 
                     ? (cachedBaseX + margin + _frameOffsetX + clippingOffsetX)
-                    : (cachedBaseX + (fontsize / 3) + leftPadding + _frameOffsetX + clippingOffsetX);
+                    : (cachedBaseX + leftPadding + _frameOffsetX + clippingOffsetX);
                 const int baseY = currentY + drawY + clippingOffsetY;
                 
                 if (labelIndex < labelLines.size() && labelLines[labelIndex] == "SOC") {
@@ -1786,7 +1834,7 @@ public:
                     }
                     // Draw "TMP" label and fan speed centered between the two rows
                     // Rows use half inter-row spacing, so center is at (fontsize + spacing/2) / 2
-                    const int centerY = (int)currentY + ((int)fontsize + (int)settings.spacing / 2) / 2;
+                    const int centerY = (int)currentY + ((int)fontsize + stackSpacingPx) / 2;
                     if (settings.showLabels) {
                         const std::string tmpLbl = "TMP";
                         const uint32_t tmpLblW = renderer->getTextDimensions(tmpLbl, false, fontsize).first;
@@ -1815,7 +1863,7 @@ public:
                         // Draw at top-row Y (baseY), center Y (fanY), and bot-row Y so it spans the full block height.
                         // Scissored so the three glyphs meet pixel-perfect without alpha-blend overlap shading.
                         const int tmpTopRowY = baseY;
-                        const int tmpBotRowY = baseY + (int)fontsize + (int)settings.spacing / 2;
+                        const int tmpBotRowY = baseY + (int)fontsize + stackSpacingPx;
                         divider_scissor::drawDividerStack3(renderer, fanX,
                             tmpTopRowY, fanY, tmpBotRowY,
                             fontsize, settings.separatorColor);
@@ -1847,7 +1895,7 @@ public:
 
                 } else if (labelIndex < labelLines.size() && labelLines[labelIndex] == "TMP_BOT") {
                     // Dual-row TMP: bottom row = SOC/PCB/Skin temps, shifted up by spacing/2
-                    const int botY = baseY - (int)settings.spacing / 2;
+                    const int botY = baseY - ((int)settings.spacing - stackSpacingPx);
                     int currentX = baseX;
                     size_t pos = 0;
                     bool parseSuccess = true;
@@ -1875,7 +1923,7 @@ public:
                     }
                                     // Compensate: loop will add full spacing, but visually we drew spacing/2 less,
                     // so pull currentY back by spacing/2 so the next row gap stays normal.
-                    currentY -= (int)settings.spacing / 2;
+                    currentY -= ((int)settings.spacing - stackSpacingPx);
                 } else if (labelIndex < labelLines.size() && labelLines[labelIndex] == "TMP_COMP") {
                     // Component temps only: single row with HIGH gradient
                     int currentX = baseX;
@@ -1940,11 +1988,11 @@ public:
                     // RAM load split row 1: [cpu% gpu%] at baseY. "RAM" label centered between rows.
                     // Right side mirrors the non-loadsplit layout: rSplitVDDQ stacks VDD2 here / VDDQ on BOT;
                     // rSplitTemp puts volt or temp on top depending on voltageAtEndRAM; otherwise nothing on top.
-                    const int ramLoadCtrY = baseY + ((int)fontsize + (int)settings.spacing / 2) / 2;
+                    const int ramLoadCtrY = baseY + ((int)fontsize + stackSpacingPx) / 2;
                     ramLoadTopBaseY = baseY;  // store TOP baseY so BOT can compute center-Y consistently
                     // 3-stack scissoring: top=baseY, center=ramLoadCtrY, bot=ramLoadBotY (in RAM_SLOAD_BOT).
                     // Predicted bot Y = baseY + fontsize + spacing/2.
-                    const int ramLoadPredictedBotY = baseY + (int)fontsize + (int)settings.spacing / 2;
+                    const int ramLoadPredictedBotY = baseY + (int)fontsize + stackSpacingPx;
                     bool ramLoadScissorOK = divider_scissor::getDividerScissorMetrics(
                         fontsize, dividerCenterOffY, dividerLeftPad, dividerFullW);
                     int ramLoadCutTC = 0;
@@ -2160,11 +2208,11 @@ public:
 
                 } else if (labelIndex < labelLines.size() && labelLines[labelIndex] == "RAM_SLOAD_BOT") {
                     // RAM load split row 2: total%@freq at baseX, then right-side at ramLoadVoltColX.
-                    const int ramLoadBotY = baseY - (int)settings.spacing / 2;
+                    const int ramLoadBotY = baseY - ((int)settings.spacing - stackSpacingPx);
                     // Center Y is computed from TOP's baseY (stored by RAM_SLOAD_TOP) so it matches
                     // TOP's center connector position exactly. Using BOT's baseY directly would point
                     // BELOW the bot row instead of between the two rows.
-                    const int ramLoadCtrY = ramLoadTopBaseY + ((int)fontsize + (int)settings.spacing / 2) / 2;
+                    const int ramLoadCtrY = ramLoadTopBaseY + ((int)fontsize + stackSpacingPx) / 2;
                     // 3-stack scissoring: BOT row. ramLoadStackCutCB was written by RAM_SLOAD_TOP.
                     // (In inline mode, the inline block computes its own cuts locally and doesn't read this.)
                     const bool ramLoadBotScissorOK = (ramLoadStackCutCB >= 0);
@@ -2377,16 +2425,16 @@ public:
                         }
                     }
                     ramLoadStackCutCB = -1;
-                    currentY -= (int)settings.spacing / 2;
+                    currentY -= ((int)settings.spacing - stackSpacingPx);
 
                 } else if (labelIndex < labelLines.size() && labelLines[labelIndex] == "RAM_SVDD2") {
                     // Split VDD2/VDDQ row 1.
                     // Usage drawn at centre (between rows), VDD2 at baseY (top), mirroring TMP_SFAN single-group.
-                    const int ramCenterY = baseY + ((int)fontsize + (int)settings.spacing / 2) / 2;
+                    const int ramCenterY = baseY + ((int)fontsize + stackSpacingPx) / 2;
                     // 3-stack scissoring: top=baseY, center=ramCenterY, bot=svddqY (drawn in RAM_SVDDQ).
                     // svddqY (predicted) = baseY_SVDDQ - spacing/2 = (baseY + fontsize + spacing) - spacing/2
                     //                    = baseY + fontsize + spacing/2.
-                    const int ramSplitPredictedBotY = baseY + (int)fontsize + (int)settings.spacing / 2;
+                    const int ramSplitPredictedBotY = baseY + (int)fontsize + stackSpacingPx;
                     bool ramSplitScissorOK = divider_scissor::getDividerScissorMetrics(
                         fontsize, dividerCenterOffY, dividerLeftPad, dividerFullW);
                     int ramSplitCutTC = 0;
@@ -2528,7 +2576,7 @@ public:
                     }
                 } else if (labelIndex < labelLines.size() && labelLines[labelIndex] == "RAM_SVDDQ") {
                     // Split VDD2/VDDQ row 2: VDDQ at the volt column; uses spacing/2 compression.
-                    const int svddqY = baseY - (int)settings.spacing / 2;
+                    const int svddqY = baseY - ((int)settings.spacing - stackSpacingPx);
                     // 3-stack scissoring: this is the BOT row of the SVDD2/SVDDQ stack.
                     // ramSplitStackCutCB was written by RAM_SVDD2 on the previous iteration.
                     const bool svddqScissorOK = (ramSplitStackCutCB >= 0);
@@ -2567,14 +2615,14 @@ public:
                     // Cut consumed — clear it so a stale value doesn't leak into a future frame
                     // where SVDD2 might not run before SVDDQ (defensive; current label order makes this safe anyway).
                     ramSplitStackCutCB = -1;
-                    currentY -= (int)settings.spacing / 2;
+                    currentY -= ((int)settings.spacing - stackSpacingPx);
 
                 } else if (labelIndex < labelLines.size() && labelLines[labelIndex] == "CPU_SVOLT") {
                     // CPU split row 1: data centered; normal=volt at top, voltAtEnd=temp at top.
-                    const int cpuCenterY = baseY + ((int)fontsize + (int)settings.spacing / 2) / 2;
+                    const int cpuCenterY = baseY + ((int)fontsize + stackSpacingPx) / 2;
                     // 3-stack scissoring: top=baseY, center=cpuCenterY, bot=stempY (drawn in CPU_STEMP).
                     // stempY (predicted) = baseY_STEMP - spacing/2 = baseY + fontsize + spacing/2.
-                    const int cpuSplitPredictedBotY = baseY + (int)fontsize + (int)settings.spacing / 2;
+                    const int cpuSplitPredictedBotY = baseY + (int)fontsize + stackSpacingPx;
                     bool cpuSplitScissorOK = divider_scissor::getDividerScissorMetrics(
                         fontsize, dividerCenterOffY, dividerLeftPad, dividerFullW);
                     int cpuSplitCutTC = 0;
@@ -2648,7 +2696,7 @@ public:
 
                 } else if (labelIndex < labelLines.size() && labelLines[labelIndex] == "CPU_STEMP") {
                     // CPU split row 2: normal=temp at bottom; voltAtEnd=volt at bottom.
-                    const int stempY = baseY - (int)settings.spacing / 2;
+                    const int stempY = baseY - ((int)settings.spacing - stackSpacingPx);
                     // 3-stack scissoring: this is the BOT row. cpuSplitStackCutCB was written by CPU_SVOLT.
                     const bool cpuStempScissorOK = (cpuSplitStackCutCB >= 0);
                     auto cpuDrawBotRowDiv = [&](int dx) {
@@ -2684,7 +2732,7 @@ public:
                         }
                     }
                     cpuSplitStackCutCB = -1;
-                    currentY -= (int)settings.spacing / 2;
+                    currentY -= ((int)settings.spacing - stackSpacingPx);
 
                 } else if (labelIndex < labelLines.size() && labelLines[labelIndex] == "CPU_SFULL") {
                     // Full CPU freq split — row 1.
@@ -2692,7 +2740,7 @@ public:
                     //   mirrors CPU_SVOLT exactly — brackets on center row, volt (or temp if voltAtEnd) at baseY top.
                     // cpuFullStacked=false: brackets on baseY (top), volt+temp inline after brackets.
                     const bool cpuFullStacked = settings.showCPUTemp && settings.showStackedCPUTemp && settings.realVolts;
-                    const int cpuFullCenterY = baseY + ((int)fontsize + (int)settings.spacing / 2) / 2;
+                    const int cpuFullCenterY = baseY + ((int)fontsize + stackSpacingPx) / 2;
                     cpuFullSplitBracketsW = (int)renderer->getTextDimensions(currentLine, false, fontsize).first;
                     // Column width = whichever line is longer: brackets or the freq line below.
                     // This ensures both rows are right-aligned to the same edge so neither overflows
@@ -2751,7 +2799,7 @@ public:
                         const bool willDrawAnyCpu = (settings.realVolts && MINI_CPU_volt_c[0]) ||
                                                      mini_cpu_temp_c[0];
                         if (willDrawAnyCpu) {
-                            const int cpuFullBotY = baseY + (int)fontsize + (int)settings.spacing / 2;
+                            const int cpuFullBotY = baseY + (int)fontsize + stackSpacingPx;
                             // 3-divider stack: top (baseY), center (cpuFullCenterY), bot (cpuFullBotY).
                             // Scissored so the three glyphs meet pixel-perfect without alpha-blend overlap.
                             divider_scissor::drawDividerStack3(renderer, voltColX,
@@ -2829,7 +2877,7 @@ public:
                     // when brackets are wider, freq is pushed right and brackets stay at baseX.
                     // Either way the divider / volt column sits cleanly at baseX + cpuFullSplitColW.
                     const bool cpuFullStacked = settings.showCPUTemp && settings.showStackedCPUTemp && settings.realVolts;
-                    const int freqY = baseY - (int)settings.spacing / 2;
+                    const int freqY = baseY - ((int)settings.spacing - stackSpacingPx);
                     const int freqW = currentLine.empty() ? 0 : (int)renderer->getTextDimensions(currentLine, false, fontsize).first;
                     // Right-align freq to the shared column right edge.
                     const int freqX = baseX + cpuFullSplitColW - freqW;
@@ -2858,13 +2906,13 @@ public:
                             }
                         }
                     }
-                    currentY -= (int)settings.spacing / 2;
+                    currentY -= ((int)settings.spacing - stackSpacingPx);
 
                 } else if (labelIndex < labelLines.size() && labelLines[labelIndex] == "GPU_SVOLT") {
                     // GPU split row 1: normal=volt at top; voltAtEnd=temp at top.
-                    const int gpuCenterY = baseY + ((int)fontsize + (int)settings.spacing / 2) / 2;
+                    const int gpuCenterY = baseY + ((int)fontsize + stackSpacingPx) / 2;
                     // 3-stack scissoring: top=baseY, center=gpuCenterY, bot=stempY (drawn in GPU_STEMP).
-                    const int gpuSplitPredictedBotY = baseY + (int)fontsize + (int)settings.spacing / 2;
+                    const int gpuSplitPredictedBotY = baseY + (int)fontsize + stackSpacingPx;
                     bool gpuSplitScissorOK = divider_scissor::getDividerScissorMetrics(
                         fontsize, dividerCenterOffY, dividerLeftPad, dividerFullW);
                     int gpuSplitCutTC = 0;
@@ -2934,7 +2982,7 @@ public:
 
                 } else if (labelIndex < labelLines.size() && labelLines[labelIndex] == "GPU_STEMP") {
                     // GPU split row 2: normal=temp at bottom; voltAtEnd=volt at bottom.
-                    const int stempY = baseY - (int)settings.spacing / 2;
+                    const int stempY = baseY - ((int)settings.spacing - stackSpacingPx);
                     // 3-stack scissoring: this is the BOT row. gpuSplitStackCutCB was written by GPU_SVOLT.
                     const bool gpuStempScissorOK = (gpuSplitStackCutCB >= 0);
                     auto gpuDrawBotRowDiv = [&](int dx) {
@@ -2968,13 +3016,13 @@ public:
                         }
                     }
                     gpuSplitStackCutCB = -1;
-                    currentY -= (int)settings.spacing / 2;
+                    currentY -= ((int)settings.spacing - stackSpacingPx);
 
                 } else if (labelIndex < labelLines.size() && labelLines[labelIndex] == "RAM_SVDDQ_ONLY") {
                     // RAM temp split row 1 (single volt rail): data centered, volt at top (baseY).
-                    const int ramTCenterY = baseY + ((int)fontsize + (int)settings.spacing / 2) / 2;
+                    const int ramTCenterY = baseY + ((int)fontsize + stackSpacingPx) / 2;
                     // 3-stack scissoring: top=baseY, center=ramTCenterY, bot=stempY (drawn in RAM_STEMP).
-                    const int ramTSplitPredictedBotY = baseY + (int)fontsize + (int)settings.spacing / 2;
+                    const int ramTSplitPredictedBotY = baseY + (int)fontsize + stackSpacingPx;
                     bool ramTSplitScissorOK = divider_scissor::getDividerScissorMetrics(
                         fontsize, dividerCenterOffY, dividerLeftPad, dividerFullW);
                     int ramTSplitCutTC = 0;
@@ -3049,7 +3097,7 @@ public:
 
                 } else if (labelIndex < labelLines.size() && labelLines[labelIndex] == "RAM_STEMP") {
                     // RAM temp split row 2: normal=temp at bottom; voltAtEnd=volt at bottom.
-                    const int stempY = baseY - (int)settings.spacing / 2;
+                    const int stempY = baseY - ((int)settings.spacing - stackSpacingPx);
                     // 3-stack scissoring: BOT row. ramTempSplitStackCutCB was written by RAM_SVDDQ_ONLY.
                     const bool ramStempScissorOK = (ramTempSplitStackCutCB >= 0);
                     auto rtDrawBotRowDiv = [&](int dx) {
@@ -3084,11 +3132,11 @@ public:
                         }
                     }
                     ramTempSplitStackCutCB = -1;
-                    currentY -= (int)settings.spacing / 2;
+                    currentY -= ((int)settings.spacing - stackSpacingPx);
 
                 } else if (labelIndex < labelLines.size() && labelLines[labelIndex] == "BAT_STOP") {
                     // BAT split row 1: top row. "BAT" label centered between both rows.
-                    const int batCenterY = baseY + ((int)fontsize + (int)settings.spacing / 2) / 2;
+                    const int batCenterY = baseY + ((int)fontsize + stackSpacingPx) / 2;
                     if (settings.showLabels) {
                         const std::string batLbl = "BAT";
                         const uint32_t batLblW = renderer->getTextDimensions(batLbl, false, fontsize).first;
@@ -3109,7 +3157,7 @@ public:
 
                 } else if (labelIndex < labelLines.size() && labelLines[labelIndex] == "BAT_SBOT") {
                     // BAT split row 2: bottom row, right-aligned to match top row.
-                    const int batBotY = baseY - (int)settings.spacing / 2;
+                    const int batBotY = baseY - ((int)settings.spacing - stackSpacingPx);
                     {
                         const char* topStr = settings.invertBatteryDisplay ? Battery_pct_c : Battery_c;
                         const uint32_t topW = topStr[0] ? renderer->getTextDimensions(std::string(topStr), false, fontsize).first : 0;
@@ -3118,14 +3166,14 @@ public:
                         const int botDrawX = baseX + batColW - (int)botW;
                         renderer->drawString(currentLine, false, botDrawX, batBotY, fontsize, settings.textColor);
                     }
-                    currentY -= (int)settings.spacing / 2;
+                    currentY -= ((int)settings.spacing - stackSpacingPx);
 
                 } else if (labelIndex < labelLines.size() && labelLines[labelIndex] == "DTC_STOP") {
                     // DTC split row 1: top half (text before DIVIDER_SYMBOL in user format).
                     // DTC label centered between both rows. The bottom row is sourced from the
                     // next variable line (_variableLines[i+1]) so we can right-align both halves
                     // within max(topW, botW) — shorter half right-aligns to the wider edge.
-                    const int dtcCenterY = baseY + ((int)fontsize + (int)settings.spacing / 2) / 2;
+                    const int dtcCenterY = baseY + ((int)fontsize + stackSpacingPx) / 2;
                     if (settings.showLabels) {
                         const std::string dtcLbl = settings.useDTCSymbol ? "\uE007" : "DTC";
                         const uint32_t dtcLblW = renderer->getTextDimensions(dtcLbl, false, fontsize).first;
@@ -3144,7 +3192,7 @@ public:
 
                 } else if (labelIndex < labelLines.size() && labelLines[labelIndex] == "DTC_SBOT") {
                     // DTC split row 2: bottom half (text after DIVIDER_SYMBOL), right-aligned to match top.
-                    const int dtcBotY = baseY - (int)settings.spacing / 2;
+                    const int dtcBotY = baseY - ((int)settings.spacing - stackSpacingPx);
                     {
                         const std::string topStr = (i >= 1) ? _variableLines[i - 1] : std::string();
                         const uint32_t topW = topStr.empty() ? 0 : renderer->getTextDimensions(topStr, false, fontsize).first;
@@ -3153,7 +3201,7 @@ public:
                         const int botDrawX = baseX + dtcColW - (int)botW;
                         renderer->drawString(currentLine, false, botDrawX, dtcBotY, fontsize, settings.textColor);
                     }
-                    currentY -= (int)settings.spacing / 2;
+                    currentY -= ((int)settings.spacing - stackSpacingPx);
 
                 } else if (labelIndex < labelLines.size() && labelLines[labelIndex] == "TMP_SFAN") {
                     // Split fan row: temps + fan on row 1; "TMP" label drawn manually.
@@ -3163,9 +3211,9 @@ public:
                     const bool sfanHighGrad = settings.showComponentTemps;
                     const int sfanTempY = sfanIsDual
                         ? baseY
-                        : (baseY + ((int)fontsize + (int)settings.spacing / 2) / 2);
+                        : (baseY + ((int)fontsize + stackSpacingPx) / 2);
                     const int sfanLabelY = sfanIsDual
-                        ? (baseY + ((int)fontsize + (int)settings.spacing / 2) / 2)
+                        ? (baseY + ((int)fontsize + stackSpacingPx) / 2)
                         : sfanTempY;
                     int currentX = baseX;
                     size_t pos = 0;
@@ -3214,7 +3262,7 @@ public:
                     //   voltAtEnd OFF: volt=TOP(baseY), center=sfanCenterY, fan=BOT(botY)
                     // Cuts are computed here; sfanStackCutCB/TC are handed to TMP_SVOLT.
                     const int sfanCenterY  = sfanIsDual ? sfanLabelY : sfanTempY;
-                    const int sfanPredBotY = baseY + (int)fontsize + (int)settings.spacing / 2;
+                    const int sfanPredBotY = baseY + (int)fontsize + stackSpacingPx;
                     const bool sfanScissorOK = divider_scissor::getDividerScissorMetrics(
                         fontsize, dividerCenterOffY, dividerLeftPad, dividerFullW);
                     int sfanCutTC = 0, sfanCutCB = 0;
@@ -3242,7 +3290,7 @@ public:
                         const int fanDuty = safeFanDuty((int)Rotation_Duty);
                         const int fanDrawY = settings.voltageAtEndTMP
                             ? baseY
-                            : (baseY + (int)fontsize + (int)settings.spacing / 2);
+                            : (baseY + (int)fontsize + stackSpacingPx);
                         // Fan is TOP when voltAtEnd ON, BOT when voltAtEnd OFF
                         int afterDivX;
                         if (sfanScissorOK) {
@@ -3273,7 +3321,7 @@ public:
                     // Dual-row split (hasTemps): mirrors TMP_BOT with spacing/2 compression.
                     // Single-group (!hasTemps): volt drawn at sfanFanColX (same X column as fan above).
                     const bool hasTemps = currentLine.find("\u00B0") != std::string::npos;
-                    const int svoltY = baseY - (int)settings.spacing / 2;
+                    const int svoltY = baseY - ((int)settings.spacing - stackSpacingPx);
                     int currentX = hasTemps ? baseX : sfanFanColX;
                     if (hasTemps) {
                         size_t pos = 0;
@@ -3336,7 +3384,7 @@ public:
                     sfanStackCutTC = -1;
                     sfanStackCutCB = -1;
                     // Both dual-row and single-group split use spacing/2 compression: compensate currentY
-                    currentY -= (int)settings.spacing / 2;
+                    currentY -= ((int)settings.spacing - stackSpacingPx);
                 } else if (labelIndex < labelLines.size() && labelLines[labelIndex] == "MEM") {
                     // MEM memory rendering with gradient color
                     // Extract numeric value for color determination
@@ -4479,10 +4527,12 @@ public:
                 }
             }
             
+            // Rough fallback height estimate (the draw path's drawCachedHeight is the
+            // authoritative value used for clamping). spacing no longer adds to edges.
             cachedOverlayHeight = ((fontsize + settings.spacing) * actualEntryCount) + 
-                                 settings.spacing + topPadding + bottomPadding;
+                                 topPadding + bottomPadding;
             if (settings.showComponentTemps && settings.showSocPcbSkinTemps)
-                cachedOverlayHeight -= settings.spacing / 2;
+                cachedOverlayHeight -= ((int)settings.spacing - stackSpacingPx);
             
             // Position calculation based on settings
             cachedBaseX = 0;
@@ -4494,8 +4544,8 @@ public:
         
         const int leftPadding = settings.showLabels ? 0 : settings.spacing + bottomPadding;
         const int overlayWidth = settings.showLabels 
-            ? (margin + rectangleWidth + (fontsize / 3))
-            : (rectangleWidth + (fontsize / 3) * 2 + leftPadding);
+            ? (margin + rectangleWidth + horizPadPx)
+            : (rectangleWidth + horizPadPx + leftPadding);
         // Use drawCachedHeight (the draw-path height) for clamping — cachedOverlayHeight is a
         // separate estimate that omits descentAbs and split compressions, so using it causes
         // maxY to be too large and the clipping guard pulls the rect back, leaving a gap.
