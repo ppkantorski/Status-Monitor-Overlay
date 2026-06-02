@@ -117,11 +117,11 @@ private:
     
     // Fixed spacing system - calculate actual widths at render time
     struct LayoutMetrics {
-        uint32_t label_data_gap = 8;      // Fixed gap between label and data
+        uint32_t label_data_gap = 8;      // label-value gap (derived from labelPadding spaces)
         uint32_t volt_separator_gap = 0;   // Fixed gap before voltage separator
         uint32_t volt_data_gap = 0;        // Fixed gap after voltage separator
-        uint32_t item_spacing = 16;        // Minimum spacing between complete items
-        uint32_t side_margin = 8;          // Left/right edge padding — set to label_data_gap in calculateLayoutMetrics
+        uint32_t item_spacing = 16;        // min gap between elements (derived from elementPadding spaces)
+        uint32_t side_margin = 8;          // Left/right edge padding (derived from horizontalPadding spaces)
         bool calculated = false;
     } layout;
 
@@ -248,34 +248,37 @@ private:
         return "@";
     }
     
+    // Width (in pixels) of a single space glyph at the current font size.
+    // This is the unit for all Micro padding settings -- see MicroSettings.
+    // Guards against a degenerate 0 measurement with a font-proportional fallback.
+    inline float spaceWidthPx(tsl::gfx::Renderer *renderer) const {
+        const float w = (float)renderer->getTextDimensions(" ", false, fontsize).first;
+        return (w > 0.5f) ? w : (float)fontsize * 0.25f;
+    }
+
+    // Convert a padding setting (tenths of a space) into pixels at the current font size.
+    inline uint32_t paddingToPx(float spaceW, uint8_t tenths) const {
+        return (uint32_t)lround(spaceW * (float)tenths / 10.0f);
+    }
+
     void calculateLayoutMetrics(tsl::gfx::Renderer *renderer) {
         if (layout.calculated) return;
-        
-        // Use font size to determine appropriate spacing
-        if (fontsize <= 16) {
-            layout.label_data_gap = 6;
-            layout.volt_separator_gap = 0;
-            layout.volt_data_gap = 0;
-            layout.item_spacing = 12;
-        } else if (fontsize <= 20) {
-            layout.label_data_gap = 8;
-            layout.volt_separator_gap = 0;
-            layout.volt_data_gap = 0;
-            layout.item_spacing = 16;
-        } else {
-            layout.label_data_gap = 10;
-            layout.volt_separator_gap = 0;
-            layout.volt_data_gap = 0;
-            layout.item_spacing = 20;
-        }
-        // Override label_data_gap if user has set a label_padding value (non-zero = explicit)
-        if (settings.labelPadding != 0) {
-            layout.label_data_gap = settings.labelPadding;
-        }
-        // Horizontal padding setting controls left/right gap from screen edge to text.
-        // The bar rectangle always spans full screen width; only the text is inset.
-        layout.side_margin = settings.horizontalPadding;
-        
+
+        // All Micro paddings are expressed in tenths of a space (font-proportional)
+        // so the bar looks consistent across font sizes / resolutions.
+        const float spaceW = spaceWidthPx(renderer);
+
+        layout.volt_separator_gap = 0;
+        layout.volt_data_gap      = 0;
+
+        // Gap between an element's label and its value.
+        layout.label_data_gap = paddingToPx(spaceW, settings.labelPadding);
+        // Minimum gap between complete elements (label+value) when aligned left/right.
+        layout.item_spacing = paddingToPx(spaceW, settings.elementPadding);
+        // Left/right gap from screen edge to text. The bar rectangle always spans the
+        // full screen width; only the text is inset.
+        layout.side_margin = paddingToPx(spaceW, settings.horizontalPadding);
+
         layout.calculated = true;
     }
 
@@ -743,7 +746,8 @@ public:
                     const auto fm = tsl::gfx::FontManager::getFontMetricsForCharacter('A', fontsize);
                     cachedAscent    = fm.ascent;           // positive: pixels above baseline
                     cachedDescentAbs = -fm.descent;        // fm.descent is negative; make positive
-                    const int32_t vPad = (int32_t)settings.verticalPadding;
+                    // Vertical padding is in tenths of a space (font-proportional).
+                    const int32_t vPad = (int32_t)paddingToPx(spaceWidthPx(renderer), settings.verticalPadding);
                     if (settings.setPosBottom) {
                         // Bar bottom is at FramebufferHeight; text centered with vPad on each side.
                         // baseline = FramebufferHeight - vPad - cachedDescentAbs
@@ -771,7 +775,8 @@ public:
             calculateLayoutMetrics(renderer);
             {
                 const int32_t gridExtraHeight = (tmpIsGrid || tmpIsSplit || ramIsSplit || cpuIsSplit || gpuIsSplit || ramTempSplit || cpuFullIsSplit || batIsSplit || ramLoadIsSplit || ramBWIsSplit || dtcIsSplit) ? ((int32_t)cachedMargin + gridGap) : 0;
-                const int32_t vPad = (int32_t)settings.verticalPadding;
+                // Vertical padding is in tenths of a space (font-proportional).
+                const int32_t vPad = (int32_t)paddingToPx(spaceWidthPx(renderer), settings.verticalPadding);
                 // Visual text height = ascent + |descent|  (excludes lineGap)
                 const int32_t textVisualH = cachedAscent + cachedDescentAbs;
                 // barH: textVisualH + N above + N below, plus any grid expansion

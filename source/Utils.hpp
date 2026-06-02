@@ -2606,9 +2606,17 @@ struct MicroSettings {
     bool showStackedTemps;   // true = temp groups on separate rows (stacked); false = one line with divider
     bool setPosBottom;
     bool disableScreenshots;
-    uint8_t horizontalPadding;  // 0-10 px, left/right gap from screen edge to text; default 8
-    uint8_t verticalPadding;    // 0-8 px, gap above/below text within bar; default 2
-    uint8_t labelPadding;       // 2-8 px, gap between element label and its value; 0 = auto (font-size-based)
+    // Micro padding values are stored in TENTHS OF A SPACE (the pixel width of a
+    // single ' ' glyph at the current font size). Using the space width as the unit
+    // keeps the bar's appearance consistent across font sizes (e.g. handheld vs
+    // 1080p docked) where a fixed pixel padding would look wrong at one scale.
+    // Horizontal/vertical/label: range 2..30 -> 0.2..3.0 sp, in steps of 1 (0.1 sp).
+    // Element: range 10..100 -> 1..10 sp, in whole-space steps of 10 (1 sp).
+    uint8_t horizontalPadding;  // left/right gap from screen edge to text; default 14 (1.4 sp)
+    uint8_t verticalPadding;    // gap above/below text within bar; default 6 (0.6 sp)
+    uint8_t labelPadding;       // gap between an element label and its value; default 14 (1.4 sp)
+    uint8_t elementPadding;     // min gap between one element (label+value) and the next
+                                // when aligned left or right; default 50 (5 sp)
 };
 
 struct FpsCounterSettings {
@@ -3228,9 +3236,10 @@ ALWAYS_INLINE void GetConfigSettings(MicroSettings* settings) {
     settings->setPosBottom = false;
     settings->disableScreenshots = false;
     settings->refreshRate = 3;
-    settings->horizontalPadding = 8;
-    settings->verticalPadding   = 5;
-    settings->labelPadding      = 8;
+    settings->horizontalPadding = 14;  // 1.4 sp
+    settings->verticalPadding   = 6;   // 0.6 sp
+    settings->labelPadding      = 14;  // 1.4 sp
+    settings->elementPadding    = 50;  // 5 sp
 
     // Open and read file efficiently
     FILE* configFile = fopen(configIniPath, "r");
@@ -3649,18 +3658,27 @@ ALWAYS_INLINE void GetConfigSettings(MicroSettings* settings) {
     if (!settings->showComponentTemps && !settings->showSocPcbSkinTemps)
         settings->showSocPcbSkinTemps = true;
 
-    // Horizontal/vertical padding for bar text margins
+    // Horizontal/vertical/label/element padding for bar text margins.
+    // Stored in tenths of a space. H/V/label: 2..30 (0.2..3.0 sp, step 1).
+    // Element: 10..100 (1..10 sp, whole-space steps) -- snapped so the applied
+    // value always matches the integer value shown in the configurator.
     it = section.find("horizontal_padding");
     if (it != section.end()) {
-        settings->horizontalPadding = (uint8_t)std::clamp(atoi(it->second.c_str()), 0, 20);
+        settings->horizontalPadding = (uint8_t)std::clamp(atoi(it->second.c_str()), 2, 30);
     }
     it = section.find("vertical_padding");
     if (it != section.end()) {
-        settings->verticalPadding = (uint8_t)std::clamp(atoi(it->second.c_str()), 0, 20);
+        settings->verticalPadding = (uint8_t)std::clamp(atoi(it->second.c_str()), 2, 30);
     }
     it = section.find("label_padding");
     if (it != section.end()) {
-        settings->labelPadding = (uint8_t)std::clamp(atoi(it->second.c_str()), 4, 12);
+        settings->labelPadding = (uint8_t)std::clamp(atoi(it->second.c_str()), 2, 30);
+    }
+    it = section.find("element_padding");
+    if (it != section.end()) {
+        int ep = std::clamp(atoi(it->second.c_str()), 10, 100);
+        ep = std::clamp(((ep + 5) / 10) * 10, 10, 100);  // snap to nearest whole space
+        settings->elementPadding = (uint8_t)ep;
     }
 
 }

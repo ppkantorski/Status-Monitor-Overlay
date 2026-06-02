@@ -961,32 +961,52 @@ public:
 };
 
 // =============================================================================
-// Micro Padding Configs (Horizontal / Vertical / Label)
+// Micro Padding Configs (Horizontal / Vertical / Label / Element)
 // =============================================================================
 
-// Shared implementation for all three Micro padding screens.
-template<int DEFAULT, int MIN_P, int MAX_P>
+// Micro paddings are stored in tenths of a space.
+// Format a tenths value as "X.Y sp" (used for horizontal / vertical / label).
+inline std::string formatSpTenths(int tenths) {
+    return std::to_string(tenths / 10) + "." + std::to_string(tenths % 10) + " sp";
+}
+// Format a tenths value that is a whole number of spaces as "N sp" (element padding).
+inline std::string formatSpWhole(int tenths) {
+    return std::to_string(tenths / 10) + " sp";
+}
+
+// Shared implementation for all Micro padding screens. Range/step come from the
+// template so each screen can differ; only the default, range and ini key vary.
+//   Horizontal/Vertical/Label: 2..30 (0.2..3.0 sp, step 1 = 0.1 sp)
+//   Element:                   10..100 (1..10 sp, step 10 = 1 sp)
+template<int DEFAULT, int MIN_T, int MAX_T, int STEP_T>
 class MicroPaddingConfigBase : public tsl::Gui {
 protected:
+    static constexpr int MIN_P  = MIN_T;
+    static constexpr int MAX_P  = MAX_T;
+    static constexpr int STEP_P = STEP_T;
+
     int         currentPadding;
     std::string iniKey;
     std::string headerLabel;
     std::string jumpLabel;
 
-    virtual std::string formatLabel(int p) const { return std::to_string(p) + " px"; }
+    virtual std::string formatLabel(int tenths) const { return formatSpTenths(tenths); }
 
 public:
     MicroPaddingConfigBase(const std::string& key, const std::string& header, const std::string& jump)
         : iniKey(key), headerLabel(header), jumpLabel(jump) {
         const std::string value = ult::parseValueFromIniSection(configIniPath, "micro", iniKey);
         currentPadding = value.empty() ? DEFAULT : std::clamp(atoi(value.c_str()), MIN_P, MAX_P);
+        // Snap to the nearest valid step so a stray value still shows a checkmark.
+        currentPadding = MIN_P + ((currentPadding - MIN_P + (STEP_P / 2)) / STEP_P) * STEP_P;
+        currentPadding = std::clamp(currentPadding, MIN_P, MAX_P);
     }
     ~MicroPaddingConfigBase() { lastSelectedListItem = nullptr; }
 
     virtual tsl::elm::Element* createUI() override {
         auto* list = new tsl::elm::List();
         list->addItem(new tsl::elm::CategoryHeader(headerLabel));
-        for (int p = MIN_P; p <= MAX_P; ++p) {
+        for (int p = MIN_P; p <= MAX_P; p += STEP_P) {
             auto* item = new tsl::elm::MiniListItem(formatLabel(p));
             if (p == currentPadding)
                 selectItem(lastSelectedListItem, item, ult::CHECKMARK_SYMBOL);
@@ -1016,32 +1036,26 @@ public:
     }
 };
 
-class MicroHPaddingConfig : public MicroPaddingConfigBase<8, 0, 20> {
+class MicroHPaddingConfig : public MicroPaddingConfigBase<14, 2, 30, 1> {
 public:
     MicroHPaddingConfig() : MicroPaddingConfigBase("horizontal_padding", "Horizontal Padding", "Horizontal Padding") {}
 };
 
-class MicroVPaddingConfig : public MicroPaddingConfigBase<2, 0, 20> {
+class MicroVPaddingConfig : public MicroPaddingConfigBase<6, 2, 30, 1> {
 public:
     MicroVPaddingConfig() : MicroPaddingConfigBase("vertical_padding", "Vertical Padding", "Vertical Padding") {}
 };
 
-class MicroLabelPaddingConfig : public MicroPaddingConfigBase<0, 4, 12> {
-    int autoDefault;
-protected:
-    std::string formatLabel(int p) const override {
-        std::string s = std::to_string(p) + " px";
-        if (p == autoDefault) s += " (default)";
-        return s;
-    }
+class MicroLabelPaddingConfig : public MicroPaddingConfigBase<14, 2, 30, 1> {
 public:
-    MicroLabelPaddingConfig() : MicroPaddingConfigBase("label_padding", "Label Padding", "Label Padding") {
-        const std::string fsVal = ult::parseValueFromIniSection(configIniPath, "micro", "handheld_font_size");
-        const int fs = fsVal.empty() ? 15 : atoi(fsVal.c_str());
-        autoDefault = (fs <= 16) ? 6 : (fs <= 20 ? 8 : 10);
-        // currentPadding==0 means "auto"; snap display to autoDefault
-        if (currentPadding == 0) currentPadding = autoDefault;
-    }
+    MicroLabelPaddingConfig() : MicroPaddingConfigBase("label_padding", "Label Padding", "Label Padding") {}
+};
+
+class MicroElementPaddingConfig : public MicroPaddingConfigBase<50, 10, 100, 10> {
+protected:
+    std::string formatLabel(int tenths) const override { return formatSpWhole(tenths); }
+public:
+    MicroElementPaddingConfig() : MicroPaddingConfigBase("element_padding", "Element Padding", "Element Padding") {}
 };
 
 // =============================================================================
@@ -1606,22 +1620,25 @@ private:
 
     int getCurrentMicroHPadding() const {
         const std::string value = ult::parseValueFromIniSection(configIniPath, "micro", "horizontal_padding");
-        return value.empty() ? 8 : std::clamp(atoi(value.c_str()), 0, 20);
+        return value.empty() ? 14 : std::clamp(atoi(value.c_str()), 2, 30);
     }
 
     int getCurrentMicroVPadding() const {
         const std::string value = ult::parseValueFromIniSection(configIniPath, "micro", "vertical_padding");
-        return value.empty() ? 2 : std::clamp(atoi(value.c_str()), 0, 20);
+        return value.empty() ? 6 : std::clamp(atoi(value.c_str()), 2, 30);
     }
 
     int getCurrentMicroLabelPadding() const {
         const std::string value = ult::parseValueFromIniSection(configIniPath, "micro", "label_padding");
-        if (value.empty()) {
-            const std::string fsVal = ult::parseValueFromIniSection(configIniPath, "micro", "handheld_font_size");
-            const int fs = fsVal.empty() ? 15 : atoi(fsVal.c_str());
-            return (fs <= 16) ? 6 : 8;
-        }
-        return std::clamp(atoi(value.c_str()), 4, 12);
+        return value.empty() ? 14 : std::clamp(atoi(value.c_str()), 2, 30);
+    }
+
+    // Element padding is whole spaces (stored as tenths: 10..100). Snap to the
+    // nearest whole space so the menu value matches what the engine applies.
+    int getCurrentMicroElementPadding() const {
+        const std::string value = ult::parseValueFromIniSection(configIniPath, "micro", "element_padding");
+        const int ep = value.empty() ? 50 : std::clamp(atoi(value.c_str()), 10, 100);
+        return std::clamp(((ep + 5) / 10) * 10, 10, 100);
     }
 
     std::string getDTCFormatName(const std::string& formatStr) const {
@@ -1823,7 +1840,7 @@ public:
             list->addItem(layerPos);
 
             auto* hPadding = new tsl::elm::ListItem("Horizontal Padding");
-            hPadding->setValue(std::to_string(getCurrentMicroHPadding()) + " px");
+            hPadding->setValue(formatSpTenths(getCurrentMicroHPadding()));
             hPadding->setClickListener([this](uint64_t keys) {
                 if (keys & KEY_A) { tsl::changeTo<MicroHPaddingConfig>(); return true; }
                 return false;
@@ -1831,7 +1848,7 @@ public:
             list->addItem(hPadding);
 
             auto* vPadding = new tsl::elm::ListItem("Vertical Padding");
-            vPadding->setValue(std::to_string(getCurrentMicroVPadding()) + " px");
+            vPadding->setValue(formatSpTenths(getCurrentMicroVPadding()));
             vPadding->setClickListener([this](uint64_t keys) {
                 if (keys & KEY_A) { tsl::changeTo<MicroVPaddingConfig>(); return true; }
                 return false;
@@ -1839,12 +1856,20 @@ public:
             list->addItem(vPadding);
 
             auto* lPadding = new tsl::elm::ListItem("Label Padding");
-            lPadding->setValue(std::to_string(getCurrentMicroLabelPadding()) + " px");
+            lPadding->setValue(formatSpTenths(getCurrentMicroLabelPadding()));
             lPadding->setClickListener([this](uint64_t keys) {
                 if (keys & KEY_A) { tsl::changeTo<MicroLabelPaddingConfig>(); return true; }
                 return false;
             });
             list->addItem(lPadding);
+
+            auto* ePadding = new tsl::elm::ListItem("Element Padding");
+            ePadding->setValue(formatSpWhole(getCurrentMicroElementPadding()));
+            ePadding->setClickListener([this](uint64_t keys) {
+                if (keys & KEY_A) { tsl::changeTo<MicroElementPaddingConfig>(); return true; }
+                return false;
+            });
+            list->addItem(ePadding);
 
         } else if (flags.isFull) {
             auto* layerPos = new tsl::elm::ListItem("Horizontal Position");
