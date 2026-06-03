@@ -2518,6 +2518,7 @@ struct MiniSettings {
     bool showDTC;
     bool useDTCSymbol;
     bool useIntegerFPS;
+    bool showFpsGraph;         // true = replace FPS row with embedded FPS graph
     std::string dtcFormat;   // derived at load time: format1 + DIVIDER + format2 (or just format1 when format2 is "None")
     std::string dtcFormat1;  // top half (always present)
     std::string dtcFormat2;  // bottom half (== ult::OPTION_SYMBOL means "None" — no bottom half, no divider)
@@ -2716,6 +2717,7 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
     settings->showDTC = true;
     settings->useDTCSymbol = true;
     settings->useIntegerFPS = false;
+    settings->showFpsGraph = false;
     settings->dtcFormat1 = "%a, %b %d";
     settings->dtcFormat2 = "%l:%M:%S %p";
     settings->dtcFormat  = settings->dtcFormat1 + ult::DIVIDER_SYMBOL + settings->dtcFormat2;
@@ -2837,7 +2839,7 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
     }
     it = section.find("vertical_padding");
     if (it != section.end()) {
-        settings->verticalPadding = (uint8_t)std::clamp(atoi(it->second.c_str()), 2, 30);
+        settings->verticalPadding = (uint8_t)std::clamp(atoi(it->second.c_str()), 2, 60);
     }
     it = section.find("corner_radius");
     if (it != section.end()) {
@@ -3045,6 +3047,13 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
         key = it->second;
         convertToUpper(key);
         settings->useIntegerFPS = (key != "FALSE");
+    }
+
+    it = section.find("use_fps_graph");
+    if (it != section.end()) {
+        key = it->second;
+        convertToUpper(key);
+        settings->showFpsGraph = (key == "TRUE");
     }
 
     // DTC format: prefer the new two-part keys (dtc_format_1, dtc_format_2). Fall back

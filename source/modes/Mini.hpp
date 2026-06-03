@@ -52,6 +52,22 @@ private:
     uint32_t drawCachedHeight = 0; // authoritative height from draw path; read by handleInput for maxY clamp
     bool isDragging = false;
 
+    // ── Embedded FPS Graph (shown in the FPS row when settings.showFpsGraph is true) ──
+    // Graph color settings loaded from the [fps-graph] INI section.
+    FpsGraphSettings graphSettings;
+    // Ring-buffer of per-frame FPS samples. Mirrors the logic in com_FPSGraph.
+    struct GraphStats { s16 value; bool zero_rounded; };
+    std::vector<GraphStats> graphReadings;
+    uint8_t graphRefreshRate = 60;   // display refresh rate from SaltySD shared memory
+    s16 graphYOld = 0;               // previous Y sample position (for line-draw continuity)
+    s16 graphY30 = 0;                // Y position of the 30-fps dashed line
+    bool graphIsAbove = false;
+    char graphFpsAvg_c[8] = "";      // formatted FPS average string for graph overlay text
+    uint64_t graphLastFrame = 0;     // last lastFrameNumber we consumed (dedup guard)
+    // graphRowHeightPx: total height in framebuffer pixels of the FPS_GRAPH row,
+    // computed once per layout recalc from graphRefreshRate and displayScale.
+    int graphRowHeightPx = 0;
+
     bool skipOnce = true;
     bool runOnce = true;
     u64  lastDataUpdateTick = 0;  // tick of last sensor data format; used to gate updates when frame limiter is off
@@ -205,6 +221,7 @@ public:
         strcpy(Battery_c, "-.-- W-.-% [--:--]"); // Default display
 
         GetConfigSettings(&settings);
+        GetConfigSettings(&graphSettings);
         // NOTE: apm is not yet initialized when the constructor runs (initServices() is called
         // after new MiniOverlay()). We defer the apm-based font selection to update().
         // For the initial font, use the docked/handheld state we already know from the
@@ -941,7 +958,30 @@ public:
                         }
                     } else if (key == "FPS") {
                         //dimensions = renderer->drawString("144.4", false, 0, 0, fontsize, renderer->a(0x0000));
-                        width = renderer->getTextDimensions("144.4", false, fontsize).first;
+                        if (settings.showFpsGraph) {
+                            // Graph column width = span from the content-left edge (gx, where the
+                            // "max" legend label such as "120" is drawn) to and including the right
+                            // border's outermost pixel. Computed for the worst case: a 3-digit refresh
+                            // rate (e.g. 120 Hz), where the plot's left offset is 22 native px (vs 15
+                            // for 2-digit), so the column is at its widest. The layout then applies a
+                            // full horizontal padding on top of this before the rounded-rect edge.
+                            //
+                            // Mirrors the FPS_GRAPH draw geometry exactly:
+                            //   rect_x_s = lround(22 * displayScale)   (plot left / legend offset, 120 case)
+                            //   rect_w   = lround(180 * displayScale)  (plot width)
+                            //   border   = drawEmptyRect(gx + rect_x_s + 1, ..., rect_w + 2, ...)
+                            //   border's RIGHTMOST PIXEL, relative to gx = rect_x_s + rect_w + 2
+                            // width is an inclusive extent (like a text width): the column occupies
+                            // pixels [gx, gx + width), so its last pixel is gx + width - 1. To make
+                            // that last pixel land ON the border's rightmost pixel we add one more:
+                            //   width = (rect_x_s + rect_w + 2) + 1 = rect_x_s + rect_w + 3
+                            // The +1/+2/+3 are literal framebuffer pixels and must NOT be scaled.
+                            const uint32_t maxRectX = (uint32_t)lround(22.0f * displayScale);
+                            const uint32_t maxRectW = (uint32_t)lround(180.0f * displayScale);
+                            width = maxRectX + maxRectW + 3;
+                        } else {
+                            width = renderer->getTextDimensions("144.4", false, fontsize).first;
+                        }
                     } else if (key == "RES") {
                         //dimensions = renderer->drawString("3840x21603840x2160", false, 0, 0, fontsize, renderer->a(0x0000));
                         if (settings.showPrimaryResolution) {
@@ -1187,7 +1227,7 @@ public:
                         flags |= 32;
                     } else if (key == "FPS" && !(flags & 64) && GameRunning && FPSavg != 254) {
                         shouldAdd = true;
-                        labelText = "FPS";
+                        labelText = settings.showFpsGraph ? "FPS_GRAPH" : "FPS";
                         flags |= 64;
                     } else if (key == "RES" && !(flags & 128) && GameRunning && m_resolutionOutput[0].width) {
                         shouldAdd = true;
@@ -1409,6 +1449,21 @@ public:
                         settings.showDTC &&
                         hasKey("DTC")) {
                         cachedHeight -= splitCompression;
+                    }
+
+                    //
+                    // FPS_GRAPH row height adjustment
+                    //
+                    // The graph row is taller than a normal text row (fontsize px).
+                    // graphRowHeightPx is the total pixel height of the graph content
+                    // (graphRefreshRate + 12, scaled to framebuffer space). The base
+                    // cachedHeight formula already budgets fontsize px for this row;
+                    // add the difference to account for the real height.
+                    if (settings.showFpsGraph && hasKey("FPS") && FPSavg != 254.0f) {
+                        graphRowHeightPx = (int)lround((graphRefreshRate + 12) * displayScale);
+                        const int extraH = graphRowHeightPx - (int)fontsize;
+                        if (extraH > 0)
+                            cachedHeight += extraH;
                     }
                 }
                 //const uint32_t margin = (fontsize * 4);
@@ -1664,7 +1719,8 @@ public:
                      labelLines[labelIndex] == "RAM_SVDDQ_ONLY" || labelLines[labelIndex] == "RAM_STEMP" ||
                      labelLines[labelIndex] == "BAT_STOP" || labelLines[labelIndex] == "BAT_SBOT" ||
                      labelLines[labelIndex] == "DTC_STOP" || labelLines[labelIndex] == "DTC_SBOT" ||
-                     labelLines[labelIndex] == "RAM_SLOAD_TOP" || labelLines[labelIndex] == "RAM_SLOAD_BOT"));
+                     labelLines[labelIndex] == "RAM_SLOAD_TOP" || labelLines[labelIndex] == "RAM_SLOAD_BOT" ||
+                     labelLines[labelIndex] == "FPS_GRAPH"));
                 if (!isTmpDualRow && settings.showLabels && !labelLines[labelIndex].empty()) {
                     labelWidth = renderer->getTextDimensions(labelLines[labelIndex], false, fontsize).first;
                     labelCenterX = cachedBaseX + (margin / 2) - (labelWidth / 2);
@@ -3421,7 +3477,186 @@ public:
                 } else {
                     // Normal rendering for all other line types (CPU, GPU, RAM, BAT, FPS, RES, DTC)
                     const std::string& curLabel = (labelIndex < labelLines.size()) ? labelLines[labelIndex] : "";
-                    if (curLabel == "CPU") {
+                    if (curLabel == "FPS_GRAPH") {
+                        // ── Embedded FPS graph ──────────────────────────────────────────
+                        // Geometry mirrors FPS_Graph.hpp exactly, scaled by displayScale.
+                        //
+                        // Native (720p) coordinates (from FPS_Graph members):
+                        //   rectangle_x = 15  (<100 Hz)  or  22  (>=100 Hz)  — plot left, also legend offset
+                        //   rectangle_y = 5                                  — plot top margin
+                        //   rectangle_width  = 180
+                        //   rectangle_height = refreshRate
+                        //   x_end = rectangle_x + rectangle_width
+                        //   Border: drawEmptyRect(rect_x - 1 + 2, rect_y - 1, rect_w + 2, rect_h + 4)
+                        //         = drawEmptyRect(rect_x + 1, rect_y - 1, rect_w + 2, rect_h + 4)
+                        //   Lines: drawn at  gx + x + 1  (no offset in the embedded row)
+                        //          rightmost x = x_end  ->  rect_x + rect_w + 1
+                        //          border inner-right   ->  rect_x + 1 + rect_w + 2 - 1 = rect_x + rect_w + 2
+                        //          so the rightmost line pixel sits just inside the border right edge.
+                        //
+                        // gx/gTopY: top-left of the graph content area (= baseX, row visual top)
+                        //
+                        const int gTopY = (int)currentY + (int)drawY - cachedBaselineOffset + clippingOffsetY;
+                        const int gx    = baseX;
+
+                        // rect_x_native: 15 for <100 Hz (2-digit label), 22 for >=100 Hz (3-digit label)
+                        const s16 rect_x_native = (graphRefreshRate < 100) ? 15 : 22;
+                        const s16 rect_x_s = (s16)lround(rect_x_native * displayScale);
+                        const s16 rect_w   = (s16)lround(180 * displayScale);
+                        const s16 rect_h   = (s16)lround(graphRefreshRate * displayScale);
+                        const s16 rect_y_s = (s16)lround(5 * displayScale);
+                        const s16 x_end    = rect_x_s + rect_w;
+                        // No horizontal line offset: the plot data must stay strictly inside the
+                        // border. Standalone FPS_Graph adds +7 for >=100 Hz, which shifts the
+                        // rightmost samples ~6px PAST the right border (and leaves a gap on the
+                        // left). In the embedded Mini row that overflow crowds the rounded-rect
+                        // edge and breaks the "data within the border" requirement, so we keep the
+                        // offset at 0. With offset 0 the newest sample lands at the inner-right
+                        // border pixel and the plot fills the area for both 2- and 3-digit rates.
+                        const s16 lineOffset = 0;
+
+                        // Y positions for reference lines
+                        const s16 y_30_line = rect_y_s + (rect_h / 2);
+                        // range is the normalization denominator for the plot's Y mapping. It MUST be
+                        // in FPS units (matching reading.value, which is lround(FPSavg)), NOT scaled
+                        // pixels. The Y formula multiplies the FPS-space fraction by rect_h (scaled
+                        // pixels) to get the pixel offset, so mixing the two scales here would compress
+                        // the data. In FPS_Graph rectangle_height == refreshRate (both unscaled), so its
+                        // range = rectangle_height + 1 happens to equal refreshRate + 1; here rect_h is
+                        // scaled by displayScale, so we must use the refresh rate directly. (At 720p
+                        // displayScale == 1, so rect_h + 1 == refreshRate + 1 and both agree; at 1080p
+                        // rect_h + 1 would be wrong, e.g. 91 vs 61 for a 60 Hz panel.)
+                        const s16 range     = (s16)graphRefreshRate + 1; // FPS units, scale-independent
+
+                        // Draw "FPS" label — same catColor as every other label, centred vertically
+                        if (settings.showLabels) {
+                            const uint32_t lw = renderer->getTextDimensions("FPS", false, fontsize).first;
+                            const int labelCX = cachedBaseX + ((int)(fontsize * 4) / 2) - (int)(lw / 2);
+                            // Vertically centre the label's cap-box on the dashed centre line
+                            // (gTopY + rect_y_s + rect_h/2). drawString's Y is the text BASELINE, and
+                            // "FPS" is all-caps with no descenders, so its cap-box runs from
+                            // baseline-capHeight to baseline and its visual centre is baseline-capHeight/2.
+                            // To put that visual centre on the dashed line, the baseline must sit
+                            // capHeight/2 BELOW it. capHeight in px = cachedBaselineOffset (it already
+                            // scales with the font, so this is correct at both 720p and 1080p). Using
+                            // fontsize/2 here (em half-height) overshoots downward by (fontsize-capHeight)/2
+                            // and is why the label looked a touch low.
+                            const int labelCY = gTopY + rect_y_s + (rect_h / 2) + (cachedBaselineOffset / 2);
+                            renderer->drawString("FPS", false,
+                                labelCX + _frameOffsetX + clippingOffsetX,
+                                labelCY,
+                                fontsize, settings.catColor);
+                        }
+
+                        // Border rect — exact mirror of FPS_Graph:
+                        //   drawEmptyRect(rect_x - 1 + 2, rect_y - 1, rect_w + 2, rect_h + 4)
+                        //   inner-right pixel = rect_x + 1 + rect_w + 2 - 1 = rect_x + rect_w + 2
+                        renderer->drawEmptyRect(
+                            gx + rect_x_s + 1,
+                            gTopY + rect_y_s - 1,
+                            rect_w + 2,
+                            rect_h + 4,
+                            aWithOpacity(graphSettings.borderColor));
+
+                        // Dashed half-way reference line — inside the border
+                        // Original: drawDashedLine(rect_x+2, y_30, rect_x+rect_w+1, y_30, 6, ...)
+                        renderer->drawDashedLine(
+                            gx + rect_x_s + 2,
+                            gTopY + y_30_line,
+                            gx + rect_x_s + rect_w + 1,
+                            gTopY + y_30_line,
+                            6,
+                            aWithOpacity(graphSettings.dashedLineColor));
+
+                        // Y-axis labels
+                        // Original max label x: rect_x - 15 (<100) or rect_x - 22 (>=100)  => always gx + 0
+                        // Original max label y: rect_y + 7  (baseline 7px below plot top)
+                        // Original min label x: rect_x - 10
+                        // Original min label y: rect_y + rect_h + 3
+                        {
+                            char legend_max[4] = "60";
+                            char legend_min[2] = "0";
+                            if (graphRefreshRate < 100) {
+                                legend_max[0] = (char)('0' + (graphRefreshRate / 10));
+                                legend_max[1] = (char)('0' + (graphRefreshRate % 10));
+                                legend_max[2] = '\0';
+                            } else {
+                                legend_max[0] = (char)('0' + (graphRefreshRate / 100));
+                                legend_max[1] = (char)('0' + ((graphRefreshRate / 10) % 10));
+                                legend_max[2] = (char)('0' + (graphRefreshRate % 10));
+                                legend_max[3] = '\0';
+                            }
+                            const int legendFontSize = (int)lround(10 * displayScale);
+                            // max label: gx + 0  (rect_x - rect_x_native == 0)
+                            renderer->drawString(&legend_max[0], false,
+                                gx,
+                                gTopY + rect_y_s + (int)lround(7 * displayScale),
+                                legendFontSize, graphSettings.maxFPSTextColor);
+                            // min label: gx + rect_x - 10  (10px left of plot left edge)
+                            renderer->drawString(&legend_min[0], false,
+                                gx + rect_x_s - (int)lround(10 * displayScale),
+                                gTopY + rect_y_s + rect_h + (int)lround(3 * displayScale),
+                                legendFontSize, graphSettings.minFPSTextColor);
+                        }
+
+                        // FPS average text centred inside the plot
+                        if (graphFpsAvg_c[0]) {
+                            const int avgFontSize = (int)lround(
+                                ((graphRefreshRate > 60 || !graphRefreshRate) ? 63 : (int)(63.0f / (60.0f / graphRefreshRate)))
+                                * displayScale);
+                            const auto avgDim = renderer->getTextDimensions(graphFpsAvg_c, false, avgFontSize);
+                            const int avg_px = gx + rect_x_s + ((rect_w - (int)avgDim.first) / 2);
+                            const int avg_py = gTopY + rect_y_s + (rect_h / 2) + (avgFontSize / 2) - (int)lround(5 * displayScale);
+                            renderer->drawString(graphFpsAvg_c, false, avg_px, avg_py, avgFontSize, graphSettings.fpsColor);
+                        }
+
+                        // Draw the line graph
+                        // Original: drawLine(final_base_x + x + offset + 1, ...)
+                        //   rightmost x = x_end = rect_x + rect_w  ->  draws at rect_x + rect_w + offset + 1
+                        //   border inner-right = rect_x + rect_w + 2  (one px of margin to spare)
+                        {
+                            const size_t nReadings = graphReadings.size();
+                            s16 y_old_local = rect_y_s + rect_h;
+                            bool isAboveLocal = false;
+
+                            for (s16 xi = x_end; xi > (s16)(x_end - (s16)nReadings); xi--) {
+                                const size_t idx = nReadings - 1 - (size_t)(x_end - xi);
+                                s32 y_on_range = graphReadings[idx].value + 1;
+                                if (y_on_range < 0)             y_on_range = 0;
+                                else if (y_on_range > range) { isAboveLocal = true; y_on_range = range; }
+
+                                const s16 y = rect_y_s + (s16)std::lround(
+                                    (float)rect_h * ((float)(range - y_on_range) / (float)range));
+
+                                tsl::Color lineColor = graphSettings.mainLineColor;
+                                if (y == y_old_local && !isAboveLocal && graphReadings[idx].zero_rounded) {
+                                    if (y == y_30_line || y == rect_y_s)
+                                        lineColor = graphSettings.perfectLineColor;
+                                    else
+                                        lineColor = graphSettings.roundedLineColor;
+                                }
+
+                                // First (rightmost) column: snap y_old to y so the seed value
+                                // (plot floor) doesn't draw a full-height vertical line down the
+                                // right edge. Mirrors FPS_Graph.hpp's `if (x == x_end) y_old = y;`.
+                                if (xi == x_end)
+                                    y_old_local = y;
+
+                                renderer->drawLine(
+                                    gx + xi + lineOffset + 1, gTopY + y,
+                                    gx + xi + lineOffset + 1, gTopY + y_old_local,
+                                    lineColor);
+
+                                isAboveLocal = false;
+                                y_old_local  = y;
+                            }
+                        }
+
+                        // currentY advance: graph row is graphRowHeightPx tall, not fontsize.
+                        currentY += graphRowHeightPx + (int)settings.spacing;
+                        ++labelIndex;
+                        continue; // skip the normal advance at end of loop
+                    } else if (curLabel == "CPU") {
                         // CPU may have a DIVIDER_SYMBOL suffix (volt inline): split at it so the
                         // divider still gets separatorColor while '#' padding gets transparent.
                         const std::string line = currentLine;
@@ -4360,6 +4595,49 @@ public:
                 else
                     snprintf(Temp_s, sizeof(Temp_s), "%2.1f [%2.1f - %2.1f]", FPSavg, FPSmin, FPSmax);
                 strcat(Temp, Temp_s);
+
+                // ── Graph readings update ──────────────────────────────────────
+                // Always maintain the ring-buffer regardless of showFpsGraph so
+                // toggling the setting doesn't produce a stale/empty graph.
+                if (settings.showFpsGraph) {
+                    // Update refreshRate from SaltySD shared memory
+                    const uint8_t srr = *(uint8_t*)((uintptr_t)shmemGetAddr(&_sharedmemory) + 1);
+                    if (srr) graphRefreshRate = srr;
+                    else     graphRefreshRate = 60;
+
+                    // Format avg string for graph overlay. This is the FPS graph's own number,
+                    // so it follows the FPS graph's integer setting (graphSettings.useIntegerFPS,
+                    // from the [fps-graph] config) to match the standalone graph -- NOT Mini's
+                    // settings.useIntegerFPS, which governs the plain "FPS" data row instead.
+                    if (FPSavg < 254.0f) {
+                        if (graphSettings.useIntegerFPS)
+                            snprintf(graphFpsAvg_c, sizeof(graphFpsAvg_c), "%d", (int)round(FPSavg));
+                        else
+                            snprintf(graphFpsAvg_c, sizeof(graphFpsAvg_c), "%.1f", FPSavg);
+
+                        // Push a new reading only when a new frame has been reported
+                        if (graphLastFrame != lastFrameNumber) {
+                            graphLastFrame = lastFrameNumber;
+                            const int maxWidth = (int)lround(180 * displayScale);
+                            if ((s16)graphReadings.size() >= maxWidth)
+                                graphReadings.erase(graphReadings.begin());
+                            GraphStats gs;
+                            gs.value = (s16)std::lround(FPSavg);
+                            const float whole = std::round(FPSavg);
+                            gs.zero_rounded = (FPSavg >= whole - 0.05f && FPSavg <= whole + 0.04f);
+                            graphReadings.push_back(gs);
+                        }
+                    } else {
+                        if (!graphReadings.empty()) {
+                            graphReadings.clear();
+                            graphReadings.shrink_to_fit();
+                            graphLastFrame = 0;
+                        }
+                        graphFpsAvg_c[0] = '\0';
+                    }
+                }
+                // ──────────────────────────────────────────────────────────────
+
                 flags |= 64;
             }
             else if (key == "RES" && !(flags & 128) && GameRunning && m_resolutionOutput[0].width) {

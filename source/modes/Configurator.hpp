@@ -738,6 +738,7 @@ public:
 
             list->addItem(new tsl::elm::CategoryHeader("FPS"));
             addToggle(list, "Integer FPS", "integer_fps", true);
+            addToggle(list, "Use FPS Graph", "use_fps_graph", false);
 
             list->addItem(new tsl::elm::CategoryHeader("BAT"));
             addToggle(list, "Invert Battery Display", "invert_battery_display", true);
@@ -1133,7 +1134,7 @@ public:
     MiniHPaddingConfig() : MiniPaddingConfigBase("horizontal_padding", "Horizontal Padding", "Horizontal Padding") {}
 };
 
-class MiniVPaddingConfig : public MiniPaddingConfigBase<30, 2, 30, 1> {
+class MiniVPaddingConfig : public MiniPaddingConfigBase<30, 2, 60, 1> {
 public:
     MiniVPaddingConfig() : MiniPaddingConfigBase("vertical_padding", "Vertical Padding", "Vertical Padding") {}
 };
@@ -1749,7 +1750,7 @@ private:
 
     int getCurrentMiniVPadding() const {
         const std::string value = ult::parseValueFromIniSection(configIniPath, "mini", "vertical_padding");
-        return value.empty() ? 30 : std::clamp(atoi(value.c_str()), 2, 30);
+        return value.empty() ? 30 : std::clamp(atoi(value.c_str()), 2, 60);
     }
 
     int getCurrentMiniSpacing() const {
