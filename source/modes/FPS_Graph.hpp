@@ -386,7 +386,7 @@ public:
             if (FPSavg != 254.0)
                 renderer->drawString(FPSavg_c, false, pos_x, pos_y-5, size, settings.fpsColor);
             renderer->drawEmptyRect(final_base_x+(rectangle_x - 1)+2, final_base_y+(rectangle_y - 1), rectangle_width + 2, rectangle_height + 4, aWithOpacity(settings.borderColor));
-            renderer->drawDashedLine(final_base_x+rectangle_x+2, final_base_y+y_30FPS, final_base_x+rectangle_x+rectangle_width, final_base_y+y_30FPS, 6, aWithOpacity(settings.dashedLineColor));
+            renderer->drawDashedLine(final_base_x+rectangle_x+2, final_base_y+y_30FPS, final_base_x+rectangle_x+rectangle_width+1, final_base_y+y_30FPS, 6, aWithOpacity(settings.dashedLineColor));
             renderer->drawString(&legend_max[0], false, final_base_x+(rectangle_x-((refreshRate < 100) ? 15 : 22)), final_base_y+(rectangle_y+7), 10, (settings.maxFPSTextColor));
             renderer->drawString(&legend_min[0], false, final_base_x+(rectangle_x-10), final_base_y+(rectangle_y+rectangle_height+3), 10, settings.minFPSTextColor);
 
@@ -413,14 +413,17 @@ public:
                     if ((y == y_30FPS || y == y_60FPS))
                         color = (settings.perfectLineColor);
                     else
-                        color = (settings.dashedLineColor);
+                        color = (settings.roundedLineColor);
                 }
 
                 if (x == x_end) {
                     y_old = y;
                 }
 
-                renderer->drawLine(final_base_x+x+offset, final_base_y+y, final_base_x+x+offset, final_base_y+y_old, color);
+                // +1 keeps every column strictly inside the border: without it the
+                // first column lands on the left border pixel (overlap) and the last
+                // column stops one pixel short of the right border (gap).
+                renderer->drawLine(final_base_x+x+offset+1, final_base_y+y, final_base_x+x+offset+1, final_base_y+y_old, color);
                 isAbove = false;
                 y_old = y;
                 last_element--;

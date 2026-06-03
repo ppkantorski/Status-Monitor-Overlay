@@ -9,6 +9,13 @@
 //static tsl::elm::HeaderOverlayFrame* rootFrame = nullptr;
 static bool skipMain = false;
 static std::string lastSelectedItem;
+// Sticky "direct session" flag. True when this Status Monitor process is part of a
+// direct/combo flow: i.e. launched into a mode via combo, or relaunched into the menu
+// via the combo-return (--direct + --lastSelectedItem). When true, choosing a mode from
+// the menu launches it in direct mode too, so the whole flow stays direct and pressing
+// back keeps unwinding toward ovlmenu. A normal ovlmenu-open of Status Monitor (no
+// --lastSelectedItem) is NOT a direct session even though ovlmenu passes --direct.
+inline bool directSession = false;
 inline std::string originalLaunchArgs; // flattened argv[1..] minus --silentLaunch; used by Mini for silent dock-transition relaunch
 
 #include "modes/FPS_Counter.hpp"
@@ -234,7 +241,10 @@ public:
             Mini->disableClickAnimation();
             Mini->setClickListener([](uint64_t keys) {
                 if (keys & KEY_A) {
-                    tsl::setNextOverlay(filepath, "-mini");
+                    tsl::setNextOverlay(filepath, directSession ? "-mini --direct" : "-mini");
+                    // Launching a mode is not an exit: in a direct session suppress the
+                    // directMode close-time exit feedback (this marks the close as a launch).
+                    if (directSession) launchComboHasTriggered.store(true, std::memory_order_release);
                     tsl::Overlay::get()->close();
                     return true;
                 }
@@ -253,7 +263,8 @@ public:
             Micro->disableClickAnimation();
             Micro->setClickListener([](uint64_t keys) {
                 if (keys & KEY_A) {
-                    tsl::setNextOverlay(filepath, "-micro");
+                    tsl::setNextOverlay(filepath, directSession ? "-micro --direct" : "-micro");
+                    if (directSession) launchComboHasTriggered.store(true, std::memory_order_release);
                     tsl::Overlay::get()->close();
                     return true;
                 }
@@ -290,7 +301,8 @@ public:
                 //    return true;
                 //}
                 if (keys & KEY_A) {
-                    tsl::setNextOverlay(filepath, "-fps_graph");
+                    tsl::setNextOverlay(filepath, directSession ? "-fps_graph --direct" : "-fps_graph");
+                    if (directSession) launchComboHasTriggered.store(true, std::memory_order_release);
                     tsl::Overlay::get()->close();
                     return true;
                 }
@@ -316,7 +328,8 @@ public:
                 //    return true;
                 //}
                 if (keys & KEY_A) {
-                    tsl::setNextOverlay(filepath, "-fps_counter");
+                    tsl::setNextOverlay(filepath, directSession ? "-fps_counter --direct" : "-fps_counter");
+                    if (directSession) launchComboHasTriggered.store(true, std::memory_order_release);
                     tsl::Overlay::get()->close();
                     return true;
                 }
@@ -342,7 +355,8 @@ public:
                 //    return true;
                 //}
                 if (keys & KEY_A) {
-                    tsl::setNextOverlay(filepath, "-game_resolutions");
+                    tsl::setNextOverlay(filepath, directSession ? "-game_resolutions --direct" : "-game_resolutions");
+                    if (directSession) launchComboHasTriggered.store(true, std::memory_order_release);
                     tsl::Overlay::get()->close();
                     return true;
                 }
@@ -410,6 +424,23 @@ public:
         }
 
         if (keysDown & KEY_B) {
+            if (directSession) {
+                // This menu was reached through the direct/combo flow, so "back" should
+                // continue unwinding to ovlmenu rather than just closing to the system.
+                // --comboReturnFrom positions ovlmenu's cursor on the SM row.
+                // --comboReturn is intentionally OMITTED: that flag tells ovlmenu "the
+                // overlay already played its own exit feedback, suppress yours." Here we
+                // want ovlmenu to play the exit feedback (SM suppresses its own teardown
+                // feedback via skipClosingExitFeedback), so we don't pass --comboReturn.
+                directSession = false;
+                ult::setIniFileValue(ult::ULTRAHAND_CONFIG_INI_PATH, ult::ULTRAHAND_PROJECT_NAME,
+                                     ult::IN_OVERLAY_STR, ult::TRUE_STR);
+                tsl::setNextOverlay(returnOverlayPath,
+                    "--direct --comboReturnFrom " + ult::getNameFromPath(filepath));
+                skipClosingExitFeedback = true; // suppress SM's own teardown double-click
+                tsl::Overlay::get()->close();
+                return true;
+            }
             tsl::goBack();
             return true;
         }
@@ -1225,6 +1256,11 @@ inline void setupMode(const std::string& modeType = "") {
 // This function gets called on startup to create a new Overlay object
 int main(int argc, char **argv) {
 
+    // Opt into returning to Status Monitor's OWN main menu (cursor on the mode's row)
+    // when a mode's launch combo is pressed again while that mode is active, instead of
+    // returning to ovlmenu. Must be set before tsl::loop starts the combo poller thread.
+    comboReturnToSelfMenu.store(true, std::memory_order_release);
+
     // load heap settings outside of loop (only Status Monitor directive)
     ult::currentHeapSize = ult::getCurrentHeapSize();
     ult::expandedMemory = ult::currentHeapSize >= ult::OverlayHeapSize::Size_8MB;
@@ -1309,9 +1345,16 @@ int main(int argc, char **argv) {
         // Pre-scan for --direct: present means launched via combo/direct, absent means UI-initiated.
         // This replaces the old trailing-underscore convention (e.g. "-mini_" vs "-mini").
         bool directLaunch = false;
+        bool hasLastSelected = false;
         for (u8 arg = 1; arg < argc; arg++) {
-            if (strcmp(argv[arg], "--direct") == 0) { directLaunch = true; break; }
+            if (strcmp(argv[arg], "--direct") == 0)           directLaunch = true;
+            else if (strcmp(argv[arg], "--lastSelectedItem") == 0) hasLastSelected = true;
         }
+        // Direct session = combo-return into the menu (--direct + --lastSelectedItem) OR a
+        // direct/combo launch straight into a mode (--direct with a -mode arg, set below).
+        // A plain ovlmenu open of Status Monitor has --direct but no --lastSelectedItem, so
+        // it stays a normal session.
+        directSession = directLaunch && hasLastSelected;
 
         // Process command line arguments
         for (u8 arg = 0; arg < argc; arg++) {
