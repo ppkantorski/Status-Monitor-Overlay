@@ -2658,9 +2658,11 @@ public:
                     };
 
                     int currentX = baseX;
-                    renderer->drawStringWithColoredSections(currentLine, false, specialChars,
-                        currentX, cpuCenterY, fontsize, settings.textColor, settings.separatorColor);
-                    currentX += (int)renderer->getTextDimensions(currentLine, false, fontsize).first;
+                    // currentLine is MINI_CPU_compressed_c: may contain B sentinel characters inside
+                    // [] when a core percentage is single-digit (e.g. "[B1% 24% ...]@freq").
+                    // Use drawBracketAware so those sentinels are rendered fully transparent,
+                    // matching the generic CPU label path and how Micro handles this case.
+                    currentX += drawBracketAware(currentLine, currentX, cpuCenterY);
                     cpuSplitVoltColX = currentX;
                     if (settings.showLabels) {
                         const std::string cpuLbl = "CPU";
