@@ -1365,7 +1365,10 @@ static constexpr PowerDomainId domains[] = {
 
 // Stuff that doesn't need multithreading
 void Misc(void*) {
-    const uint64_t timeout_ns = TeslaFPS < 10 ? (1'000'000'000 / TeslaFPS) : 100'000'000;
+    // Use the same interval as CheckCore/FPSCounter so temps/GPU/RAM data
+    // updates at the overlay refresh rate rather than the old hardcapped 10 Hz.
+    // At very low frame rates (< 10 fps) the original safety floor still applies.
+    const uint64_t timeout_ns = 1'000'000'000ULL / TeslaFPS;
     const bool isUsingEOSorHOC = g_isUsingEOSorHOC;  // cached at init — no IPC cost
     
     // Initialize voltage reading if needed
@@ -1963,7 +1966,7 @@ void Misc3(void*) {
         
         mutexUnlock(&mutex_Misc);
         
-    } while (!leventWait(&threadexit, 1'000'000'000)); // 1 second timeout
+    } while (!leventWait(&threadexit, 1'000'000'000ULL / TeslaFPS)); // rate-follow TeslaFPS like Misc/CheckCore
     
     // Cleanup voltage reading if initialized
     if (canReadVoltages) {
@@ -2496,6 +2499,7 @@ struct FullSettings {
 
 struct MiniSettings {
     uint8_t refreshRate;
+    uint8_t sampleRate;  // how often sensor values are re-polled; always <= refreshRate
     bool realFrequencies;
     bool realVolts;
     bool showLabels;
@@ -2658,6 +2662,7 @@ struct FpsCounterSettings {
 struct FpsGraphSettings {
     bool showInfo;
     uint8_t refreshRate;
+    uint8_t sampleRate;  // how often info/values are re-polled; always <= refreshRate
     uint16_t backgroundColor;
     uint16_t focusBackgroundColor;
     uint16_t fpsColor;
@@ -2755,7 +2760,7 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
     settings->showStackedBAT = false;
     settings->showStackedDTC = false;
     settings->refreshRate = 3;
-    settings->disableScreenshots = false;
+    settings->sampleRate = 3;  // default matches refreshRate
     //settings->setPos = 0;
     settings->frameOffsetX = 0;
     settings->frameOffsetY = 0;
@@ -2791,6 +2796,14 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
         settings->refreshRate = std::clamp(atol(it->second.c_str()), 1L, 60L);
     }
     
+
+    // Process sample_rate: how often sensor values are re-polled; always <= refreshRate
+    it = section.find("sample_rate");
+    if (it != section.end()) {
+        settings->sampleRate = std::clamp(atol(it->second.c_str()), 1L, (long)settings->refreshRate);
+    } else {
+        settings->sampleRate = settings->refreshRate;
+    }
     // Process boolean flags
     it = section.find("real_freqs");
     if (it != section.end()) {
@@ -3904,6 +3917,7 @@ ALWAYS_INLINE void GetConfigSettings(FpsGraphSettings* settings) {
     convertStrToRGBA4444("#2DFF", &(settings->catColor));
 
     settings->refreshRate = 5;
+    settings->sampleRate = settings->refreshRate;  // <= refreshRate; overridden below
     settings->useDynamicColors = true;
     settings->useIntegerFPS = true;
     settings->disableScreenshots = false;
@@ -3967,6 +3981,16 @@ ALWAYS_INLINE void GetConfigSettings(FpsGraphSettings* settings) {
         convertToUpper(key);
         settings->showInfo = (key == "TRUE");
     }
+
+    it = section.find("refresh_rate");
+    if (it != section.end())
+        settings->refreshRate = (uint8_t)std::clamp(atol(it->second.c_str()), 1L, 60L);
+
+    // sample_rate: how often the info/value text is re-polled; always <= refreshRate.
+    settings->sampleRate = settings->refreshRate;
+    it = section.find("sample_rate");
+    if (it != section.end())
+        settings->sampleRate = (uint8_t)std::clamp(atol(it->second.c_str()), 1L, (long)settings->refreshRate);
 
     it = section.find("use_dynamic_colors");
     if (it != section.end()) {

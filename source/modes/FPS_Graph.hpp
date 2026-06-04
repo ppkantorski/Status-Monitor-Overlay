@@ -78,6 +78,7 @@ public:
         }
         deactivateOriginalFooter = true;
         mutexInit(&mutex_Misc);
+        mutexInit(&readings_mutex);
         StartInfoThread();
         StartFPSCounterThread();
 
@@ -265,10 +266,10 @@ public:
     char legend_min[2] = "0";
     s32 range = std::abs(rectangle_range_max - rectangle_range_min) + 1;
     s16 x_end = rectangle_x + rectangle_width;
-    s16 y_old = rectangle_y+rectangle_height;
     s16 y_30FPS = rectangle_y+(rectangle_height / 2);
     s16 y_60FPS = rectangle_y;
-    bool isAbove = false;
+
+    Mutex readings_mutex;  // guards 'readings' (per-frame push in update() and the draw loop)
 
     virtual tsl::elm::Element* createUI() override {
 
@@ -388,44 +389,47 @@ public:
             renderer->drawString(&legend_max[0], false, final_base_x+(rectangle_x-((refreshRate < 100) ? 15 : 22)), final_base_y+(rectangle_y+7), 10, (settings.maxFPSTextColor));
             renderer->drawString(&legend_min[0], false, final_base_x+(rectangle_x-10), final_base_y+(rectangle_y+rectangle_height+3), 10, settings.minFPSTextColor);
 
-            size_t last_element = readings.size() - 1;
+            mutexLock(&readings_mutex);
+            const size_t nReadings = readings.size();
+            // y_old_local is a stack variable reset each draw call -- no cross-frame
+            // contamination from stale state when a new sample is pushed mid-frame.
+            s16 y_old_local = rectangle_y + rectangle_height;
+            bool isAboveLocal = false;
 
             s16 offset = 0;
             if (refreshRate >= 100) offset = 7;
 
-            static s32 y_on_range;
-            static tsl::Color color = {0};
-            for (s16 x = x_end; x > static_cast<s16>(x_end-readings.size()); x--) {
-                y_on_range = readings[last_element].value + std::abs(rectangle_range_min) + 1;
+            for (s16 x = x_end; x > static_cast<s16>(x_end - (s16)nReadings); x--) {
+                const size_t idx = nReadings - 1 - (size_t)(x_end - x);
+                s32 y_on_range = readings[idx].value + std::abs(rectangle_range_min) + 1;
                 if (y_on_range < 0) {
                     y_on_range = 0;
+                } else if (y_on_range > range) {
+                    isAboveLocal = true;
+                    y_on_range = range;
                 }
-                else if (y_on_range > range) {
-                    isAbove = true;
-                    y_on_range = range; 
-                }
-                
-                const s16 y = rectangle_y + static_cast<s16>(std::lround((float)rectangle_height * ((float)(range - y_on_range) / (float)range)));
-                color = (settings.mainLineColor);
-                if (y == y_old && !isAbove && readings[last_element].zero_rounded) {
-                    if ((y == y_30FPS || y == y_60FPS))
-                        color = (settings.perfectLineColor);
+
+                const s16 y = rectangle_y + static_cast<s16>(std::lround(
+                    (float)rectangle_height * ((float)(range - y_on_range) / (float)range)));
+                tsl::Color color = settings.mainLineColor;
+                if (y == y_old_local && !isAboveLocal && readings[idx].zero_rounded) {
+                    if (y == y_30FPS || y == y_60FPS)
+                        color = settings.perfectLineColor;
                     else
-                        color = (settings.roundedLineColor);
+                        color = settings.roundedLineColor;
                 }
 
-                if (x == x_end) {
-                    y_old = y;
-                }
+                // Snap y_old_local on the rightmost column so the first segment
+                // is zero-length (a point), not a vertical line to the plot floor.
+                if (x == x_end)
+                    y_old_local = y;
 
-                // +1 keeps every column strictly inside the border: without it the
-                // first column lands on the left border pixel (overlap) and the last
-                // column stops one pixel short of the right border (gap).
-                renderer->drawLine(final_base_x+x+offset+1, final_base_y+y, final_base_x+x+offset+1, final_base_y+y_old, color);
-                isAbove = false;
-                y_old = y;
-                last_element--;
+                renderer->drawLine(final_base_x+x+offset+1, final_base_y+y,
+                                   final_base_x+x+offset+1, final_base_y+y_old_local, color);
+                isAboveLocal = false;
+                y_old_local = y;
             }
+            mutexUnlock(&readings_mutex);
 
             // FPS counter drawn last so it sits on top of the graph lines and dashed line.
             if (FPSavg != 254.0)
@@ -487,102 +491,100 @@ public:
     }
 
     virtual void update() override {
-        cnt++;
-        if (cnt >= TeslaFPS)
-            cnt = 0;
-
-        ///FPS
-        stats temp = {0, false};
-        static uint64_t lastFrame = 0;
-
         const u64 _nowTick = armGetSystemTick();
-        const bool shouldUpdateData = (_nowTick - lastDataUpdateTick) >= (systemtickfrequency / settings.refreshRate);
-        if (shouldUpdateData) {
-            lastDataUpdateTick = _nowTick;
-        
-        if (settings.useIntegerFPS)
-            snprintf(FPSavg_c, sizeof FPSavg_c, "%d", (int)round(FPSavg));
-        else
-            snprintf(FPSavg_c, sizeof FPSavg_c, "%2.1f",  FPSavg);
-        const uint8_t SaltySharedDisplayRefreshRate = *(uint8_t*)((uintptr_t)shmemGetAddr(&_sharedmemory) + 1);
-        if (SaltySharedDisplayRefreshRate) 
-            refreshRate = SaltySharedDisplayRefreshRate;
-        else refreshRate = 60;
-        if (FPSavg < 254) {
-            if (settings.useIntegerFPS)
-                snprintf(FPSavg_c, sizeof(FPSavg_c), "%d", (int)round(useOldFPSavg ? FPSavg_old : FPSavg));
-            else
-                snprintf(FPSavg_c, sizeof(FPSavg_c), "%.1f", useOldFPSavg ? FPSavg_old : FPSavg);
 
-            if (lastFrame == lastFrameNumber) return;
-            else lastFrame = lastFrameNumber;
-            if ((s16)(readings.size()) >= rectangle_width) {
-                readings.erase(readings.begin());
-            }
-            const float whole = std::round(useOldFPSavg ? FPSavg_old : FPSavg);
-            temp.value = static_cast<s16>(std::lround(useOldFPSavg ? FPSavg_old : FPSavg));
-            if ((useOldFPSavg ? FPSavg_old : FPSavg) < whole+0.04 && (useOldFPSavg ? FPSavg_old : FPSavg) > whole-0.05) {
+        // --- Graph plot: advance one column EVERY frame ----------------------
+        // Tesla's frame limiter calls update() once per frame at TeslaFPS
+        // (== settings.refreshRate), so plotting one value per call scrolls the
+        // trace at the overlay refresh rate instead of in discrete sampler steps.
+        if (FPSavg < 254.0f) {
+            const float avg = useOldFPSavg ? FPSavg_old : FPSavg;
+            stats temp = {0, false};
+            temp.value = static_cast<s16>(std::lround(avg));
+            const float whole = std::round(avg);
+            if (avg >= whole - 0.05f && avg <= whole + 0.04f)
                 temp.zero_rounded = true;
-            }
+            mutexLock(&readings_mutex);
+            if ((s16)readings.size() >= rectangle_width)
+                readings.erase(readings.begin());
             readings.push_back(temp);
-        }
-        else {
-            if (readings.size()) {
+            mutexUnlock(&readings_mutex);
+        } else {
+            mutexLock(&readings_mutex);
+            if (!readings.empty()) {
                 readings.clear();
                 readings.shrink_to_fit();
-                lastFrame = 0;
             }
-            FPSavg_c[0] = 0;
+            mutexUnlock(&readings_mutex);
         }
 
-        } // end shouldUpdateData
+        // --- Info / value text: refresh at the SAMPLE rate (<= refresh rate) --
+        // settings.sampleRate governs how often the numeric readouts (FPS number,
+        // temps, CPU/GPU/RAM) are re-formatted. Decoupling this from the per-frame
+        // plot keeps fast-changing numbers from flickering and trims redundant work.
+        if ((_nowTick - lastDataUpdateTick) >= (systemtickfrequency / settings.sampleRate)) {
+            lastDataUpdateTick = _nowTick;
 
-        if (cnt)
-            return;
+            // Read display refresh rate from shared memory
+            const uint8_t SaltySharedDisplayRefreshRate = *(uint8_t*)((uintptr_t)shmemGetAddr(&_sharedmemory) + 1);
+            if (SaltySharedDisplayRefreshRate)
+                refreshRate = SaltySharedDisplayRefreshRate;
+            else refreshRate = 60;
 
-        mutexLock(&mutex_Misc);
-        
-        // Format temperature strings separately for proper alignment
-        snprintf(SOC_TEMP_c, sizeof SOC_TEMP_c, "%2.1f\u00B0C", SOC_temperatureF);
-        snprintf(PCB_TEMP_c, sizeof PCB_TEMP_c, "%2.1f\u00B0C", PCB_temperatureF);
-        snprintf(SKIN_TEMP_c, sizeof SKIN_TEMP_c, "%2d.%d\u00B0C", 
-                 skin_temperaturemiliC / 1000, (skin_temperaturemiliC / 100) % 10);
-        
-        // Atomically snapshot each idle tick once
-        const uint64_t idle0 = idletick0.load(std::memory_order_acquire);
-        const uint64_t idle1 = idletick1.load(std::memory_order_acquire);
-        const uint64_t idle2 = idletick2.load(std::memory_order_acquire);
-        const uint64_t idle3 = idletick3.load(std::memory_order_acquire);
-        
-        // Clamp values to systemtickfrequency_impl (avoid div-by-zero / runaway)
-        const uint64_t safe0 = std::min(idle0, systemtickfrequency_impl);
-        const uint64_t safe1 = std::min(idle1, systemtickfrequency_impl);
-        const uint64_t safe2 = std::min(idle2, systemtickfrequency_impl);
-        const uint64_t safe3 = std::min(idle3, systemtickfrequency_impl);
-        
-        // Compute per-core CPU usage
-        const double cpu_usage0 = (1.0 - (static_cast<double>(safe0) / systemtickfrequency_impl)) * 100.0;
-        const double cpu_usage1 = (1.0 - (static_cast<double>(safe1) / systemtickfrequency_impl)) * 100.0;
-        const double cpu_usage2 = (1.0 - (static_cast<double>(safe2) / systemtickfrequency_impl)) * 100.0;
-        const double cpu_usage3 = (1.0 - (static_cast<double>(safe3) / systemtickfrequency_impl)) * 100.0;
-        
-        // Compute max core load (the highest usage), clamped to [0, 100]
-        const double cpu_usageM = std::max(0.0, std::min(100.0,
-            std::max({cpu_usage0, cpu_usage1, cpu_usage2, cpu_usage3})));
+            // Format the FPS counter string
+            if (FPSavg < 254) {
+                if (settings.useIntegerFPS)
+                    snprintf(FPSavg_c, sizeof(FPSavg_c), "%d", (int)round(useOldFPSavg ? FPSavg_old : FPSavg));
+                else
+                    snprintf(FPSavg_c, sizeof(FPSavg_c), "%.1f", useOldFPSavg ? FPSavg_old : FPSavg);
+            } else {
+                FPSavg_c[0] = 0;
+            }
 
-        // Clamp GPU (tenths, 0–1000) and RAM (permille, 0–1000) before display
-        const uint32_t gpu_clamped = std::min(GPU_Load_u, (uint32_t)1000);
-        const uint32_t ram_clamped = std::min(ramLoad[SysClkRamLoad_All], (uint32_t)1000);
+            mutexLock(&mutex_Misc);
 
-        // Format output strings
-        snprintf(CPU_Load_c, sizeof(CPU_Load_c), "%.1f%%", cpu_usageM);
-        snprintf(GPU_Load_c, sizeof(GPU_Load_c), "%u.%u%%", gpu_clamped / 10, gpu_clamped % 10);
-        snprintf(RAM_Load_c, sizeof(RAM_Load_c), "%u.%u%%",
-                 ram_clamped / 10,
-                 ram_clamped % 10);
-        
-        mutexUnlock(&mutex_Misc);
-    
+            // Format temperature strings separately for proper alignment
+            snprintf(SOC_TEMP_c, sizeof SOC_TEMP_c, "%2.1f\u00B0C", SOC_temperatureF);
+            snprintf(PCB_TEMP_c, sizeof PCB_TEMP_c, "%2.1f\u00B0C", PCB_temperatureF);
+            snprintf(SKIN_TEMP_c, sizeof SKIN_TEMP_c, "%2d.%d\u00B0C",
+                     skin_temperaturemiliC / 1000, (skin_temperaturemiliC / 100) % 10);
+
+            // Atomically snapshot each idle tick once
+            const uint64_t idle0 = idletick0.load(std::memory_order_acquire);
+            const uint64_t idle1 = idletick1.load(std::memory_order_acquire);
+            const uint64_t idle2 = idletick2.load(std::memory_order_acquire);
+            const uint64_t idle3 = idletick3.load(std::memory_order_acquire);
+
+            // Clamp values to systemtickfrequency_impl (avoid div-by-zero / runaway)
+            const uint64_t safe0 = std::min(idle0, systemtickfrequency_impl);
+            const uint64_t safe1 = std::min(idle1, systemtickfrequency_impl);
+            const uint64_t safe2 = std::min(idle2, systemtickfrequency_impl);
+            const uint64_t safe3 = std::min(idle3, systemtickfrequency_impl);
+
+            // Compute per-core CPU usage
+            const double cpu_usage0 = (1.0 - (static_cast<double>(safe0) / systemtickfrequency_impl)) * 100.0;
+            const double cpu_usage1 = (1.0 - (static_cast<double>(safe1) / systemtickfrequency_impl)) * 100.0;
+            const double cpu_usage2 = (1.0 - (static_cast<double>(safe2) / systemtickfrequency_impl)) * 100.0;
+            const double cpu_usage3 = (1.0 - (static_cast<double>(safe3) / systemtickfrequency_impl)) * 100.0;
+
+            // Compute max core load (the highest usage), clamped to [0, 100]
+            const double cpu_usageM = std::max(0.0, std::min(100.0,
+                std::max({cpu_usage0, cpu_usage1, cpu_usage2, cpu_usage3})));
+
+            // Clamp GPU (tenths, 0-1000) and RAM (permille, 0-1000) before display
+            const uint32_t gpu_clamped = std::min(GPU_Load_u, (uint32_t)1000);
+            const uint32_t ram_clamped = std::min(ramLoad[SysClkRamLoad_All], (uint32_t)1000);
+
+            // Format output strings
+            snprintf(CPU_Load_c, sizeof(CPU_Load_c), "%.1f%%", cpu_usageM);
+            snprintf(GPU_Load_c, sizeof(GPU_Load_c), "%u.%u%%", gpu_clamped / 10, gpu_clamped % 10);
+            snprintf(RAM_Load_c, sizeof(RAM_Load_c), "%u.%u%%",
+                     ram_clamped / 10,
+                     ram_clamped % 10);
+
+            mutexUnlock(&mutex_Misc);
+        }
+
         if (!skipOnce) {
             if (runOnce) {
                 if (!(tsl::notification && tsl::notification->isActive())) {

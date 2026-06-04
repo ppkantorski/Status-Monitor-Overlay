@@ -37,6 +37,7 @@ static tsl::elm::ListItem* lastSelectedListItem;
 // Forward declarations
 class ConfiguratorOverlay;
 class RefreshRateConfig;
+class SampleRateConfig;
 class FontSizeConfig;
 class FontSizeSelector;
 class ColorConfig;
@@ -770,6 +771,65 @@ public:
         if (keysDown & KEY_B) {
             triggerExitFeedback();
             tsl::goBack();
+            return true;
+        }
+        return false;
+    }
+};
+
+// =============================================================================
+// Sample Rate Configuration (Mini / FPS Graph)
+// =============================================================================
+class SampleRateConfig : public tsl::Gui {
+private:
+    std::string modeName;
+    ModeFlags   flags;
+    int currentRate;
+    int maxRate;  // capped at the current refresh_rate
+
+public:
+    SampleRateConfig(const std::string& mode) : modeName(mode), flags(mode) {
+        const std::string section = modeToSection(mode);
+        const std::string rrVal = ult::parseValueFromIniSection(configIniPath, section, "refresh_rate");
+        const int defaultRate = (flags.isFPSCounter || flags.isFPSGraph) ? 5 : 3;
+        maxRate = rrVal.empty() ? defaultRate : std::clamp(atoi(rrVal.c_str()), 1, 60);
+        const std::string srVal = ult::parseValueFromIniSection(configIniPath, section, "sample_rate");
+        currentRate = srVal.empty() ? maxRate : std::clamp(atoi(srVal.c_str()), 1, maxRate);
+    }
+    ~SampleRateConfig() { lastSelectedListItem = nullptr; }
+
+    virtual tsl::elm::Element* createUI() override {
+        auto* list = new tsl::elm::List();
+        list->addItem(new tsl::elm::CategoryHeader("Sample Rate"));
+
+        const std::string section = modeToSection(modeName);
+        static const int rates[] = {1, 2, 3, 5, 10, 15, 30, 60};
+        for (int rate : rates) {
+            if (rate > maxRate) break;
+            auto* rateItem = new tsl::elm::MiniListItem(std::to_string(rate) + " Hz");
+            if (rate == currentRate)
+                selectItem(lastSelectedListItem, rateItem, ult::CHECKMARK_SYMBOL);
+            rateItem->setClickListener([this, rateItem, rate, section](uint64_t keys) {
+                if (keys & KEY_A) {
+                    ult::setIniFileValue(configIniPath, section, "sample_rate", std::to_string(rate));
+                    selectItem(lastSelectedListItem, rateItem, ult::CHECKMARK_SYMBOL);
+                    return true;
+                }
+                return false;
+            });
+            list->addItem(rateItem);
+        }
+
+        list->jumpToItem("", ult::CHECKMARK_SYMBOL, false);
+        return makeFrame(modeName + " " + std::string(ult::DIVIDER_SYMBOL) + " Configuration", list);
+    }
+
+    virtual bool handleInput(u64 keysDown, u64 keysHeld, const HidTouchState &touchPos,
+                             HidAnalogStickState joyStickPosLeft, HidAnalogStickState joyStickPosRight) override {
+        if (keysDown & KEY_B) {
+            triggerExitFeedback();
+            jumpItemName = "Sample Rate"; jumpItemValue = ""; jumpItemExactMatch = false;
+            tsl::swapTo<ConfiguratorOverlay>(SwapDepth(2), modeName);
             return true;
         }
         return false;
@@ -1707,6 +1767,15 @@ private:
         return value.empty() ? defaultRate : atoi(value.c_str());
     }
 
+    int getCurrentSampleRate() const {
+        const std::string section = modeToSection(modeName);
+        const std::string rrVal = ult::parseValueFromIniSection(configIniPath, section, "refresh_rate");
+        const int defaultRate = (flags.isFPSCounter || flags.isFPSGraph) ? 5 : 3;
+        const int maxRate = rrVal.empty() ? defaultRate : std::clamp(atoi(rrVal.c_str()), 1, 60);
+        const std::string srVal = ult::parseValueFromIniSection(configIniPath, section, "sample_rate");
+        return srVal.empty() ? maxRate : std::clamp(atoi(srVal.c_str()), 1, maxRate);
+    }
+
     int getCurrentFramePadding() const {
         const std::string section = modeToSection(modeName);
         if (section.empty()) return 10;
@@ -1905,6 +1974,17 @@ public:
                 return false;
             });
             list->addItem(fontSizes);
+        }
+
+        // Sample Rate (Mini / FPS Graph) — above Refresh Rate
+        if (flags.isMini || flags.isFPSGraph) {
+            auto* sampleRate = new tsl::elm::ListItem("Sample Rate");
+            sampleRate->setValue(std::to_string(getCurrentSampleRate()) + " Hz");
+            sampleRate->setClickListener([this](uint64_t keys) {
+                if (keys & KEY_A) { tsl::changeTo<SampleRateConfig>(modeName); return true; }
+                return false;
+            });
+            list->addItem(sampleRate);
         }
 
         // Refresh Rate (all modes)

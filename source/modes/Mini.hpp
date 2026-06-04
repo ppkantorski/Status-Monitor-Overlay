@@ -63,7 +63,6 @@ private:
     s16 graphY30 = 0;                // Y position of the 30-fps dashed line
     bool graphIsAbove = false;
     char graphFpsAvg_c[8] = "";      // formatted FPS average string for graph overlay text
-    uint64_t graphLastFrame = 0;     // last lastFrameNumber we consumed (dedup guard)
     // graphRowHeightPx: total height in framebuffer pixels of the FPS_GRAPH row,
     // computed once per layout recalc from graphRefreshRate and displayScale.
     int graphRowHeightPx = 0;
@@ -102,6 +101,9 @@ private:
 
     Thread touchPollThread;
     std::atomic<bool> touchPollRunning{false};
+
+    Thread graphSampleThread;
+    std::atomic<bool> graphSampleRunning{false};
     
     // Width (in pixels) of a single space glyph at the current font size. This is the
     // unit for Mini's space-based paddings (spacing / horizontal / vertical / corner),
@@ -516,12 +518,61 @@ public:
             }
         }, this, NULL, 0x1000, 0x2B, -2);
         threadStart(&touchPollThread);
+
+        // Graph sampling thread - runs at a fixed ~10 Hz so the FPS graph
+        // fills at a consistent real-time rate regardless of the overlay's
+        // display refresh rate setting. update() is called at TeslaFPS Hz,
+        // so at low refresh rates (e.g. 2 Hz) sampling inside update() would
+        // make the graph scroll 5x slower than at 10 Hz. Running the sampler
+        // in a dedicated thread decouples it entirely from the UI frame rate.
+        if (settings.showFpsGraph) {
+            graphSampleRunning.store(true, std::memory_order_release);
+            threadCreate(&graphSampleThread, [](void* arg) -> void {
+                MiniOverlay* ov = static_cast<MiniOverlay*>(arg);
+                // Sample interval: 30 seconds / maxWidth pixels = time per pixel.
+                // Recompute each iteration so it adapts if displayScale ever changes.
+                while (ov->graphSampleRunning.load(std::memory_order_acquire)) {
+
+                    svcSleepThread(100'000'000ULL); // 100ms = 10 Hz
+                    // Sleep gate
+                    if (tsl::hlp::waitWhileSleeping()) continue;
+                    
+                    if (!ov->graphSampleRunning.load(std::memory_order_acquire)) break;
+                    if (!GameRunning) {
+                        if (!ov->graphReadings.empty()) {
+                            ov->graphReadings.clear();
+                            ov->graphReadings.shrink_to_fit();
+                        }
+                        ov->graphFpsAvg_c[0] = '\0';
+                        continue;
+                    }
+                    const float avg = FPSavg;
+                    if (avg >= 254.0f) continue;
+                    const int maxWidth = (int)lround(180 * ov->displayScale);
+                    if ((int)ov->graphReadings.size() >= maxWidth)
+                        ov->graphReadings.erase(ov->graphReadings.begin());
+                    GraphStats gs;
+                    gs.value = (s16)std::lround(avg);
+                    const float whole = std::round(avg);
+                    gs.zero_rounded = (avg >= whole - 0.05f && avg <= whole + 0.04f);
+                    ov->graphReadings.push_back(gs);
+                }
+            }, this, NULL, 0x1000, 0x2B, -2);
+            threadStart(&graphSampleThread);
+        }
     }
+
     ~MiniOverlay() {
         // Stop touch polling thread
         touchPollRunning.store(false, std::memory_order_release);
         threadWaitForExit(&touchPollThread);
         threadClose(&touchPollThread);
+
+        // Stop graph sampling thread
+        if (graphSampleRunning.exchange(false, std::memory_order_acq_rel)) {
+            threadWaitForExit(&graphSampleThread);
+            threadClose(&graphSampleThread);
+        }
 
         CloseThreads();
         FullMode = true;
@@ -3943,12 +3994,12 @@ public:
             return std::find(showKeys.begin(), showKeys.end(), key) != showKeys.end();
         };
     
-        // Throttle data formatting to the user-specified refresh rate even when
+        // Throttle data formatting to the user-specified sample rate even when
         // the frame limiter is off (e.g. during drag/reposition).  The render
         // loop may call update() at vsync speed (~60 fps) while isDragging,
-        // but we only rebuild the display strings at 1/refreshRate intervals.
+        // but we only rebuild the display strings at 1/sampleRate intervals.
         const u64 nowTick = armGetSystemTick();
-        const u64 pollIntervalTicks = systemtickfrequency / settings.refreshRate;
+        const u64 pollIntervalTicks = systemtickfrequency / settings.sampleRate;
         const bool shouldUpdateData = (nowTick - lastDataUpdateTick) >= pollIntervalTicks;
         if (shouldUpdateData) lastDataUpdateTick = nowTick;
 
@@ -4696,24 +4747,12 @@ public:
                             snprintf(graphFpsAvg_c, sizeof(graphFpsAvg_c), "%d", (int)round(FPSavg));
                         else
                             snprintf(graphFpsAvg_c, sizeof(graphFpsAvg_c), "%.1f", FPSavg);
-
-                        // Push a new reading only when a new frame has been reported
-                        if (graphLastFrame != lastFrameNumber) {
-                            graphLastFrame = lastFrameNumber;
-                            const int maxWidth = (int)lround(180 * displayScale);
-                            if ((s16)graphReadings.size() >= maxWidth)
-                                graphReadings.erase(graphReadings.begin());
-                            GraphStats gs;
-                            gs.value = (s16)std::lround(FPSavg);
-                            const float whole = std::round(FPSavg);
-                            gs.zero_rounded = (FPSavg >= whole - 0.05f && FPSavg <= whole + 0.04f);
-                            graphReadings.push_back(gs);
-                        }
+                        // Ring-buffer is populated by graphSampleThread at 10 Hz,
+                        // independent of the overlay display refresh rate.
                     } else {
                         if (!graphReadings.empty()) {
                             graphReadings.clear();
                             graphReadings.shrink_to_fit();
-                            graphLastFrame = 0;
                         }
                         graphFpsAvg_c[0] = '\0';
                     }
