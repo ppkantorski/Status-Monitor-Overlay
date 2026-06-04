@@ -1460,8 +1460,37 @@ public:
                     // cachedHeight formula already budgets fontsize px for this row;
                     // add the difference to account for the real height.
                     if (settings.showFpsGraph && hasKey("FPS") && FPSavg != 254.0f) {
-                        graphRowHeightPx = (int)lround((graphRefreshRate + 12) * displayScale);
-                        const int extraH = graphRowHeightPx - (int)fontsize;
+                        // Treat the FPS graph as a single line whose height IS the border box:
+                        // its top edge pixel is the line's top, its bottom edge pixel the line's
+                        // bottom. The box is drawn as drawEmptyRect(.., rect_h + 4) tall, with
+                        //   rect_h = round(refreshRate * displayScale)   (matches the draw section)
+                        // so the line/slot height is rect_h + 4. Substituting that for the usual
+                        // fontsize slot lets the normal padding/spacing logic place the box exactly
+                        // like any other line — no manual gaps.
+                        const int rectH  = (int)lround(graphRefreshRate * displayScale);
+                        graphRowHeightPx = rectH + 4;                       // box top..bottom edge, px
+
+                        // The closed-form cachedHeight uses fontsize slots for interior rows and
+                        // firstRowExtent for the last row.  The "slot" for the FPS graph must carry
+                        // the same trailing slack that every text slot does (fontsize - firstRowExtent)
+                        // so the gap below the box matches the gap above it and every other row gap.
+                        // That means the graph's effective slot height = graphRowHeightPx + slack
+                        //   = graphRowHeightPx + (fontsize - firstRowExtent).
+                        //
+                        //   • non-last: replaces a fontsize slot
+                        //               -> extra = (boxH + slack) - fontsize = boxH - firstRowExtent
+                        //   • last:     replaces the firstRowExtent term at the end of the formula
+                        //               -> extra = (boxH + slack) - (fontsize + firstRowExtent... 
+                        //               Wait — last row: base formula ends with firstRowExtent (no
+                        //               spacing after it).  The graph's last-row contribution is
+                        //               graphRowHeightPx (box fills its own extent with no slack
+                        //               stripped off, because bottomPadding goes right after the box).
+                        //               -> extra = boxH - firstRowExtent
+                        //
+                        // Both cases reduce to the same expression.
+                        const bool graphIsLastRow = !labelLines.empty() && labelLines.back() == "FPS_GRAPH";
+                        (void)graphIsLastRow; // both branches are identical; kept for clarity
+                        const int  extraH = graphRowHeightPx - firstRowExtent;
                         if (extraH > 0)
                             cachedHeight += extraH;
                     }
@@ -3494,9 +3523,10 @@ public:
                         //          border inner-right   ->  rect_x + 1 + rect_w + 2 - 1 = rect_x + rect_w + 2
                         //          so the rightmost line pixel sits just inside the border right edge.
                         //
-                        // gx/gTopY: top-left of the graph content area (= baseX, row visual top)
+                        // gx: left of the graph content area (= baseX).
+                        // gSlotTop: the row's slot top — where a normal line's top pixel sits.
                         //
-                        const int gTopY = (int)currentY + (int)drawY - cachedBaselineOffset + clippingOffsetY;
+                        const int gSlotTop = (int)currentY + (int)drawY - cachedBaselineOffset + clippingOffsetY;
                         const int gx    = baseX;
 
                         // rect_x_native: 15 for <100 Hz (2-digit label), 22 for >=100 Hz (3-digit label)
@@ -3505,6 +3535,12 @@ public:
                         const s16 rect_w   = (s16)lround(180 * displayScale);
                         const s16 rect_h   = (s16)lround(graphRefreshRate * displayScale);
                         const s16 rect_y_s = (s16)lround(5 * displayScale);
+                        // Anchor the border box's TOP EDGE pixel on the slot top, so the FPS section's
+                        // start IS the box top edge (and its end the box bottom edge). The box is drawn
+                        // at gTopY + rect_y_s - 1, so choose gTopY to land that on gSlotTop. The box's
+                        // shape and size are unchanged — the whole assembly just shifts up by
+                        // (rect_y_s - 1) so its top edge coincides with where the line begins.
+                        const int gTopY = gSlotTop - (rect_y_s - 1);
                         const s16 x_end    = rect_x_s + rect_w;
                         // No horizontal line offset: the plot data must stay strictly inside the
                         // border. Standalone FPS_Graph adds +7 for >=100 Hz, which shifts the
@@ -3593,9 +3629,32 @@ public:
                                 gTopY + rect_y_s + (int)lround(7 * displayScale),
                                 legendFontSize, graphSettings.maxFPSTextColor);
                             // min label: gx + rect_x - 10  (10px left of plot left edge)
+                            // Bottom-align "0" with the border's bottom edge instead of a hand-tuned
+                            // per-scale fudge, deriving the baseline from how renderGlyph actually
+                            // rasterizes the glyph:
+                            //   drawString's Y is the BASELINE. renderGlyph computes the bitmap top as
+                            //   yPos = baseline + bounds[1] (bounds[1] = iy0, negative → above baseline)
+                            //   and blits rows [yPos .. yPos + height - 1]. So the glyph's BOTTOM-MOST
+                            //   pixel row is at  baseline + bounds[1] + height - 1.
+                            //   For a non-descending glyph like '0', bounds[1] + height - 1 == -1
+                            //   (stb leaves the baseline row itself empty; the bottom pixel sits one
+                            //   row above the baseline) — NOT bounds[3], which is the geometric box
+                            //   bottom and would leave the digit ~1px high.
+                            // The border comes from drawEmptyRect(.., gTopY + rect_y_s - 1, .., rect_h + 4),
+                            // and drawEmptyRect's bottom edge pixel is y + h - 1 = gTopY + rect_y_s + rect_h + 2.
+                            // Solving baseline + (bounds[1] + height - 1) == borderBottomY lands the
+                            // digit's bottom pixel exactly on the border's bottom row at any displayScale.
+                            const int  borderBottomY = gTopY + rect_y_s + rect_h + 2;
+                            const auto glyph0 = tsl::gfx::FontManager::getOrCreateGlyph('0', false, legendFontSize);
+                            // Offset (px) from baseline to the glyph's bottom-most rendered row.
+                            // Fallback -1 matches a non-descending glyph until the cache is warm
+                            // (the legend is drawn every frame, so this is at most a one-frame value).
+                            const int  zeroBottomFromBaseline = (glyph0 && glyph0->height > 0)
+                                ? (glyph0->bounds[1] + glyph0->height - 2)
+                                : -2;
                             renderer->drawString(&legend_min[0], false,
                                 gx + rect_x_s - (int)lround(10 * displayScale),
-                                gTopY + rect_y_s + rect_h + (int)lround(3 * displayScale),
+                                borderBottomY - zeroBottomFromBaseline,
                                 legendFontSize, graphSettings.minFPSTextColor);
                         }
 
@@ -3652,8 +3711,17 @@ public:
                             }
                         }
 
-                        // currentY advance: graph row is graphRowHeightPx tall, not fontsize.
-                        currentY += graphRowHeightPx + (int)settings.spacing;
+                        // currentY advance: advance by the box height PLUS the same slack that every
+                        // text row carries below its glyph (fontsize - firstRowExtent = fontsize -
+                        // cachedBaselineOffset - cachedDescentAbs).  Text rows advance by fontsize +
+                        // spacing; a glyph only fills firstRowExtent of that fontsize, leaving
+                        // (fontsize - firstRowExtent) px of empty space below it before the next
+                        // slot.  Without that slack the gap below the FPS box would be just `spacing`
+                        // while the gap above is `spacing + slack` — producing the asymmetry.  Adding
+                        // the same slack here makes both gaps equal (fontsize - firstRowExtent) +
+                        // spacing, identical to every text-to-text gap.
+                        const int textSlack = (int)fontsize - cachedBaselineOffset - cachedDescentAbs;
+                        currentY += graphRowHeightPx + (textSlack > 0 ? textSlack : 0) + (int)settings.spacing;
                         ++labelIndex;
                         continue; // skip the normal advance at end of loop
                     } else if (curLabel == "CPU") {
