@@ -1132,7 +1132,7 @@ void CheckIfGameRunning(void*) {
             }
         }
         mutexUnlock(&mutex_Misc);
-    } while (!leventWait(&threadexit, 1'000'000'000));
+    } while (!leventWait(&threadexit, 1'000'000'000ULL));
 }
 
 // Utils.hpp or your relevant header
@@ -2115,8 +2115,14 @@ void CloseThreads() {
 
 //Separate functions dedicated to "FPS Counter" mode
 void FPSCounter(void*) {
-    const uint64_t timeout_ns = 1'000'000'000 / TeslaFPS;
+    const uint64_t timeout_ns = 1'000'000'000ULL / TeslaFPS;
     do {
+        // Halt during sleep — NxFps shared memory is owned by the suspended
+        // game process; reads during sleep produce stale/garbage tick deltas.
+        if (tsl::hlp::waitWhileSleeping(timeout_ns)) {
+            if (!leventWait(&threadexit, 0)) continue; // still running
+            return; // threadexit signalled while sleeping
+        }
         if (GameRunning) {
             if (SharedMemoryUsed && NxFps) {
                 FPS = (NxFps -> FPS);

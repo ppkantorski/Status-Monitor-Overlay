@@ -36,6 +36,9 @@ private:
     Thread touchPollThread;
     std::atomic<bool> touchPollRunning{false};
 
+    Thread graphSampleThread;
+    std::atomic<bool> graphSampleRunning{false};
+
     // Store actual rendered dimensions (including border)
     size_t actualTotalWidth = 0;
     size_t actualTotalHeight = 0;
@@ -226,6 +229,40 @@ public:
             }
         }, this, NULL, 0x1000, 0x2B, -2);
         threadStart(&touchPollThread);
+
+        // Graph sampler thread: fixed 10 Hz (100 ms), capped at 180 samples.
+        // Mirrors the Mini embedded graph sampler so the time window is always
+        // 18 seconds regardless of the overlay refresh rate setting.
+        graphSampleRunning.store(true, std::memory_order_release);
+        threadCreate(&graphSampleThread, [](void* arg) -> void {
+            com_FPSGraph* ov = static_cast<com_FPSGraph*>(arg);
+            while (ov->graphSampleRunning.load(std::memory_order_acquire)) {
+                svcSleepThread(100'000'000ULL); // 100 ms = 10 Hz
+                if (tsl::hlp::waitWhileSleeping()) continue;
+                if (!ov->graphSampleRunning.load(std::memory_order_acquire)) break;
+                const float avg = useOldFPSavg ? FPSavg_old : FPSavg;
+                if (avg >= 254.0f) {
+                    mutexLock(&ov->readings_mutex);
+                    if (!ov->readings.empty()) {
+                        ov->readings.clear();
+                        ov->readings.shrink_to_fit();
+                    }
+                    mutexUnlock(&ov->readings_mutex);
+                    continue;
+                }
+                stats temp = {0, false};
+                temp.value = static_cast<s16>(std::lround(avg));
+                const float whole = std::round(avg);
+                if (avg >= whole - 0.05f && avg <= whole + 0.04f)
+                    temp.zero_rounded = true;
+                mutexLock(&ov->readings_mutex);
+                if ((s16)ov->readings.size() >= ov->rectangle_width)
+                    ov->readings.erase(ov->readings.begin());
+                ov->readings.push_back(temp);
+                mutexUnlock(&ov->readings_mutex);
+            }
+        }, this, NULL, 0x1000, 0x2B, -2);
+        threadStart(&graphSampleThread);
     }
 
     ~com_FPSGraph() {
@@ -233,6 +270,11 @@ public:
         touchPollRunning.store(false, std::memory_order_release);
         threadWaitForExit(&touchPollThread);
         threadClose(&touchPollThread);
+
+        // Stop graph sampler thread
+        graphSampleRunning.store(false, std::memory_order_release);
+        threadWaitForExit(&graphSampleThread);
+        threadClose(&graphSampleThread);
 
         EndInfoThread();
         EndFPSCounterThread();
@@ -492,31 +534,6 @@ public:
 
     virtual void update() override {
         const u64 _nowTick = armGetSystemTick();
-
-        // --- Graph plot: advance one column EVERY frame ----------------------
-        // Tesla's frame limiter calls update() once per frame at TeslaFPS
-        // (== settings.refreshRate), so plotting one value per call scrolls the
-        // trace at the overlay refresh rate instead of in discrete sampler steps.
-        if (FPSavg < 254.0f) {
-            const float avg = useOldFPSavg ? FPSavg_old : FPSavg;
-            stats temp = {0, false};
-            temp.value = static_cast<s16>(std::lround(avg));
-            const float whole = std::round(avg);
-            if (avg >= whole - 0.05f && avg <= whole + 0.04f)
-                temp.zero_rounded = true;
-            mutexLock(&readings_mutex);
-            if ((s16)readings.size() >= rectangle_width)
-                readings.erase(readings.begin());
-            readings.push_back(temp);
-            mutexUnlock(&readings_mutex);
-        } else {
-            mutexLock(&readings_mutex);
-            if (!readings.empty()) {
-                readings.clear();
-                readings.shrink_to_fit();
-            }
-            mutexUnlock(&readings_mutex);
-        }
 
         // --- Info / value text: refresh at the SAMPLE rate (<= refresh rate) --
         // settings.sampleRate governs how often the numeric readouts (FPS number,

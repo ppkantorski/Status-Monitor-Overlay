@@ -395,7 +395,6 @@ public:
         
             HidTouchScreenState state = {0};
             bool inputDetected;
-            size_t actualEntryCount;
         
             while (overlay->touchPollRunning.load(std::memory_order_acquire)) {
                 // Sleep gate: touch panel is off during sleep — no input is
@@ -420,16 +419,12 @@ public:
                         const int overlayY = overlay->frameOffsetY;
                         const int overlayWidth = margin + overlay->rectangleWidth + overlay->horizPadPx;
                         
-                        // Calculate height from Variables string
-                        actualEntryCount = 1;
-                        for (size_t i = 0; overlay->Variables[i] != '\0'; i++) {
-                            if (overlay->Variables[i] == '\n') {
-                                actualEntryCount++;
-                            }
-                        }
-                        const int overlayHeight = ((overlay->fontsize + overlay->settings.spacing) * actualEntryCount) + 
-                                                 overlay->settings.spacing * actualEntryCount + 
-                                                 overlay->topPadding + overlay->bottomPadding;
+                        // Use drawCachedHeight (written by the draw path) for the hit-test.
+                        // The old line-count formula omitted descent pixels and split
+                        // compressions, so the hit-test rect was taller than the actual
+                        // rendered rect. When combined with a stale frameOffsetY this
+                        // caused touch drag activation to fail near screen edges.
+                        const int overlayHeight = (int)overlay->drawCachedHeight;
                         
                         // Add touch padding
                         const int touchPadding = 4;
@@ -438,8 +433,11 @@ public:
                         const int touchableWidth = overlayWidth + (touchPadding * 2);
                         const int touchableHeight = overlayHeight + (touchPadding * 2);
                         
-                        // Check if touch is within bounds — 500ms hold required
-                        if (touchX >= touchableX && touchX <= touchableX + touchableWidth &&
+                        // Check if touch is within bounds — 500ms hold required.
+                        // Guard on overlayHeight > 0: drawCachedHeight is 0 until the draw
+                        // path runs at least once; a zero-height rect would match any touch Y.
+                        if (overlayHeight > 0 &&
+                            touchX >= touchableX && touchX <= touchableX + touchableWidth &&
                             touchY >= touchableY && touchY <= touchableY + touchableHeight) {
                             if (overlay->buttonState.touchDragActive.load(std::memory_order_acquire)) {
                                 // Drag already confirmed — keep input signalled
@@ -1660,22 +1658,29 @@ public:
                 // Update layer position
                 updateLayerPos();
             } else {
-                // Non-limited memory mode - use original clipping offset logic
+                // Non-limited memory mode
                 _frameOffsetX = frameOffsetX;
-                
+
                 // Check X bounds and calculate clipping offset
                 if (cachedBaseX + _frameOffsetX < int(framePadding)) {
                     clippingOffsetX = framePadding - (cachedBaseX + _frameOffsetX);
                 } else if ((cachedBaseX + _frameOffsetX + overlayWidth) > screenWidth - framePadding) {
                     clippingOffsetX = (screenWidth - framePadding) - (cachedBaseX + _frameOffsetX + overlayWidth);
                 }
-                
-                // Check Y bounds and calculate clipping offset  
-                if (cachedBaseY + drawY < int(framePadding)) {
-                    clippingOffsetY = framePadding - (cachedBaseY + drawY);
-                } else if ((cachedBaseY + drawY + cachedHeight) > screenHeight - framePadding) {
-                    clippingOffsetY = (screenHeight - framePadding) - (cachedBaseY + drawY + cachedHeight);
+
+                // Clamp frameOffsetY directly (same formula as handleInput's maxY).
+                // Previously this used clippingOffsetY to shift the draw position for
+                // one frame only, leaving frameOffsetY out-of-bounds so the rect would
+                // flash off-screen on the next frame before snapping back, and the touch
+                // poll thread (which reads frameOffsetY for hit-testing) would use the
+                // stale value, breaking drag activation near the edges.
+                {
+                    const int minFrameY = (int)framePadding - cachedBaseY;
+                    const int maxFrameY = screenHeight - (int)framePadding - (int)cachedHeight - cachedBaseY;
+                    frameOffsetY = std::max(minFrameY, std::min(frameOffsetY, std::max(minFrameY, maxFrameY)));
+                    drawY = frameOffsetY;
                 }
+                clippingOffsetY = 0;
             }
             
             // Apply to all drawing calls
