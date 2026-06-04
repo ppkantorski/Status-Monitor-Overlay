@@ -3124,25 +3124,44 @@ public:
 
                 // Prioritize 16:9 aspect ratios (e.g. 1280x720, 1920x1080) so the
                 // actual game render resolution appears before UI/buffer resolutions.
-                // stable_partition preserves call-count ordering within each group.
+                // stable_partition moves all 16:9 entries to the front while keeping
+                // non-16:9 entries after them; both groups retain their call-count order.
                 std::stable_partition(m_resolutionOutput, m_resolutionOutput + 8,
                     [](const resolutionCalls& r) {
                         return r.width != 0 && (r.width * 9 == r.height * 16);
                     });
 
+                // Within the 16:9 group, sort by pixel area (largest first) so that
+                // 1920x1080 always precedes 1280x720 regardless of call counts.
+                resolutionCalls* end169 = m_resolutionOutput;
+                while (end169 < m_resolutionOutput + 8 &&
+                       end169->width != 0 &&
+                       end169->width * 9 == end169->height * 16)
+                    ++end169;
+                std::stable_sort(m_resolutionOutput, end169,
+                    [](const resolutionCalls& a, const resolutionCalls& b) {
+                        return (uint32_t)a.width * a.height > (uint32_t)b.width * b.height;
+                    });
+
                 // Anti-flicker swap logic
                 static std::pair<uint16_t, uint16_t> old_res[2];
                 
-                // Only swap if BOTH resolutions exist (prevent swapping with empty slot)
+                // Only swap if BOTH resolutions exist (prevent swapping with empty slot).
+                // Guard: never swap if doing so would demote a 16:9 entry behind a
+                // non-16:9 — 16:9 priority must always win over flicker suppression.
                 if (m_resolutionOutput[0].width && m_resolutionOutput[1].width) {
-                    if ((m_resolutionOutput[0].width == old_res[1].first && m_resolutionOutput[0].height == old_res[1].second) || 
-                        (m_resolutionOutput[1].width == old_res[0].first && m_resolutionOutput[1].height == old_res[0].second)) {
-                        const uint16_t swap_width = m_resolutionOutput[0].width;
-                        const uint16_t swap_height = m_resolutionOutput[0].height;
-                        m_resolutionOutput[0].width = m_resolutionOutput[1].width;
-                        m_resolutionOutput[0].height = m_resolutionOutput[1].height;
-                        m_resolutionOutput[1].width = swap_width;
-                        m_resolutionOutput[1].height = swap_height;
+                    const uint16_t sw0 = m_resolutionOutput[0].width, sh0 = m_resolutionOutput[0].height;
+                    const uint16_t sw1 = m_resolutionOutput[1].width, sh1 = m_resolutionOutput[1].height;
+                    const bool slot0is169 = (sw0 * 9 == sh0 * 16);
+                    const bool slot1is169 = (sw1 * 9 == sh1 * 16);
+                    const bool swapWouldDemote169 = slot0is169 && !slot1is169;
+                    if (!swapWouldDemote169 &&
+                        ((sw0 == old_res[1].first && sh0 == old_res[1].second) ||
+                         (sw1 == old_res[0].first && sh1 == old_res[0].second))) {
+                        m_resolutionOutput[0].width  = sw1;
+                        m_resolutionOutput[0].height = sh1;
+                        m_resolutionOutput[1].width  = sw0;
+                        m_resolutionOutput[1].height = sh0;
                     }
                 }
                 

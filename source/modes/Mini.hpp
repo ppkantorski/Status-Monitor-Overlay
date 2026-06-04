@@ -4462,10 +4462,24 @@ public:
 
                 // Prioritize 16:9 aspect ratios (e.g. 1280x720, 1920x1080) so the
                 // actual game render resolution appears before UI/buffer resolutions.
-                // stable_partition preserves call-count ordering within each group.
+                // stable_partition moves all 16:9 entries to the front while keeping
+                // non-16:9 entries after them; both groups retain their call-count order.
                 std::stable_partition(m_resolutionOutput, m_resolutionOutput + 8,
                     [](const resolutionCalls& r) {
                         return r.width != 0 && (r.width * 9 == r.height * 16);
+                    });
+
+                // Within the 16:9 group, sort by pixel area (largest first) so that
+                // 1920x1080 always precedes 1280x720 regardless of call counts.
+                // Find the end of the 16:9 prefix first.
+                resolutionCalls* end169 = m_resolutionOutput;
+                while (end169 < m_resolutionOutput + 8 &&
+                       end169->width != 0 &&
+                       end169->width * 9 == end169->height * 16)
+                    ++end169;
+                std::stable_sort(m_resolutionOutput, end169,
+                    [](const resolutionCalls& a, const resolutionCalls& b) {
+                        return (uint32_t)a.width * a.height > (uint32_t)b.width * b.height;
                     });
             }
         } else if (!GameRunning && resolutionLookup != 0) {
@@ -4720,8 +4734,16 @@ public:
                 
                 if (w0 || w1) {
                     if (w0 && w1) {
-                        if ((w0 == old_res[1].first && h0 == old_res[1].second) ||
-                            (w1 == old_res[0].first && h1 == old_res[0].second)) {
+                        // Anti-flicker: if the two primary slots swapped since last frame,
+                        // restore the previous assignment to avoid flickering.
+                        // Guard: never swap if doing so would demote a 16:9 entry behind a
+                        // non-16:9 — 16:9 priority must always win over flicker suppression.
+                        const bool slot0is169 = (w0 * 9 == h0 * 16);
+                        const bool slot1is169 = (w1 * 9 == h1 * 16);
+                        const bool swapWouldDemote169 = slot0is169 && !slot1is169;
+                        if (!swapWouldDemote169 &&
+                            ((w0 == old_res[1].first && h0 == old_res[1].second) ||
+                             (w1 == old_res[0].first && h1 == old_res[0].second))) {
                             std::swap(w0, w1);
                             std::swap(h0, h1);
                         }

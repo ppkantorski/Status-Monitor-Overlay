@@ -1011,8 +1011,15 @@ static void Update() {
 
 
 int compare (const void* elem1, const void* elem2) {
-    if ((((resolutionCalls*)(elem1))->calls) > (((resolutionCalls*)(elem2))->calls)) return -1;
-    else return 1;
+    const uint16_t c1 = ((const resolutionCalls*)elem1)->calls;
+    const uint16_t c2 = ((const resolutionCalls*)elem2)->calls;
+    // Zero-width entries are empty padding slots — sort them to the end.
+    const bool empty1 = (((const resolutionCalls*)elem1)->width == 0);
+    const bool empty2 = (((const resolutionCalls*)elem2)->width == 0);
+    if (empty1 != empty2) return empty1 ? 1 : -1;  // real entries before empty slots
+    if (c1 > c2) return -1;
+    if (c1 < c2) return  1;
+    return 0;
 }
 
 void LoadSharedMemoryAndRefreshRate() {
