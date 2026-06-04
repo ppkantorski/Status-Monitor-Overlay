@@ -383,8 +383,6 @@ public:
             const s16 pos_y = size + final_base_y + rectangle_y + ((rectangle_height - size) / 2);
             const s16 pos_x = final_base_x + rectangle_x + ((rectangle_width - width) / 2);
 
-            if (FPSavg != 254.0)
-                renderer->drawString(FPSavg_c, false, pos_x, pos_y-5, size, settings.fpsColor);
             renderer->drawEmptyRect(final_base_x+(rectangle_x - 1)+2, final_base_y+(rectangle_y - 1), rectangle_width + 2, rectangle_height + 4, aWithOpacity(settings.borderColor));
             renderer->drawDashedLine(final_base_x+rectangle_x+2, final_base_y+y_30FPS, final_base_x+rectangle_x+rectangle_width+1, final_base_y+y_30FPS, 6, aWithOpacity(settings.dashedLineColor));
             renderer->drawString(&legend_max[0], false, final_base_x+(rectangle_x-((refreshRate < 100) ? 15 : 22)), final_base_y+(rectangle_y+7), 10, (settings.maxFPSTextColor));
@@ -428,6 +426,10 @@ public:
                 y_old = y;
                 last_element--;
             }
+
+            // FPS counter drawn last so it sits on top of the graph lines and dashed line.
+            if (FPSavg != 254.0)
+                renderer->drawString(FPSavg_c, false, pos_x, pos_y-5, size, settings.fpsColor);
 
             if (settings.showInfo) {
                 const s16 info_x = final_base_x+rectangle_width+rectangle_x + 6 +8;
