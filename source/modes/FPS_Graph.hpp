@@ -465,8 +465,14 @@ public:
             s16 y_old_local = rectangle_y + rectangle_height;
             bool isAboveLocal = false;
 
-            s16 offset = 0;
-            if (refreshRate >= 100) offset = 7;
+            // offset = 1: the main line draws at final_base_x + x + offset + 1.
+            // With x = x_end = rectangle_x + rectangle_width, the rightmost line pixel
+            // lands at final_base_x + rectangle_x + rectangle_width + 2, directly left
+            // of the border's right outer column at +3. Shadow falls on the border column
+            // and is overwritten when the border is drawn after the loop.
+            // x_end already incorporates rectangle_x (15 or 22), so no separate per-rate
+            // shift is needed — offset is the same constant at all refresh rates.
+            const s16 offset = 1;
 
             for (s16 x = x_end; x > static_cast<s16>(x_end - (s16)nReadings); x--) {
                 const size_t idx = nReadings - 1 - (size_t)(x_end - x);
