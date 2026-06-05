@@ -256,7 +256,12 @@ public:
                 if (avg >= whole - 0.05f && avg <= whole + 0.04f)
                     temp.zero_rounded = true;
                 mutexLock(&ov->readings_mutex);
-                if ((s16)ov->readings.size() >= ov->rectangle_width)
+                // +1: the draw loop's leftmost x = x_end - nReadings + 1. With
+                // nReadings = rectangle_width + 1 that x = rectangle_x + rectangle_width
+                // - rectangle_width = rectangle_x, placing the leftmost line pixel at
+                // final_base_x + rectangle_x + offset + 1 = final_base_x + rectangle_x + 2,
+                // flush against the border's inner-left face at final_base_x + rectangle_x + 2.
+                if ((s16)ov->readings.size() >= ov->rectangle_width + 1)
                     ov->readings.erase(ov->readings.begin());
                 ov->readings.push_back(temp);
                 mutexUnlock(&ov->readings_mutex);

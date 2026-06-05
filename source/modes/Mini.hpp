@@ -546,7 +546,11 @@ public:
                     }
                     const float avg = FPSavg;
                     if (avg >= 254.0f) continue;
-                    const int maxWidth = (int)lround(180 * ov->displayScale);
+                    // +1: the draw loop's leftmost xi = x_end - nReadings + 1. With
+                    // nReadings = rect_w + 1 that xi = rect_x_s + rect_w - rect_w = rect_x_s,
+                    // placing the leftmost line pixel at gx + rect_x_s + lineOffset + 1 =
+                    // gx + rect_x_s + 2, flush against the border's inner-left face.
+                    const int maxWidth = (int)lround(180 * ov->displayScale) + 1;
                     if ((int)ov->graphReadings.size() >= maxWidth)
                         ov->graphReadings.erase(ov->graphReadings.begin());
                     GraphStats gs;
@@ -3672,9 +3676,9 @@ public:
                         // Dashed half-way reference line — inside the border
                         // Original: drawDashedLine(rect_x+2, y_30, rect_x+rect_w+1, y_30, 6, ...)
                         renderer->drawDashedLine(
-                            gx + rect_x_s + 2 + (displayScale == 1.5 ? 0 : 3),
+                            gx + rect_x_s + 2 + (displayScale == 1.5 ? 6 : 3),
                             gTopY + y_30_line,
-                            gx + rect_x_s + rect_w + 2 - (displayScale == 1.5 ? 0 : 3),
+                            gx + rect_x_s + rect_w + 2 - (displayScale == 1.5 ? 5 : 3),
                             gTopY + y_30_line,
                             6,
                             aWithOpacity(graphSettings.dashedLineColor));
