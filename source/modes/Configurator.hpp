@@ -791,10 +791,11 @@ public:
     SampleRateConfig(const std::string& mode) : modeName(mode), flags(mode) {
         const std::string section = modeToSection(mode);
         const std::string rrVal = ult::parseValueFromIniSection(configIniPath, section, "refresh_rate");
-        const int defaultRate = (flags.isFPSCounter || flags.isFPSGraph) ? 5 : 3;
+        const int defaultRate       = flags.isFPSGraph ? 30 : (flags.isFPSCounter ? 5 : (flags.isMini ? 30 : 3));
+        const int defaultSampleRate = (flags.isFPSGraph || flags.isMini) ? 3 : defaultRate;
         maxRate = rrVal.empty() ? defaultRate : std::clamp(atoi(rrVal.c_str()), 1, 60);
         const std::string srVal = ult::parseValueFromIniSection(configIniPath, section, "sample_rate");
-        currentRate = srVal.empty() ? maxRate : std::clamp(atoi(srVal.c_str()), 1, maxRate);
+        currentRate = srVal.empty() ? std::min(defaultSampleRate, maxRate) : std::clamp(atoi(srVal.c_str()), 1, maxRate);
     }
     ~SampleRateConfig() { lastSelectedListItem = nullptr; }
 
@@ -849,7 +850,7 @@ public:
     RefreshRateConfig(const std::string& mode) : modeName(mode), flags(mode) {
         const std::string section = modeToSection(mode);
         const std::string value = ult::parseValueFromIniSection(configIniPath, section, "refresh_rate");
-        const int defaultRate = (flags.isFPSCounter || flags.isFPSGraph) ? 5 : 3;
+        const int defaultRate = flags.isFPSGraph ? 30 : (flags.isFPSCounter ? 5 : (flags.isMini ? 30 : 3));
         currentRate = value.empty() ? defaultRate : std::clamp(atoi(value.c_str()), 1, 60);
     }
     ~RefreshRateConfig() { lastSelectedListItem = nullptr; }
@@ -982,7 +983,7 @@ public:
     FramePaddingConfig(const std::string& mode) : modeName(mode) {
         section = modeToSection(mode);
         const std::string value = ult::parseValueFromIniSection(configIniPath, section, "frame_padding");
-        currentPadding = value.empty() ? 10 : std::clamp(atoi(value.c_str()), 0, 14);
+        currentPadding = value.empty() ? 4 : std::clamp(atoi(value.c_str()), 0, 14);
     }
     ~FramePaddingConfig() { lastSelectedListItem = nullptr; }
 
@@ -1102,12 +1103,12 @@ public:
     MicroHPaddingConfig() : MicroPaddingConfigBase("horizontal_padding", "Horizontal Padding", "Horizontal Padding") {}
 };
 
-class MicroVPaddingConfig : public MicroPaddingConfigBase<6, 2, 30, 1> {
+class MicroVPaddingConfig : public MicroPaddingConfigBase<8, 2, 30, 1> {
 public:
     MicroVPaddingConfig() : MicroPaddingConfigBase("vertical_padding", "Vertical Padding", "Vertical Padding") {}
 };
 
-class MicroStackedSpacingConfig : public MicroPaddingConfigBase<7, 0, 30, 1> {
+class MicroStackedSpacingConfig : public MicroPaddingConfigBase<4, 0, 30, 1> {
 public:
     MicroStackedSpacingConfig() : MicroPaddingConfigBase("stacked_spacing", "Stacked Spacing", "Stacked Spacing") {}
 };
@@ -1189,7 +1190,7 @@ public:
     }
 };
 
-class MiniHPaddingConfig : public MiniPaddingConfigBase<2, 2, 30, 1> {
+class MiniHPaddingConfig : public MiniPaddingConfigBase<30, 2, 60, 1> {
 public:
     MiniHPaddingConfig() : MiniPaddingConfigBase("horizontal_padding", "Horizontal Padding", "Horizontal Padding") {}
 };
@@ -1199,12 +1200,12 @@ public:
     MiniVPaddingConfig() : MiniPaddingConfigBase("vertical_padding", "Vertical Padding", "Vertical Padding") {}
 };
 
-class MiniSpacingConfig : public MiniPaddingConfigBase<14, 2, 30, 1> {
+class MiniSpacingConfig : public MiniPaddingConfigBase<15, 2, 30, 1> {
 public:
     MiniSpacingConfig() : MiniPaddingConfigBase("spacing", "Spacing", "Spacing") {}
 };
 
-class MiniStackedSpacingConfig : public MiniPaddingConfigBase<7, 0, 30, 1> {
+class MiniStackedSpacingConfig : public MiniPaddingConfigBase<4, 0, 30, 1> {
 public:
     MiniStackedSpacingConfig() : MiniPaddingConfigBase("stacked_spacing", "Stacked Spacing", "Stacked Spacing") {}
 };
@@ -1253,7 +1254,7 @@ public:
         // Default sizes per type; 1080p defaults are ~1.5× the 720p docked defaults.
         int defaultSize;
         if (fontType == "docked_1080p")
-            defaultSize = flags.isFPSCounter ? 60 : 22;
+            defaultSize = flags.isFPSCounter ? 68 : 21;
         else
             defaultSize = flags.isFPSCounter ? 40 : 15;
 
@@ -1315,7 +1316,7 @@ public:
 
         const std::string section = modeToSection(modeName);
         const int defaultSize      = flags.isFPSCounter ? 40 : 15;
-        const int default1080pSize = flags.isFPSCounter ? 60 : 22;
+        const int default1080pSize = flags.isFPSCounter ? 68 : 21;
 
         auto makeItem = [&](const std::string& label, const std::string& key,
                             const std::string& type, int defSz) {
@@ -1536,15 +1537,15 @@ public:
                 const char* name; const char* key; const char* def; bool hasAlpha;
             };
             static const FPSGraphColorSetting fpsGraphColors[] = {
-                {"FPS Counter",  "fps_counter_color",  "#888C", true},
+                {"FPS Counter",  "fps_counter_color",  "#2DFF", false},
                 {"Graph",        "plot_background_color", "#0007", true},
                 {"Border",       "border_color",        "#2DFF", false},
-                {"Dashed Line",  "dashed_line_color",   "#8888", true},
+                {"Dashed Line",  "dashed_line_color",   "#0AAF", true},
                 {"Max FPS Text", "max_fps_text_color",  "#FFFF", false},
                 {"Min FPS Text", "min_fps_text_color",  "#FFFF", false},
-                {"Main Line",    "main_line_color",     "#FFFF", false},
-                {"Rounded Line", "rounded_line_color",  "#F0FF", false},
-                {"Perfect Line", "perfect_line_color",  "#0C0F", false},
+                {"Main Line",    "main_line_color",     "#0F0F", false},
+                {"Rounded Line", "rounded_line_color",  "#0C0F", false},
+                {"Perfect Line", "perfect_line_color",  "#A0FF", false},
             };
             for (const auto& c : fpsGraphColors) {
                 if (c.hasAlpha)
@@ -1610,7 +1611,7 @@ public:
         std::string orderValue = ult::parseValueFromIniSection(configIniPath, section, "element_order");
 
         if (showValue.empty())
-            showValue = isMiniMode ? "DTC+BAT+CPU+GPU+RAM+TMP+FPS+RES" : "FPS+CPU+GPU+RAM+TMP+BAT+DTC";
+            showValue = isMiniMode ? "DTC+BAT+CPU+GPU+RAM+TMP+RES+FPS" : "FPS+CPU+GPU+RAM+TMP+BAT+DTC";
         convertToUpper(showValue);
 
         enabledElements.clear();
@@ -1621,8 +1622,10 @@ public:
                 if (!item.empty()) enabledElements.insert(item);
         }
 
-        static constexpr std::string_view miniElements[]  = {"DTC","BAT","CPU","GPU","RAM","MEM","READ","SOC","TMP","FPS","RES"};
-        static constexpr std::string_view microElements[] = {"FPS","CPU","GPU","RAM","READ","SOC","TMP","RES","BAT","DTC"};
+        // Element order arrays: order matches the ini element_order defaults so the
+        // fallback (no element_order key) produces the same sequence as the ini.
+        static constexpr std::string_view miniElements[]  = {"DTC","BAT","CPU","GPU","RAM","MEM","SOC","TMP","READ","RES","FPS"};
+        static constexpr std::string_view microElements[] = {"FPS","RES","CPU","GPU","RAM","READ","SOC","TMP","BAT","DTC"};
         const auto* allElements    = isMiniMode ? miniElements : microElements;
         const size_t allElementsSize = isMiniMode ? std::size(miniElements) : std::size(microElements);
 
@@ -1765,24 +1768,25 @@ private:
     int getCurrentRefreshRate() const {
         const std::string section = modeToSection(modeName);
         const std::string value = ult::parseValueFromIniSection(configIniPath, section, "refresh_rate");
-        const int defaultRate = (flags.isFPSCounter || flags.isFPSGraph) ? 5 : 3;
+        const int defaultRate = flags.isFPSGraph ? 30 : (flags.isFPSCounter ? 5 : (flags.isMini ? 30 : 3));
         return value.empty() ? defaultRate : atoi(value.c_str());
     }
 
     int getCurrentSampleRate() const {
         const std::string section = modeToSection(modeName);
         const std::string rrVal = ult::parseValueFromIniSection(configIniPath, section, "refresh_rate");
-        const int defaultRate = (flags.isFPSCounter || flags.isFPSGraph) ? 5 : 3;
+        const int defaultRate       = flags.isFPSGraph ? 30 : (flags.isFPSCounter ? 5 : (flags.isMini ? 30 : 3));
+        const int defaultSampleRate = (flags.isFPSGraph || flags.isMini) ? 3 : defaultRate;
         const int maxRate = rrVal.empty() ? defaultRate : std::clamp(atoi(rrVal.c_str()), 1, 60);
         const std::string srVal = ult::parseValueFromIniSection(configIniPath, section, "sample_rate");
-        return srVal.empty() ? maxRate : std::clamp(atoi(srVal.c_str()), 1, maxRate);
+        return srVal.empty() ? std::min(defaultSampleRate, maxRate) : std::clamp(atoi(srVal.c_str()), 1, maxRate);
     }
 
     int getCurrentFramePadding() const {
         const std::string section = modeToSection(modeName);
-        if (section.empty()) return 10;
+        if (section.empty()) return 4;
         const std::string value = ult::parseValueFromIniSection(configIniPath, section, "frame_padding");
-        return value.empty() ? 10 : atoi(value.c_str());
+        return value.empty() ? 4 : atoi(value.c_str());
     }
 
     int getCurrentMicroHPadding() const {
@@ -1792,12 +1796,12 @@ private:
 
     int getCurrentMicroVPadding() const {
         const std::string value = ult::parseValueFromIniSection(configIniPath, "micro", "vertical_padding");
-        return value.empty() ? 6 : std::clamp(atoi(value.c_str()), 2, 30);
+        return value.empty() ? 8 : std::clamp(atoi(value.c_str()), 2, 30);
     }
 
     int getCurrentMicroStackedSpacing() const {
         const std::string value = ult::parseValueFromIniSection(configIniPath, "micro", "stacked_spacing");
-        return value.empty() ? 7 : std::clamp(atoi(value.c_str()), 0, 30);
+        return value.empty() ? 4 : std::clamp(atoi(value.c_str()), 0, 30);
     }
 
     int getCurrentMicroLabelPadding() const {
@@ -1816,7 +1820,7 @@ private:
     // Mini space-unit paddings (tenths of a space). Defaults mirror MiniSettings.
     int getCurrentMiniHPadding() const {
         const std::string value = ult::parseValueFromIniSection(configIniPath, "mini", "horizontal_padding");
-        return value.empty() ? 2 : std::clamp(atoi(value.c_str()), 2, 30);
+        return value.empty() ? 30 : std::clamp(atoi(value.c_str()), 2, 60);
     }
 
     int getCurrentMiniVPadding() const {
@@ -1826,12 +1830,12 @@ private:
 
     int getCurrentMiniSpacing() const {
         const std::string value = ult::parseValueFromIniSection(configIniPath, "mini", "spacing");
-        return value.empty() ? 14 : std::clamp(atoi(value.c_str()), 2, 30);
+        return value.empty() ? 15 : std::clamp(atoi(value.c_str()), 2, 30);
     }
 
     int getCurrentMiniStackedSpacing() const {
         const std::string value = ult::parseValueFromIniSection(configIniPath, "mini", "stacked_spacing");
-        return value.empty() ? 7 : std::clamp(atoi(value.c_str()), 0, 30);
+        return value.empty() ? 4 : std::clamp(atoi(value.c_str()), 0, 30);
     }
 
     int getCurrentMiniCornerRadius() const {

@@ -2726,9 +2726,9 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
     settings->showStackedCPUTemp = true;
     settings->showStackedGPUTemp = true;
     settings->showStackedRAMTemp = true;
-    settings->voltageAtEndCPU = false;
+    settings->voltageAtEndCPU = true;
     settings->voltageAtEndGPU = true;
-    settings->voltageAtEndRAM = false;
+    settings->voltageAtEndRAM = true;
     settings->voltageAtEndTMP = true;
     settings->showVDDQ = true;
     settings->showVDD2 = true;
@@ -2736,25 +2736,25 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
     settings->showDTC = true;
     settings->useDTCSymbol = true;
     settings->useIntegerFPS = false;
-    settings->showFpsGraph = false;
+    settings->showFpsGraph = true;
     settings->dtcFormat1 = "%a, %b %d";
     settings->dtcFormat2 = "%l:%M:%S %p";
     settings->dtcFormat  = settings->dtcFormat1 + ult::DIVIDER_SYMBOL + settings->dtcFormat2;
     settings->handheldFontSize = 15;
     settings->dockedFontSize = 15;
-    settings->docked1080pFontSize = 20;  // ~15 × 1.5 — visually matches 720p docked size
+    settings->docked1080pFontSize = 21;
     settings->use1080pDocked = true;
-    settings->spacing = 14;            // 1.4 sp
-    settings->horizontalPadding = 2;   // 0.2 sp (trailing/right-side text padding)
+    settings->spacing = 15;            // 1.5 sp
+    settings->horizontalPadding = 30;  // 3.0 sp (trailing/right-side text padding)
     settings->verticalPadding = 30;    // 3.0 sp (top/bottom interior padding)
     settings->cornerRadiusSp = 40;     // 4.0 sp
-    settings->stackedSpacing = 7;      // 0.7 sp (gap between stacked/split rows)
+    settings->stackedSpacing = 4;      // 0.4 sp (gap between stacked/split rows)
     convertStrToRGBA4444("#000A", &(settings->backgroundColor));
     convertStrToRGBA4444("#000F", &(settings->focusBackgroundColor));
     convertStrToRGBA4444("#2DFF", &(settings->separatorColor));
     convertStrToRGBA4444("#2DFF", &(settings->catColor));
     convertStrToRGBA4444("#FFFF", &(settings->textColor));
-    settings->show = "DTC+BAT+CPU+GPU+RAM+TMP+FPS+RES";
+    settings->show = "DTC+BAT+CPU+GPU+RAM+TMP+RES+FPS";
     settings->showLabels = true;
     settings->showRAMLoad = true;
     settings->showRAMLoadCPUGPU = false;
@@ -2766,7 +2766,7 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
     settings->invertBatteryDisplay = true;
     settings->showStackedBAT = false;
     settings->showStackedDTC = false;
-    settings->refreshRate = 3;
+    settings->refreshRate = 30;
     settings->sampleRate = 3;  // default matches refreshRate
     //settings->setPos = 0;
     settings->frameOffsetX = 0;
@@ -2804,12 +2804,12 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
     }
     
 
-    // Process sample_rate: how often sensor values are re-polled; always <= refreshRate
+    // Process sample_rate: how often sensor values are re-polled; always <= refreshRate.
+    // Default is 3 (not refreshRate) — the ini default is sample_rate=3 regardless of
+    // what refresh_rate is set to.
     it = section.find("sample_rate");
     if (it != section.end()) {
         settings->sampleRate = std::clamp(atol(it->second.c_str()), 1L, (long)settings->refreshRate);
-    } else {
-        settings->sampleRate = settings->refreshRate;
     }
     // Process boolean flags
     it = section.find("real_freqs");
@@ -2853,16 +2853,15 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
         settings->use1080pDocked = (key != "FALSE");
     }
 
-    // Space-unit paddings (tenths of a space). spacing/horizontal/vertical: 2..30
-    // (0.2..3.0 sp). cornerRadius allowed a wider 0..80 (0..8.0 sp) since rounding
-    // can legitimately be larger than text padding.
+    // Space-unit paddings (tenths of a space). spacing: 2..30 (0.2..3.0 sp).
+    // horizontal/vertical: 2..60 (0.2..6.0 sp). cornerRadius: 0..80 (0..8.0 sp).
     it = section.find("spacing");
     if (it != section.end()) {
         settings->spacing = (size_t)std::clamp(atoi(it->second.c_str()), 2, 30);
     }
     it = section.find("horizontal_padding");
     if (it != section.end()) {
-        settings->horizontalPadding = (uint8_t)std::clamp(atoi(it->second.c_str()), 2, 30);
+        settings->horizontalPadding = (uint8_t)std::clamp(atoi(it->second.c_str()), 2, 60);
     }
     it = section.find("vertical_padding");
     if (it != section.end()) {
@@ -3286,7 +3285,7 @@ ALWAYS_INLINE void GetConfigSettings(MicroSettings* settings) {
     settings->showStackedDTC = true;
     settings->handheldFontSize = 15;
     settings->dockedFontSize = 15;
-    settings->docked1080pFontSize = 20;  // ~15 × 1.5 — visually matches 720p docked size
+    settings->docked1080pFontSize = 21;
     settings->use1080pDocked = true;
     settings->alignTo = 1; // CENTER
     convertStrToRGBA4444("#000A", &(settings->backgroundColor));
@@ -3307,10 +3306,10 @@ ALWAYS_INLINE void GetConfigSettings(MicroSettings* settings) {
     settings->disableScreenshots = false;
     settings->refreshRate = 3;
     settings->horizontalPadding = 14;  // 1.4 sp
-    settings->verticalPadding   = 6;   // 0.6 sp
+    settings->verticalPadding   = 8;   // 0.8 sp
     settings->labelPadding      = 14;  // 1.4 sp
     settings->elementPadding    = 50;  // 5 sp
-    settings->stackedSpacing    = 7;   // 0.7 sp (gap between stacked/split rows)
+    settings->stackedSpacing    = 4;   // 0.4 sp (gap between stacked/split rows)
 
     // Open and read file efficiently
     FILE* configFile = fopen(configIniPath, "r");
@@ -3766,7 +3765,7 @@ ALWAYS_INLINE void GetConfigSettings(FpsCounterSettings* settings) {
     settings->use1080pDocked = true;
     convertStrToRGBA4444("#000A", &(settings->backgroundColor));
     convertStrToRGBA4444("#000F", &(settings->focusBackgroundColor));
-    convertStrToRGBA4444("#8CFF", &(settings->textColor));
+    convertStrToRGBA4444("#2DFF", &(settings->textColor));
     //settings->setPos = 0;
     settings->refreshRate = 5;
     settings->useIntegerFPS = true;
@@ -3911,21 +3910,21 @@ ALWAYS_INLINE void GetConfigSettings(FpsGraphSettings* settings) {
     //settings->setPos = 0;
     convertStrToRGBA4444("#000A", &(settings->backgroundColor));
     convertStrToRGBA4444("#000F", &(settings->focusBackgroundColor));
-    convertStrToRGBA4444("#888C", &(settings->fpsColor));
+    convertStrToRGBA4444("#2DFF", &(settings->fpsColor));
     convertStrToRGBA4444("#2DFF", &(settings->borderColor));
-    convertStrToRGBA4444("#8888", &(settings->dashedLineColor));
+    convertStrToRGBA4444("#0AAF", &(settings->dashedLineColor));
     convertStrToRGBA4444("#FFFF", &(settings->maxFPSTextColor));
     convertStrToRGBA4444("#FFFF", &(settings->minFPSTextColor));
-    convertStrToRGBA4444("#FFFF", &(settings->mainLineColor));
-    convertStrToRGBA4444("#F0FF", &(settings->roundedLineColor));
-    convertStrToRGBA4444("#0C0F", &(settings->perfectLineColor));
+    convertStrToRGBA4444("#0F0F", &(settings->mainLineColor));
+    convertStrToRGBA4444("#0C0F", &(settings->roundedLineColor));
+    convertStrToRGBA4444("#A0FF", &(settings->perfectLineColor));
 
     convertStrToRGBA4444("#FFFF", &(settings->textColor));
     convertStrToRGBA4444("#2DFF", &(settings->catColor));
     convertStrToRGBA4444("#0007", &(settings->plotBackgroundColor));
 
-    settings->refreshRate = 5;
-    settings->sampleRate = settings->refreshRate;  // <= refreshRate; overridden below
+    settings->refreshRate = 30;
+    settings->sampleRate = 3;  // default sample_rate for fps-graph
     settings->useDynamicColors = true;
     settings->useIntegerFPS = true;
     settings->disableScreenshots = false;
@@ -3995,7 +3994,7 @@ ALWAYS_INLINE void GetConfigSettings(FpsGraphSettings* settings) {
         settings->refreshRate = (uint8_t)std::clamp(atol(it->second.c_str()), 1L, 60L);
 
     // sample_rate: how often the info/value text is re-polled; always <= refreshRate.
-    settings->sampleRate = settings->refreshRate;
+    // Default is 3 (set above in the defaults block); only override if the ini key is present.
     it = section.find("sample_rate");
     if (it != section.end())
         settings->sampleRate = (uint8_t)std::clamp(atol(it->second.c_str()), 1L, (long)settings->refreshRate);
