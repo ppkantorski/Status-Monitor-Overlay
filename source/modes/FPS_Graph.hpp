@@ -135,7 +135,7 @@ public:
                             // Fallback calculation
                             const s16 refresh_rate_offset = (overlay->refreshRate < 100) ? 21 : 28;
                             const s16 info_width = overlay->settings.showInfo ? (6 + overlay->rectangle_width/2 - 4) : 0;
-                            const s16 content_width = overlay->rectangle_width + refresh_rate_offset + info_width;
+                            const s16 content_width = overlay->rectangle_width + refresh_rate_offset + info_width + 1;
                             const s16 content_height = overlay->rectangle_height + 12;
                             totalWidth = content_width + (2 * border);
                             totalHeight = content_height + (2 * border);
@@ -320,7 +320,7 @@ public:
             // Calculate content dimensions (what goes inside the border)
             const s16 refresh_rate_offset = (refreshRate < 100) ? 21 : 28;
             const s16 info_width = settings.showInfo ? (6 + rectangle_width/2 - 4) : 6;
-            const s16 content_width = rectangle_width + refresh_rate_offset + info_width;
+            const s16 content_width = rectangle_width + refresh_rate_offset + info_width + 1;
             const s16 content_height = rectangle_height + 12;
             
             // Total dimensions including border
@@ -424,12 +424,39 @@ public:
             const auto width = renderer->getTextDimensions(FPSavg_c, false, size).first;
 
             const s16 pos_y = size + final_base_y + rectangle_y + ((rectangle_height - size) / 2);
-            const s16 pos_x = final_base_x + rectangle_x + ((rectangle_width - width) / 2);
+            const s16 pos_x = final_base_x + rectangle_x + (((rectangle_width + 1) - width) / 2);
 
-            renderer->drawEmptyRect(final_base_x+(rectangle_x - 1)+2, final_base_y+(rectangle_y - 1), rectangle_width + 2, rectangle_height + 4, aWithOpacity(settings.borderColor));
-            renderer->drawDashedLine(final_base_x+rectangle_x+2, final_base_y+y_30FPS, final_base_x+rectangle_x+rectangle_width+1, final_base_y+y_30FPS, 6, aWithOpacity(settings.dashedLineColor));
+            // Plot background: drawn immediately after the border, so the dashed
+            // line, legend, FPS counter, and data line all render on top of it.
+            // Skipped entirely when alpha is 0 to avoid an unnecessary draw call.
+            // plotBackgroundColor is uint16_t (RGBA4444); alpha is the top nibble.
+            if ((settings.plotBackgroundColor >> 12) & 0xF)
+                renderer->drawRect(
+                    final_base_x + rectangle_x + 2,
+                    final_base_y + rectangle_y,
+                    rectangle_width + 1, // +1px right: data sits on the rightmost column; widen so it no longer touches the border
+                    rectangle_height + 2,
+                    aWithOpacity(settings.plotBackgroundColor));
+
+            renderer->drawDashedLine(final_base_x+rectangle_x+2 +3, final_base_y+y_30FPS, final_base_x+rectangle_x+rectangle_width+2 -3, final_base_y+y_30FPS, 6, aWithOpacity(settings.dashedLineColor));
             renderer->drawString(&legend_max[0], false, final_base_x+(rectangle_x-((refreshRate < 100) ? 15 : 22)), final_base_y+(rectangle_y+7), 10, (settings.maxFPSTextColor));
-            renderer->drawString(&legend_min[0], false, final_base_x+(rectangle_x-10), final_base_y+(rectangle_y+rectangle_height+3), 10, settings.minFPSTextColor);
+            // Right-align the min "0" with the trailing '0' of the max label:
+            // place its cursor at the same x as the final '0' in legend_max so both
+            // glyphs occupy the exact same pixel columns at any refresh rate.
+            // zeroAdvanceFps uses getTextDimensions — the same truncating static_cast<s32>
+            // path as maxAdvanceFps — so both cursor offsets round identically.
+            // (lround(xAdvance * currFontSize) can differ by 1 px, causing misalignment.)
+            {
+                const int zeroAdvanceFps  = renderer->getTextDimensions("0", false, 10).first;
+                const int maxAdvanceFps   = renderer->getTextDimensions(&legend_max[0], false, 10).first;
+                renderer->drawString(&legend_min[0], false,
+                    final_base_x + (rectangle_x - ((refreshRate < 100) ? 15 : 22)) + maxAdvanceFps - zeroAdvanceFps,
+                    final_base_y+(rectangle_y+rectangle_height+3), 10, settings.minFPSTextColor);
+            }
+
+            // FPS counter drawn above the dashed line but below the data line.
+            if (FPSavg != 254.0)
+                renderer->drawString(FPSavg_c, false, pos_x, pos_y-5, size, settings.fpsColor);
 
             mutexLock(&readings_mutex);
             const size_t nReadings = readings.size();
@@ -466,19 +493,23 @@ public:
                 if (x == x_end)
                     y_old_local = y;
 
+                // Shadow: same segment offset +1x, +1y in translucent black.
+                // Drawn first so the main line paints on top.
+                renderer->drawLine(final_base_x+x+offset+2, final_base_y+y+1,
+                                   final_base_x+x+offset+2, final_base_y+y_old_local+1,
+                                   tsl::Color(0, 0, 0, 5));
                 renderer->drawLine(final_base_x+x+offset+1, final_base_y+y,
                                    final_base_x+x+offset+1, final_base_y+y_old_local, color);
                 isAboveLocal = false;
                 y_old_local = y;
             }
+
+            renderer->drawEmptyRect(final_base_x+(rectangle_x - 1)+2, final_base_y+(rectangle_y - 1), rectangle_width + 3, rectangle_height + 4, aWithOpacity(settings.borderColor));
+
             mutexUnlock(&readings_mutex);
 
-            // FPS counter drawn last so it sits on top of the graph lines and dashed line.
-            if (FPSavg != 254.0)
-                renderer->drawString(FPSavg_c, false, pos_x, pos_y-5, size, settings.fpsColor);
-
             if (settings.showInfo) {
-                const s16 info_x = final_base_x+rectangle_width+rectangle_x + 6 +8;
+                const s16 info_x = final_base_x+rectangle_width+rectangle_x + 6 +8 +1; // +1: follow the 1px-wider border
                 const s16 info_y = final_base_y + 3;
                 const s16 fontSize = 11;
                 
@@ -651,7 +682,7 @@ public:
             // Fallback calculation if not yet rendered
             const s16 refresh_rate_offset = (refreshRate < 100) ? 21 : 28;
             const s16 info_width = settings.showInfo ? (6 + rectangle_width/2 - 4) : 0;
-            const s16 content_width = rectangle_width + refresh_rate_offset + info_width;
+            const s16 content_width = rectangle_width + refresh_rate_offset + info_width + 1;
             const s16 content_height = rectangle_height + 12;
             totalWidth = content_width + (2 * border);
             totalHeight = content_height + (2 * border);

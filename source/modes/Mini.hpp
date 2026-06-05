@@ -1009,25 +1009,36 @@ public:
                         //dimensions = renderer->drawString("144.4", false, 0, 0, fontsize, renderer->a(0x0000));
                         if (settings.showFpsGraph) {
                             // Graph column width = span from the content-left edge (gx, where the
-                            // "max" legend label such as "120" is drawn) to and including the right
-                            // border's outermost pixel. Computed for the worst case: a 3-digit refresh
-                            // rate (e.g. 120 Hz), where the plot's left offset is 22 native px (vs 15
-                            // for 2-digit), so the column is at its widest. The layout then applies a
-                            // full horizontal padding on top of this before the rounded-rect edge.
+                            // max legend label is drawn) to and including the right border's
+                            // outermost pixel.
                             //
-                            // Mirrors the FPS_GRAPH draw geometry exactly:
-                            //   rect_x_s = lround(22 * displayScale)   (plot left / legend offset, 120 case)
-                            //   rect_w   = lround(180 * displayScale)  (plot width)
-                            //   border   = drawEmptyRect(gx + rect_x_s + 1, ..., rect_w + 2, ...)
-                            //   border's RIGHTMOST PIXEL, relative to gx = rect_x_s + rect_w + 2
-                            // width is an inclusive extent (like a text width): the column occupies
-                            // pixels [gx, gx + width), so its last pixel is gx + width - 1. To make
-                            // that last pixel land ON the border's rightmost pixel we add one more:
-                            //   width = (rect_x_s + rect_w + 2) + 1 = rect_x_s + rect_w + 3
-                            // The +1/+2/+3 are literal framebuffer pixels and must NOT be scaled.
-                            const uint32_t maxRectX = (uint32_t)lround(22.0f * displayScale);
-                            const uint32_t maxRectW = (uint32_t)lround(180.0f * displayScale);
-                            width = maxRectX + maxRectW + 3;
+                            // The left margin (rect_x_s) must be wide enough to fit the max legend
+                            // label ("60", "90", "120", etc.) at the legend font size, plus 1 scaled
+                            // pixel of breathing room. Using a fixed scaled native constant (15 or 22)
+                            // was wrong: the font renders at lround(10 * displayScale) px, so the
+                            // actual glyph width changes non-linearly with scale and can't be reliably
+                            // predicted from a fixed constant. Measuring it directly guarantees the
+                            // layout and draw blocks agree at every displayScale.
+                            //
+                            // Draw geometry:
+                            //   rect_x_s = measured (below)
+                            //   rect_w   = lround(180 * displayScale)
+                            //   border   = drawEmptyRect(gx + rect_x_s + 1, ..., rect_w + 3, ...)
+                            //   border's RIGHTMOST PIXEL, relative to gx = rect_x_s + rect_w + 3
+                            // width is an inclusive extent: last pixel = gx + width - 1. To land
+                            // exactly on the border's rightmost pixel:
+                            //   width = (rect_x_s + rect_w + 3) + 1 = rect_x_s + rect_w + 4
+                            // The +1/+2/+3/+4 are literal framebuffer pixels, not scaled.
+                            {
+                                const int legendFontSize = (int)lround(10.0f * displayScale);
+                                // Worst-case legend string: 3-digit rate produces the widest label.
+                                const char* legendStr = (graphRefreshRate >= 100) ? "120" : "60";
+                                const uint32_t legendW = renderer->getTextDimensions(legendStr, false, legendFontSize).first;
+                                // 1 scaled pixel gap between legend right edge and plot left edge.
+                                const uint32_t rectX_s = legendW + (uint32_t)lround(1.0f * displayScale);
+                                const uint32_t rectW_s = (uint32_t)lround(180.0f * displayScale);
+                                width = rectX_s + rectW_s + 4;
+                            }
                         } else {
                             width = renderer->getTextDimensions("144.4", false, fontsize).first;
                         }
@@ -3566,18 +3577,19 @@ public:
                         // ── Embedded FPS graph ──────────────────────────────────────────
                         // Geometry mirrors FPS_Graph.hpp exactly, scaled by displayScale.
                         //
-                        // Native (720p) coordinates (from FPS_Graph members):
-                        //   rectangle_x = 15  (<100 Hz)  or  22  (>=100 Hz)  — plot left, also legend offset
-                        //   rectangle_y = 5                                  — plot top margin
-                        //   rectangle_width  = 180
-                        //   rectangle_height = refreshRate
-                        //   x_end = rectangle_x + rectangle_width
-                        //   Border: drawEmptyRect(rect_x - 1 + 2, rect_y - 1, rect_w + 2, rect_h + 4)
-                        //         = drawEmptyRect(rect_x + 1, rect_y - 1, rect_w + 2, rect_h + 4)
-                        //   Lines: drawn at  gx + x + 1  (no offset in the embedded row)
-                        //          rightmost x = x_end  ->  rect_x + rect_w + 1
-                        //          border inner-right   ->  rect_x + 1 + rect_w + 2 - 1 = rect_x + rect_w + 2
-                        //          so the rightmost line pixel sits just inside the border right edge.
+                        // Geometry (all in framebuffer pixels, scaled by displayScale):
+                        //   rect_x_s  = getTextDimensions(legend_max, legendFontSize).width + 1 scaled px
+                        //               (font-metric-driven; matches the layout width calculation exactly)
+                        //   rect_w    = lround(180 * displayScale)
+                        //   rect_h    = lround(graphRefreshRate * displayScale)
+                        //   rect_y_s  = lround(5 * displayScale)
+                        //   x_end     = rect_x_s + rect_w
+                        //   lineOffset = 1
+                        //   Lines drawn at gx + xi + lineOffset + 1; rightmost xi = x_end:
+                        //     main line  ->  gx + rect_x_s + rect_w + 2  (directly left of border)
+                        //     shadow     ->  gx + rect_x_s + rect_w + 3  (overwritten by border)
+                        //   Border: drawEmptyRect(gx + rect_x_s + 1, ..., rect_w + 3, ...)
+                        //     right column  ->  gx + rect_x_s + rect_w + 3
                         //
                         // gx: left of the graph content area (= baseX).
                         // gSlotTop: the row's slot top — where a normal line's top pixel sits.
@@ -3585,9 +3597,14 @@ public:
                         const int gSlotTop = (int)currentY + (int)drawY - cachedBaselineOffset + clippingOffsetY;
                         const int gx    = baseX;
 
-                        // rect_x_native: 15 for <100 Hz (2-digit label), 22 for >=100 Hz (3-digit label)
-                        const s16 rect_x_native = (graphRefreshRate < 100) ? 15 : 22;
-                        const s16 rect_x_s = (s16)lround(rect_x_native * displayScale);
+                        // rect_x_s: left margin wide enough to fit the max legend label at the
+                        // legend font size, plus 1 scaled pixel of breathing room. Derived from
+                        // getTextDimensions so it is correct at every displayScale — the same
+                        // formula used in the layout width calculation above.
+                        const int legendFontSizeG = (int)lround(10.0f * displayScale);
+                        const char* legendStrG = (graphRefreshRate >= 100) ? "120" : "60";
+                        const uint32_t legendWG = renderer->getTextDimensions(legendStrG, false, legendFontSizeG).first;
+                        const s16 rect_x_s = (s16)(legendWG + (uint32_t)lround(1.0f * displayScale));
                         const s16 rect_w   = (s16)lround(180 * displayScale);
                         const s16 rect_h   = (s16)lround(graphRefreshRate * displayScale);
                         const s16 rect_y_s = (s16)lround(5 * displayScale);
@@ -3598,14 +3615,13 @@ public:
                         // (rect_y_s - 1) so its top edge coincides with where the line begins.
                         const int gTopY = gSlotTop - (rect_y_s - 1);
                         const s16 x_end    = rect_x_s + rect_w;
-                        // No horizontal line offset: the plot data must stay strictly inside the
-                        // border. Standalone FPS_Graph adds +7 for >=100 Hz, which shifts the
-                        // rightmost samples ~6px PAST the right border (and leaves a gap on the
-                        // left). In the embedded Mini row that overflow crowds the rounded-rect
-                        // edge and breaks the "data within the border" requirement, so we keep the
-                        // offset at 0. With offset 0 the newest sample lands at the inner-right
-                        // border pixel and the plot fills the area for both 2- and 3-digit rates.
-                        const s16 lineOffset = 0;
+                        // lineOffset = 1: the draw loop places the main line at gx + xi + lineOffset + 1.
+                        // With lineOffset=1 and xi=x_end the rightmost line pixel lands at
+                        // gx + rect_x_s + rect_w + 2, which is directly left of the border's right
+                        // column at gx + rect_x_s + rect_w + 3. The shadow (+2 extra) falls on the
+                        // border column itself and is overwritten when the border is drawn after the
+                        // loop, so no stray translucent pixel appears between the line and the border.
+                        const s16 lineOffset = 1;
 
                         // Y positions for reference lines
                         const s16 y_30_line = rect_y_s + (rect_h / 2);
@@ -3640,31 +3656,34 @@ public:
                                 fontsize, settings.catColor);
                         }
 
-                        // Border rect — exact mirror of FPS_Graph:
-                        //   drawEmptyRect(rect_x - 1 + 2, rect_y - 1, rect_w + 2, rect_h + 4)
-                        //   inner-right pixel = rect_x + 1 + rect_w + 2 - 1 = rect_x + rect_w + 2
-                        renderer->drawEmptyRect(
-                            gx + rect_x_s + 1,
-                            gTopY + rect_y_s - 1,
-                            rect_w + 2,
-                            rect_h + 4,
-                            aWithOpacity(graphSettings.borderColor));
+
+                        // Plot background: drawn immediately after the border, so the
+                        // dashed line, legend, FPS average, and data line all render on
+                        // top of it. Skipped entirely when alpha is 0.
+                        // plotBackgroundColor is uint16_t (RGBA4444); alpha is the top nibble.
+                        if ((graphSettings.plotBackgroundColor >> 12) & 0xF)
+                            renderer->drawRect(
+                                gx + rect_x_s + 2,
+                                gTopY + rect_y_s,
+                                rect_w + 1, // +1px right: data sits on the rightmost column; widen so it no longer touches the border
+                                rect_h + 2,
+                                aWithOpacity(graphSettings.plotBackgroundColor));
 
                         // Dashed half-way reference line — inside the border
                         // Original: drawDashedLine(rect_x+2, y_30, rect_x+rect_w+1, y_30, 6, ...)
                         renderer->drawDashedLine(
-                            gx + rect_x_s + 2,
+                            gx + rect_x_s + 2 + (displayScale == 1.5 ? 0 : 3),
                             gTopY + y_30_line,
-                            gx + rect_x_s + rect_w + 1,
+                            gx + rect_x_s + rect_w + 2 - (displayScale == 1.5 ? 0 : 3),
                             gTopY + y_30_line,
                             6,
                             aWithOpacity(graphSettings.dashedLineColor));
 
                         // Y-axis labels
-                        // Original max label x: rect_x - 15 (<100) or rect_x - 22 (>=100)  => always gx + 0
-                        // Original max label y: rect_y + 7  (baseline 7px below plot top)
-                        // Original min label x: rect_x - 10
-                        // Original min label y: rect_y + rect_h + 3
+                        // max label: drawn at gx (left edge of content area); rect_x_s was sized
+                        //   to fit it exactly so it always ends just left of the plot.
+                        // min label: gx + rect_x_s - lround(10 * displayScale)  (1 scaled-px gap
+                        //   left of plot left edge, matching the original native geometry).
                         {
                             char legend_max[4] = "60";
                             char legend_min[2] = "0";
@@ -3678,40 +3697,41 @@ public:
                                 legend_max[2] = (char)('0' + (graphRefreshRate % 10));
                                 legend_max[3] = '\0';
                             }
-                            const int legendFontSize = (int)lround(10 * displayScale);
-                            // max label: gx + 0  (rect_x - rect_x_native == 0)
+                            // legendFontSizeG was computed above for rect_x_s — reuse it here.
                             renderer->drawString(&legend_max[0], false,
                                 gx,
                                 gTopY + rect_y_s + (int)lround(7 * displayScale),
-                                legendFontSize, graphSettings.maxFPSTextColor);
-                            // min label: gx + rect_x - 10  (10px left of plot left edge)
-                            // Bottom-align "0" with the border's bottom edge instead of a hand-tuned
-                            // per-scale fudge, deriving the baseline from how renderGlyph actually
-                            // rasterizes the glyph:
-                            //   drawString's Y is the BASELINE. renderGlyph computes the bitmap top as
-                            //   yPos = baseline + bounds[1] (bounds[1] = iy0, negative → above baseline)
-                            //   and blits rows [yPos .. yPos + height - 1]. So the glyph's BOTTOM-MOST
-                            //   pixel row is at  baseline + bounds[1] + height - 1.
-                            //   For a non-descending glyph like '0', bounds[1] + height - 1 == -1
-                            //   (stb leaves the baseline row itself empty; the bottom pixel sits one
-                            //   row above the baseline) — NOT bounds[3], which is the geometric box
-                            //   bottom and would leave the digit ~1px high.
-                            // The border comes from drawEmptyRect(.., gTopY + rect_y_s - 1, .., rect_h + 4),
-                            // and drawEmptyRect's bottom edge pixel is y + h - 1 = gTopY + rect_y_s + rect_h + 2.
-                            // Solving baseline + (bounds[1] + height - 1) == borderBottomY lands the
-                            // digit's bottom pixel exactly on the border's bottom row at any displayScale.
+                                legendFontSizeG, graphSettings.maxFPSTextColor);
+                            // min "0": right-aligned with the trailing '0' of the max label.
+                            // drawString places each character's cursor at gx + sum_of_prior_advances,
+                            // so the trailing '0' of legend_max starts at:
+                            //   gx + (total_advance_of_legend_max - advance_of_'0')
+                            // Drawing legend_min at that same x makes the two '0' glyphs
+                            // pixel-identical in position at any scale or refresh rate.
+                            //
+                            // Y: bottom-align with the border's bottom edge.
+                            // drawString places the baseline at Y; the glyph's bottom-most inked
+                            // row is baseline + bounds[1] + height - 1 (one row above the baseline
+                            // for non-descending glyphs like '0'). borderBottomY is the last row of
+                            // drawEmptyRect(.., rect_h + 4): y + h - 1 = gTopY + rect_y_s + rect_h + 2.
                             const int  borderBottomY = gTopY + rect_y_s + rect_h + 2;
-                            const auto glyph0 = tsl::gfx::FontManager::getOrCreateGlyph('0', false, legendFontSize);
+                            // zeroAdvance: use getTextDimensions — the same truncating static_cast<s32>
+                            // path as maxLabelAdvance — so both cursor offsets round identically.
+                            // (lround(xAdvance * currFontSize) can differ by 1 px from the truncating
+                            // cast used inside drawString, causing visible right-edge misalignment.)
+                            const int  zeroAdvance     = renderer->getTextDimensions("0", false, legendFontSizeG).first;
+                            const int  maxLabelAdvance = renderer->getTextDimensions(&legend_max[0], false, legendFontSizeG).first;
+                            // Glyph lookup is still needed for Y bottom-alignment only.
+                            const auto glyph0 = tsl::gfx::FontManager::getOrCreateGlyph('0', false, legendFontSizeG);
                             // Offset (px) from baseline to the glyph's bottom-most rendered row.
-                            // Fallback -1 matches a non-descending glyph until the cache is warm
-                            // (the legend is drawn every frame, so this is at most a one-frame value).
+                            // Fallback -2 matches a non-descending glyph until the cache is warm.
                             const int  zeroBottomFromBaseline = (glyph0 && glyph0->height > 0)
                                 ? (glyph0->bounds[1] + glyph0->height - 2)
                                 : -2;
                             renderer->drawString(&legend_min[0], false,
-                                gx + rect_x_s - (int)lround(10 * displayScale),
+                                gx + maxLabelAdvance - zeroAdvance,
                                 borderBottomY - zeroBottomFromBaseline,
-                                legendFontSize, graphSettings.minFPSTextColor);
+                                legendFontSizeG, graphSettings.minFPSTextColor);
                         }
 
                         // FPS average text centred inside the plot
@@ -3720,15 +3740,16 @@ public:
                                 ((graphRefreshRate > 60 || !graphRefreshRate) ? 63 : (int)(63.0f / (60.0f / graphRefreshRate)))
                                 * displayScale);
                             const auto avgDim = renderer->getTextDimensions(graphFpsAvg_c, false, avgFontSize);
-                            const int avg_px = gx + rect_x_s + ((rect_w - (int)avgDim.first) / 2);
+                            const int avg_px = gx + rect_x_s + (((int)rect_w + 1 - (int)avgDim.first) / 2);
                             const int avg_py = gTopY + rect_y_s + (rect_h / 2) + (avgFontSize / 2) - (int)lround(5 * displayScale);
                             renderer->drawString(graphFpsAvg_c, false, avg_px, avg_py, avgFontSize, graphSettings.fpsColor);
                         }
 
                         // Draw the line graph
-                        // Original: drawLine(final_base_x + x + offset + 1, ...)
-                        //   rightmost x = x_end = rect_x + rect_w  ->  draws at rect_x + rect_w + offset + 1
-                        //   border inner-right = rect_x + rect_w + 2  (one px of margin to spare)
+                        // With lineOffset=1: drawLine(gx + xi + 2, ...) for shadow, drawLine(gx + xi + 1 + 1, ...) for main.
+                        //   rightmost xi = x_end = rect_x_s + rect_w  ->  main at gx + rect_x_s + rect_w + 2
+                        //   border right column = gx + rect_x_s + rect_w + 3  (one px of margin to spare)
+                        //   shadow at +3 is overwritten by the border drawn after the loop.
                         {
                             const size_t nReadings = graphReadings.size();
                             s16 y_old_local = rect_y_s + rect_h;
@@ -3757,15 +3778,30 @@ public:
                                 if (xi == x_end)
                                     y_old_local = y;
 
+                                // Shadow: same segment offset +1x, +1y in translucent black.
+                                // Drawn first so the main line paints on top.
                                 renderer->drawLine(
-                                    gx + xi + lineOffset + 1, gTopY + y,
-                                    gx + xi + lineOffset + 1, gTopY + y_old_local,
+                                    gx + xi + lineOffset + 2, gTopY + y + 1 + (displayScale == 1.5 ? 1 : 0),
+                                    gx + xi + lineOffset + 2, gTopY + y_old_local + 1 + (displayScale == 1.5 ? 1 : 0),
+                                    tsl::Color(0, 0, 0, 5));
+                                renderer->drawLine(
+                                    gx + xi + lineOffset + 1, gTopY + y + (displayScale == 1.5 ? 1 : 0),
+                                    gx + xi + lineOffset + 1, gTopY + y_old_local + (displayScale == 1.5 ? 1 : 0),
                                     lineColor);
 
                                 isAboveLocal = false;
                                 y_old_local  = y;
                             }
                         }
+
+                        // Border rect: drawEmptyRect(gx + rect_x_s + 1, ..., rect_w + 3, rect_h + 4)
+                        //   right column = gx + rect_x_s + 1 + rect_w + 3 - 1 = gx + rect_x_s + rect_w + 3
+                        renderer->drawEmptyRect(
+                            gx + rect_x_s + 1,
+                            gTopY + rect_y_s - 1,
+                            rect_w + 3,
+                            rect_h + 4,
+                            aWithOpacity(graphSettings.borderColor));
 
                         // currentY advance: advance by the box height PLUS the same slack that every
                         // text row carries below its glyph (fontsize - firstRowExtent = fontsize -

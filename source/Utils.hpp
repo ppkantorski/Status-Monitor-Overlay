@@ -2681,6 +2681,7 @@ struct FpsGraphSettings {
     uint16_t minFPSTextColor;
     uint16_t textColor;
     uint16_t catColor;
+    uint16_t plotBackgroundColor;
     //int setPos;
     bool useDynamicColors;
     bool useIntegerFPS;
@@ -3921,6 +3922,7 @@ ALWAYS_INLINE void GetConfigSettings(FpsGraphSettings* settings) {
 
     convertStrToRGBA4444("#FFFF", &(settings->textColor));
     convertStrToRGBA4444("#2DFF", &(settings->catColor));
+    convertStrToRGBA4444("#0007", &(settings->plotBackgroundColor));
 
     settings->refreshRate = 5;
     settings->sampleRate = settings->refreshRate;  // <= refreshRate; overridden below
@@ -4054,7 +4056,8 @@ ALWAYS_INLINE void GetConfigSettings(FpsGraphSettings* settings) {
         {"rounded_line_color", &settings->roundedLineColor},
         {"perfect_line_color", &settings->perfectLineColor},
         {"text_color", &settings->textColor},
-        {"cat_color", &settings->catColor}
+        {"cat_color", &settings->catColor},
+        {"plot_background_color", &settings->plotBackgroundColor}
     };
     
     for (const auto& mapping : colorMappings) {
