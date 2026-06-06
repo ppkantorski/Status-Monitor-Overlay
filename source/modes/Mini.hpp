@@ -3627,8 +3627,6 @@ public:
                         // loop, so no stray translucent pixel appears between the line and the border.
                         const s16 lineOffset = 1;
 
-                        // Y positions for reference lines
-                        const s16 y_30_line = rect_y_s + (rect_h / 2);
                         // range is the normalization denominator for the plot's Y mapping. It MUST be
                         // in FPS units (matching reading.value, which is lround(FPSavg)), NOT scaled
                         // pixels. The Y formula multiplies the FPS-space fraction by rect_h (scaled
@@ -3639,6 +3637,15 @@ public:
                         // displayScale == 1, so rect_h + 1 == refreshRate + 1 and both agree; at 1080p
                         // rect_h + 1 would be wrong, e.g. 91 vs 61 for a 60 Hz panel.)
                         const s16 range     = (s16)graphRefreshRate + 1; // FPS units, scale-independent
+
+                        // Y positions for reference lines.
+                        // y_30_line: visual midpoint used for the dashed reference line and label
+                        // positioning — position is unchanged.
+                        // y_30_color: where a 30fps reading actually lands via the data formula.
+                        // These differ by 1px at 1080p (displayScale=1.5) due to lround scaling,
+                        // so the color check uses y_30_color to match exactly where the line is drawn.
+                        const s16 y_30_line  = rect_y_s + (rect_h / 2);
+                        const s16 y_30_color = rect_y_s + (s16)std::lround((float)rect_h * ((float)(range - 31) / (float)range));
 
                         // Draw "FPS" label — same catColor as every other label, centred vertically
                         if (settings.showLabels) {
@@ -3770,7 +3777,7 @@ public:
 
                                 tsl::Color lineColor = graphSettings.mainLineColor;
                                 if (y == y_old_local && !isAboveLocal && graphReadings[idx].zero_rounded) {
-                                    if (y == y_30_line || y == rect_y_s)
+                                    if (y == y_30_color || y == rect_y_s)
                                         lineColor = graphSettings.perfectLineColor;
                                     else
                                         lineColor = graphSettings.roundedLineColor;
