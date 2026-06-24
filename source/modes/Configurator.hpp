@@ -1123,7 +1123,7 @@ public:
     BorderThicknessConfig(const std::string& mode) : modeName(mode) {
         section = modeToSection(mode);
         const std::string value = ult::parseValueFromIniSection(configIniPath, section, "border_thickness");
-        currentThickness = value.empty() ? 3 : std::clamp(atoi(value.c_str()), 1, 10);
+        currentThickness = value.empty() ? 10 : std::clamp(atoi(value.c_str()), 1, 30);
     }
     ~BorderThicknessConfig() { lastSelectedListItem = nullptr; }
 
@@ -1131,14 +1131,15 @@ public:
         auto* list = new tsl::elm::List();
         list->addItem(new tsl::elm::CategoryHeader("Border Thickness"));
 
-        for (int thickness = 1; thickness <= 10; ++thickness) {
-            auto* item = new tsl::elm::MiniListItem(std::to_string(thickness) + " px");
+        for (int tenths = 1; tenths <= 30; ++tenths) {
+            const std::string label = std::to_string(tenths / 10) + "." + std::to_string(tenths % 10) + " sp";
+            auto* item = new tsl::elm::MiniListItem(label);
             item->setRadioSelector();
-            if (thickness == currentThickness)
+            if (tenths == currentThickness)
                 selectItem(lastSelectedListItem, item, ult::CHECKMARK_SYMBOL);
-            item->setClickListener([this, item, thickness](uint64_t keys) {
+            item->setClickListener([this, item, tenths](uint64_t keys) {
                 if (keys & KEY_A) {
-                    ult::setIniFileValue(configIniPath, section, "border_thickness", std::to_string(thickness));
+                    ult::setIniFileValue(configIniPath, section, "border_thickness", std::to_string(tenths));
                     selectItem(lastSelectedListItem, item, ult::CHECKMARK_SYMBOL);
                     return true;
                 }
@@ -1335,12 +1336,12 @@ public:
     }
 };
 
-class MiniHPaddingConfig : public MiniPaddingConfigBase<36, 2, 60, 1> {
+class MiniHPaddingConfig : public MiniPaddingConfigBase<34, 2, 60, 1> {
 public:
     MiniHPaddingConfig() : MiniPaddingConfigBase("horizontal_padding", "Horizontal Padding", "Horizontal Padding") {}
 };
 
-class MiniVPaddingConfig : public MiniPaddingConfigBase<36, 2, 60, 1> {
+class MiniVPaddingConfig : public MiniPaddingConfigBase<34, 2, 60, 1> {
 public:
     MiniVPaddingConfig() : MiniPaddingConfigBase("vertical_padding", "Vertical Padding", "Vertical Padding") {}
 };
@@ -1431,7 +1432,7 @@ private:
     int getBorderThickness() const {
         const std::string section = modeToSection(modeName);
         const std::string v = ult::parseValueFromIniSection(configIniPath, section, "border_thickness");
-        return v.empty() ? 3 : std::clamp(atoi(v.c_str()), 0, 14);
+        return v.empty() ? 10 : std::clamp(atoi(v.c_str()), 0, 30);
     }
     int getCornerRadius() const {
         const std::string section = modeToSection(modeName);
@@ -1464,11 +1465,11 @@ private:
     }
     int getMiniHPadding() const {
         const std::string v = ult::parseValueFromIniSection(configIniPath, "mini", "horizontal_padding");
-        return v.empty() ? 36 : std::clamp(atoi(v.c_str()), 2, 60);
+        return v.empty() ? 34 : std::clamp(atoi(v.c_str()), 2, 60);
     }
     int getMiniVPadding() const {
         const std::string v = ult::parseValueFromIniSection(configIniPath, "mini", "vertical_padding");
-        return v.empty() ? 36 : std::clamp(atoi(v.c_str()), 2, 60);
+        return v.empty() ? 34 : std::clamp(atoi(v.c_str()), 2, 60);
     }
     int getMiniSpacing() const {
         const std::string v = ult::parseValueFromIniSection(configIniPath, "mini", "spacing");
@@ -1507,7 +1508,10 @@ public:
 
             // Border Thickness - same modes carry the configurable frame border.
             auto* btItem = new tsl::elm::ListItem("Border Thickness");
-            btItem->setValue(std::to_string(getBorderThickness()) + " px");
+            {
+                const int bt = getBorderThickness();
+                btItem->setValue(std::to_string(bt / 10) + "." + std::to_string(bt % 10) + " sp");
+            }
             btItem->setClickListener([this](uint64_t keys) {
                 if (keys & KEY_A) { tsl::changeTo<BorderThicknessConfig>(modeName); return true; }
                 return false;
@@ -2283,12 +2287,12 @@ private:
     // Mini space-unit paddings (tenths of a space). Defaults mirror MiniSettings.
     int getCurrentMiniHPadding() const {
         const std::string value = ult::parseValueFromIniSection(configIniPath, "mini", "horizontal_padding");
-        return value.empty() ? 36 : std::clamp(atoi(value.c_str()), 2, 60);
+        return value.empty() ? 34 : std::clamp(atoi(value.c_str()), 2, 60);
     }
 
     int getCurrentMiniVPadding() const {
         const std::string value = ult::parseValueFromIniSection(configIniPath, "mini", "vertical_padding");
-        return value.empty() ? 36 : std::clamp(atoi(value.c_str()), 2, 60);
+        return value.empty() ? 34 : std::clamp(atoi(value.c_str()), 2, 60);
     }
 
     int getCurrentMiniSpacing() const {

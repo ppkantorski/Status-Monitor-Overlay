@@ -132,12 +132,15 @@ public:
                         size_t totalHeight = overlay->actualTotalHeight;
                         
                         if (totalWidth == 0) {
-                            // Fallback calculation
+                            // Fallback calculation (no renderer available)
                             const s16 refresh_rate_offset = (overlay->refreshRate < 100) ? 21 : 28;
                             const s16 info_width = overlay->settings.showInfo ? (6 + overlay->rectangle_width/2 - 4) : 0;
                             const s16 content_width = overlay->rectangle_width + refresh_rate_offset + info_width + 1;
                             const s16 content_height = overlay->rectangle_height + 12;
-                            const int bExpandFb = overlay->settings.useBorder ? (int)overlay->settings.borderThickness : 0;
+                            // Estimate space width from graph height (proxy for font size).
+                            const float spaceEst = (float)overlay->rectangle_height * 0.25f;
+                            const int btPx = std::max(1, (int)(spaceEst * (float)overlay->settings.borderThickness / 10.0f + 0.5f));
+                            const int bExpandFb = overlay->settings.useBorder ? btPx : 0;
                             totalWidth = content_width + (2 * border) + bExpandFb;
                             totalHeight = content_height + (2 * border) + (2 * bExpandFb);
                         }
@@ -330,9 +333,15 @@ public:
             const s16 content_height = rectangle_height + 12;
             
             // Total dimensions including border
-            // Expand by borderThickness on each side when the border is on so the
+            // Space width at fixed reference size — used for both borderThicknessPx and
+            // cornerRadius below, so we compute it once here before bExpand.
+            const float _crSpW = (float)renderer->getTextDimensions(" ", false, 16).first;
+            const float _crSpace = (_crSpW > 0.5f) ? _crSpW : 4.0f;
+            const int borderThicknessPx = std::max(1, (int)(_crSpace * (float)settings.borderThickness / 10.0f + 0.5f));
+
+            // Expand by borderThicknessPx on each side when the border is on so the
             // border stroke never overlaps the interior content (mirrors Mini fix).
-            const int bExpand = settings.useBorder ? (int)settings.borderThickness : 0;
+            const int bExpand = settings.useBorder ? borderThicknessPx : 0;
             const size_t totalWidth = content_width + (2 * border) + bExpand;
             const size_t totalHeight = content_height + (2 * border) + (2 * bExpand);
             
@@ -416,10 +425,8 @@ public:
             
             // Configurable Switch 2 frame border; offset 0 when border is off.
             const s32 borderOffset = settings.useBorder ? 1 : 0;
-            // Corner radius in sp (tenths of a space) -> px (mirrors Mini), measured
-            // at a fixed reference size so the default stays stable (4.0 sp ~= 16 px).
-            const float _crSpW = (float)renderer->getTextDimensions(" ", false, 16).first;
-            const float _crSpace = (_crSpW > 0.5f) ? _crSpW : 4.0f;
+            // Corner radius in sp (tenths of a space) -> px. _crSpace is already
+            // computed above (reused from the borderThicknessPx calculation).
             const s32 cornerRadius = (s32)(_crSpace * (float)settings.cornerRadiusSp / 10.0f + 0.5f);
             renderer->drawRoundedRectSingleThreaded(
                 posX + borderOffset, 
@@ -433,7 +440,7 @@ public:
             if (settings.useBorder) {
                 const auto w2 = makeBorderWheel(settings);
                 renderer->drawBorderedRoundedRect(posX, posY, totalWidth, totalHeight,
-                    settings.borderThickness, cornerRadius,
+                    borderThicknessPx, cornerRadius,
                     aWithOpacity(settings.borderColor),
                     settings.useDynamicBorder ? &w2 : nullptr);
             }
@@ -720,12 +727,15 @@ public:
         size_t totalHeight = actualTotalHeight;
         
         if (totalWidth == 0) {
-            // Fallback calculation if not yet rendered
+            // Fallback calculation if not yet rendered (no renderer available)
             const s16 refresh_rate_offset = (refreshRate < 100) ? 21 : 28;
             const s16 info_width = settings.showInfo ? (6 + rectangle_width/2 - 4) : 0;
             const s16 content_width = rectangle_width + refresh_rate_offset + info_width + 1;
             const s16 content_height = rectangle_height + 12;
-            const int bExpandFb = settings.useBorder ? (int)settings.borderThickness : 0;
+            // Estimate space width from graph height (proxy for font size).
+            const float spaceEst = (float)rectangle_height * 0.25f;
+            const int btPx = std::max(1, (int)(spaceEst * (float)settings.borderThickness / 10.0f + 0.5f));
+            const int bExpandFb = settings.useBorder ? btPx : 0;
             totalWidth = content_width + (2 * border) + bExpandFb;
             totalHeight = content_height + (2 * border) + (2 * bExpandFb);
         }

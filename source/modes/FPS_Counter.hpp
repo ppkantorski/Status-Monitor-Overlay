@@ -180,15 +180,19 @@ public:
                         size_t totalHeight = overlay->actualTotalHeight;
                         
                         if (totalWidth == 0) {
-                            // Fallback calculation
+                            // Fallback calculation (no renderer available)
                             size_t approxFontSize = overlay->fontsize;
                             if (approxFontSize == 0) approxFontSize = 50;
                             const size_t textWidth = approxFontSize * 4;
                             const size_t margin = (approxFontSize / 8);
                             const size_t innerWidth = textWidth + margin;
                             const size_t innerHeight = approxFontSize;
-                            totalWidth = innerWidth + (2 * border);
-                            totalHeight = innerHeight + (2 * border);
+                            // Estimate space width from font size (mirrors miniSpaceWidthPx fallback).
+                            const float spaceEst = (float)approxFontSize * 0.25f;
+                            const int btPx = std::max(1, (int)(spaceEst * (float)overlay->settings.borderThickness / 10.0f + 0.5f));
+                            const int bExpFb = overlay->settings.useBorder ? btPx : 0;
+                            totalWidth = innerWidth + (2 * border) + bExpFb;
+                            totalHeight = innerHeight + (2 * border) + (2 * bExpFb);
                         }
                         
                         // Apply frame offsets
@@ -314,11 +318,18 @@ public:
             const size_t innerWidth = textWidth + margin;
             const size_t innerHeight = textHeight;
 
-            // Expand the rounded rect by borderThickness on each side when the
+            // Space width at fixed reference size (same measurement used for cornerRadius below).
+            // Used to convert borderThickness (tenths of a space) into pixels so that the border
+            // stays proportional to the font regardless of font size scaling.
+            const float _crSpW = (float)renderer->getTextDimensions(" ", false, 16).first;
+            const float _crSpace = (_crSpW > 0.5f) ? _crSpW : 4.0f;
+            const int borderThicknessPx = std::max(1, (int)(_crSpace * (float)settings.borderThickness / 10.0f + 0.5f));
+
+            // Expand the rounded rect by borderThicknessPx on each side when the
             // border is on, so the border stroke never overlaps interior content.
             // Mirrors the Mini fix: horizPadPx += borderThickness (right side),
             // vPad += borderThickness (top + bottom).
-            const int bExpand = settings.useBorder ? (int)settings.borderThickness : 0;
+            const int bExpand = settings.useBorder ? borderThicknessPx : 0;
             
             // Total dimensions including border (+ border-compensation when on)
             const size_t totalWidth = innerWidth + (2 * border) + bExpand;
@@ -405,11 +416,8 @@ public:
             
             // Configurable Switch 2 frame border; offset 0 when border is off.
             const s32 borderOffset = settings.useBorder ? 1 : 0;
-            // Corner radius in sp (tenths of a space) -> px (mirrors Mini).
-            // Measured at a fixed reference size so this font-scaled layout keeps
-            // a stable default (4.0 sp ~= 16 px) rather than a pill on large fonts.
-            const float _crSpW = (float)renderer->getTextDimensions(" ", false, 16).first;
-            const float _crSpace = (_crSpW > 0.5f) ? _crSpW : 4.0f;
+            // Corner radius in sp (tenths of a space) -> px. _crSpace is already
+            // computed above (reused from the borderThicknessPx calculation).
             const s32 cornerRadius = (s32)(_crSpace * (float)settings.cornerRadiusSp / 10.0f + 0.5f);
             renderer->drawRoundedRectSingleThreaded(
                 posX + borderOffset, 
@@ -424,7 +432,7 @@ public:
                 const auto w2 = makeBorderWheel(settings);
                 renderer->drawBorderedRoundedRect(
                     posX, posY, totalWidth, totalHeight,
-                    settings.borderThickness, cornerRadius,
+                    borderThicknessPx, cornerRadius,
                     aWithOpacity(settings.borderColor),
                     settings.useDynamicBorder ? &w2 : nullptr);
             }
@@ -555,13 +563,17 @@ public:
         size_t totalHeight = actualTotalHeight;
         
         if (totalWidth == 0) {
-            // Fallback calculation if not yet rendered
+            // Fallback calculation if not yet rendered (no renderer available)
             const size_t textWidth = fontsize * 4;
             const size_t margin = (fontsize / 8);
             const size_t innerWidth = textWidth + margin;
             const size_t innerHeight = fontsize + (margin / 2);
-            totalWidth = innerWidth + (2 * border);
-            totalHeight = innerHeight + (2 * border);
+            // Estimate space width from font size (mirrors miniSpaceWidthPx fallback).
+            const float spaceEst = (float)fontsize * 0.25f;
+            const int btPx = std::max(1, (int)(spaceEst * (float)settings.borderThickness / 10.0f + 0.5f));
+            const int bExpFb = settings.useBorder ? btPx : 0;
+            totalWidth = innerWidth + (2 * border) + bExpFb;
+            totalHeight = innerHeight + (2 * border) + (2 * bExpFb);
         }
         
         // Screen boundaries for clamping — sliding-window-aware, mirrors Mini.

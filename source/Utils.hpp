@@ -2582,8 +2582,8 @@ struct MiniSettings {
                              // and the background fill is NOT contracted.
     bool useDynamicBorder;   // true = rotating Switch 2 colour wheel; false = flat borderColor
     bool useBorderCW;        // true = clockwise wheel flow (default); false = reversed
-    uint8_t borderThickness; // outer border thickness in px (also the inset applied
-                             // to the background fill on all sides when useBorder)
+    uint8_t borderThickness; // outer border thickness in tenths of a space (0 = none;
+                             // e.g. 5 = 0.5 sp). Same unit as cornerRadiusSp.
     uint16_t borderColor;    // flat fallback colour when useDynamicBorder is false
     uint16_t borderWheelColor1;     // wheel anchor0  (UR)
     uint16_t borderWheelColor2;     // wheel anchor2  (LL)
@@ -2729,7 +2729,7 @@ struct FpsGraphSettings {
     bool useGraphBackground; // inner plot-region filled background on/off
     bool useDynamicBorder;   // wheel vs flat for both borders
     bool useBorderCW;        // true = clockwise wheel flow (default); false = reversed
-    uint8_t borderThickness; // outer frame border thickness in px (inner stays 1px)
+    uint8_t borderThickness; // outer frame border thickness in tenths of a space (inner stays 1px)
     uint16_t borderWheelColor1;
     uint16_t borderWheelColor2;
     uint16_t borderWheelColor3;
@@ -2770,14 +2770,14 @@ struct ResolutionSettings {
 // Shared initialiser for the configurable Switch 2 frame border. Every overlay
 // settings struct that carries a border (Mini / FPS Counter / FPS Graph / Game
 // Resolutions) exposes the same field names, so a single function template fills
-// all of them. Defaults: border ON, dynamic wheel ON, 1px thick, flat fallback
-// teal (#2DFF), wheel = muted slate palette.
+// all of them. Defaults: border ON, dynamic wheel ON, 1.0 sp thick (stored as
+// tenths: 10), flat fallback teal (#2DFF), wheel = muted slate palette.
 template <typename S>
 ALWAYS_INLINE void initBorderDefaults(S* s) {
     s->useBorder = true;
     s->useDynamicBorder = true;
     s->useBorderCW = true;
-    s->borderThickness = 3;
+    s->borderThickness = 10;
     convertStrToRGBA4444("#04AF", &(s->borderColor));           // Cobalt
     convertStrToRGBA4444("#0C0F", &(s->borderWheelColor1));     // anchor0 UR
     convertStrToRGBA4444("#64FF", &(s->borderWheelColor2));     // anchor2 LL  (Deep Slate)
@@ -2805,7 +2805,7 @@ ALWAYS_INLINE void parseBorderSettings(S* settings, const SectionT& section) {
     if (it != section.end()) { key = it->second; convertToUpper(key); settings->useBorderCW = (key != "FALSE"); }
 
     it = section.find("border_thickness");
-    if (it != section.end()) settings->borderThickness = (uint8_t)std::clamp(atol(it->second.c_str()), 0L, 14L);
+    if (it != section.end()) settings->borderThickness = (uint8_t)std::clamp(atol(it->second.c_str()), 0L, 30L);
 
     struct { const char* k; uint16_t* t; } m[] = {
         {"border_color",             &settings->borderColor},
@@ -2861,8 +2861,8 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
     settings->docked1080pFontSize = 21;
     settings->use1080pDocked = true;
     settings->spacing = 15;            // 1.5 sp
-    settings->horizontalPadding = 36;  // 3.6 sp (trailing/right-side text padding)
-    settings->verticalPadding = 36;    // 3.6 sp (top/bottom interior padding)
+    settings->horizontalPadding = 34;  // 3.4 sp (trailing/right-side text padding)
+    settings->verticalPadding = 34;    // 3.4 sp (top/bottom interior padding)
     settings->cornerRadiusSp = 36;     // 3.6 sp
     settings->stackedSpacing = 4;      // 0.4 sp (gap between stacked/split rows)
     convertStrToRGBA4444("#000A", &(settings->backgroundColor));

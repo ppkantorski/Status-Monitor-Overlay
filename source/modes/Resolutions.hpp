@@ -110,8 +110,11 @@ public:
                         overlayHeight = 200;
                         // Expand to match draw path when border is on
                         if (overlay->settings.useBorder) {
-                            overlayWidth  += (int)overlay->settings.borderThickness;
-                            overlayHeight += 2 * (int)overlay->settings.borderThickness;
+                            // Fixed reference space width (4.0px at size 16), same fallback as _crSpace floor.
+                            const float spaceRef = 4.0f;
+                            const int btPx = std::max(1, (int)(spaceRef * (float)overlay->settings.borderThickness / 10.0f + 0.5f));
+                            overlayWidth  += btPx;
+                            overlayHeight += 2 * btPx;
                         }
                         
                         // Add touch padding
@@ -238,11 +241,17 @@ public:
             int total_width = 360 - 20;
             int total_height = 200;
 
-            // Expand the rounded rect by borderThickness on each side when the
+            // Space width at fixed reference size — used for both borderThicknessPx and
+            // cornerRadius below, so we compute it once here before bExpand.
+            const float _crSpW = (float)renderer->getTextDimensions(" ", false, 16).first;
+            const float _crSpace = (_crSpW > 0.5f) ? _crSpW : 4.0f;
+            const int borderThicknessPx = std::max(1, (int)(_crSpace * (float)settings.borderThickness / 10.0f + 0.5f));
+
+            // Expand the rounded rect by borderThicknessPx on each side when the
             // border is on, so the border stroke never overlaps interior content.
-            // Mirrors the Mini fix: right side += borderThickness,
-            // top + bottom += borderThickness each.
-            const int bExpand = settings.useBorder ? (int)settings.borderThickness : 0;
+            // Mirrors the Mini fix: right side += borderThicknessPx,
+            // top + bottom += borderThicknessPx each.
+            const int bExpand = settings.useBorder ? borderThicknessPx : 0;
             total_width  += bExpand;
             total_height += 2 * bExpand;
             
@@ -307,11 +316,8 @@ public:
         
             // Configurable Switch 2 frame border; offset 0 when border is off.
             const int borderOffset = settings.useBorder ? 1 : 0;
-            // Corner radius in sp (tenths of a space), converted to px at the
-            // current font, mirroring Mini. Measured at a fixed reference size so
-            // the fixed-pixel layout keeps a stable default (4.0 sp ~= 16 px).
-            const float _crSpW = (float)renderer->getTextDimensions(" ", false, 16).first;
-            const float _crSpace = (_crSpW > 0.5f) ? _crSpW : 4.0f;
+            // Corner radius in sp (tenths of a space) -> px. _crSpace is already
+            // computed above (reused from the borderThicknessPx calculation).
             const int cornerRadius = (int)(_crSpace * (float)settings.cornerRadiusSp / 10.0f + 0.5f);
             // Game detected
             if (gameStart && NxFps && NxFps->API >= 1 && (Resolutions_c[0] != '\0' && Resolutions2_c[0] != '\0')) {
@@ -352,7 +358,7 @@ public:
             if (settings.useBorder) {
                 const auto w2 = makeBorderWheel(settings);
                 renderer->drawBorderedRoundedRect(final_base_x, final_base_y, total_width, total_height,
-                    settings.borderThickness, cornerRadius,
+                    borderThicknessPx, cornerRadius,
                     aWithOpacity(settings.borderColor),
                     settings.useDynamicBorder ? &w2 : nullptr);
             }
@@ -489,8 +495,11 @@ public:
         overlayHeight = 200;
         // Expand to match draw path when border is on
         if (settings.useBorder) {
-            overlayWidth  += (int)settings.borderThickness;
-            overlayHeight += 2 * (int)settings.borderThickness;
+            // Fixed reference space width (4.0px at size 16), same fallback as _crSpace floor.
+            const float spaceRef = 4.0f;
+            const int btPx = std::max(1, (int)(spaceRef * (float)settings.borderThickness / 10.0f + 0.5f));
+            overlayWidth  += btPx;
+            overlayHeight += 2 * btPx;
         }
         
         // Screen boundaries for clamping

@@ -73,6 +73,7 @@ private:
 
     size_t framePadding = 10;
     int    cornerRadius = 16;
+    int    borderThicknessPx = 2; // borderThickness (tenths of a space) converted to pixels by miniApplySpaceUnits
     float  displayScale = 1.0f;  // 1.5 in 1080p pixel-perfect docked mode, 1.0 otherwise
     int    screenWidth  = 1280;  // framebuffer coordinate space (720p: 1280, 1080p: 832)
     int    screenHeight = 720;   // framebuffer coordinate space (720p: 720,  1080p: 1080)
@@ -130,11 +131,12 @@ private:
         }
         const float spaceW = miniSpaceWidthPx(renderer);
         settings.spacing = (size_t)std::max(0, miniPaddingToPx(spaceW, (unsigned)spacingSp));
-        horizPadPx       = miniPaddingToPx(spaceW, settings.horizontalPadding) + (settings.useBorder ? (int)settings.borderThickness : 0);
-        const int vPad   = miniPaddingToPx(spaceW, settings.verticalPadding) + (settings.useBorder ? (int)settings.borderThickness : 0);
+        horizPadPx       = miniPaddingToPx(spaceW, settings.horizontalPadding) + (settings.useBorder ? miniPaddingToPx(spaceW, settings.borderThickness) : 0);
+        const int vPad   = miniPaddingToPx(spaceW, settings.verticalPadding) + (settings.useBorder ? miniPaddingToPx(spaceW, settings.borderThickness) : 0);
         topPadding       = vPad;
         bottomPadding    = vPad;
         cornerRadius     = miniPaddingToPx(spaceW, settings.cornerRadiusSp);
+        borderThicknessPx = std::max(1, miniPaddingToPx(spaceW, settings.borderThickness));
         stackSpacingPx   = miniPaddingToPx(spaceW, settings.stackedSpacing);
     }
 
@@ -1581,7 +1583,7 @@ public:
             // When the border is on, expand the box rightward by borderThickness so the
             // right-side interior gap stays visually equal to the left-side gap (which the
             // border occupies). Content is shifted right by the same amount below.
-            const int borderInset = settings.useBorder ? (int)settings.borderThickness : 0;
+            const int borderInset = settings.useBorder ? borderThicknessPx : 0;
             const uint32_t overlayWidth = settings.showLabels 
                 ? (margin + rectangleWidth + horizPadPx + borderInset)
                 : (rectangleWidth + horizPadPx + leftPadding + borderInset);
@@ -1723,7 +1725,7 @@ public:
                     cachedBaseY + drawY + clippingOffsetY, 
                     overlayWidth, 
                     cachedHeight,
-                    settings.borderThickness,
+                    borderThicknessPx,
                     cornerRadius, 
                     aWithOpacity(settings.borderColor),
                     settings.useDynamicBorder ? &w2 : nullptr
