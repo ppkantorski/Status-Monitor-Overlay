@@ -108,6 +108,11 @@ public:
                         int overlayWidth, overlayHeight;
                         overlayWidth = 360-20;
                         overlayHeight = 200;
+                        // Expand to match draw path when border is on
+                        if (overlay->settings.useBorder) {
+                            overlayWidth  += (int)overlay->settings.borderThickness;
+                            overlayHeight += 2 * (int)overlay->settings.borderThickness;
+                        }
                         
                         // Add touch padding
                         const int touchPadding = 4;
@@ -232,6 +237,14 @@ public:
         
             int total_width = 360 - 20;
             int total_height = 200;
+
+            // Expand the rounded rect by borderThickness on each side when the
+            // border is on, so the border stroke never overlaps interior content.
+            // Mirrors the Mini fix: right side += borderThickness,
+            // top + bottom += borderThickness each.
+            const int bExpand = settings.useBorder ? (int)settings.borderThickness : 0;
+            total_width  += bExpand;
+            total_height += 2 * bExpand;
             
             int _frameOffsetX;
             
@@ -307,7 +320,7 @@ public:
                 renderer->drawRoundedRectSingleThreaded(final_base_x + borderOffset, final_base_y + borderOffset, total_width - (2*borderOffset), total_height - (2*borderOffset), cornerRadius, aWithOpacity(bgColor));
         
                 int xOffset = 10;
-                int yOffset = 10;
+                int yOffset = 10 + bExpand; // shift down by bExpand to stay clear of expanded top border
                 renderer->drawString("Depth", false, xOffset + final_base_x + 20, yOffset + final_base_y + 20, 20, settings.catColor);
                 renderer->drawString(Resolutions_c, false, xOffset + final_base_x + 20, yOffset + final_base_y + 55, 18, settings.textColor);
                 renderer->drawString("Viewport", false, xOffset + final_base_x + 180, yOffset + final_base_y + 20, 20, settings.catColor);
@@ -474,6 +487,11 @@ public:
         int overlayWidth, overlayHeight;
         overlayWidth = 360-20;
         overlayHeight = 200;
+        // Expand to match draw path when border is on
+        if (settings.useBorder) {
+            overlayWidth  += (int)settings.borderThickness;
+            overlayHeight += 2 * (int)settings.borderThickness;
+        }
         
         // Screen boundaries for clamping
         const int minX = -cachedBaseX + framePadding;

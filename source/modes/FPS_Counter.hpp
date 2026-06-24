@@ -313,10 +313,16 @@ public:
             // Inner rectangle dimensions (content area)
             const size_t innerWidth = textWidth + margin;
             const size_t innerHeight = textHeight;
+
+            // Expand the rounded rect by borderThickness on each side when the
+            // border is on, so the border stroke never overlaps interior content.
+            // Mirrors the Mini fix: horizPadPx += borderThickness (right side),
+            // vPad += borderThickness (top + bottom).
+            const int bExpand = settings.useBorder ? (int)settings.borderThickness : 0;
             
-            // Total dimensions including border
-            const size_t totalWidth = innerWidth + (2 * border);
-            const size_t totalHeight = innerHeight + (2 * border);
+            // Total dimensions including border (+ border-compensation when on)
+            const size_t totalWidth = innerWidth + (2 * border) + bExpand;
+            const size_t totalHeight = innerHeight + (2 * border) + (2 * bExpand);
             
             // Store actual dimensions for input handling
             actualTextWidth = textWidth;
@@ -423,9 +429,11 @@ public:
                     settings.useDynamicBorder ? &w2 : nullptr);
             }
             
-            // Calculate centered text position within the bordered area
-            const int textX = posX + border + (margin / 2);
-            const int textY = posY + border + (fontsize - margin);
+            // Calculate centered text position within the bordered area.
+            // bExpand shifts the content origin right and down to stay inside
+            // the extra space added by the border compensation.
+            const int textX = posX + border + (margin / 2) + bExpand;
+            const int textY = posY + border + (fontsize - margin) + bExpand;
             
             // Draw the text
             renderer->drawString(

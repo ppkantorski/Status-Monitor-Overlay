@@ -137,8 +137,9 @@ public:
                             const s16 info_width = overlay->settings.showInfo ? (6 + overlay->rectangle_width/2 - 4) : 0;
                             const s16 content_width = overlay->rectangle_width + refresh_rate_offset + info_width + 1;
                             const s16 content_height = overlay->rectangle_height + 12;
-                            totalWidth = content_width + (2 * border);
-                            totalHeight = content_height + (2 * border);
+                            const int bExpandFb = overlay->settings.useBorder ? (int)overlay->settings.borderThickness : 0;
+                            totalWidth = content_width + (2 * border) + bExpandFb;
+                            totalHeight = content_height + (2 * border) + (2 * bExpandFb);
                         }
                         
                         // Apply frame offsets — in limitedMemory the layer slides to frameOffsetX,
@@ -329,8 +330,11 @@ public:
             const s16 content_height = rectangle_height + 12;
             
             // Total dimensions including border
-            const size_t totalWidth = content_width + (2 * border);
-            const size_t totalHeight = content_height + (2 * border);
+            // Expand by borderThickness on each side when the border is on so the
+            // border stroke never overlaps the interior content (mirrors Mini fix).
+            const int bExpand = settings.useBorder ? (int)settings.borderThickness : 0;
+            const size_t totalWidth = content_width + (2 * border) + bExpand;
+            const size_t totalHeight = content_height + (2 * border) + (2 * bExpand);
             
             // Store actual dimensions for input handling
             actualTotalWidth = totalWidth;
@@ -436,9 +440,11 @@ public:
             
             posX += 4;
 
-            // Content drawing position (inside the border)
-            const int final_base_x = posX + border;
-            const int final_base_y = posY + border;
+            // Content drawing position (inside the border).
+            // bExpand shifts origin right/down to account for the extra space
+            // added by border compensation, keeping content clear of the stroke.
+            const int final_base_x = posX + border + bExpand;
+            const int final_base_y = posY + border + bExpand;
 
             const s16 size = (refreshRate > 60 || !refreshRate) ? 63 : (s32)(63.0/(60.0/refreshRate));
             const auto width = renderer->getTextDimensions(FPSavg_c, false, size).first;
@@ -716,8 +722,9 @@ public:
             const s16 info_width = settings.showInfo ? (6 + rectangle_width/2 - 4) : 0;
             const s16 content_width = rectangle_width + refresh_rate_offset + info_width + 1;
             const s16 content_height = rectangle_height + 12;
-            totalWidth = content_width + (2 * border);
-            totalHeight = content_height + (2 * border);
+            const int bExpandFb = settings.useBorder ? (int)settings.borderThickness : 0;
+            totalWidth = content_width + (2 * border) + bExpandFb;
+            totalHeight = content_height + (2 * border) + (2 * bExpandFb);
         }
         
         // Screen boundaries for clamping.
