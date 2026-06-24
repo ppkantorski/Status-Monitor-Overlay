@@ -1104,7 +1104,7 @@ public:
         if (keysDown & KEY_B) {
             triggerExitFeedback();
             jumpItemName = "Frame Padding"; jumpItemValue = ""; jumpItemExactMatch = false;
-            tsl::goBack();
+            tsl::swapTo<PaddingsConfig>(SwapDepth(2), modeName);
             return true;
         }
         return false;
@@ -1156,7 +1156,7 @@ public:
         if (keysDown & KEY_B) {
             triggerExitFeedback();
             jumpItemName = "Border Thickness"; jumpItemValue = ""; jumpItemExactMatch = false;
-            tsl::goBack();
+            tsl::swapTo<PaddingsConfig>(SwapDepth(2), modeName);
             return true;
         }
         return false;
@@ -1192,6 +1192,7 @@ protected:
     std::string iniKey;
     std::string headerLabel;
     std::string jumpLabel;
+    std::string modeName = "Micro";
 
     virtual std::string formatLabel(int tenths) const { return formatSpTenths(tenths); }
 
@@ -1233,7 +1234,7 @@ public:
         if (keysDown & KEY_B) {
             triggerExitFeedback();
             jumpItemName = jumpLabel; jumpItemValue = ""; jumpItemExactMatch = false;
-            tsl::goBack();
+            tsl::swapTo<PaddingsConfig>(SwapDepth(2), modeName);
             return true;
         }
         return false;
@@ -1285,6 +1286,7 @@ protected:
     std::string iniKey;
     std::string headerLabel;
     std::string jumpLabel;
+    std::string modeName = "Mini";
 
     virtual std::string formatLabel(int tenths) const { return formatSpTenths(tenths); }
 
@@ -1326,7 +1328,7 @@ public:
         if (keysDown & KEY_B) {
             triggerExitFeedback();
             jumpItemName = jumpLabel; jumpItemValue = ""; jumpItemExactMatch = false;
-            tsl::goBack();
+            tsl::swapTo<PaddingsConfig>(SwapDepth(2), modeName);
             return true;
         }
         return false;
@@ -1388,6 +1390,7 @@ public:
             item->setClickListener([this, item, p](uint64_t keys) {
                 if (keys & KEY_A) {
                     ult::setIniFileValue(configIniPath, section, "corner_radius", std::to_string(p));
+                    currentRadius = p;
                     selectItem(lastSelectedListItem, item, ult::CHECKMARK_SYMBOL);
                     return true;
                 }
@@ -1404,7 +1407,7 @@ public:
         if (keysDown & KEY_B) {
             triggerExitFeedback();
             jumpItemName = "Corner Radius"; jumpItemValue = ""; jumpItemExactMatch = false;
-            tsl::goBack();
+            tsl::swapTo<PaddingsConfig>(SwapDepth(2), modeName);
             return true;
         }
         return false;
