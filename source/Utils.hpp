@@ -52,6 +52,7 @@ uint64_t systemtickfrequency = 19200000;
 
 LEvent threadexit;
 LEvent microSwipeExitEvent;  // global so it is zero-initialized like threadexit; leventCreate not needed
+LEvent fullSwipeExitEvent;   // global so it is zero-initialized like threadexit; leventCreate not needed
 PwmChannelSession g_ICon;
 const std::string folderpath = "sdmc:/switch/.overlays/";
 
@@ -1368,7 +1369,7 @@ void Misc(void*) {
     // Use the same interval as CheckCore/FPSCounter so temps/GPU/RAM data
     // updates at the overlay refresh rate rather than the old hardcapped 10 Hz.
     // At very low frame rates (< 10 fps) the original safety floor still applies.
-    const uint64_t timeout_ns = 1'000'000'000ULL / TeslaFPS;
+    const uint64_t timeout_ns = 1'000'000'000ULL / (TeslaFPS > 0 ? TeslaFPS : 1);
     const bool isUsingEOSorHOC = g_isUsingEOSorHOC;  // cached at init — no IPC cost
     
     // Initialize voltage reading if needed
@@ -2034,7 +2035,7 @@ void Misc3(void*) {
 //}
 
 void CheckCore(void* idletick_ptr) {
-    const uint64_t timeout_ns = 1'000'000'000ULL / TeslaFPS;
+    const uint64_t timeout_ns = 1'000'000'000ULL / (TeslaFPS > 0 ? TeslaFPS : 1);
     std::atomic<uint64_t>* idletick = (std::atomic<uint64_t>*)idletick_ptr;
     while (true) {
         // Sleep gate: idle-tick deltas measured during sleep are meaningless.
@@ -2115,7 +2116,7 @@ void CloseThreads() {
 
 //Separate functions dedicated to "FPS Counter" mode
 void FPSCounter(void*) {
-    const uint64_t timeout_ns = 1'000'000'000ULL / TeslaFPS;
+    const uint64_t timeout_ns = 1'000'000'000ULL / (TeslaFPS > 0 ? TeslaFPS : 1);
     do {
         // Halt during sleep — NxFps shared memory is owned by the suspended
         // game process; reads during sleep produce stale/garbage tick deltas.
@@ -2486,6 +2487,7 @@ bool convertStrToRGBA4444(std::string hexColor, uint16_t* returnValue) {
 
 struct FullSettings {
     uint8_t refreshRate;
+    uint8_t sampleRate;  // how often sensor values are re-polled while focus mode unlocks the limiter; always <= refreshRate
     bool setPosRight;
     bool showRealFreqs;
     bool realVolts; 
@@ -2497,6 +2499,7 @@ struct FullSettings {
     bool useDynamicColors;
     bool disableScreenshots;
     uint16_t backgroundColor;
+    uint16_t focusBackgroundColor;  // background color while Plus is held (focus/reposition mode)
     uint16_t separatorColor;
     uint16_t catColor1;
     uint16_t catColor2;
@@ -2664,6 +2667,8 @@ struct MicroSettings {
 
 struct FpsCounterSettings {
     uint8_t refreshRate;
+    uint8_t sampleRate;          // how often FPS data is re-polled; always <= refreshRate
+    uint8_t cornerRadiusSp;      // background box corner radius; tenths of a space
     size_t handheldFontSize;
     size_t dockedFontSize;
     size_t docked1080pFontSize;  // font size used when use1080pDocked is true and console is docked
@@ -2695,6 +2700,7 @@ struct FpsGraphSettings {
     bool showInfo;
     uint8_t refreshRate;
     uint8_t sampleRate;  // how often info/values are re-polled; always <= refreshRate
+    uint8_t cornerRadiusSp;      // background box corner radius; tenths of a space
     uint16_t backgroundColor;
     uint16_t focusBackgroundColor;
     uint16_t fpsColor;
@@ -2734,6 +2740,8 @@ struct FpsGraphSettings {
 
 struct ResolutionSettings {
     uint8_t refreshRate;
+    uint8_t sampleRate;          // how often resolution data is re-polled; <= refreshRate
+    uint8_t cornerRadiusSp;      // background box corner radius; tenths of a space
     uint16_t backgroundColor;
     uint16_t focusBackgroundColor;
     uint16_t catColor;
@@ -2769,14 +2777,14 @@ ALWAYS_INLINE void initBorderDefaults(S* s) {
     s->useBorder = true;
     s->useDynamicBorder = true;
     s->useBorderCW = true;
-    s->borderThickness = 1;
-    convertStrToRGBA4444("#2DFF", &(s->borderColor));
-    convertStrToRGBA4444("#75FF", &(s->borderWheelColor1));      // anchor0 UR  (Muted Violet-Steel)
-    convertStrToRGBA4444("#64FF", &(s->borderWheelColor2));      // anchor2 LL  (Deep Slate)
-    convertStrToRGBA4444("#799F", &(s->borderWheelColor3));      // anchor1 bright (Warm Steel)
-    convertStrToRGBA4444("#657F", &(s->borderWheelColor3Deep));  // anchor1 deep  (Slate Navy)
-    convertStrToRGBA4444("#A98F", &(s->borderWheelColor4));      // anchor3 bright (Periwinkle)
-    convertStrToRGBA4444("#755F", &(s->borderWheelColor4Deep));  // anchor3 deep  (Indigo Gray)
+    s->borderThickness = 3;
+    convertStrToRGBA4444("#04AF", &(s->borderColor));           // Cobalt
+    convertStrToRGBA4444("#0C0F", &(s->borderWheelColor1));     // anchor0 UR
+    convertStrToRGBA4444("#64FF", &(s->borderWheelColor2));     // anchor2 LL  (Deep Slate)
+    convertStrToRGBA4444("#08AF", &(s->borderWheelColor3));     // anchor1 bright
+    convertStrToRGBA4444("#657F", &(s->borderWheelColor3Deep)); // anchor1 deep  (Slate Navy)
+    convertStrToRGBA4444("#A98F", &(s->borderWheelColor4));     // anchor3 bright (Periwinkle)
+    convertStrToRGBA4444("#C8FF", &(s->borderWheelColor4Deep)); // anchor3 deep
 }
 
 // Shared parser for the configurable Switch 2 frame border. Reads the same keys
@@ -2820,7 +2828,7 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
     settings->realVolts = true;
     settings->showFullCPU = true;
     settings->showFullCPUMaxCore012 = true;
-    settings->showStackedFullCPU = false;
+    settings->showStackedFullCPU = true;
     settings->showFullResolution = true;
     settings->showPrimaryResolution = false;
     settings->showFanPercentage = true;
@@ -2853,9 +2861,9 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
     settings->docked1080pFontSize = 21;
     settings->use1080pDocked = true;
     settings->spacing = 15;            // 1.5 sp
-    settings->horizontalPadding = 30;  // 3.0 sp (trailing/right-side text padding)
-    settings->verticalPadding = 30;    // 3.0 sp (top/bottom interior padding)
-    settings->cornerRadiusSp = 40;     // 4.0 sp
+    settings->horizontalPadding = 36;  // 3.6 sp (trailing/right-side text padding)
+    settings->verticalPadding = 36;    // 3.6 sp (top/bottom interior padding)
+    settings->cornerRadiusSp = 30;     // 3.0 sp
     settings->stackedSpacing = 4;      // 0.4 sp (gap between stacked/split rows)
     convertStrToRGBA4444("#000A", &(settings->backgroundColor));
     convertStrToRGBA4444("#000F", &(settings->focusBackgroundColor));
@@ -2875,11 +2883,11 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
     settings->showStackedBAT = false;
     settings->showStackedDTC = false;
     settings->refreshRate = 30;
-    settings->sampleRate = 3;  // default matches refreshRate
+    settings->sampleRate = 2;  // re-poll sensors 2x/sec by default
     //settings->setPos = 0;
     settings->frameOffsetX = 0;
     settings->frameOffsetY = 0;
-    settings->framePadding = 4;
+    settings->framePadding = 0;
     initBorderDefaults(settings);
 
     // Open and read file efficiently
@@ -3878,13 +3886,15 @@ ALWAYS_INLINE void GetConfigSettings(FpsCounterSettings* settings) {
     convertStrToRGBA4444("#000F", &(settings->focusBackgroundColor));
     convertStrToRGBA4444("#2DFF", &(settings->textColor));
     //settings->setPos = 0;
-    settings->refreshRate = 5;
+    settings->refreshRate = 30;
+    settings->sampleRate = 30;   // re-poll FPS data at the same rate by default
+    settings->cornerRadiusSp = 30;     // 3.0 sp
     settings->useIntegerFPS = true;
     settings->disableScreenshots = false;
 
     settings->frameOffsetX = 0;
     settings->frameOffsetY = 0;
-    settings->framePadding = 4;
+    settings->framePadding = 0;
     initBorderDefaults(settings);
 
     // Open and read file efficiently
@@ -3912,12 +3922,27 @@ ALWAYS_INLINE void GetConfigSettings(FpsCounterSettings* settings) {
 
     const auto& section = sectionIt->second;
     
+    // Process refresh_rate (overlay redraw rate; also gates data updates). Previously
+    // unparsed, so the configured value was ignored and refreshRate stayed at default.
+    auto it = section.find("refresh_rate");
+    if (it != section.end()) {
+        settings->refreshRate = std::clamp(atol(it->second.c_str()), 1L, 60L);
+    }
+
+    // Process sample_rate: how often FPS data is re-polled; always <= refreshRate.
+    it = section.find("sample_rate");
+    if (it != section.end()) {
+        settings->sampleRate = std::clamp(atol(it->second.c_str()), 1L, (long)settings->refreshRate);
+    } else {
+        settings->sampleRate = settings->refreshRate; // default: match refresh rate
+    }
+
     // Process font sizes with shared bounds
     static constexpr long minFontSize    = 8;
     static constexpr long maxFontSize    = 150;  // 720p cap
     static constexpr long max1080pFont   = 225;  // 1080p pixel-perfect cap (~1.5× 720p max)
 
-    auto it = section.find("handheld_font_size");
+    it = section.find("handheld_font_size");
     if (it != section.end()) {
         settings->handheldFontSize = std::clamp(atol(it->second.c_str()), minFontSize, maxFontSize);
     }
@@ -4015,6 +4040,12 @@ ALWAYS_INLINE void GetConfigSettings(FpsCounterSettings* settings) {
         settings->framePadding = atol(it->second.c_str());
     }
 
+    // Process corner_radius (tenths of a space; converted to px at draw time)
+    it = section.find("corner_radius");
+    if (it != section.end()) {
+        settings->cornerRadiusSp = (uint8_t)std::clamp(atoi(it->second.c_str()), 0, 80);
+    }
+
     parseBorderSettings(settings, section);
 }
 
@@ -4045,10 +4076,11 @@ ALWAYS_INLINE void GetConfigSettings(FpsGraphSettings* settings) {
 
     settings->frameOffsetX = 0;
     settings->frameOffsetY = 0;
-    settings->framePadding = 4;
+    settings->framePadding = 0;
     initBorderDefaults(settings);
-    settings->useGraphBorder = true;   // inner plot-region border (FPS Graph only)
-    settings->useGraphBackground = true; // inner plot-region background (FPS Graph only)
+    settings->useGraphBorder = false;   // inner plot-region border (FPS Graph only)
+    settings->useGraphBackground = false; // inner plot-region background (FPS Graph only)
+    settings->cornerRadiusSp = 30;     // 3.0 sp
 
 
     // Open and read file efficiently
@@ -4153,6 +4185,12 @@ ALWAYS_INLINE void GetConfigSettings(FpsGraphSettings* settings) {
         settings->framePadding = atol(it->second.c_str());
     }
 
+    // Process corner_radius (tenths of a space; converted to px at draw time)
+    it = section.find("corner_radius");
+    if (it != section.end()) {
+        settings->cornerRadiusSp = (uint8_t)std::clamp(atoi(it->second.c_str()), 0, 80);
+    }
+
     
     // Process colors - using a struct for cleaner code
     struct ColorMapping {
@@ -4205,7 +4243,8 @@ ALWAYS_INLINE void GetConfigSettings(FpsGraphSettings* settings) {
 ALWAYS_INLINE void GetConfigSettings(FullSettings* settings) {
     // Initialize defaults
     settings->setPosRight = false;
-    settings->refreshRate = 3;
+    settings->refreshRate = 2;
+    settings->sampleRate = 2;  // matches refreshRate by default for this mode
     settings->showRealFreqs = true;
     settings->showDeltas = true;
     settings->showTargetFreqs = true;
@@ -4215,6 +4254,7 @@ ALWAYS_INLINE void GetConfigSettings(FullSettings* settings) {
     settings->useDynamicColors = true;
     settings->disableScreenshots = false;
     convertStrToRGBA4444("#0009", &(settings->backgroundColor));
+    convertStrToRGBA4444("#000F", &(settings->focusBackgroundColor));
     convertStrToRGBA4444("#2DFF", &(settings->separatorColor));
     convertStrToRGBA4444("#8FFF", &(settings->catColor1));
     convertStrToRGBA4444("#8CFF", &(settings->catColor2));
@@ -4248,6 +4288,12 @@ ALWAYS_INLINE void GetConfigSettings(FullSettings* settings) {
     auto it = section.find("refresh_rate");
     if (it != section.end()) {
         settings->refreshRate = std::clamp(atol(it->second.c_str()), 1L, 60L);
+    }
+
+    // Process sample_rate: how often sensor values are re-polled; always <= refreshRate.
+    it = section.find("sample_rate");
+    if (it != section.end()) {
+        settings->sampleRate = std::clamp(atol(it->second.c_str()), 1L, (long)settings->refreshRate);
     }
     
     // Process layer position
@@ -4323,6 +4369,13 @@ ALWAYS_INLINE void GetConfigSettings(FullSettings* settings) {
             settings->backgroundColor = temp;
     }
 
+    it = section.find("focus_background_color");
+    if (it != section.end()) {
+        temp = 0;
+        if (convertStrToRGBA4444(it->second, &temp))
+            settings->focusBackgroundColor = temp;
+    }
+
     it = section.find("separator_color");
     if (it != section.end()) {
         temp = 0;
@@ -4359,13 +4412,15 @@ ALWAYS_INLINE void GetConfigSettings(ResolutionSettings* settings) {
     convertStrToRGBA4444("#8FFF", &(settings->catColor));
     //convertStrToRGBA4444("#8CFF", &(settings->catColor2));
     convertStrToRGBA4444("#FFFF", &(settings->textColor));
-    settings->refreshRate = 3;
+    settings->refreshRate = 30;        // smooth redraw / border animation (matches Mini)
+    settings->sampleRate = 2;          // resolution rarely changes; poll 2x/sec (matches Mini)
+    settings->cornerRadiusSp = 30;     // 3.0 sp
     //ettings->setPos = 0;
     settings->disableScreenshots = false;
 
     settings->frameOffsetX = 0;
     settings->frameOffsetY = 0;
-    settings->framePadding = 4;
+    settings->framePadding = 0;
     initBorderDefaults(settings);
 
 
@@ -4396,6 +4451,18 @@ ALWAYS_INLINE void GetConfigSettings(ResolutionSettings* settings) {
     auto it = section.find("refresh_rate");
     if (it != section.end()) {
         settings->refreshRate = std::clamp(atol(it->second.c_str()), 1L, 60L);
+    }
+
+    // Process sample_rate: how often resolution values are re-polled; always <= refreshRate.
+    it = section.find("sample_rate");
+    if (it != section.end()) {
+        settings->sampleRate = std::clamp(atol(it->second.c_str()), 1L, (long)settings->refreshRate);
+    }
+
+    // Process corner_radius (tenths of a space; converted to px at draw time)
+    it = section.find("corner_radius");
+    if (it != section.end()) {
+        settings->cornerRadiusSp = (uint8_t)std::clamp(atoi(it->second.c_str()), 0, 80);
     }
 
     uint16_t temp;

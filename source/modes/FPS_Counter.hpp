@@ -399,12 +399,18 @@ public:
             
             // Configurable Switch 2 frame border; offset 0 when border is off.
             const s32 borderOffset = settings.useBorder ? 1 : 0;
+            // Corner radius in sp (tenths of a space) -> px (mirrors Mini).
+            // Measured at a fixed reference size so this font-scaled layout keeps
+            // a stable default (4.0 sp ~= 16 px) rather than a pill on large fonts.
+            const float _crSpW = (float)renderer->getTextDimensions(" ", false, 16).first;
+            const float _crSpace = (_crSpW > 0.5f) ? _crSpW : 4.0f;
+            const s32 cornerRadius = (s32)(_crSpace * (float)settings.cornerRadiusSp / 10.0f + 0.5f);
             renderer->drawRoundedRectSingleThreaded(
                 posX + borderOffset, 
                 posY + borderOffset, 
                 totalWidth - (2*borderOffset), 
                 totalHeight - (2*borderOffset),
-                16, 
+                cornerRadius, 
                 aWithOpacity(bgColor)
             );
 
@@ -412,7 +418,7 @@ public:
                 const auto w2 = makeBorderWheel(settings);
                 renderer->drawBorderedRoundedRect(
                     posX, posY, totalWidth, totalHeight,
-                    settings.borderThickness, 16,
+                    settings.borderThickness, cornerRadius,
                     aWithOpacity(settings.borderColor),
                     settings.useDynamicBorder ? &w2 : nullptr);
             }
@@ -485,7 +491,7 @@ public:
             fontsize = settings.dockedFontSize;
         }
         const u64 _nowTick = armGetSystemTick();
-        const bool shouldUpdateData = (_nowTick - lastDataUpdateTick) >= (systemtickfrequency / settings.refreshRate);
+        const bool shouldUpdateData = (_nowTick - lastDataUpdateTick) >= (systemtickfrequency / settings.sampleRate);
         if (shouldUpdateData) {
             lastDataUpdateTick = _nowTick;
             if (settings.useIntegerFPS) {

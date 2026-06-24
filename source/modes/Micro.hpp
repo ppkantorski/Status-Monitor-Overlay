@@ -110,6 +110,7 @@ private:
     std::atomic<bool> plusFocusActive{false};   // true while Plus-hold focus mode is live
     bool plusFocusWasActive = false;             // edge-detect: was active last handleInput frame
     bool swipeClearOnRelease = false;
+    bool focusClearOnRelease = false;            // deferred frame-limiter re-enable after focus ends
     // Deferred layer position: set true when setPosBottom changes so that
     // setLayerPos() is called at the END of the next draw frame, after the
     // buffer already shows the bar at the new base_y. Calling setLayerPos()
@@ -3240,6 +3241,18 @@ public:
     }
     
     virtual bool handleInput(u64 keysDown, u64 keysHeld, const HidTouchState &touchPos, HidAnalogStickState joyStickPosLeft, HidAnalogStickState joyStickPosRight) override {
+        // ── Focus-end: re-enable frame limiter one frame after color reverts ──
+        // Checked at the TOP of handleInput so there is always at least one full
+        // loop() cycle (update → draw → endFrame, no block since isRendering is
+        // still false) between when focusClearOnRelease is set (bottom of this
+        // function, the frame focus ends) and when isRendering is restored here.
+        // This mirrors Mini's clearOnRelease pattern exactly.
+        if (focusClearOnRelease && !isRendering) {
+            focusClearOnRelease = false;
+            isRendering = true;
+            leventClear(&renderingStopEvent);
+        }
+
         // ── Plus-hold focus/reposition mode ───────────────────────────────────
         // The poll thread sets plusFocusActive after a 1-second Plus hold and
         // stops the frame limiter. Here we:
@@ -3293,10 +3306,11 @@ public:
                 }
             }
 
-            // Edge: focus mode just deactivated → re-enable frame limiter.
+            // Edge: focus mode just deactivated → defer frame-limiter re-enable
+            // by one frame so loop() draws the reverted background color before
+            // endFrame() starts blocking at the slow TeslaFPS interval again.
             if (!focusNow && plusFocusWasActive) {
-                isRendering = true;
-                leventClear(&renderingStopEvent);
+                focusClearOnRelease = true;
             }
             plusFocusWasActive = focusNow;
         }

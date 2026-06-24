@@ -54,9 +54,158 @@ private:
 
     bool skipOnce = true;
     bool runOnce = true;
+    u64  lastDataUpdateTick = 0;  // tick of last sensor data format; used to gate updates when frame limiter is off
+
+    // Swipe-to-flip position detection (left/right for Full, mirrors Micro's
+    // top/bottom version). fullSwipeExitEvent is a global (zero-initialized
+    // like threadexit) - using a class member LEvent without leventCreate
+    // causes uninitialized handle corruption on the 2nd/3rd open when heap
+    // memory is reused with stale content.
+    // swipeFlipPending is the one-way signal from poll thread -> handleInput.
+    // plusFocusActive is set by the poll thread while Plus is held long enough
+    // to activate focus/reposition mode; cleared by the poll thread on release.
+    std::atomic<bool> swipeFlipPending{false};
+    std::atomic<bool> plusFocusActive{false};   // true while Plus-hold focus mode is live
+    bool plusFocusWasActive = false;             // edge-detect: was active last handleInput frame
+    bool swipeClearOnRelease = false;
+    bool focusClearOnRelease = false;            // deferred frame-limiter re-enable after focus ends
+    Thread swipePollThread;
 
     bool originalUseRightAlignment = ult::useRightAlignment;
     tsl::Color originalBackgroundColor = tsl::defaultBackgroundColor;
+
+    // Poll thread: wakes every ~32 ms via leventWait (same pattern as Micro's
+    // swipePollFunc / gpuLoadThread / BatteryChecker in Utils.hpp). leventWait
+    // returns true when fullSwipeExitEvent is signalled -> thread exits immediately.
+    // On swipe trigger: stops the frame limiter (isRendering=false + leventSignal) and
+    // sets swipeFlipPending. handleInput re-enables the limiter via swipeClearOnRelease.
+    // Plus-hold focus mode: sets plusFocusActive after a 1-second hold; cleared on release.
+    // While active, handleInput switches to focusBackgroundColor and handles joystick flips.
+    // The touch-swipe edge/distance bounds mirror tesla.hpp's own swipe-to-open
+    // detection (16 px edge guard, 84 px travel, 150 ms window) since Full's
+    // flip is a left/right gesture just like swipe-to-open.
+    static void swipePollFunc(void* arg) {
+        auto* self = static_cast<FullOverlay*>(arg);
+
+        static constexpr u64 POLL_NS          = 32'000'000ULL;   // 32 ms sleep / exit check
+        static constexpr u64 SWIPE_WINDOW_NS  = 150'000'000ULL;  // 150 ms gesture window
+        static constexpr int SWIPE_DIST_PX    = 84;              // framebuffer pixels
+        static constexpr int SWIPE_EDGE_PX    = 16;              // touch must start within 16 px of left/right edge
+        static constexpr int SCREEN_WIDTH_PX  = 1280;            // framebuffer width
+        static constexpr u64 PLUS_HOLD_NS     = 1'000'000'000ULL; // 1 s hold to activate
+
+        // HID setup - same as Micro's touch poll thread: allow P1 + Handheld.
+        const HidNpadIdType id_list[2] = { HidNpadIdType_No1, HidNpadIdType_Handheld };
+        hidSetSupportedNpadIdType(id_list, 2);
+        padConfigureInput(2, HidNpadStyleSet_NpadStandard | HidNpadStyleTag_NpadSystemExt);
+        PadState pad_p1;
+        PadState pad_handheld;
+        padInitialize(&pad_p1,       HidNpadIdType_No1);
+        padInitialize(&pad_handheld, HidNpadIdType_Handheld);
+
+        HidTouchScreenState state = {0};
+        bool touching             = false;
+        int  initialX             = 0;
+        u64  touchStartNs         = 0;
+        u64  plusHoldStart        = 0;
+
+        do {
+            // Sleep gate: swipe and button input are impossible while the
+            // system is sleeping and the display is off. Block here until
+            // wake; the while condition checks fullSwipeExitEvent on resume
+            // so shutdown during sleep still exits cleanly within one POLL_NS.
+            if (tsl::hlp::waitWhileSleeping(POLL_NS)) continue;
+
+            const u64 nowNs = armTicksToNs(armGetSystemTick());
+
+            // -- Touch-swipe-to-flip ------------------------------------------
+            if (hidGetTouchScreenStates(&state, 1) && state.count > 0) {
+                const int tx = static_cast<int>(state.touches[0].x);
+
+                if (!touching) {
+                    // Finger just placed - record origin
+                    touching     = true;
+                    initialX     = tx;
+                    touchStartNs = nowNs;
+                } else if (!self->swipeFlipPending.load(std::memory_order_acquire)) {
+                    // Gesture in progress, no flip queued yet - check thresholds
+                    const u64 elapsed = nowNs - touchStartNs;
+                    if (elapsed <= SWIPE_WINDOW_NS) {
+                        const int  deltaX  = tx - initialX;
+                        const bool atLeft  = !self->settings.setPosRight;
+                        const bool atRight =  self->settings.setPosRight;
+                        // Touch must have started within SWIPE_EDGE_PX of the
+                        // relevant screen edge - same guard tesla uses for swipe-to-open.
+                        const bool startedAtEdge = (atLeft  && initialX <= SWIPE_EDGE_PX) ||
+                                                   (atRight && initialX >= SCREEN_WIDTH_PX - SWIPE_EDGE_PX);
+                        if (startedAtEdge &&
+                            ((atLeft  && deltaX >=  SWIPE_DIST_PX) ||
+                             (atRight && deltaX <= -SWIPE_DIST_PX))) {
+                            if (isRendering) {
+                                isRendering = false;
+                                leventSignal(&renderingStopEvent);
+                            }
+                            self->swipeFlipPending.store(true, std::memory_order_release);
+                            triggerMoveFeedback();
+                        }
+                    }
+                }
+            } else {
+                // No touch - reset so the next finger-down starts a fresh gesture
+                touching = false;
+            }
+
+            // -- Plus-hold focus mode ------------------------------------------
+            padUpdate(&pad_p1);
+            padUpdate(&pad_handheld);
+            const u64 keysHeld = padGetButtons(&pad_p1) | padGetButtons(&pad_handheld);
+            const bool plusOnly = (keysHeld & KEY_PLUS) && !(keysHeld & ~KEY_PLUS & ALL_KEYS_MASK);
+
+            if (plusOnly) {
+                if (plusHoldStart == 0) plusHoldStart = nowNs;
+                if (!self->plusFocusActive.load(std::memory_order_acquire) &&
+                    (nowNs - plusHoldStart) >= PLUS_HOLD_NS) {
+                    // Hold threshold reached - activate focus mode and stop the
+                    // frame limiter so handleInput can render at full speed.
+                    self->plusFocusActive.store(true, std::memory_order_release);
+                    if (isRendering) {
+                        isRendering = false;
+                        leventSignal(&renderingStopEvent);
+                    }
+                    triggerOnFeedback();
+                }
+            } else {
+                if (self->plusFocusActive.load(std::memory_order_acquire)) {
+                    // Plus released while focus mode was active - deactivate.
+                    self->plusFocusActive.store(false, std::memory_order_release);
+                    triggerOffFeedback(true);
+                }
+                plusHoldStart = 0;
+            }
+
+        } while (!leventWait(&fullSwipeExitEvent, POLL_NS));
+    }
+
+    // Applies a left/right reposition: updates settings, persists to the ini,
+    // flips alignment, and moves the VI layer. No-op if already at the
+    // requested side. Shared by both the joystick-flip and swipe-flip paths
+    // in handleInput (always called from the main thread).
+    void applyPositionFlip(bool wantRight) {
+        if (wantRight == settings.setPosRight) return;
+        settings.setPosRight = wantRight;
+        ult::setIniFileValue(configIniPath, "full", "layer_width_align", wantRight ? "right" : "left");
+        ult::useRightAlignment = wantRight;
+        const auto [horizontalUnderscanPixels, verticalUnderscanPixels] = tsl::gfx::getUnderscanPixels();
+        if (wantRight) {
+            tsl::gfx::Renderer::get().setLayerPos(1280-32 - horizontalUnderscanPixels, 0);
+        } else {
+            tsl::gfx::Renderer::get().setLayerPos(0, 0);
+        }
+        // Note: callers are responsible for triggering move feedback.
+        // The swipe path already fires it in the poll thread; the joystick
+        // path calls triggerMoveFeedback() explicitly after applyPositionFlip.
+    }
+
 public:
     FullOverlay() { 
         disableJumpTo = true;
@@ -88,8 +237,17 @@ public:
 
         realVoltsPolling = false;
         StartThreads();
+
+        // Start swipe-to-flip poll thread.
+        // leventClear ensures the exit event starts non-signalled before threadStart.
+        leventClear(&fullSwipeExitEvent);
+        threadCreate(&swipePollThread, swipePollFunc, this, nullptr, 0x1000, 0x2c, -2);
+        threadStart(&swipePollThread);
     }
     ~FullOverlay() {
+        leventSignal(&fullSwipeExitEvent);
+        threadWaitForExit(&swipePollThread);
+        threadClose(&swipePollThread);
         CloseThreads();
         fixForeground = true;
         ult::useRightAlignment = originalUseRightAlignment;
@@ -395,6 +553,24 @@ public:
     }
 
     virtual void update() override {
+        // While Plus-hold focus mode is active, swap to the focus background
+        // color so the user gets immediate visual feedback even though data
+        // formatting below is still throttled to sampleRate. This runs every
+        // frame (not gated) since the frame limiter may be unlocked here.
+        tsl::defaultBackgroundColor = tsl::Color(
+            plusFocusActive.load(std::memory_order_acquire) ? settings.focusBackgroundColor
+                                                              : settings.backgroundColor);
+
+        // Throttle data formatting to the user-specified sample rate even when
+        // the frame limiter is off (e.g. during Plus-hold focus mode). The render
+        // loop may call update() at vsync speed (~60 fps) while focus mode is
+        // active, but we only rebuild the display strings at 1/sampleRate intervals.
+        const u64 nowTick = armGetSystemTick();
+        const u64 pollIntervalTicks = systemtickfrequency / settings.sampleRate;
+        const bool shouldUpdateData = (nowTick - lastDataUpdateTick) >= pollIntervalTicks;
+        if (shouldUpdateData) lastDataUpdateTick = nowTick;
+
+        if (shouldUpdateData) {
         //Make stuff ready to print
         ///CPU
         if (systemtickfrequency_impl > 0) {
@@ -649,6 +825,7 @@ public:
                  remainingBatteryLife);
         
         mutexUnlock(&mutex_BatteryChecker);
+        } // end shouldUpdateData
         
         if (!skipOnce) {
             if (runOnce) {
@@ -667,6 +844,75 @@ public:
 
 
     virtual bool handleInput(u64 keysDown, u64 keysHeld, const HidTouchState &touchPos, HidAnalogStickState joyStickPosLeft, HidAnalogStickState joyStickPosRight) override {
+        // -- Focus-end: re-enable frame limiter one frame after color reverts ----
+        // Checked at the TOP of handleInput so there is always at least one full
+        // loop() cycle (update -> draw -> endFrame, no block since isRendering is
+        // still false) between when focusClearOnRelease is set (bottom of this
+        // function, the frame focus ends) and when isRendering is restored here.
+        // This mirrors Mini's clearOnRelease pattern exactly.
+        if (focusClearOnRelease && !isRendering) {
+            focusClearOnRelease = false;
+            isRendering = true;
+            leventClear(&renderingStopEvent);
+        }
+
+        // -- Plus-hold focus/reposition mode -------------------------------------
+        // The poll thread sets plusFocusActive after a 1-second Plus hold and
+        // stops the frame limiter. Here we:
+        //   1. Re-enable the frame limiter the frame after focus mode ends.
+        //   2. While active, map right-joystick full-left/right to position flips
+        //      (same logic as swipeFlipPending: toggle setPosRight and move layer).
+        {
+            const bool focusNow = plusFocusActive.load(std::memory_order_acquire);
+
+            if (focusNow) {
+                // Frame limiter is already stopped by the poll thread.
+                // Check left joystick for left/right snap.
+                static constexpr int JOYSTICK_SNAP_THRESHOLD = 28000; // ~85 % of 32767
+                static bool joystickFlipArmed = true; // re-arm once stick returns to center
+
+                const int jx = joyStickPosLeft.x;
+                const bool stickAtRight = (jx >=  JOYSTICK_SNAP_THRESHOLD);
+                const bool stickAtLeft  = (jx <= -JOYSTICK_SNAP_THRESHOLD);
+                const bool stickNeutral = (abs(jx) < JOYSTICK_SNAP_THRESHOLD / 2);
+
+                if (stickNeutral) {
+                    joystickFlipArmed = true; // stick returned to center; allow next flip
+                }
+
+                if (joystickFlipArmed && (stickAtRight || stickAtLeft)) {
+                    applyPositionFlip(stickAtRight);
+                    triggerMoveFeedback();
+                    joystickFlipArmed = false; // require stick to return to center before next flip
+                }
+            }
+
+            // Edge: focus mode just deactivated -> defer frame-limiter re-enable
+            // by one frame so loop() draws the reverted background color before
+            // endFrame() starts blocking at the slow TeslaFPS interval again.
+            if (!focusNow && plusFocusWasActive) {
+                focusClearOnRelease = true;
+            }
+            plusFocusWasActive = focusNow;
+        }
+
+        // -- Swipe-to-flip: re-enable rendering after position transition --------
+        // Poll thread stopped the frame limiter when the swipe fired. Once the
+        // flip is applied and one frame is drawn with the new position, re-enable.
+        if (swipeClearOnRelease && !isRendering) {
+            swipeClearOnRelease = false;
+            isRendering = true;
+            leventClear(&renderingStopEvent);
+        }
+
+        // -- Swipe-to-flip: apply position change ---------------------------------
+        // Poll thread sets swipeFlipPending; consumed here (main thread) so all
+        // settings/render state mutations are safe and single-threaded.
+        if (swipeFlipPending.exchange(false, std::memory_order_acq_rel)) {
+            applyPositionFlip(!settings.setPosRight);
+            swipeClearOnRelease = true;
+        }
+
         if (isKeyComboPressed(keysHeld, keysDown)) {
             isRendering = false;
             leventSignal(&renderingStopEvent);

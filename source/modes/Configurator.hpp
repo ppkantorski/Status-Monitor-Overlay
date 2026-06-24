@@ -712,8 +712,8 @@ public:
             addToggle(list, "Border",         "use_border",       true);
             addToggle(list, "Dynamic Border", "dynamic_border",   true);
             addToggle(list, "CW Border Flow", "cw_border_flow",   true);
-            addToggle(list, "Graph Border",   "use_graph_border", true);
-            addToggle(list, "Graph Background", "graph_background", true);
+            addToggle(list, "Graph Border",   "use_graph_border", false);
+            addToggle(list, "Graph Background", "graph_background", false);
 
         } else if (flags.isFull) {
             list->addItem(new tsl::elm::CategoryHeader("Global"));
@@ -746,7 +746,7 @@ public:
             list->addItem(new tsl::elm::CategoryHeader("CPU"));
             addToggle(list, "Full CPU",              "show_full_cpu",              true);
             addToggle(list, "Full CPU Max Core 0-2", "show_full_cpu_max_core_012", flags.isMini);
-            addToggle(list, "Stacked Full CPU",      "show_stacked_full_cpu",      flags.isMicro);
+            addToggle(list, "Stacked Full CPU",      "show_stacked_full_cpu",      true);
             addToggle(list, "CPU Temp",              "show_cpu_temp",              flags.isMicro);
             addToggle(list, "Stacked CPU Temp",      "show_stacked_cpu_temp",      true);
             addToggle(list, "Voltage At End",        "voltage_at_end_cpu",         flags.isMicro);
@@ -875,8 +875,8 @@ public:
     SampleRateConfig(const std::string& mode) : modeName(mode), flags(mode) {
         const std::string section = modeToSection(mode);
         const std::string rrVal = ult::parseValueFromIniSection(configIniPath, section, "refresh_rate");
-        const int defaultRate       = flags.isFPSGraph ? 30 : (flags.isFPSCounter ? 5 : (flags.isMini ? 30 : 3));
-        const int defaultSampleRate = (flags.isFPSGraph || flags.isMini) ? 3 : defaultRate;
+        const int defaultRate       = flags.isFPSGraph ? 30 : (flags.isFPSCounter ? 30 : ((flags.isMini || flags.isGameRes) ? 30 : (flags.isFull ? 2 : 3)));
+        const int defaultSampleRate = (flags.isFPSGraph ? 3 : (flags.isFPSCounter ? 30 : ((flags.isMini || flags.isGameRes) ? 2 : defaultRate)));
         maxRate = rrVal.empty() ? defaultRate : std::clamp(atoi(rrVal.c_str()), 1, 60);
         const std::string srVal = ult::parseValueFromIniSection(configIniPath, section, "sample_rate");
         currentRate = srVal.empty() ? std::min(defaultSampleRate, maxRate) : std::clamp(atoi(srVal.c_str()), 1, maxRate);
@@ -935,7 +935,7 @@ public:
     RefreshRateConfig(const std::string& mode) : modeName(mode), flags(mode) {
         const std::string section = modeToSection(mode);
         const std::string value = ult::parseValueFromIniSection(configIniPath, section, "refresh_rate");
-        const int defaultRate = flags.isFPSGraph ? 30 : (flags.isFPSCounter ? 5 : (flags.isMini ? 30 : 3));
+        const int defaultRate = flags.isFPSGraph ? 30 : (flags.isFPSCounter ? 30 : ((flags.isMini || flags.isGameRes) ? 30 : (flags.isFull ? 2 : 3)));
         currentRate = value.empty() ? defaultRate : std::clamp(atoi(value.c_str()), 1, 60);
     }
     ~RefreshRateConfig() { lastSelectedListItem = nullptr; }
@@ -1071,7 +1071,7 @@ public:
     FramePaddingConfig(const std::string& mode) : modeName(mode) {
         section = modeToSection(mode);
         const std::string value = ult::parseValueFromIniSection(configIniPath, section, "frame_padding");
-        currentPadding = value.empty() ? 4 : std::clamp(atoi(value.c_str()), 0, 14);
+        currentPadding = value.empty() ? 0 : std::clamp(atoi(value.c_str()), 0, 14);
     }
     ~FramePaddingConfig() { lastSelectedListItem = nullptr; }
 
@@ -1123,7 +1123,7 @@ public:
     BorderThicknessConfig(const std::string& mode) : modeName(mode) {
         section = modeToSection(mode);
         const std::string value = ult::parseValueFromIniSection(configIniPath, section, "border_thickness");
-        currentThickness = value.empty() ? 1 : std::clamp(atoi(value.c_str()), 0, 14);
+        currentThickness = value.empty() ? 3 : std::clamp(atoi(value.c_str()), 1, 10);
     }
     ~BorderThicknessConfig() { lastSelectedListItem = nullptr; }
 
@@ -1131,7 +1131,7 @@ public:
         auto* list = new tsl::elm::List();
         list->addItem(new tsl::elm::CategoryHeader("Border Thickness"));
 
-        for (int thickness = 0; thickness <= 14; ++thickness) {
+        for (int thickness = 1; thickness <= 10; ++thickness) {
             auto* item = new tsl::elm::MiniListItem(std::to_string(thickness) + " px");
             item->setRadioSelector();
             if (thickness == currentThickness)
@@ -1333,12 +1333,12 @@ public:
     }
 };
 
-class MiniHPaddingConfig : public MiniPaddingConfigBase<30, 2, 60, 1> {
+class MiniHPaddingConfig : public MiniPaddingConfigBase<36, 2, 60, 1> {
 public:
     MiniHPaddingConfig() : MiniPaddingConfigBase("horizontal_padding", "Horizontal Padding", "Horizontal Padding") {}
 };
 
-class MiniVPaddingConfig : public MiniPaddingConfigBase<30, 2, 60, 1> {
+class MiniVPaddingConfig : public MiniPaddingConfigBase<36, 2, 60, 1> {
 public:
     MiniVPaddingConfig() : MiniPaddingConfigBase("vertical_padding", "Vertical Padding", "Vertical Padding") {}
 };
@@ -1353,9 +1353,62 @@ public:
     MiniStackedSpacingConfig() : MiniPaddingConfigBase("stacked_spacing", "Stacked Spacing", "Stacked Spacing") {}
 };
 
-class MiniCornerRadiusConfig : public MiniPaddingConfigBase<40, 0, 80, 2> {
+class MiniCornerRadiusConfig : public MiniPaddingConfigBase<30, 0, 80, 2> {
 public:
     MiniCornerRadiusConfig() : MiniPaddingConfigBase("corner_radius", "Corner Radius", "Corner Radius") {}
+};
+
+// Mode-generic Corner Radius (sp) config for modes that don't use the Mini-only
+// MiniCornerRadiusConfig (FPS Graph / FPS Counter / Game Resolutions). Writes
+// corner_radius (tenths of a space, 0..80 step 2) to the mode's own section.
+class CornerRadiusConfig : public tsl::Gui {
+private:
+    std::string modeName;
+    std::string section;
+    int currentRadius;
+
+public:
+    CornerRadiusConfig(const std::string& mode) : modeName(mode) {
+        section = modeToSection(mode);
+        const std::string value = ult::parseValueFromIniSection(configIniPath, section, "corner_radius");
+        currentRadius = value.empty() ? 30 : std::clamp(atoi(value.c_str()), 0, 80);
+        currentRadius = ((currentRadius + 1) / 2) * 2;   // snap to step 2
+        currentRadius = std::clamp(currentRadius, 0, 80);
+    }
+    ~CornerRadiusConfig() { lastSelectedListItem = nullptr; }
+
+    virtual tsl::elm::Element* createUI() override {
+        auto* list = new tsl::elm::List();
+        list->addItem(new tsl::elm::CategoryHeader("Corner Radius"));
+        for (int p = 0; p <= 80; p += 2) {
+            auto* item = new tsl::elm::MiniListItem(formatSpTenths(p));
+            item->setRadioSelector();
+            if (p == currentRadius)
+                selectItem(lastSelectedListItem, item, ult::CHECKMARK_SYMBOL);
+            item->setClickListener([this, item, p](uint64_t keys) {
+                if (keys & KEY_A) {
+                    ult::setIniFileValue(configIniPath, section, "corner_radius", std::to_string(p));
+                    selectItem(lastSelectedListItem, item, ult::CHECKMARK_SYMBOL);
+                    return true;
+                }
+                return false;
+            });
+            list->addItem(item);
+        }
+        list->jumpToItem("", ult::CHECKMARK_SYMBOL, false);
+        return makeFrame(modeName + " " + ult::DIVIDER_SYMBOL + " Configuration", list);
+    }
+
+    virtual bool handleInput(u64 keysDown, u64 keysHeld, const HidTouchState &touchPos,
+                             HidAnalogStickState joyStickPosLeft, HidAnalogStickState joyStickPosRight) override {
+        if (keysDown & KEY_B) {
+            triggerExitFeedback();
+            jumpItemName = "Corner Radius"; jumpItemValue = ""; jumpItemExactMatch = false;
+            tsl::goBack();
+            return true;
+        }
+        return false;
+    }
 };
 
 // =============================================================================
@@ -1370,12 +1423,17 @@ private:
     int getFramePadding() const {
         const std::string section = modeToSection(modeName);
         const std::string v = ult::parseValueFromIniSection(configIniPath, section, "frame_padding");
-        return v.empty() ? 4 : std::clamp(atoi(v.c_str()), 0, 14);
+        return v.empty() ? 0 : std::clamp(atoi(v.c_str()), 0, 14);
     }
     int getBorderThickness() const {
         const std::string section = modeToSection(modeName);
         const std::string v = ult::parseValueFromIniSection(configIniPath, section, "border_thickness");
-        return v.empty() ? 1 : std::clamp(atoi(v.c_str()), 0, 14);
+        return v.empty() ? 3 : std::clamp(atoi(v.c_str()), 0, 14);
+    }
+    int getCornerRadius() const {
+        const std::string section = modeToSection(modeName);
+        const std::string v = ult::parseValueFromIniSection(configIniPath, section, "corner_radius");
+        return v.empty() ? 30 : std::clamp(atoi(v.c_str()), 0, 80);
     }
     int getMicroHPadding() const {
         const std::string v = ult::parseValueFromIniSection(configIniPath, "micro", "horizontal_padding");
@@ -1403,11 +1461,11 @@ private:
     }
     int getMiniHPadding() const {
         const std::string v = ult::parseValueFromIniSection(configIniPath, "mini", "horizontal_padding");
-        return v.empty() ? 30 : std::clamp(atoi(v.c_str()), 2, 60);
+        return v.empty() ? 36 : std::clamp(atoi(v.c_str()), 2, 60);
     }
     int getMiniVPadding() const {
         const std::string v = ult::parseValueFromIniSection(configIniPath, "mini", "vertical_padding");
-        return v.empty() ? 30 : std::clamp(atoi(v.c_str()), 2, 60);
+        return v.empty() ? 36 : std::clamp(atoi(v.c_str()), 2, 60);
     }
     int getMiniSpacing() const {
         const std::string v = ult::parseValueFromIniSection(configIniPath, "mini", "spacing");
@@ -1421,7 +1479,7 @@ private:
     }
     int getMiniCornerRadius() const {
         const std::string v = ult::parseValueFromIniSection(configIniPath, "mini", "corner_radius");
-        int val = v.empty() ? 40 : std::clamp(atoi(v.c_str()), 0, 80);
+        int val = v.empty() ? 30 : std::clamp(atoi(v.c_str()), 0, 80);
         val = 0 + ((val - 0 + (2 / 2)) / 2) * 2;
         return std::clamp(val, 0, 80);
     }
@@ -1452,6 +1510,18 @@ public:
                 return false;
             });
             list->addItem(btItem);
+
+            // Corner Radius (sp) for the non-Mini border modes; Mini has its own
+            // entry below via MiniCornerRadiusConfig.
+            if (flags.isGameRes || flags.isFPSCounter || flags.isFPSGraph) {
+                auto* crItem = new tsl::elm::ListItem("Corner Radius");
+                crItem->setValue(formatSpTenths(getCornerRadius()));
+                crItem->setClickListener([this](uint64_t keys) {
+                    if (keys & KEY_A) { tsl::changeTo<CornerRadiusConfig>(modeName); return true; }
+                    return false;
+                });
+                list->addItem(crItem);
+            }
         }
 
         // Mini paddings
@@ -1863,12 +1933,12 @@ private:
     // The six Switch 2 frame-border wheel anchor colours (shared by every overlay
     // that carries the configurable border). Defaults are the muted slate palette.
     void addBorderWheelColors(tsl::elm::List* list) {
-        addColorItem(list, "Border Wheel 1",      "border_wheel_color_1",      "#75FF");
+        addColorItem(list, "Border Wheel 1",      "border_wheel_color_1",      "#0C0F");
         addColorItem(list, "Border Wheel 2",      "border_wheel_color_2",      "#64FF");
-        addColorItem(list, "Border Wheel 3",      "border_wheel_color_3",      "#799F");
+        addColorItem(list, "Border Wheel 3",      "border_wheel_color_3",      "#08AF");
         addColorItem(list, "Border Wheel 3 Deep", "border_wheel_color_3_deep", "#657F");
         addColorItem(list, "Border Wheel 4",      "border_wheel_color_4",      "#A98F");
-        addColorItem(list, "Border Wheel 4 Deep", "border_wheel_color_4_deep", "#755F");
+        addColorItem(list, "Border Wheel 4 Deep", "border_wheel_color_4_deep", "#C8FF");
     }
 
 public:
@@ -1878,13 +1948,9 @@ public:
         auto* list = new tsl::elm::List();
         list->addItem(new tsl::elm::CategoryHeader("Colors"));
 
-        if (!flags.isFull) {
-            addColorWithAlpha(list, "Background Color", "background_color",       "#000A", "Background Alpha");
-            if (flags.isMini || flags.isMicro || flags.isFPSCounter || flags.isFPSGraph || flags.isGameRes)
-                addColorWithAlpha(list, "Focus Color",  "focus_background_color", "#000F", "Focus Alpha");
-        } else {
-            addColorWithAlpha(list, "Background Color", "background_color",       "#000A", "Background Alpha");
-        }
+        addColorWithAlpha(list, "Background Color", "background_color",       "#000A", "Background Alpha");
+        if (flags.isMini || flags.isMicro || flags.isFPSCounter || flags.isFPSGraph || flags.isGameRes || flags.isFull)
+            addColorWithAlpha(list, "Focus Color",  "focus_background_color", "#000F", "Focus Alpha");
 
         addColorItem(list, "Text Color", "text_color", "#FFFF");
 
@@ -1897,7 +1963,7 @@ public:
             static const FPSGraphColorSetting fpsGraphColors[] = {
                 {"FPS Counter",  "fps_counter_color",  "#2DFF", false},
                 {"Graph",        "plot_background_color", "#0007", true},
-                {"Border",       "border_color",        "#2DFF", false},
+                {"Border",       "border_color",        "#04AF", false},
                 {"Dashed Line",  "dashed_line_color",   "#0AAF", true},
                 {"Max FPS Text", "max_fps_text_color",  "#FFFF", false},
                 {"Min FPS Text", "min_fps_text_color",  "#FFFF", false},
@@ -1926,17 +1992,17 @@ public:
             addColorItem(list, "Category Color", "cat_color",       "#2DFF");
             addColorItem(list, "Separator Color", "separator_color", "#2DFF");
             if (flags.isMini) {
-                addColorItem(list, "Border Color", "border_color", "#2DFF");
+                addColorItem(list, "Border Color", "border_color", "#04AF");
                 addBorderWheelColors(list);
             }
 
         } else if (flags.isFPSCounter) {
-            addColorItem(list, "Border Color", "border_color", "#2DFF");
+            addColorItem(list, "Border Color", "border_color", "#04AF");
             addBorderWheelColors(list);
 
         } else if (flags.isGameRes) {
             addColorItem(list, "Category Color", "cat_color", "#2DFF");
-            addColorItem(list, "Border Color", "border_color", "#2DFF");
+            addColorItem(list, "Border Color", "border_color", "#04AF");
             addBorderWheelColors(list);
         }
 
@@ -2162,15 +2228,15 @@ private:
     int getCurrentRefreshRate() const {
         const std::string section = modeToSection(modeName);
         const std::string value = ult::parseValueFromIniSection(configIniPath, section, "refresh_rate");
-        const int defaultRate = flags.isFPSGraph ? 30 : (flags.isFPSCounter ? 5 : (flags.isMini ? 30 : 3));
+        const int defaultRate = flags.isFPSGraph ? 30 : (flags.isFPSCounter ? 30 : ((flags.isMini || flags.isGameRes) ? 30 : (flags.isFull ? 2 : 3)));
         return value.empty() ? defaultRate : atoi(value.c_str());
     }
 
     int getCurrentSampleRate() const {
         const std::string section = modeToSection(modeName);
         const std::string rrVal = ult::parseValueFromIniSection(configIniPath, section, "refresh_rate");
-        const int defaultRate       = flags.isFPSGraph ? 30 : (flags.isFPSCounter ? 5 : (flags.isMini ? 30 : 3));
-        const int defaultSampleRate = (flags.isFPSGraph || flags.isMini) ? 3 : defaultRate;
+        const int defaultRate       = flags.isFPSGraph ? 30 : (flags.isFPSCounter ? 30 : ((flags.isMini || flags.isGameRes) ? 30 : (flags.isFull ? 2 : 3)));
+        const int defaultSampleRate = (flags.isFPSGraph ? 3 : (flags.isFPSCounter ? 30 : ((flags.isMini || flags.isGameRes) ? 2 : defaultRate)));
         const int maxRate = rrVal.empty() ? defaultRate : std::clamp(atoi(rrVal.c_str()), 1, 60);
         const std::string srVal = ult::parseValueFromIniSection(configIniPath, section, "sample_rate");
         return srVal.empty() ? std::min(defaultSampleRate, maxRate) : std::clamp(atoi(srVal.c_str()), 1, maxRate);
@@ -2178,9 +2244,9 @@ private:
 
     int getCurrentFramePadding() const {
         const std::string section = modeToSection(modeName);
-        if (section.empty()) return 4;
+        if (section.empty()) return 0;
         const std::string value = ult::parseValueFromIniSection(configIniPath, section, "frame_padding");
-        return value.empty() ? 4 : atoi(value.c_str());
+        return value.empty() ? 0 : atoi(value.c_str());
     }
 
     int getCurrentMicroHPadding() const {
@@ -2214,12 +2280,12 @@ private:
     // Mini space-unit paddings (tenths of a space). Defaults mirror MiniSettings.
     int getCurrentMiniHPadding() const {
         const std::string value = ult::parseValueFromIniSection(configIniPath, "mini", "horizontal_padding");
-        return value.empty() ? 30 : std::clamp(atoi(value.c_str()), 2, 60);
+        return value.empty() ? 36 : std::clamp(atoi(value.c_str()), 2, 60);
     }
 
     int getCurrentMiniVPadding() const {
         const std::string value = ult::parseValueFromIniSection(configIniPath, "mini", "vertical_padding");
-        return value.empty() ? 30 : std::clamp(atoi(value.c_str()), 2, 60);
+        return value.empty() ? 36 : std::clamp(atoi(value.c_str()), 2, 60);
     }
 
     int getCurrentMiniSpacing() const {
@@ -2234,7 +2300,7 @@ private:
 
     int getCurrentMiniCornerRadius() const {
         const std::string value = ult::parseValueFromIniSection(configIniPath, "mini", "corner_radius");
-        return value.empty() ? 40 : std::clamp(atoi(value.c_str()), 0, 80);
+        return value.empty() ? 30 : std::clamp(atoi(value.c_str()), 0, 80);
     }
 
     std::string getDTCFormatName(const std::string& formatStr) const {
@@ -2388,8 +2454,8 @@ public:
             list->addItem(paddings);
         }
 
-        // Sample Rate (Mini / FPS Graph) — above Refresh Rate
-        if (flags.isMini || flags.isFPSGraph) {
+        // Sample Rate (Mini / FPS Counter / FPS Graph / Game Resolutions / Full) — above Refresh Rate
+        if (flags.isMini || flags.isFPSCounter || flags.isFPSGraph || flags.isGameRes || flags.isFull) {
             auto* sampleRate = new tsl::elm::ListItem("Sample Rate");
             sampleRate->setValue(std::to_string(getCurrentSampleRate()) + " Hz");
             sampleRate->setClickListener([this](uint64_t keys) {
