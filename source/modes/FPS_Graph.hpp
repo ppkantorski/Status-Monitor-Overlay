@@ -512,6 +512,14 @@ public:
 
                 const s16 y = rectangle_y + static_cast<s16>(std::lround(
                     (float)rectangle_height * ((float)(range - y_on_range) / (float)range)));
+
+                // Snap y_old_local on the rightmost column BEFORE evaluating color
+                // so the first segment is zero-length (a point) and the color check
+                // y == y_old_local fires correctly instead of comparing against the
+                // initialised floor value.
+                if (x == x_end)
+                    y_old_local = y;
+
                 tsl::Color color = settings.mainLineColor;
                 if (y == y_old_local && !isAboveLocal && readings[idx].zero_rounded) {
                     if (y == y_30FPS || y == y_60FPS)
@@ -519,11 +527,6 @@ public:
                     else
                         color = settings.roundedLineColor;
                 }
-
-                // Snap y_old_local on the rightmost column so the first segment
-                // is zero-length (a point), not a vertical line to the plot floor.
-                if (x == x_end)
-                    y_old_local = y;
 
                 // Shadow: same segment offset +1x, +1y in translucent black.
                 // Drawn first so the main line paints on top.

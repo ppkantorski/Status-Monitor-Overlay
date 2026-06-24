@@ -2854,7 +2854,7 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
     settings->useIntegerFPS = false;
     settings->showFpsGraph = true;
     settings->dtcFormat1 = "%a, %b %d";
-    settings->dtcFormat2 = "%l:%M:%S %p";
+    settings->dtcFormat2 = "%H:%M:%S";
     settings->dtcFormat  = settings->dtcFormat1 + ult::DIVIDER_SYMBOL + settings->dtcFormat2;
     settings->handheldFontSize = 15;
     settings->dockedFontSize = 15;
@@ -3397,7 +3397,7 @@ ALWAYS_INLINE void GetConfigSettings(MicroSettings* settings) {
     settings->useDTCSymbol = true;
     settings->useIntegerFPS = true;
     settings->dtcFormat1 = "%a, %b %d";
-    settings->dtcFormat2 = "%l:%M:%S %p";
+    settings->dtcFormat2 = "%H:%M:%S";
     settings->dtcFormat  = settings->dtcFormat1 + ult::DIVIDER_SYMBOL + settings->dtcFormat2;
     settings->invertBatteryDisplay = true;
     settings->showStackedBAT = true;

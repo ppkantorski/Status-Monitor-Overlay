@@ -3796,6 +3796,12 @@ public:
                                 const s16 y = rect_y_s + (s16)std::lround(
                                     (float)rect_h * ((float)(range - y_on_range) / (float)range));
 
+                                // First (rightmost) column: snap y_old to y BEFORE evaluating
+                                // color so the color check y == y_old_local fires correctly
+                                // instead of comparing against the initialised floor value.
+                                if (xi == x_end)
+                                    y_old_local = y;
+
                                 tsl::Color lineColor = graphSettings.mainLineColor;
                                 if (y == y_old_local && !isAboveLocal && graphReadings[idx].zero_rounded) {
                                     if (y == y_30_color || y == rect_y_s)
@@ -3803,12 +3809,6 @@ public:
                                     else
                                         lineColor = graphSettings.roundedLineColor;
                                 }
-
-                                // First (rightmost) column: snap y_old to y so the seed value
-                                // (plot floor) doesn't draw a full-height vertical line down the
-                                // right edge. Mirrors FPS_Graph.hpp's `if (x == x_end) y_old = y;`.
-                                if (xi == x_end)
-                                    y_old_local = y;
 
                                 // Shadow: same segment offset +1x, +1y in translucent black.
                                 // Drawn first so the main line paints on top.

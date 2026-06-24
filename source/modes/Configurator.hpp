@@ -615,7 +615,7 @@ public:
         std::string currentValue = ult::parseValueFromIniSection(configIniPath, section, iniKey);
         if (currentValue.empty()) {
             if (slot == 1) currentValue = std::string("%a, %b %d");
-            else           currentValue = std::string("%l:%M:%S %p");
+            else           currentValue = std::string("%H:%M:%S");
         }
 
         if (slot == 2) {
