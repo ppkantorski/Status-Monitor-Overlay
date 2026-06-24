@@ -2777,7 +2777,7 @@ ALWAYS_INLINE void initBorderDefaults(S* s) {
     s->useBorder = true;
     s->useDynamicBorder = true;
     s->useBorderCW = true;
-    s->borderThickness = 10;
+    // borderThickness is set per-mode by the caller immediately after this call.
     convertStrToRGBA4444("#04AF", &(s->borderColor));           // Cobalt
     convertStrToRGBA4444("#0C0F", &(s->borderWheelColor1));     // anchor0 UR
     convertStrToRGBA4444("#64FF", &(s->borderWheelColor2));     // anchor2 LL  (Deep Slate)
@@ -2889,6 +2889,7 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
     settings->frameOffsetY = 0;
     settings->framePadding = 0;
     initBorderDefaults(settings);
+    settings->borderThickness = 10; // 1.0 sp (Mini default)
 
     // Open and read file efficiently
     FILE* configFile = fopen(configIniPath, "r");
@@ -3896,6 +3897,7 @@ ALWAYS_INLINE void GetConfigSettings(FpsCounterSettings* settings) {
     settings->frameOffsetY = 0;
     settings->framePadding = 0;
     initBorderDefaults(settings);
+    settings->borderThickness = 6;  // 0.6 sp (FPS Counter default)
 
     // Open and read file efficiently
     FILE* configFile = fopen(configIniPath, "r");
@@ -4078,6 +4080,7 @@ ALWAYS_INLINE void GetConfigSettings(FpsGraphSettings* settings) {
     settings->frameOffsetY = 0;
     settings->framePadding = 0;
     initBorderDefaults(settings);
+    settings->borderThickness = 6;  // 0.6 sp (FPS Graph default)
     settings->useGraphBorder = false;   // inner plot-region border (FPS Graph only)
     settings->useGraphBackground = false; // inner plot-region background (FPS Graph only)
     settings->cornerRadiusSp = 36;     // 3.6 sp
@@ -4422,6 +4425,7 @@ ALWAYS_INLINE void GetConfigSettings(ResolutionSettings* settings) {
     settings->frameOffsetY = 0;
     settings->framePadding = 0;
     initBorderDefaults(settings);
+    settings->borderThickness = 8;  // 0.8 sp (Game Resolutions default)
 
 
     // Open and read file efficiently

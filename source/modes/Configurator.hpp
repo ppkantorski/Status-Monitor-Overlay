@@ -1111,8 +1111,17 @@ public:
     }
 };
 
-// Border thickness for the configurable Switch 2 frame border. Stored in raw px;
-// a radio-list dropdown like Frame Padding (not a slider). Range 0..14 px.
+// Returns the per-mode default border thickness in tenths of a space (sp),
+// used as the fallback when the ini key is absent.
+// Mini: 10 (1.0 sp)  FPS Counter/Graph: 6 (0.6 sp)  Game Resolutions: 8 (0.8 sp)
+inline int defaultBorderThickness(const std::string& mode) {
+    if (mode == "FPS Counter" || mode == "FPS Graph") return 6;
+    if (mode == "Game Resolutions") return 8;
+    return 10; // Mini (and any other mode)
+}
+
+// Border thickness for the configurable Switch 2 frame border. Stored in tenths
+// of a space (sp); a radio-list dropdown. Range 1..30 tenths (0.1–3.0 sp).
 class BorderThicknessConfig : public tsl::Gui {
 private:
     std::string modeName;
@@ -1123,7 +1132,7 @@ public:
     BorderThicknessConfig(const std::string& mode) : modeName(mode) {
         section = modeToSection(mode);
         const std::string value = ult::parseValueFromIniSection(configIniPath, section, "border_thickness");
-        currentThickness = value.empty() ? 10 : std::clamp(atoi(value.c_str()), 1, 30);
+        currentThickness = value.empty() ? defaultBorderThickness(mode) : std::clamp(atoi(value.c_str()), 1, 30);
     }
     ~BorderThicknessConfig() { lastSelectedListItem = nullptr; }
 
@@ -1432,7 +1441,7 @@ private:
     int getBorderThickness() const {
         const std::string section = modeToSection(modeName);
         const std::string v = ult::parseValueFromIniSection(configIniPath, section, "border_thickness");
-        return v.empty() ? 10 : std::clamp(atoi(v.c_str()), 0, 30);
+        return v.empty() ? defaultBorderThickness(modeName) : std::clamp(atoi(v.c_str()), 0, 30);
     }
     int getCornerRadius() const {
         const std::string section = modeToSection(modeName);
