@@ -410,14 +410,24 @@ public:
                 ? settings.backgroundColor
                 : settings.focusBackgroundColor;
             
+            // Configurable Switch 2 frame border; offset 0 when border is off.
+            const s32 borderOffset = settings.useBorder ? 1 : 0;
             renderer->drawRoundedRectSingleThreaded(
-                posX, 
-                posY, 
-                totalWidth, 
-                totalHeight,
+                posX + borderOffset, 
+                posY + borderOffset, 
+                totalWidth - (2*borderOffset), 
+                totalHeight - (2*borderOffset),
                 16, 
                 aWithOpacity(bgColor)
             );
+
+            if (settings.useBorder) {
+                const auto w2 = makeBorderWheel(settings);
+                renderer->drawBorderedRoundedRect(posX, posY, totalWidth, totalHeight,
+                    settings.borderThickness, 16,
+                    aWithOpacity(settings.borderColor),
+                    settings.useDynamicBorder ? &w2 : nullptr);
+            }
             
             posX += 4;
 
@@ -435,7 +445,7 @@ public:
             // line, legend, FPS counter, and data line all render on top of it.
             // Skipped entirely when alpha is 0 to avoid an unnecessary draw call.
             // plotBackgroundColor is uint16_t (RGBA4444); alpha is the top nibble.
-            if ((settings.plotBackgroundColor >> 12) & 0xF)
+            if (settings.useGraphBackground && ((settings.plotBackgroundColor >> 12) & 0xF))
                 renderer->drawRect(
                     final_base_x + rectangle_x + 2,
                     final_base_y + rectangle_y,
@@ -515,7 +525,13 @@ public:
                 y_old_local = y;
             }
 
-            renderer->drawEmptyRect(final_base_x+(rectangle_x - 1)+2, final_base_y+(rectangle_y - 1), rectangle_width + 3, rectangle_height + 4, aWithOpacity(settings.borderColor));
+            if (settings.useGraphBorder) {
+                const auto w2g = makeBorderWheel(settings);
+                renderer->drawBorderedRoundedRect(final_base_x+(rectangle_x - 1)+2, final_base_y+(rectangle_y - 1), rectangle_width + 3, rectangle_height + 4,
+                    1, 0,
+                    aWithOpacity(settings.borderColor),
+                    settings.useDynamicBorder ? &w2g : nullptr);
+            }
 
             mutexUnlock(&readings_mutex);
 

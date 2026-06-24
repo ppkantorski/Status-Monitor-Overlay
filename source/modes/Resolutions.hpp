@@ -292,11 +292,13 @@ public:
             // threshold in ns (100 ms)
             static constexpr u64 CHECK_NS = 2000000000ULL;
         
+            // Configurable Switch 2 frame border; offset 0 when border is off.
+            const int borderOffset = settings.useBorder ? 1 : 0;
             // Game detected
             if (gameStart && NxFps && NxFps->API >= 1 && (Resolutions_c[0] != '\0' && Resolutions2_c[0] != '\0')) {
                 lastGameSeenTick = curTick;
                 waitingForGame = true; // reset waiting state so next missing cycle shows "Checking..."
-                renderer->drawRoundedRectSingleThreaded(final_base_x, final_base_y, total_width, total_height, 16, aWithOpacity(bgColor));
+                renderer->drawRoundedRectSingleThreaded(final_base_x + borderOffset, final_base_y + borderOffset, total_width - (2*borderOffset), total_height - (2*borderOffset), 16, aWithOpacity(bgColor));
         
                 int xOffset = 10;
                 int yOffset = 10;
@@ -307,7 +309,7 @@ public:
             }
             // Game not detected
             else {
-                renderer->drawRoundedRectSingleThreaded(final_base_x, final_base_y, total_width, total_height, 16, aWithOpacity(bgColor));
+                renderer->drawRoundedRectSingleThreaded(final_base_x + borderOffset, final_base_y + borderOffset, total_width - (2*borderOffset), total_height - (2*borderOffset), 16, aWithOpacity(bgColor));
         
                 // Check elapsed time since last game detection
                 u64 elapsed_ns = armTicksToNs(curTick - lastGameSeenTick);
@@ -326,6 +328,14 @@ public:
                 const int text_y = final_base_y + (total_height) / 2;
                 
                 renderer->drawString(msg, false, text_x, (under100ms && waitingForGame) ? text_y+textHeight/2 : text_y, 20, (under100ms && waitingForGame) ? 0xFFFF : 0xF00F);
+            }
+
+            if (settings.useBorder) {
+                const auto w2 = makeBorderWheel(settings);
+                renderer->drawBorderedRoundedRect(final_base_x, final_base_y, total_width, total_height,
+                    settings.borderThickness, 16,
+                    aWithOpacity(settings.borderColor),
+                    settings.useDynamicBorder ? &w2 : nullptr);
             }
         });
         

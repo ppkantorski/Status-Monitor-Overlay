@@ -40,6 +40,7 @@ class RefreshRateConfig;
 class SampleRateConfig;
 class FontSizeConfig;
 class FontSizeSelector;
+class PaddingsConfig;
 class ColorConfig;
 class ColorSelector;
 class AlphaSelector;
@@ -103,39 +104,65 @@ inline std::string getColorName(const std::string& hexColor) {
                       ? hexColor.substr(0, 4) : hexColor;
 
     static const std::map<std::string, std::string> colorNames = {
-        {"#000","Black"},      {"#222","Charcoal"},    {"#444","Dark Gray"},
-        {"#666","Gray"},       {"#999","Light Gray"},   {"#CCC","Silver"},
-        {"#EEE","Off-White"},  {"#FFF","White"},
+        // Neutrals
+        {"#000","Black"},        {"#222","Charcoal"},     {"#444","Dark Gray"},
+        {"#666","Gray"},         {"#789","Slate"},         {"#899","Cool Gray"},
+        {"#999","Light Gray"},   {"#CCC","Silver"},        {"#EEE","Off-White"},
+        {"#FEE","Warm White"},   {"#FFF","White"},
 
-        {"#200","Dark Red"},   {"#700","Maroon"},       {"#B22","Crimson"},
-        {"#F00","Red"},        {"#F66","Light Red"},    {"#FAA","Salmon"},
+        // Reds
+        {"#200","Dark Red"},     {"#802","Burgundy"},      {"#700","Maroon"},
+        {"#B22","Crimson"},      {"#F20","Scarlet"},       {"#F00","Red"},
+        {"#F33","Tomato"},       {"#F66","Light Red"},     {"#F84","Coral"},
+        {"#FAA","Salmon"},
 
-        {"#520","Dark Orange"},{"#A40","Burnt Orange"}, {"#F80","Orange"},
-        {"#FB6","Light Orange"},{"#FC8","Peach"},
+        // Oranges
+        {"#520","Dark Orange"},  {"#A40","Burnt Orange"},  {"#B41","Rust"},
+        {"#F40","Vermilion"},    {"#F80","Orange"},        {"#FA6","Apricot"},
+        {"#FB6","Light Orange"}, {"#FC8","Peach"},
 
-        {"#220","Dark Yellow"},{"#CA0","Gold"},         {"#FF0","Yellow"},
-        {"#FF6","Light Yellow"},{"#FFC","Cream"},
+        // Yellows
+        {"#220","Dark Yellow"},  {"#880","Olive"},         {"#CA0","Gold"},
+        {"#DB0","Mustard"},      {"#ECA","Wheat"},         {"#FC0","Amber"},
+        {"#FF0","Yellow"},       {"#FF6","Light Yellow"},  {"#FFC","Cream"},
 
-        {"#020","Dark Green"}, {"#063","Forest Green"}, {"#080","Green"},
-        {"#0C0","Lime Green"}, {"#0F0","Bright Green"}, {"#8F8","Light Green"},
-        {"#CFA","Mint"},
+        // Greens
+        {"#020","Dark Green"},   {"#063","Forest Green"},  {"#080","Green"},
+        {"#0C5","Emerald"},      {"#484","Fern"},          {"#682","Olive Green"},
+        {"#0C0","Lime Green"},   {"#8F0","Chartreuse"},    {"#0F0","Bright Green"},
+        {"#8F8","Light Green"},  {"#9B9","Sage"},          {"#AEC","Seafoam"},
+        {"#BEB","Pale Green"},   {"#CFA","Mint"},
 
-        {"#022","Dark Teal"},  {"#066","Teal"},         {"#0AA","Aqua"},
-        {"#0FF","Cyan"},       {"#8FF","Light Cyan"},
+        // Teals & Cyans
+        {"#022","Dark Teal"},    {"#055","Dark Cyan"},     {"#066","Teal"},
+        {"#08A","Cerulean"},     {"#0AA","Aqua"},          {"#0FF","Cyan"},
+        {"#799","Steel Cyan"},   {"#8FF","Light Cyan"},    {"#9EC","Seafoam Green"},
 
-        {"#002","Midnight Blue"},{"#003","Dark Blue"},  {"#04A","Navy"},
-        {"#06F","Royal Blue"}, {"#00F","Blue"},         {"#2DF","Light Blue"},
-        {"#8CF","Sky Blue"},   {"#ACE","Powder Blue"},
+        // Blues
+        {"#003","Dark Blue"},    {"#008","Navy"},          {"#04A","Cobalt"},
+        {"#359","Denim"},        {"#657","Slate Navy"},    {"#48B","Steel Blue"},
+        {"#06F","Royal Blue"},   {"#00F","Blue"},          {"#0AF","Azure"},
+        {"#69E","Cornflower"},   {"#2DF","Light Blue"},    {"#8CF","Sky Blue"},
+        {"#ACE","Powder Blue"},  {"#CEF","Ice Blue"},
 
-        {"#202","Dark Purple"},{"#404","Eggplant"},     {"#608","Indigo"},
-        {"#808","Purple"},     {"#A0F","Violet"},       {"#C8F","Lavender"},
-        {"#D9F","Light Lavender"},
+        // Purples
+        {"#202","Dark Purple"},  {"#404","Deep Purple"},   {"#608","Indigo"},
+        {"#64F","Indigo Blue"},  {"#75F","Violet Blue"},   {"#808","Purple"},
+        {"#66C","Periwinkle"},    {"#93C","Amethyst"},      {"#A0F","Violet"},
+        {"#969","Mauve"},         {"#C8F","Lavender"},      {"#CCF","Light Periwinkle"},
+        {"#D7D","Orchid"},        {"#DAD","Plum"},          {"#D9F","Thistle"},
 
-        {"#606","Dark Magenta"},{"#F0F","Magenta"},     {"#F4A","Hot Pink"},
-        {"#F8A","Pink"},       {"#FCE","Light Pink"},
+        // Magentas & Pinks
+        {"#606","Dark Magenta"}, {"#F0F","Magenta"},       {"#F09","Fuchsia"},
+        {"#F4A","Hot Pink"},     {"#F69","Rose"},          {"#F8A","Pink"},
+        {"#C89","Dusty Rose"},   {"#F9C","Petal"},         {"#FBD","Baby Pink"},
+        {"#FCE","Light Pink"},   {"#FDE","Blush"},
 
-        {"#321","Dark Brown"}, {"#642","Brown"},        {"#A75","Light Brown"},
-        {"#DB8","Tan"},
+        // Browns
+        {"#321","Dark Brown"},   {"#642","Brown"},         {"#755","Muted Mauve"},
+        {"#B73","Caramel"},      {"#A53","Sienna"},        {"#A75","Light Brown"},
+        {"#A98","Taupe"},        {"#CB8","Sand"},          {"#DB8","Tan"},
+        {"#FE9","Khaki"},
     };
 
     auto it = colorNames.find(rgb);
@@ -234,38 +261,50 @@ public:
     void setSwatchColor(tsl::Color color) { m_swatchColor = color; }
 
     virtual void draw(tsl::gfx::Renderer* renderer) override {
-        const std::string full = this->m_value;
-
-        // x = getX() + getWidth() - textWidth(full,20) - 19
-        // (equivalent to drawValue's getX() + m_maxWidth + 47 with full value)
-        const s32 fullValueWidth = renderer->getTextDimensions(full, false, 20).first;
-        const s32 swatchX = this->getX() + this->getWidth() - fullValueWidth - 19;
-
-        // Strip the swatch so the parent never renders it.
-        std::string withoutSwatch = full;
-        const auto pos = withoutSwatch.find(COLOR_SWATCH);
-        if (pos != std::string::npos) {
-            withoutSwatch.erase(pos, COLOR_SWATCH.size());
-            while (!withoutSwatch.empty() && withoutSwatch.front() == ' ')
-                withoutSwatch.erase(withoutSwatch.begin());
-        }
-        this->m_value    = withoutSwatch;
-        this->m_maxWidth = 0;
-        Base::draw(renderer);
-        this->m_value    = full;
-        this->m_maxWidth = 0;
-
-        // Draw the swatch once in m_swatchColor at the correct position.
         static constexpr s32 fontSize   = 20;
         static constexpr u16 itemHeight = isMini ? tsl::style::MiniListItemDefaultHeight
                                                  : tsl::style::ListItemDefaultHeight;
         static constexpr s32 yOffset    = (tsl::style::ListItemDefaultHeight - itemHeight) / 2 + 1;
         const s32 swatchY = this->getY() + 45 - yOffset - 1;
-        renderer->drawStringWithColoredSections(
-            COLOR_SWATCH, false, COLOR_SWATCH_SPECIAL,
-            swatchX, swatchY, fontSize, tsl::Color(0, 0, 0, 0), m_swatchColor);
-    }
 
+        if (this->m_flags.m_radioSelector && ult::useSwitch2Style) {
+            // Switch 2 radio mode: base draws the radio circle with COLOR_SWATCH as
+            // the label text (left of circle). We overdraw the label in the true
+            // swatch color so it appears colored rather than plain white/grey.
+            this->m_maxWidth = 0;
+            Base::draw(renderer);
+            // groupLeft mirrors drawRadioSelector's anchor: getX() + m_maxWidth + 47.
+            // Read m_maxWidth (now freshly recalculated by Base::draw) BEFORE zeroing it.
+            const s32 groupLeft = this->getX() + this->m_maxWidth + 47;
+            this->m_maxWidth = 0;
+            renderer->drawStringWithColoredSections(
+                COLOR_SWATCH, false, COLOR_SWATCH_SPECIAL,
+                groupLeft, swatchY, fontSize, tsl::Color(0, 0, 0, 0), m_swatchColor);
+        } else {
+            // Switch 1 / non-radio mode: original swatch-in-value behavior.
+            const std::string full = this->m_value;
+
+            const s32 fullValueWidth = renderer->getTextDimensions(full, false, 20).first;
+            const s32 swatchX = this->getX() + this->getWidth() - fullValueWidth - 19;
+
+            std::string withoutSwatch = full;
+            const auto pos = withoutSwatch.find(COLOR_SWATCH);
+            if (pos != std::string::npos) {
+                withoutSwatch.erase(pos, COLOR_SWATCH.size());
+                while (!withoutSwatch.empty() && withoutSwatch.front() == ' ')
+                    withoutSwatch.erase(withoutSwatch.begin());
+            }
+            this->m_value    = withoutSwatch;
+            this->m_maxWidth = 0;
+            Base::draw(renderer);
+            this->m_value    = full;
+            this->m_maxWidth = 0;
+
+            renderer->drawStringWithColoredSections(
+                COLOR_SWATCH, false, COLOR_SWATCH_SPECIAL,
+                swatchX, swatchY, fontSize, tsl::Color(0, 0, 0, 0), m_swatchColor);
+        }
+    }
 private:
     tsl::Color m_swatchColor;
 };
@@ -276,39 +315,65 @@ using MiniColorSwatchListItem = ColorSwatchListItemT<true>;
 
 // Shared color palette used by ColorSelector.
 static const std::vector<std::pair<std::string, std::string>> g_colorPalette = {
-    {"Black","#000"},        {"Charcoal","#222"},     {"Dark Gray","#444"},
-    {"Gray","#666"},         {"Light Gray","#999"},   {"Silver","#CCC"},
-    {"Off-White","#EEE"},    {"White","#FFF"},
+    // Neutrals
+    {"Black","#000"},        {"Charcoal","#222"},      {"Dark Gray","#444"},
+    {"Gray","#666"},         {"Slate","#789"},          {"Cool Gray","#899"},
+    {"Light Gray","#999"},   {"Silver","#CCC"},         {"Off-White","#EEE"},
+    {"Warm White","#FEE"},   {"White","#FFF"},
 
-    {"Dark Red","#200"},     {"Maroon","#700"},       {"Crimson","#B22"},
-    {"Red","#F00"},          {"Light Red","#F66"},    {"Salmon","#FAA"},
+    // Reds
+    {"Dark Red","#200"},     {"Burgundy","#802"},       {"Maroon","#700"},
+    {"Crimson","#B22"},      {"Scarlet","#F20"},        {"Red","#F00"},
+    {"Tomato","#F33"},       {"Light Red","#F66"},      {"Coral","#F84"},
+    {"Salmon","#FAA"},
 
-    {"Dark Orange","#520"},  {"Burnt Orange","#A40"}, {"Orange","#F80"},
+    // Oranges
+    {"Dark Orange","#520"},  {"Burnt Orange","#A40"},   {"Rust","#B41"},
+    {"Vermilion","#F40"},    {"Orange","#F80"},         {"Apricot","#FA6"},
     {"Light Orange","#FB6"}, {"Peach","#FC8"},
 
-    {"Dark Yellow","#220"},  {"Gold","#CA0"},         {"Yellow","#FF0"},
-    {"Light Yellow","#FF6"}, {"Cream","#FFC"},
+    // Yellows
+    {"Dark Yellow","#220"},  {"Olive","#880"},          {"Gold","#CA0"},
+    {"Mustard","#DB0"},      {"Wheat","#ECA"},          {"Amber","#FC0"},
+    {"Yellow","#FF0"},       {"Light Yellow","#FF6"},   {"Cream","#FFC"},
 
-    {"Dark Green","#020"},   {"Forest Green","#063"}, {"Green","#080"},
-    {"Lime Green","#0C0"},   {"Bright Green","#0F0"}, {"Light Green","#8F8"},
-    {"Mint","#CFA"},
+    // Greens
+    {"Dark Green","#020"},   {"Forest Green","#063"},   {"Green","#080"},
+    {"Emerald","#0C5"},      {"Fern","#484"},           {"Olive Green","#682"},
+    {"Lime Green","#0C0"},   {"Chartreuse","#8F0"},     {"Bright Green","#0F0"},
+    {"Light Green","#8F8"},  {"Sage","#9B9"},           {"Seafoam","#AEC"},
+    {"Pale Green","#BEB"},   {"Mint","#CFA"},
 
-    {"Dark Teal","#022"},    {"Teal","#066"},         {"Aqua","#0AA"},
-    {"Cyan","#0FF"},         {"Light Cyan","#8FF"},
+    // Teals & Cyans
+    {"Dark Teal","#022"},    {"Dark Cyan","#055"},      {"Teal","#066"},
+    {"Cerulean","#08A"},     {"Aqua","#0AA"},           {"Cyan","#0FF"},
+    {"Steel Cyan","#799"},   {"Light Cyan","#8FF"},     {"Seafoam Green","#9EC"},
 
-    {"Midnight Blue","#002"},{"Dark Blue","#003"},    {"Navy","#04A"},
-    {"Royal Blue","#06F"},   {"Blue","#00F"},         {"Light Blue","#2DF"},
-    {"Sky Blue","#8CF"},     {"Powder Blue","#ACE"},
+    // Blues
+    {"Dark Blue","#003"},    {"Navy","#008"},           {"Cobalt","#04A"},
+    {"Denim","#359"},        {"Slate Navy","#657"},     {"Steel Blue","#48B"},
+    {"Royal Blue","#06F"},   {"Blue","#00F"},           {"Azure","#0AF"},
+    {"Cornflower","#69E"},   {"Light Blue","#2DF"},     {"Sky Blue","#8CF"},
+    {"Powder Blue","#ACE"},  {"Ice Blue","#CEF"},
 
-    {"Dark Purple","#202"},  {"Eggplant","#404"},     {"Indigo","#608"},
-    {"Purple","#808"},       {"Violet","#A0F"},       {"Lavender","#C8F"},
-    {"Light Lavender","#D9F"},
+    // Purples
+    {"Dark Purple","#202"},  {"Deep Purple","#404"},    {"Indigo","#608"},
+    {"Indigo Blue","#64F"},  {"Violet Blue","#75F"},    {"Purple","#808"},
+    {"Periwinkle","#66C"},     {"Amethyst","#93C"},     {"Violet","#A0F"},
+    {"Mauve","#969"},          {"Lavender","#C8F"},     {"Light Periwinkle","#CCF"},
+    {"Orchid","#D7D"},         {"Plum","#DAD"},         {"Thistle","#D9F"},
 
-    {"Dark Magenta","#606"}, {"Magenta","#F0F"},      {"Hot Pink","#F4A"},
-    {"Pink","#F8A"},         {"Light Pink","#FCE"},
+    // Magentas & Pinks
+    {"Dark Magenta","#606"}, {"Magenta","#F0F"},        {"Fuchsia","#F09"},
+    {"Hot Pink","#F4A"},     {"Rose","#F69"},           {"Pink","#F8A"},
+    {"Dusty Rose","#C89"},   {"Petal","#F9C"},          {"Baby Pink","#FBD"},
+    {"Light Pink","#FCE"},   {"Blush","#FDE"},
 
-    {"Dark Brown","#321"},   {"Brown","#642"},        {"Light Brown","#A75"},
-    {"Tan","#DB8"},
+    // Browns
+    {"Dark Brown","#321"},   {"Brown","#642"},          {"Muted Mauve","#755"},
+    {"Caramel","#B73"},      {"Sienna","#A53"},         {"Light Brown","#A75"},
+    {"Taupe","#A98"},        {"Sand","#CB8"},           {"Tan","#DB8"},
+    {"Khaki","#FE9"},
 };
 
 // =============================================================================
@@ -443,6 +508,7 @@ public:
 
         for (const auto& option : alphaOptions) {
             auto* alphaItem = new tsl::elm::MiniListItem(option.first);
+            alphaItem->setRadioSelector();
             if (!currentAlpha.empty() && currentAlpha[0] == option.second)
                 selectItem(lastSelectedListItem, alphaItem, ult::CHECKMARK_SYMBOL);
             alphaItem->setClickListener([this, alphaItem, option, section](uint64_t keys) {
@@ -555,6 +621,7 @@ public:
         if (slot == 2) {
             list->addItem(new tsl::elm::CategoryHeader("None"));
             auto* noneItem = new tsl::elm::MiniListItem(ult::OPTION_SYMBOL);
+            noneItem->setRadioSelector();
             if (currentValue == ult::OPTION_SYMBOL)
                 selectItem(lastSelectedListItem, noneItem, ult::CHECKMARK_SYMBOL);
             noneItem->setClickListener([this, noneItem, section](uint64_t keys) {
@@ -572,6 +639,7 @@ public:
             list->addItem(new tsl::elm::CategoryHeader(cat.header));
             for (const auto& entry : cat.entries) {
                 auto* formatItem = new tsl::elm::MiniListItem(entry.label);
+                formatItem->setRadioSelector();
                 if (entry.fmt == currentValue)
                     selectItem(lastSelectedListItem, formatItem, ult::CHECKMARK_SYMBOL);
                 const std::string capturedFmt = entry.fmt;
@@ -639,8 +707,13 @@ public:
             list->addItem(new tsl::elm::CategoryHeader("Global"));
             addToggle(list, "Disable Screenshots", "disable_screenshots", false);
             addToggle(list, "Info",                "show_info",           true);
-            addToggle(list, "Dynamic Temp Colors", "use_dynamic_colors",  true);
+            addToggle(list, "Dynamic Temps", "use_dynamic_colors",  true);
             addToggle(list, "Integer FPS",         "integer_fps",         true);
+            addToggle(list, "Border",         "use_border",       true);
+            addToggle(list, "Dynamic Border", "dynamic_border",   true);
+            addToggle(list, "CW Border Flow", "cw_border_flow",   true);
+            addToggle(list, "Graph Border",   "use_graph_border", true);
+            addToggle(list, "Graph Background", "graph_background", true);
 
         } else if (flags.isFull) {
             list->addItem(new tsl::elm::CategoryHeader("Global"));
@@ -651,7 +724,7 @@ public:
             addToggle(list, "FPS",                 "show_fps",            true);
             addToggle(list, "RES",                 "show_res",            true);
             addToggle(list, "Read Speed",          "show_read_speed",     true);
-            addToggle(list, "Dynamic Temp Colors", "use_dynamic_colors",  true);
+            addToggle(list, "Dynamic Temps", "use_dynamic_colors",  true);
 
         } else if (flags.isMini || flags.isMicro) {
             list->addItem(new tsl::elm::CategoryHeader("Global"));
@@ -663,7 +736,12 @@ public:
 
             addToggle(list, "Real Frequencies",    "real_freqs",          true);
             addToggle(list, "Real Voltages",       "real_volts",          true);
-            addToggle(list, "Dynamic Temp Colors", "use_dynamic_colors",  true);
+            addToggle(list, "Dynamic Temps", "use_dynamic_colors",  true);
+            if (flags.isMini) {
+                addToggle(list, "Border",         "use_border",      true);
+                addToggle(list, "Dynamic Border", "dynamic_border",  true);
+                addToggle(list, "CW Border Flow", "cw_border_flow",  true);
+            }
 
             list->addItem(new tsl::elm::CategoryHeader("CPU"));
             addToggle(list, "Full CPU",              "show_full_cpu",              true);
@@ -752,12 +830,18 @@ public:
         } else if (flags.isGameRes) {
             list->addItem(new tsl::elm::CategoryHeader("Global"));
             addToggle(list, "Disable Screenshots", "disable_screenshots", false);
+            addToggle(list, "Border",         "use_border",      true);
+            addToggle(list, "Dynamic Border", "dynamic_border",  true);
+            addToggle(list, "CW Border Flow", "cw_border_flow",  true);
 
         } else if (flags.isFPSCounter) {
             list->addItem(new tsl::elm::CategoryHeader("Global"));
             addToggle(list, "1080p Docked",   "use_1080p_docked",   true);
             addToggle(list, "Disable Screenshots", "disable_screenshots", false);
             addToggle(list, "Integer FPS",         "integer_fps",         true);
+            addToggle(list, "Border",         "use_border",      true);
+            addToggle(list, "Dynamic Border", "dynamic_border",  true);
+            addToggle(list, "CW Border Flow", "cw_border_flow",  true);
         }
 
         list->jumpToItem(jumpItemName, jumpItemValue, jumpItemExactMatch);
@@ -808,6 +892,7 @@ public:
         for (int rate : rates) {
             if (rate > maxRate) break;
             auto* rateItem = new tsl::elm::MiniListItem(std::to_string(rate) + " Hz");
+            rateItem->setRadioSelector();
             if (rate == currentRate)
                 selectItem(lastSelectedListItem, rateItem, ult::CHECKMARK_SYMBOL);
             rateItem->setClickListener([this, rateItem, rate, section](uint64_t keys) {
@@ -863,6 +948,7 @@ public:
         static const int rates[] = {1, 2, 3, 5, 10, 15, 30, 60};
         for (int rate : rates) {
             auto* rateItem = new tsl::elm::MiniListItem(std::to_string(rate) + " Hz");
+            rateItem->setRadioSelector();
             if (rate == currentRate)
                 selectItem(lastSelectedListItem, rateItem, ult::CHECKMARK_SYMBOL);
             rateItem->setClickListener([this, rateItem, rate, section](uint64_t keys) {
@@ -915,6 +1001,7 @@ public:
 
         {
             auto* noneItem = new tsl::elm::ListItem(ult::OPTION_SYMBOL);
+            noneItem->setRadioSelector();
             if (currentCombo.empty())
                 selectItem(lastSelectedListItem, noneItem, ult::CHECKMARK_SYMBOL);
             noneItem->setClickListener([this, noneItem](uint64_t keys) -> bool {
@@ -939,6 +1026,7 @@ public:
             ult::convertComboToUnicode(display);
 
             auto* item = new tsl::elm::ListItem(display);
+            item->setRadioSelector();
             if (currentKeys != 0 && comboKeys == currentKeys)
                 selectItem(lastSelectedListItem, item, ult::CHECKMARK_SYMBOL);
 
@@ -993,6 +1081,7 @@ public:
 
         for (int padding = 0; padding <= 14; ++padding) {
             auto* paddingItem = new tsl::elm::MiniListItem(std::to_string(padding) + " px");
+            paddingItem->setRadioSelector();
             if (padding == currentPadding)
                 selectItem(lastSelectedListItem, paddingItem, ult::CHECKMARK_SYMBOL);
             paddingItem->setClickListener([this, paddingItem, padding](uint64_t keys) {
@@ -1015,7 +1104,59 @@ public:
         if (keysDown & KEY_B) {
             triggerExitFeedback();
             jumpItemName = "Frame Padding"; jumpItemValue = ""; jumpItemExactMatch = false;
-            tsl::swapTo<ConfiguratorOverlay>(SwapDepth(2), modeName);
+            tsl::goBack();
+            return true;
+        }
+        return false;
+    }
+};
+
+// Border thickness for the configurable Switch 2 frame border. Stored in raw px;
+// a radio-list dropdown like Frame Padding (not a slider). Range 0..14 px.
+class BorderThicknessConfig : public tsl::Gui {
+private:
+    std::string modeName;
+    std::string section;
+    int currentThickness;
+
+public:
+    BorderThicknessConfig(const std::string& mode) : modeName(mode) {
+        section = modeToSection(mode);
+        const std::string value = ult::parseValueFromIniSection(configIniPath, section, "border_thickness");
+        currentThickness = value.empty() ? 1 : std::clamp(atoi(value.c_str()), 0, 14);
+    }
+    ~BorderThicknessConfig() { lastSelectedListItem = nullptr; }
+
+    virtual tsl::elm::Element* createUI() override {
+        auto* list = new tsl::elm::List();
+        list->addItem(new tsl::elm::CategoryHeader("Border Thickness"));
+
+        for (int thickness = 0; thickness <= 14; ++thickness) {
+            auto* item = new tsl::elm::MiniListItem(std::to_string(thickness) + " px");
+            item->setRadioSelector();
+            if (thickness == currentThickness)
+                selectItem(lastSelectedListItem, item, ult::CHECKMARK_SYMBOL);
+            item->setClickListener([this, item, thickness](uint64_t keys) {
+                if (keys & KEY_A) {
+                    ult::setIniFileValue(configIniPath, section, "border_thickness", std::to_string(thickness));
+                    selectItem(lastSelectedListItem, item, ult::CHECKMARK_SYMBOL);
+                    return true;
+                }
+                return false;
+            });
+            list->addItem(item);
+        }
+
+        list->jumpToItem("", ult::CHECKMARK_SYMBOL, false);
+        return makeFrame(modeName + " " + ult::DIVIDER_SYMBOL + " Configuration", list);
+    }
+
+    virtual bool handleInput(u64 keysDown, u64 keysHeld, const HidTouchState &touchPos,
+                             HidAnalogStickState joyStickPosLeft, HidAnalogStickState joyStickPosRight) override {
+        if (keysDown & KEY_B) {
+            triggerExitFeedback();
+            jumpItemName = "Border Thickness"; jumpItemValue = ""; jumpItemExactMatch = false;
+            tsl::goBack();
             return true;
         }
         return false;
@@ -1070,6 +1211,7 @@ public:
         list->addItem(new tsl::elm::CategoryHeader(headerLabel));
         for (int p = MIN_P; p <= MAX_P; p += STEP_P) {
             auto* item = new tsl::elm::MiniListItem(formatLabel(p));
+            item->setRadioSelector();
             if (p == currentPadding)
                 selectItem(lastSelectedListItem, item, ult::CHECKMARK_SYMBOL);
             item->setClickListener([this, item, p](uint64_t keys) {
@@ -1091,7 +1233,7 @@ public:
         if (keysDown & KEY_B) {
             triggerExitFeedback();
             jumpItemName = jumpLabel; jumpItemValue = ""; jumpItemExactMatch = false;
-            tsl::swapTo<ConfiguratorOverlay>(SwapDepth(2), "Micro");
+            tsl::goBack();
             return true;
         }
         return false;
@@ -1162,6 +1304,7 @@ public:
         list->addItem(new tsl::elm::CategoryHeader(headerLabel));
         for (int p = MIN_P; p <= MAX_P; p += STEP_P) {
             auto* item = new tsl::elm::MiniListItem(formatLabel(p));
+            item->setRadioSelector();
             if (p == currentPadding)
                 selectItem(lastSelectedListItem, item, ult::CHECKMARK_SYMBOL);
             item->setClickListener([this, item, p](uint64_t keys) {
@@ -1183,7 +1326,7 @@ public:
         if (keysDown & KEY_B) {
             triggerExitFeedback();
             jumpItemName = jumpLabel; jumpItemValue = ""; jumpItemExactMatch = false;
-            tsl::swapTo<ConfiguratorOverlay>(SwapDepth(2), "Mini");
+            tsl::goBack();
             return true;
         }
         return false;
@@ -1213,6 +1356,204 @@ public:
 class MiniCornerRadiusConfig : public MiniPaddingConfigBase<40, 0, 80, 2> {
 public:
     MiniCornerRadiusConfig() : MiniPaddingConfigBase("corner_radius", "Corner Radius", "Corner Radius") {}
+};
+
+// =============================================================================
+// Paddings Configuration (hub — one dropdown for all per-mode padding options)
+// =============================================================================
+class PaddingsConfig : public tsl::Gui {
+private:
+    std::string modeName;
+    ModeFlags   flags;
+
+    // ---- value helpers (mirrors ConfiguratorOverlay getters) ----------------
+    int getFramePadding() const {
+        const std::string section = modeToSection(modeName);
+        const std::string v = ult::parseValueFromIniSection(configIniPath, section, "frame_padding");
+        return v.empty() ? 4 : std::clamp(atoi(v.c_str()), 0, 14);
+    }
+    int getBorderThickness() const {
+        const std::string section = modeToSection(modeName);
+        const std::string v = ult::parseValueFromIniSection(configIniPath, section, "border_thickness");
+        return v.empty() ? 1 : std::clamp(atoi(v.c_str()), 0, 14);
+    }
+    int getMicroHPadding() const {
+        const std::string v = ult::parseValueFromIniSection(configIniPath, "micro", "horizontal_padding");
+        return v.empty() ? 14 : std::clamp(atoi(v.c_str()), 2, 30);
+    }
+    int getMicroVPadding() const {
+        const std::string v = ult::parseValueFromIniSection(configIniPath, "micro", "vertical_padding");
+        return v.empty() ? 8 : std::clamp(atoi(v.c_str()), 2, 30);
+    }
+    int getMicroStackedSpacing() const {
+        const std::string v = ult::parseValueFromIniSection(configIniPath, "micro", "stacked_spacing");
+        int val = v.empty() ? 4 : std::clamp(atoi(v.c_str()), 0, 30);
+        val = 0 + ((val - 0 + (1 / 2)) / 1) * 1;
+        return std::clamp(val, 0, 30);
+    }
+    int getMicroLabelPadding() const {
+        const std::string v = ult::parseValueFromIniSection(configIniPath, "micro", "label_padding");
+        return v.empty() ? 14 : std::clamp(atoi(v.c_str()), 2, 30);
+    }
+    int getMicroElementPadding() const {
+        const std::string v = ult::parseValueFromIniSection(configIniPath, "micro", "element_padding");
+        int val = v.empty() ? 50 : std::clamp(atoi(v.c_str()), 10, 100);
+        val = 10 + ((val - 10 + (10 / 2)) / 10) * 10;
+        return std::clamp(val, 10, 100);
+    }
+    int getMiniHPadding() const {
+        const std::string v = ult::parseValueFromIniSection(configIniPath, "mini", "horizontal_padding");
+        return v.empty() ? 30 : std::clamp(atoi(v.c_str()), 2, 60);
+    }
+    int getMiniVPadding() const {
+        const std::string v = ult::parseValueFromIniSection(configIniPath, "mini", "vertical_padding");
+        return v.empty() ? 30 : std::clamp(atoi(v.c_str()), 2, 60);
+    }
+    int getMiniSpacing() const {
+        const std::string v = ult::parseValueFromIniSection(configIniPath, "mini", "spacing");
+        return v.empty() ? 15 : std::clamp(atoi(v.c_str()), 2, 30);
+    }
+    int getMiniStackedSpacing() const {
+        const std::string v = ult::parseValueFromIniSection(configIniPath, "mini", "stacked_spacing");
+        int val = v.empty() ? 4 : std::clamp(atoi(v.c_str()), 0, 30);
+        val = 0 + ((val - 0 + (1 / 2)) / 1) * 1;
+        return std::clamp(val, 0, 30);
+    }
+    int getMiniCornerRadius() const {
+        const std::string v = ult::parseValueFromIniSection(configIniPath, "mini", "corner_radius");
+        int val = v.empty() ? 40 : std::clamp(atoi(v.c_str()), 0, 80);
+        val = 0 + ((val - 0 + (2 / 2)) / 2) * 2;
+        return std::clamp(val, 0, 80);
+    }
+
+public:
+    PaddingsConfig(const std::string& mode) : modeName(mode), flags(mode) {}
+    ~PaddingsConfig() { lastSelectedListItem = nullptr; }
+
+    virtual tsl::elm::Element* createUI() override {
+        auto* list = new tsl::elm::List();
+        list->addItem(new tsl::elm::CategoryHeader("Paddings"));
+
+        // Frame Padding — Mini / Game Resolutions / FPS Counter / FPS Graph
+        if (flags.isMini || flags.isGameRes || flags.isFPSCounter || flags.isFPSGraph) {
+            auto* item = new tsl::elm::ListItem("Frame Padding");
+            item->setValue(std::to_string(getFramePadding()) + " px");
+            item->setClickListener([this](uint64_t keys) {
+                if (keys & KEY_A) { tsl::changeTo<FramePaddingConfig>(modeName); return true; }
+                return false;
+            });
+            list->addItem(item);
+
+            // Border Thickness - same modes carry the configurable frame border.
+            auto* btItem = new tsl::elm::ListItem("Border Thickness");
+            btItem->setValue(std::to_string(getBorderThickness()) + " px");
+            btItem->setClickListener([this](uint64_t keys) {
+                if (keys & KEY_A) { tsl::changeTo<BorderThicknessConfig>(modeName); return true; }
+                return false;
+            });
+            list->addItem(btItem);
+        }
+
+        // Mini paddings
+        if (flags.isMini) {
+            auto* hItem = new tsl::elm::ListItem("Horizontal Padding");
+            hItem->setValue(formatSpTenths(getMiniHPadding()));
+            hItem->setClickListener([this](uint64_t keys) {
+                if (keys & KEY_A) { tsl::changeTo<MiniHPaddingConfig>(); return true; }
+                return false;
+            });
+            list->addItem(hItem);
+
+            auto* vItem = new tsl::elm::ListItem("Vertical Padding");
+            vItem->setValue(formatSpTenths(getMiniVPadding()));
+            vItem->setClickListener([this](uint64_t keys) {
+                if (keys & KEY_A) { tsl::changeTo<MiniVPaddingConfig>(); return true; }
+                return false;
+            });
+            list->addItem(vItem);
+
+            auto* spItem = new tsl::elm::ListItem("Spacing");
+            spItem->setValue(formatSpTenths(getMiniSpacing()));
+            spItem->setClickListener([this](uint64_t keys) {
+                if (keys & KEY_A) { tsl::changeTo<MiniSpacingConfig>(); return true; }
+                return false;
+            });
+            list->addItem(spItem);
+
+            auto* ssItem = new tsl::elm::ListItem("Stacked Spacing");
+            ssItem->setValue(formatSpTenths(getMiniStackedSpacing()));
+            ssItem->setClickListener([this](uint64_t keys) {
+                if (keys & KEY_A) { tsl::changeTo<MiniStackedSpacingConfig>(); return true; }
+                return false;
+            });
+            list->addItem(ssItem);
+
+            auto* crItem = new tsl::elm::ListItem("Corner Radius");
+            crItem->setValue(formatSpTenths(getMiniCornerRadius()));
+            crItem->setClickListener([this](uint64_t keys) {
+                if (keys & KEY_A) { tsl::changeTo<MiniCornerRadiusConfig>(); return true; }
+                return false;
+            });
+            list->addItem(crItem);
+        }
+
+        // Micro paddings
+        if (flags.isMicro) {
+            auto* hItem = new tsl::elm::ListItem("Horizontal Padding");
+            hItem->setValue(formatSpTenths(getMicroHPadding()));
+            hItem->setClickListener([this](uint64_t keys) {
+                if (keys & KEY_A) { tsl::changeTo<MicroHPaddingConfig>(); return true; }
+                return false;
+            });
+            list->addItem(hItem);
+
+            auto* vItem = new tsl::elm::ListItem("Vertical Padding");
+            vItem->setValue(formatSpTenths(getMicroVPadding()));
+            vItem->setClickListener([this](uint64_t keys) {
+                if (keys & KEY_A) { tsl::changeTo<MicroVPaddingConfig>(); return true; }
+                return false;
+            });
+            list->addItem(vItem);
+
+            auto* ssItem = new tsl::elm::ListItem("Stacked Spacing");
+            ssItem->setValue(formatSpTenths(getMicroStackedSpacing()));
+            ssItem->setClickListener([this](uint64_t keys) {
+                if (keys & KEY_A) { tsl::changeTo<MicroStackedSpacingConfig>(); return true; }
+                return false;
+            });
+            list->addItem(ssItem);
+
+            auto* lItem = new tsl::elm::ListItem("Label Padding");
+            lItem->setValue(formatSpTenths(getMicroLabelPadding()));
+            lItem->setClickListener([this](uint64_t keys) {
+                if (keys & KEY_A) { tsl::changeTo<MicroLabelPaddingConfig>(); return true; }
+                return false;
+            });
+            list->addItem(lItem);
+
+            auto* eItem = new tsl::elm::ListItem("Element Padding");
+            eItem->setValue(formatSpWhole(getMicroElementPadding()));
+            eItem->setClickListener([this](uint64_t keys) {
+                if (keys & KEY_A) { tsl::changeTo<MicroElementPaddingConfig>(); return true; }
+                return false;
+            });
+            list->addItem(eItem);
+        }
+
+        list->jumpToItem(jumpItemName, jumpItemValue, jumpItemExactMatch);
+        return makeFrame(modeName + " " + ult::DIVIDER_SYMBOL + " Configuration " + ult::DIVIDER_SYMBOL + " Paddings", list);
+    }
+
+    virtual bool handleInput(u64 keysDown, u64 keysHeld, const HidTouchState &touchPos,
+                             HidAnalogStickState joyStickPosLeft, HidAnalogStickState joyStickPosRight) override {
+        if (keysDown & KEY_B) {
+            triggerExitFeedback();
+            jumpItemName = "Paddings"; jumpItemValue = ""; jumpItemExactMatch = true;
+            tsl::swapTo<ConfiguratorOverlay>(SwapDepth(2), modeName);
+            return true;
+        }
+        return false;
+    }
 };
 
 // =============================================================================
@@ -1270,6 +1611,7 @@ public:
 
         for (int size = minSize; size <= maxSize; size++) {
             auto* sizeItem = new tsl::elm::MiniListItem(std::to_string(size) + " pt");
+            sizeItem->setRadioSelector();
             if (size == currentSize)
                 selectItem(lastSelectedListItem, sizeItem, ult::CHECKMARK_SYMBOL);
             sizeItem->setClickListener([this, sizeItem, size, keyName, section](uint64_t keys) {
@@ -1377,7 +1719,11 @@ public:
                              key == "plot_background_color")));
         isTextBasedColor  = (key == "text_color" || key == "separator_color" || key == "cat_color" ||
                             key == "cat_color_1" || key == "cat_color_2" ||
-                            (flags.isFPSGraph && (key == "border_color" || key == "max_fps_text_color" ||
+                            key == "border_color" ||
+                            key == "border_wheel_color_1" || key == "border_wheel_color_2" ||
+                            key == "border_wheel_color_3" || key == "border_wheel_color_3_deep" ||
+                            key == "border_wheel_color_4" || key == "border_wheel_color_4_deep" ||
+                            (flags.isFPSGraph && (key == "max_fps_text_color" ||
                              key == "min_fps_text_color" || key == "main_line_color" ||
                              key == "rounded_line_color" || key == "perfect_line_color")));
     }
@@ -1399,6 +1745,7 @@ public:
             const std::string hexRgb = extractColorWithoutAlpha(color.second); // #RGB
             const tsl::Color swatchColor = hexToSwatchColor(hexRgb);
             colorItem->setSwatchColor(swatchColor);
+            colorItem->setRadioLabelSelector();
             colorItem->setValue(COLOR_SWATCH);
 
             const bool isSelected = (hexRgb == currentColorWithoutAlpha);
@@ -1513,6 +1860,17 @@ private:
         list->addItem(alphaItem);
     }
 
+    // The six Switch 2 frame-border wheel anchor colours (shared by every overlay
+    // that carries the configurable border). Defaults are the muted slate palette.
+    void addBorderWheelColors(tsl::elm::List* list) {
+        addColorItem(list, "Border Wheel 1",      "border_wheel_color_1",      "#75FF");
+        addColorItem(list, "Border Wheel 2",      "border_wheel_color_2",      "#64FF");
+        addColorItem(list, "Border Wheel 3",      "border_wheel_color_3",      "#799F");
+        addColorItem(list, "Border Wheel 3 Deep", "border_wheel_color_3_deep", "#657F");
+        addColorItem(list, "Border Wheel 4",      "border_wheel_color_4",      "#A98F");
+        addColorItem(list, "Border Wheel 4 Deep", "border_wheel_color_4_deep", "#755F");
+    }
+
 public:
     ColorConfig(const std::string& mode) : modeName(mode), flags(mode) {}
 
@@ -1555,18 +1913,31 @@ public:
                 else
                     addColorItem(list, std::string(c.name) + " Color", c.key, c.def);
             }
+            // Switch 2 frame-border wheel colours (the flat "Border" colour is in
+            // the table above and is reused for both the outer frame and the plot).
+            addBorderWheelColors(list);
 
         } else if (flags.isFull) {
             addColorItem(list, "Category Color 1", "cat_color_1",    "#8FFF");
             addColorItem(list, "Category Color 2", "cat_color_2",    "#2DFF");
-            addColorItem(list, "Separator Color",  "separator_color","#888F");
+            addColorItem(list, "Separator Color",  "separator_color","#2DFF");
 
         } else if (flags.isMini || flags.isMicro) {
             addColorItem(list, "Category Color", "cat_color",       "#2DFF");
-            addColorItem(list, "Separator Color", "separator_color", "#888F");
+            addColorItem(list, "Separator Color", "separator_color", "#2DFF");
+            if (flags.isMini) {
+                addColorItem(list, "Border Color", "border_color", "#2DFF");
+                addBorderWheelColors(list);
+            }
+
+        } else if (flags.isFPSCounter) {
+            addColorItem(list, "Border Color", "border_color", "#2DFF");
+            addBorderWheelColors(list);
 
         } else if (flags.isGameRes) {
             addColorItem(list, "Category Color", "cat_color", "#2DFF");
+            addColorItem(list, "Border Color", "border_color", "#2DFF");
+            addBorderWheelColors(list);
         }
 
         list->jumpToItem(jumpItemName, jumpItemValue, jumpItemExactMatch);
@@ -1595,6 +1966,17 @@ private:
     bool isMiniMode;
     std::vector<std::string> elementOrder;
     std::unordered_set<std::string> enabledElements;
+    // Rebuilding the UI (tsl::swapTo) must never happen synchronously from
+    // inside an element's own onClick (which is what setStateChangedListener /
+    // setClickListener fire from). ToggleListItem::onClick keeps touching
+    // `this` after invoking the state-changed listener, so if that listener
+    // destroys the element tree mid-call, the toggle item becomes a dangling
+    // pointer the moment the listener returns -> crash. Instead we just flag
+    // that a rebuild is needed here, and perform the actual swapTo from
+    // handleInput(), which the framework only calls *after* the onClick call
+    // chain has fully unwound for the frame -- the same safe pattern every
+    // other Config screen in this file already uses for KEY_B.
+    bool pendingRebuild = false;
 
 public:
     ShowConfig(const std::string& mode) : modeName(mode) {
@@ -1644,47 +2026,49 @@ public:
             }
         }
 
+        static const std::unordered_set<std::string> dynamicElements = {"FPS", "RES", "READ"};
+
         for (size_t i = 0; i < elementOrder.size(); i++) {
             const std::string& element = elementOrder[i];
             const bool isEnabled = enabledElements.count(element) > 0;
 
-            auto* elementItem = new tsl::elm::MiniListItem(element);
+            auto* elementItem = new tsl::elm::MiniToggleListItem(element, isEnabled);
             elementItem->enableShortHoldKey();
             elementItem->enableLongHoldKey();
-            elementItem->setValue(isEnabled ? ult::ON : ult::OFF, !isEnabled);
 
-            elementItem->setClickListener([this, elementItem, element](uint64_t keys) {
-                static bool hasNotTriggeredAnimation = false;
-                if (hasNotTriggeredAnimation) {
-                    elementItem->triggerClickAnimation();
-                    hasNotTriggeredAnimation = false;
-                }
-                if (keys & KEY_A) {
-                    // Dynamic elements (FPS, RES, READ) only render when a game is running,
-                    // so they don't count as "always visible". Block turning off an always-showing
-                    // element if it would leave no always-showing elements enabled.
-                    static const std::unordered_set<std::string> dynamicElements = {"FPS", "RES", "READ"};
-                    if (enabledElements.count(element)) {
-                        // Turning OFF — guard against leaving zero always-showing elements
-                        if (dynamicElements.count(element) == 0) {
-                            // Count always-showing elements that would remain enabled after removal
-                            int alwaysOnAfter = 0;
-                            for (const auto& e : enabledElements) {
-                                if (e != element && dynamicElements.count(e) == 0)
-                                    alwaysOnAfter++;
-                            }
-                            if (alwaysOnAfter == 0) return true; // Block: last always-showing element
+            // KEY_A: ToggleListItem handles the visual flip; we guard the last
+            // always-showing element and persist the change.
+            elementItem->setStateChangedListener([this, elementItem, element](bool newState) {
+                if (!newState) {
+                    // Turning OFF — block if this would leave no always-showing elements
+                    if (dynamicElements.count(element) == 0) {
+                        int alwaysOnAfter = 0;
+                        for (const auto& e : enabledElements) {
+                            if (e != element && dynamicElements.count(e) == 0)
+                                alwaysOnAfter++;
                         }
-                        enabledElements.erase(element);
-                    } else {
-                        enabledElements.insert(element);
+                        if (alwaysOnAfter == 0) {
+                            // Revert the visual state and bail
+                            elementItem->setState(true);
+                            return;
+                        }
                     }
-                    updateShowAndOrder();
-                    jumpItemName = element; jumpItemValue = ""; jumpItemExactMatch = true;
-                    hasNotTriggeredAnimation = true;
-                    tsl::swapTo<ShowConfig>(SwapDepth(1), modeName);
-                    return true;
+                    enabledElements.erase(element);
+                } else {
+                    enabledElements.insert(element);
                 }
+                updateShowAndOrder();
+                jumpItemName = element; jumpItemValue = ""; jumpItemExactMatch = true;
+                // Don't swapTo here -- this listener is invoked from inside
+                // ToggleListItem::onClick, which still touches `this` (the
+                // toggle item being destroyed by the swap) after we return.
+                // Defer to handleInput() instead.
+                pendingRebuild = true;
+            });
+
+            // KEY_X / KEY_Y: reorder (ToggleListItem passes non-KEY_A keys through
+            // to the click listener after handling its own KEY_A toggle).
+            elementItem->setClickListener([this, element](uint64_t keys) {
                 if (keys & KEY_Y || keys & KEY_X) {
                     size_t currentPos = 0;
                     for (size_t j = 0; j < elementOrder.size(); j++) {
@@ -1713,7 +2097,9 @@ public:
                     }
                     updateShowAndOrder();
                     jumpItemName = element; jumpItemValue = ""; jumpItemExactMatch = true;
-                    tsl::swapTo<ShowConfig>(SwapDepth(1), modeName);
+                    // Same reasoning as the toggle listener above: defer the
+                    // rebuild to handleInput() rather than swapping here.
+                    pendingRebuild = true;
                     return true;
                 }
                 return false;
@@ -1729,6 +2115,14 @@ public:
 
     virtual bool handleInput(u64 keysDown, u64 keysHeld, const HidTouchState &touchPos,
                              HidAnalogStickState joyStickPosLeft, HidAnalogStickState joyStickPosRight) override {
+        // Performed here (not inside the toggle/click listeners) so the swap
+        // only happens once the element's own onClick call has fully returned
+        // -- see the pendingRebuild comment above for why this matters.
+        if (pendingRebuild) {
+            pendingRebuild = false;
+            tsl::swapTo<ShowConfig>(SwapDepth(1), modeName);
+            return true;
+        }
         if (keysDown & KEY_B) {
             triggerExitFeedback();
             tsl::goBack();
@@ -1982,6 +2376,18 @@ public:
             list->addItem(fontSizes);
         }
 
+        // Paddings — after Font Sizes (or after Colors for modes without Font Sizes),
+        // before Sample Rate / Refresh Rate.
+        if (flags.isMini || flags.isGameRes || flags.isFPSCounter || flags.isFPSGraph || flags.isMicro) {
+            auto* paddings = new tsl::elm::ListItem("Paddings");
+            paddings->setValue(ult::DROPDOWN_SYMBOL);
+            paddings->setClickListener([this](uint64_t keys) {
+                if (keys & KEY_A) { tsl::changeTo<PaddingsConfig>(modeName); return true; }
+                return false;
+            });
+            list->addItem(paddings);
+        }
+
         // Sample Rate (Mini / FPS Graph) — above Refresh Rate
         if (flags.isMini || flags.isFPSGraph) {
             auto* sampleRate = new tsl::elm::ListItem("Sample Rate");
@@ -2023,61 +2429,7 @@ public:
             list->addItem(dtcFormat2);
         }
 
-        // Frame Padding (Mini/Game Resolutions/FPS Counter/FPS Graph)
-        if (flags.isMini || flags.isGameRes || flags.isFPSCounter || flags.isFPSGraph) {
-            auto* framePadding = new tsl::elm::ListItem("Frame Padding");
-            framePadding->setValue(std::to_string(getCurrentFramePadding()) + " px");
-            framePadding->setClickListener([this](uint64_t keys) {
-                if (keys & KEY_A) { tsl::changeTo<FramePaddingConfig>(modeName); return true; }
-                return false;
-            });
-            list->addItem(framePadding);
-        }
-
-        // Mini space-unit paddings (Horizontal / Vertical / Spacing / Corner Radius)
-        if (flags.isMini) {
-            auto* hPadding = new tsl::elm::ListItem("Horizontal Padding");
-            hPadding->setValue(formatSpTenths(getCurrentMiniHPadding()));
-            hPadding->setClickListener([this](uint64_t keys) {
-                if (keys & KEY_A) { tsl::changeTo<MiniHPaddingConfig>(); return true; }
-                return false;
-            });
-            list->addItem(hPadding);
-
-            auto* vPadding = new tsl::elm::ListItem("Vertical Padding");
-            vPadding->setValue(formatSpTenths(getCurrentMiniVPadding()));
-            vPadding->setClickListener([this](uint64_t keys) {
-                if (keys & KEY_A) { tsl::changeTo<MiniVPaddingConfig>(); return true; }
-                return false;
-            });
-            list->addItem(vPadding);
-
-            auto* spacing = new tsl::elm::ListItem("Spacing");
-            spacing->setValue(formatSpTenths(getCurrentMiniSpacing()));
-            spacing->setClickListener([this](uint64_t keys) {
-                if (keys & KEY_A) { tsl::changeTo<MiniSpacingConfig>(); return true; }
-                return false;
-            });
-            list->addItem(spacing);
-
-            auto* stackedSpacing = new tsl::elm::ListItem("Stacked Spacing");
-            stackedSpacing->setValue(formatSpTenths(getCurrentMiniStackedSpacing()));
-            stackedSpacing->setClickListener([this](uint64_t keys) {
-                if (keys & KEY_A) { tsl::changeTo<MiniStackedSpacingConfig>(); return true; }
-                return false;
-            });
-            list->addItem(stackedSpacing);
-
-            auto* cornerRadius = new tsl::elm::ListItem("Corner Radius");
-            cornerRadius->setValue(formatSpTenths(getCurrentMiniCornerRadius()));
-            cornerRadius->setClickListener([this](uint64_t keys) {
-                if (keys & KEY_A) { tsl::changeTo<MiniCornerRadiusConfig>(); return true; }
-                return false;
-            });
-            list->addItem(cornerRadius);
-        }
-
-        // Mode-specific positioning
+        // Mode-specific positioning (kept in main menu — these are positional, not padding)
         if (flags.isMicro) {
             auto* textAlign = new tsl::elm::ListItem("Text Alignment");
             textAlign->setValue(getCurrentTextAlign());
@@ -2094,46 +2446,6 @@ public:
                 return false;
             });
             list->addItem(layerPos);
-
-            auto* hPadding = new tsl::elm::ListItem("Horizontal Padding");
-            hPadding->setValue(formatSpTenths(getCurrentMicroHPadding()));
-            hPadding->setClickListener([this](uint64_t keys) {
-                if (keys & KEY_A) { tsl::changeTo<MicroHPaddingConfig>(); return true; }
-                return false;
-            });
-            list->addItem(hPadding);
-
-            auto* vPadding = new tsl::elm::ListItem("Vertical Padding");
-            vPadding->setValue(formatSpTenths(getCurrentMicroVPadding()));
-            vPadding->setClickListener([this](uint64_t keys) {
-                if (keys & KEY_A) { tsl::changeTo<MicroVPaddingConfig>(); return true; }
-                return false;
-            });
-            list->addItem(vPadding);
-
-            auto* stackedSpacing = new tsl::elm::ListItem("Stacked Spacing");
-            stackedSpacing->setValue(formatSpTenths(getCurrentMicroStackedSpacing()));
-            stackedSpacing->setClickListener([this](uint64_t keys) {
-                if (keys & KEY_A) { tsl::changeTo<MicroStackedSpacingConfig>(); return true; }
-                return false;
-            });
-            list->addItem(stackedSpacing);
-
-            auto* lPadding = new tsl::elm::ListItem("Label Padding");
-            lPadding->setValue(formatSpTenths(getCurrentMicroLabelPadding()));
-            lPadding->setClickListener([this](uint64_t keys) {
-                if (keys & KEY_A) { tsl::changeTo<MicroLabelPaddingConfig>(); return true; }
-                return false;
-            });
-            list->addItem(lPadding);
-
-            auto* ePadding = new tsl::elm::ListItem("Element Padding");
-            ePadding->setValue(formatSpWhole(getCurrentMicroElementPadding()));
-            ePadding->setClickListener([this](uint64_t keys) {
-                if (keys & KEY_A) { tsl::changeTo<MicroElementPaddingConfig>(); return true; }
-                return false;
-            });
-            list->addItem(ePadding);
 
         } else if (flags.isFull) {
             auto* layerPos = new tsl::elm::ListItem("Horizontal Position");

@@ -397,14 +397,25 @@ public:
                 ? settings.backgroundColor
                 : settings.focusBackgroundColor;
             
+            // Configurable Switch 2 frame border; offset 0 when border is off.
+            const s32 borderOffset = settings.useBorder ? 1 : 0;
             renderer->drawRoundedRectSingleThreaded(
-                posX, 
-                posY, 
-                totalWidth, 
-                totalHeight,
+                posX + borderOffset, 
+                posY + borderOffset, 
+                totalWidth - (2*borderOffset), 
+                totalHeight - (2*borderOffset),
                 16, 
                 aWithOpacity(bgColor)
             );
+
+            if (settings.useBorder) {
+                const auto w2 = makeBorderWheel(settings);
+                renderer->drawBorderedRoundedRect(
+                    posX, posY, totalWidth, totalHeight,
+                    settings.borderThickness, 16,
+                    aWithOpacity(settings.borderColor),
+                    settings.useDynamicBorder ? &w2 : nullptr);
+            }
             
             // Calculate centered text position within the bordered area
             const int textX = posX + border + (margin / 2);

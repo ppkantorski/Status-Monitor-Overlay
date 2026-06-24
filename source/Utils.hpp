@@ -2574,6 +2574,20 @@ struct MiniSettings {
     int frameOffsetX;
     int frameOffsetY;
     size_t framePadding;
+    // Configurable Switch 2 frame border (main rounded-rect outline).
+    bool useBorder;          // master on/off; when false the border is not drawn
+                             // and the background fill is NOT contracted.
+    bool useDynamicBorder;   // true = rotating Switch 2 colour wheel; false = flat borderColor
+    bool useBorderCW;        // true = clockwise wheel flow (default); false = reversed
+    uint8_t borderThickness; // outer border thickness in px (also the inset applied
+                             // to the background fill on all sides when useBorder)
+    uint16_t borderColor;    // flat fallback colour when useDynamicBorder is false
+    uint16_t borderWheelColor1;     // wheel anchor0  (UR)
+    uint16_t borderWheelColor2;     // wheel anchor2  (LL)
+    uint16_t borderWheelColor3;     // wheel anchor1 bright (LR)
+    uint16_t borderWheelColor3Deep; // wheel anchor1 deep
+    uint16_t borderWheelColor4;     // wheel anchor3 bright (UL)
+    uint16_t borderWheelColor4Deep; // wheel anchor3 deep
 };
 
 struct MicroSettings {
@@ -2663,6 +2677,18 @@ struct FpsCounterSettings {
     int frameOffsetX;
     int frameOffsetY;
     size_t framePadding;
+    // Configurable Switch 2 frame border (see MiniSettings for field semantics).
+    bool useBorder;
+    bool useDynamicBorder;
+    bool useBorderCW;        // true = clockwise wheel flow (default); false = reversed
+    uint8_t borderThickness;
+    uint16_t borderColor;
+    uint16_t borderWheelColor1;
+    uint16_t borderWheelColor2;
+    uint16_t borderWheelColor3;
+    uint16_t borderWheelColor3Deep;
+    uint16_t borderWheelColor4;
+    uint16_t borderWheelColor4Deep;
 };
 
 struct FpsGraphSettings {
@@ -2689,6 +2715,21 @@ struct FpsGraphSettings {
     int frameOffsetX;
     int frameOffsetY;
     size_t framePadding;
+    // Configurable Switch 2 frame border. borderColor (declared above) is reused
+    // as the flat fallback colour for both the outer frame border and the inner
+    // plot-region border. See MiniSettings for the shared field semantics.
+    bool useBorder;          // outer rounded-rect frame border on/off
+    bool useGraphBorder;     // inner plot-region border on/off (fixed 1px, fixed pos)
+    bool useGraphBackground; // inner plot-region filled background on/off
+    bool useDynamicBorder;   // wheel vs flat for both borders
+    bool useBorderCW;        // true = clockwise wheel flow (default); false = reversed
+    uint8_t borderThickness; // outer frame border thickness in px (inner stays 1px)
+    uint16_t borderWheelColor1;
+    uint16_t borderWheelColor2;
+    uint16_t borderWheelColor3;
+    uint16_t borderWheelColor3Deep;
+    uint16_t borderWheelColor4;
+    uint16_t borderWheelColor4Deep;
 };
 
 struct ResolutionSettings {
@@ -2704,7 +2745,74 @@ struct ResolutionSettings {
     int frameOffsetX;
     int frameOffsetY;
     size_t framePadding;
+    // Configurable Switch 2 frame border (see MiniSettings for field semantics).
+    bool useBorder;
+    bool useDynamicBorder;
+    bool useBorderCW;        // true = clockwise wheel flow (default); false = reversed
+    uint8_t borderThickness;
+    uint16_t borderColor;
+    uint16_t borderWheelColor1;
+    uint16_t borderWheelColor2;
+    uint16_t borderWheelColor3;
+    uint16_t borderWheelColor3Deep;
+    uint16_t borderWheelColor4;
+    uint16_t borderWheelColor4Deep;
 };
+
+// Shared initialiser for the configurable Switch 2 frame border. Every overlay
+// settings struct that carries a border (Mini / FPS Counter / FPS Graph / Game
+// Resolutions) exposes the same field names, so a single function template fills
+// all of them. Defaults: border ON, dynamic wheel ON, 1px thick, flat fallback
+// teal (#2DFF), wheel = muted slate palette.
+template <typename S>
+ALWAYS_INLINE void initBorderDefaults(S* s) {
+    s->useBorder = true;
+    s->useDynamicBorder = true;
+    s->useBorderCW = true;
+    s->borderThickness = 1;
+    convertStrToRGBA4444("#2DFF", &(s->borderColor));
+    convertStrToRGBA4444("#75FF", &(s->borderWheelColor1));      // anchor0 UR  (Muted Violet-Steel)
+    convertStrToRGBA4444("#64FF", &(s->borderWheelColor2));      // anchor2 LL  (Deep Slate)
+    convertStrToRGBA4444("#799F", &(s->borderWheelColor3));      // anchor1 bright (Warm Steel)
+    convertStrToRGBA4444("#657F", &(s->borderWheelColor3Deep));  // anchor1 deep  (Slate Navy)
+    convertStrToRGBA4444("#A98F", &(s->borderWheelColor4));      // anchor3 bright (Periwinkle)
+    convertStrToRGBA4444("#755F", &(s->borderWheelColor4Deep));  // anchor3 deep  (Indigo Gray)
+}
+
+// Shared parser for the configurable Switch 2 frame border. Reads the same keys
+// for every overlay; only keys present in the ini override the defaults. The
+// FPS-Graph-only `use_graph_border` key is parsed separately in its own loader.
+template <typename S, typename SectionT>
+ALWAYS_INLINE void parseBorderSettings(S* settings, const SectionT& section) {
+    std::string key;
+    uint16_t temp;
+
+    auto it = section.find("use_border");
+    if (it != section.end()) { key = it->second; convertToUpper(key); settings->useBorder = (key != "FALSE"); }
+
+    it = section.find("dynamic_border");
+    if (it != section.end()) { key = it->second; convertToUpper(key); settings->useDynamicBorder = (key != "FALSE"); }
+
+    it = section.find("cw_border_flow");
+    if (it != section.end()) { key = it->second; convertToUpper(key); settings->useBorderCW = (key != "FALSE"); }
+
+    it = section.find("border_thickness");
+    if (it != section.end()) settings->borderThickness = (uint8_t)std::clamp(atol(it->second.c_str()), 0L, 14L);
+
+    struct { const char* k; uint16_t* t; } m[] = {
+        {"border_color",             &settings->borderColor},
+        {"border_wheel_color_1",     &settings->borderWheelColor1},
+        {"border_wheel_color_2",     &settings->borderWheelColor2},
+        {"border_wheel_color_3",     &settings->borderWheelColor3},
+        {"border_wheel_color_3_deep",&settings->borderWheelColor3Deep},
+        {"border_wheel_color_4",     &settings->borderWheelColor4},
+        {"border_wheel_color_4_deep",&settings->borderWheelColor4Deep},
+    };
+    for (auto& e : m) {
+        it = section.find(e.k);
+        if (it != section.end()) { temp = 0; if (convertStrToRGBA4444(it->second, &temp)) *(e.t) = temp; }
+    }
+}
 
 ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
     // Initialize defaults
@@ -2772,6 +2880,7 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
     settings->frameOffsetX = 0;
     settings->frameOffsetY = 0;
     settings->framePadding = 4;
+    initBorderDefaults(settings);
 
     // Open and read file efficiently
     FILE* configFile = fopen(configIniPath, "r");
@@ -3245,6 +3354,8 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
     if (it != section.end()) {
         settings->framePadding = atol(it->second.c_str());
     }
+
+    parseBorderSettings(settings, section);
 }
 
 ALWAYS_INLINE void GetConfigSettings(MicroSettings* settings) {
@@ -3774,6 +3885,7 @@ ALWAYS_INLINE void GetConfigSettings(FpsCounterSettings* settings) {
     settings->frameOffsetX = 0;
     settings->frameOffsetY = 0;
     settings->framePadding = 4;
+    initBorderDefaults(settings);
 
     // Open and read file efficiently
     FILE* configFile = fopen(configIniPath, "r");
@@ -3902,6 +4014,8 @@ ALWAYS_INLINE void GetConfigSettings(FpsCounterSettings* settings) {
     if (it != section.end()) {
         settings->framePadding = atol(it->second.c_str());
     }
+
+    parseBorderSettings(settings, section);
 }
 
 ALWAYS_INLINE void GetConfigSettings(FpsGraphSettings* settings) {
@@ -3932,6 +4046,9 @@ ALWAYS_INLINE void GetConfigSettings(FpsGraphSettings* settings) {
     settings->frameOffsetX = 0;
     settings->frameOffsetY = 0;
     settings->framePadding = 4;
+    initBorderDefaults(settings);
+    settings->useGraphBorder = true;   // inner plot-region border (FPS Graph only)
+    settings->useGraphBackground = true; // inner plot-region background (FPS Graph only)
 
 
     // Open and read file efficiently
@@ -4067,6 +4184,22 @@ ALWAYS_INLINE void GetConfigSettings(FpsGraphSettings* settings) {
                 *(mapping.target) = temp;
         }
     }
+
+    it = section.find("use_graph_border");
+    if (it != section.end()) {
+        key = it->second;
+        convertToUpper(key);
+        settings->useGraphBorder = (key != "FALSE");
+    }
+
+    it = section.find("graph_background");
+    if (it != section.end()) {
+        key = it->second;
+        convertToUpper(key);
+        settings->useGraphBackground = (key != "FALSE");
+    }
+
+    parseBorderSettings(settings, section);
 }
 
 ALWAYS_INLINE void GetConfigSettings(FullSettings* settings) {
@@ -4082,7 +4215,7 @@ ALWAYS_INLINE void GetConfigSettings(FullSettings* settings) {
     settings->useDynamicColors = true;
     settings->disableScreenshots = false;
     convertStrToRGBA4444("#0009", &(settings->backgroundColor));
-    convertStrToRGBA4444("#888F", &(settings->separatorColor));
+    convertStrToRGBA4444("#2DFF", &(settings->separatorColor));
     convertStrToRGBA4444("#8FFF", &(settings->catColor1));
     convertStrToRGBA4444("#8CFF", &(settings->catColor2));
     convertStrToRGBA4444("#FFFF", &(settings->textColor));
@@ -4233,6 +4366,7 @@ ALWAYS_INLINE void GetConfigSettings(ResolutionSettings* settings) {
     settings->frameOffsetX = 0;
     settings->frameOffsetY = 0;
     settings->framePadding = 4;
+    initBorderDefaults(settings);
 
 
     // Open and read file efficiently
@@ -4348,6 +4482,8 @@ ALWAYS_INLINE void GetConfigSettings(ResolutionSettings* settings) {
         convertToUpper(key);
         settings->disableScreenshots = (key != "FALSE");
     }
+
+    parseBorderSettings(settings, section);
 }
 
 // =============================================================================
@@ -4487,3 +4623,24 @@ namespace divider_scissor {
     }
 
 } // namespace divider_scissor
+
+
+// Build a Switch 2 wheel from the six per-overlay border-wheel colour fields
+// carried by an overlay's settings struct (Mini / FPS Graph / FPS Counter /
+// Game Resolutions all expose the same field names). Used for the configurable
+// frame border. Period is fixed at 10s; flow direction follows the per-overlay
+// useBorderCW toggle (true = clockwise -> reverseFlow false; false = reversed).
+// Templated so member lookup is deferred to each call site -- tesla.hpp does
+// not need to know the concrete settings types, only that they carry the six
+// borderWheelColor* (uint16_t RGBA4444) fields plus useBorderCW.
+template <typename SettingsT>
+static inline tsl::Switch2Wheel makeBorderWheel(const SettingsT& s) {
+    return makeSwitch2Wheel(
+        tsl::Color(s.borderWheelColor1),
+        tsl::Color(s.borderWheelColor2),
+        tsl::Color(s.borderWheelColor3),
+        tsl::Color(s.borderWheelColor3Deep),
+        tsl::Color(s.borderWheelColor4),
+        tsl::Color(s.borderWheelColor4Deep),
+        10.0, !s.useBorderCW);
+}

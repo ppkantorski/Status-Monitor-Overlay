@@ -1698,16 +1698,33 @@ public:
                 clippingOffsetY = 0;
             }
             
+            // Configurable Switch 2 frame border. When the border is off the
+            // background fill is NOT contracted (borderOffset 0) and neither the
+            // bordered rect nor its colour wheel are built/drawn.
+            const s32 borderOffset = settings.useBorder ? 1 : 0;
             // Apply to all drawing calls
             renderer->drawRoundedRectSingleThreaded(
-                cachedBaseX + _frameOffsetX + clippingOffsetX, 
-                cachedBaseY + drawY + clippingOffsetY, 
-                overlayWidth, 
-                cachedHeight, 
+                cachedBaseX + _frameOffsetX + clippingOffsetX + borderOffset, 
+                cachedBaseY + drawY + clippingOffsetY + borderOffset,
+                overlayWidth - (2*borderOffset),
+                cachedHeight - (2*borderOffset), 
                 cornerRadius, 
                 a(bgColor)
             );
-                        
+
+            if (settings.useBorder) {
+                const auto w2 = makeBorderWheel(settings);
+                renderer->drawBorderedRoundedRect(
+                    cachedBaseX + _frameOffsetX + clippingOffsetX, 
+                    cachedBaseY + drawY + clippingOffsetY, 
+                    overlayWidth, 
+                    cachedHeight,
+                    settings.borderThickness,
+                    cornerRadius, 
+                    aWithOpacity(settings.borderColor),
+                    settings.useDynamicBorder ? &w2 : nullptr
+                );
+            }
             
             // Split Variables into lines for individual positioning
             std::vector<std::string> variableLines;
@@ -3672,7 +3689,7 @@ public:
                         // dashed line, legend, FPS average, and data line all render on
                         // top of it. Skipped entirely when alpha is 0.
                         // plotBackgroundColor is uint16_t (RGBA4444); alpha is the top nibble.
-                        if ((graphSettings.plotBackgroundColor >> 12) & 0xF)
+                        if (graphSettings.useGraphBackground && ((graphSettings.plotBackgroundColor >> 12) & 0xF))
                             renderer->drawRect(
                                 gx + rect_x_s + 2,
                                 gTopY + rect_y_s,
@@ -3807,12 +3824,25 @@ public:
 
                         // Border rect: drawEmptyRect(gx + rect_x_s + 1, ..., rect_w + 3, rect_h + 4)
                         //   right column = gx + rect_x_s + 1 + rect_w + 3 - 1 = gx + rect_x_s + rect_w + 3
-                        renderer->drawEmptyRect(
-                            gx + rect_x_s + 1,
-                            gTopY + rect_y_s - 1,
-                            rect_w + 3,
-                            rect_h + 4,
-                            aWithOpacity(graphSettings.borderColor));
+                        //renderer->drawEmptyRect(
+                        //    gx + rect_x_s + 1,
+                        //    gTopY + rect_y_s - 1,
+                        //    rect_w + 3,
+                        //    rect_h + 4,
+                        //    aWithOpacity(graphSettings.borderColor));
+
+                        if (graphSettings.useGraphBorder) {
+                            const auto w2 = makeBorderWheel(graphSettings);
+                            renderer->drawBorderedRoundedRect(
+                                gx + rect_x_s + 1,
+                                gTopY + rect_y_s - 1,
+                                rect_w + 3,
+                                rect_h + 4,
+                                1,
+                                0,
+                                aWithOpacity(graphSettings.borderColor),
+                                graphSettings.useDynamicBorder ? &w2 : nullptr);
+                        }
 
                         // currentY advance: advance by the box height PLUS the same slack that every
                         // text row carries below its glyph (fontsize - firstRowExtent = fontsize -
@@ -4773,13 +4803,21 @@ public:
                 flags |= 32;
             }
             else if (key == "FPS" && !(flags & 64) && GameRunning) {
-                if (Temp[0]) strcat(Temp, "\n");
-                char Temp_s[24];
-                if (settings.useIntegerFPS)
-                    snprintf(Temp_s, sizeof(Temp_s), "%d [%d - %d]", (int)round(FPSavg), (int)round(FPSmin), (int)round(FPSmax));
-                else
-                    snprintf(Temp_s, sizeof(Temp_s), "%2.1f [%2.1f - %2.1f]", FPSavg, FPSmin, FPSmax);
-                strcat(Temp, Temp_s);
+                // Emit the FPS row into Variables ONLY when there is a valid reading,
+                // matching the layout's labelLines gate (key=="FPS" && GameRunning &&
+                // FPSavg != 254). The drawer pairs Variables lines to labelLines by
+                // index, so writing a placeholder "254 [..]" row here while the layout
+                // omits it shifts every row below for a frame -- the brief "rows
+                // un-stack then snap back" flicker seen as the FPS graph first appears.
+                if (FPSavg != 254.0f) {
+                    if (Temp[0]) strcat(Temp, "\n");
+                    char Temp_s[24];
+                    if (settings.useIntegerFPS)
+                        snprintf(Temp_s, sizeof(Temp_s), "%d [%d - %d]", (int)round(FPSavg), (int)round(FPSmin), (int)round(FPSmax));
+                    else
+                        snprintf(Temp_s, sizeof(Temp_s), "%2.1f [%2.1f - %2.1f]", FPSavg, FPSmin, FPSmax);
+                    strcat(Temp, Temp_s);
+                }
 
                 // ── Graph readings update ──────────────────────────────────────
                 // Always maintain the ring-buffer regardless of showFpsGraph so
