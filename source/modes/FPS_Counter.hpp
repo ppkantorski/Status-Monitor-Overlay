@@ -191,7 +191,7 @@ public:
                             const float spaceEst = (float)approxFontSize * 0.25f;
                             const int btPx = std::max(1, (int)(spaceEst * (float)overlay->settings.borderThickness / 10.0f + 0.5f));
                             const int bExpFb = overlay->settings.useBorder ? btPx : 0;
-                            totalWidth = innerWidth + (2 * border) + bExpFb;
+                            totalWidth = innerWidth + (2 * border) + (2 * bExpFb);
                             totalHeight = innerHeight + (2 * border) + (2 * bExpFb);
                         }
                         
@@ -327,12 +327,12 @@ public:
 
             // Expand the rounded rect by borderThicknessPx on each side when the
             // border is on, so the border stroke never overlaps interior content.
-            // Mirrors the Mini fix: horizPadPx += borderThickness (right side),
-            // vPad += borderThickness (top + bottom).
+            // Both axes expand by 2*bExpand (left+right, top+bottom) so the gap
+            // is symmetric on all sides.
             const int bExpand = settings.useBorder ? borderThicknessPx : 0;
             
             // Total dimensions including border (+ border-compensation when on)
-            const size_t totalWidth = innerWidth + (2 * border) + bExpand;
+            const size_t totalWidth = innerWidth + (2 * border) + (2 * bExpand);
             const size_t totalHeight = innerHeight + (2 * border) + (2 * bExpand);
             
             // Store actual dimensions for input handling
@@ -572,7 +572,7 @@ public:
             const float spaceEst = (float)fontsize * 0.25f;
             const int btPx = std::max(1, (int)(spaceEst * (float)settings.borderThickness / 10.0f + 0.5f));
             const int bExpFb = settings.useBorder ? btPx : 0;
-            totalWidth = innerWidth + (2 * border) + bExpFb;
+            totalWidth = innerWidth + (2 * border) + (2 * bExpFb);
             totalHeight = innerHeight + (2 * border) + (2 * bExpFb);
         }
         
