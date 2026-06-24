@@ -130,8 +130,8 @@ private:
         }
         const float spaceW = miniSpaceWidthPx(renderer);
         settings.spacing = (size_t)std::max(0, miniPaddingToPx(spaceW, (unsigned)spacingSp));
-        horizPadPx       = miniPaddingToPx(spaceW, settings.horizontalPadding);
-        const int vPad   = miniPaddingToPx(spaceW, settings.verticalPadding);
+        horizPadPx       = miniPaddingToPx(spaceW, settings.horizontalPadding) + (settings.useBorder ? (int)settings.borderThickness : 0);
+        const int vPad   = miniPaddingToPx(spaceW, settings.verticalPadding) + (settings.useBorder ? (int)settings.borderThickness : 0);
         topPadding       = vPad;
         bottomPadding    = vPad;
         cornerRadius     = miniPaddingToPx(spaceW, settings.cornerRadiusSp);
