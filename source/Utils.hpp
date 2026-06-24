@@ -2863,7 +2863,7 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
     settings->spacing = 15;            // 1.5 sp
     settings->horizontalPadding = 36;  // 3.6 sp (trailing/right-side text padding)
     settings->verticalPadding = 36;    // 3.6 sp (top/bottom interior padding)
-    settings->cornerRadiusSp = 30;     // 3.0 sp
+    settings->cornerRadiusSp = 36;     // 3.6 sp
     settings->stackedSpacing = 4;      // 0.4 sp (gap between stacked/split rows)
     convertStrToRGBA4444("#000A", &(settings->backgroundColor));
     convertStrToRGBA4444("#000F", &(settings->focusBackgroundColor));
@@ -3888,7 +3888,7 @@ ALWAYS_INLINE void GetConfigSettings(FpsCounterSettings* settings) {
     //settings->setPos = 0;
     settings->refreshRate = 30;
     settings->sampleRate = 30;   // re-poll FPS data at the same rate by default
-    settings->cornerRadiusSp = 30;     // 3.0 sp
+    settings->cornerRadiusSp = 36;     // 3.6 sp
     settings->useIntegerFPS = true;
     settings->disableScreenshots = false;
 
@@ -4080,7 +4080,7 @@ ALWAYS_INLINE void GetConfigSettings(FpsGraphSettings* settings) {
     initBorderDefaults(settings);
     settings->useGraphBorder = false;   // inner plot-region border (FPS Graph only)
     settings->useGraphBackground = false; // inner plot-region background (FPS Graph only)
-    settings->cornerRadiusSp = 30;     // 3.0 sp
+    settings->cornerRadiusSp = 36;     // 3.6 sp
 
 
     // Open and read file efficiently
@@ -4414,7 +4414,7 @@ ALWAYS_INLINE void GetConfigSettings(ResolutionSettings* settings) {
     convertStrToRGBA4444("#FFFF", &(settings->textColor));
     settings->refreshRate = 30;        // smooth redraw / border animation (matches Mini)
     settings->sampleRate = 2;          // resolution rarely changes; poll 2x/sec (matches Mini)
-    settings->cornerRadiusSp = 30;     // 3.0 sp
+    settings->cornerRadiusSp = 36;     // 3.6 sp
     //ettings->setPos = 0;
     settings->disableScreenshots = false;
 

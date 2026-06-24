@@ -1353,7 +1353,7 @@ public:
     MiniStackedSpacingConfig() : MiniPaddingConfigBase("stacked_spacing", "Stacked Spacing", "Stacked Spacing") {}
 };
 
-class MiniCornerRadiusConfig : public MiniPaddingConfigBase<30, 0, 80, 2> {
+class MiniCornerRadiusConfig : public MiniPaddingConfigBase<36, 0, 80, 2> {
 public:
     MiniCornerRadiusConfig() : MiniPaddingConfigBase("corner_radius", "Corner Radius", "Corner Radius") {}
 };
@@ -1371,7 +1371,7 @@ public:
     CornerRadiusConfig(const std::string& mode) : modeName(mode) {
         section = modeToSection(mode);
         const std::string value = ult::parseValueFromIniSection(configIniPath, section, "corner_radius");
-        currentRadius = value.empty() ? 30 : std::clamp(atoi(value.c_str()), 0, 80);
+        currentRadius = value.empty() ? 36 : std::clamp(atoi(value.c_str()), 0, 80);
         currentRadius = ((currentRadius + 1) / 2) * 2;   // snap to step 2
         currentRadius = std::clamp(currentRadius, 0, 80);
     }
@@ -1433,7 +1433,7 @@ private:
     int getCornerRadius() const {
         const std::string section = modeToSection(modeName);
         const std::string v = ult::parseValueFromIniSection(configIniPath, section, "corner_radius");
-        return v.empty() ? 30 : std::clamp(atoi(v.c_str()), 0, 80);
+        return v.empty() ? 36 : std::clamp(atoi(v.c_str()), 0, 80);
     }
     int getMicroHPadding() const {
         const std::string v = ult::parseValueFromIniSection(configIniPath, "micro", "horizontal_padding");
@@ -1479,7 +1479,7 @@ private:
     }
     int getMiniCornerRadius() const {
         const std::string v = ult::parseValueFromIniSection(configIniPath, "mini", "corner_radius");
-        int val = v.empty() ? 30 : std::clamp(atoi(v.c_str()), 0, 80);
+        int val = v.empty() ? 36 : std::clamp(atoi(v.c_str()), 0, 80);
         val = 0 + ((val - 0 + (2 / 2)) / 2) * 2;
         return std::clamp(val, 0, 80);
     }
@@ -2300,7 +2300,7 @@ private:
 
     int getCurrentMiniCornerRadius() const {
         const std::string value = ult::parseValueFromIniSection(configIniPath, "mini", "corner_radius");
-        return value.empty() ? 30 : std::clamp(atoi(value.c_str()), 0, 80);
+        return value.empty() ? 36 : std::clamp(atoi(value.c_str()), 0, 80);
     }
 
     std::string getDTCFormatName(const std::string& formatStr) const {
