@@ -138,7 +138,7 @@ public:
         //    list->addItem(Res);
         //}
         //tsl::elm::g_disableMenuCacheOnReturn.store(true, std::memory_order_release);
-        tsl::elm::HeaderOverlayFrame* rootFrame = new tsl::elm::HeaderOverlayFrame("Status Monitor", "Modes");
+        tsl::elm::HeaderOverlayFrame* rootFrame = new tsl::elm::HeaderOverlayFrame("Status Monitor", localizeSubtitle("Modes"));
         if (!lastSelectedItem.empty()) {
             list->jumpToItem(lastSelectedItem);
         }

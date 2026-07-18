@@ -221,8 +221,32 @@ inline void selectItem(tsl::elm::ListItem*& lastSelected,
 }
 
 // Build a standard OverlayFrame, attach content, and return it.
+// Localize the OverlayFrame subtitle before it is handed to the frame.
+// OverlayFrame draws the subtitle with drawStringWithColoredSections (which only
+// colors the DIVIDER_SYMBOL segments and does NOT consult the translation cache),
+// so unless we translate here the subtitle would always render in English.
+// Mirrors tsl::elm::CategoryHeader's set-time logic: try a full-string cache hit
+// first (covers plain subtitles like "Alpha" / "DTC Format 1"), otherwise translate
+// each divider-separated segment individually (covers composites like
+// "Full <DIV> Configuration <DIV> Paddings"). Divider glyphs are preserved verbatim.
+inline std::string localizeSubtitle(const std::string& subtitle) {
+    std::string sub = subtitle;
+    bool fullHit = false;
+    {
+        std::shared_lock<std::shared_mutex> readLock(tsl::gfx::s_translationCacheMutex);
+        auto it = ult::translationCache.find(sub);
+        if (it != ult::translationCache.end() && it->second != sub) {
+            sub = it->second;
+            fullHit = true;
+        }
+    }
+    if (!fullHit)
+        tsl::gfx::translateStringSegments(sub, tsl::s_dividerSpecialChars);
+    return sub;
+}
+
 inline tsl::elm::Element* makeFrame(const std::string& subtitle, tsl::elm::Element* content) {
-    auto* f = new tsl::elm::OverlayFrame("Status Monitor", subtitle);
+    auto* f = new tsl::elm::OverlayFrame("Status Monitor", localizeSubtitle(subtitle));
     f->setContent(content);
     return f;
 }
@@ -2558,7 +2582,7 @@ public:
         list->jumpToItem(jumpItemName, jumpItemValue, jumpItemExactMatch.load(std::memory_order_acquire));
         clearJump();
 
-        auto* rootFrame = new tsl::elm::OverlayFrame("Status Monitor", modeName);
+        auto* rootFrame = new tsl::elm::OverlayFrame("Status Monitor", localizeSubtitle(modeName));
         rootFrame->setContent(list);
         return rootFrame;
     }
