@@ -834,7 +834,6 @@ public:
             };
             
             std::vector<ItemLayout> item_layouts;
-            uint32_t total_main_width = 0;
 
             static const auto sep_width = renderer->getTextDimensions("", false, fontsize).first;
 
@@ -1072,11 +1071,18 @@ public:
                     }
                 }
 
-                // BAT split: width = label + gap + max(draw_w, pct_w)
+                // BAT split: width = label + gap + max(draw_w, pct_w).
+                // data_width (not just total_width) must be the max of BOTH rows: the draw
+                // loop right-aligns the top row within data_width and the bottom row within
+                // data_width. If data_width only tracked the top line, a wider bottom line
+                // (e.g. the "%.1f%% [h:mm]" row when invertBatteryDisplay is off) would be
+                // right-aligned past the data-column start and overlap the BAT label.
                 if (batIsSplit && item.type == 6) {
                     const uint32_t draw_w = Battery_draw_c[0] ? renderer->getTextDimensions(Battery_draw_c, false, fontsize).first : 0;
                     const uint32_t pct_w  = Battery_pct_c[0]  ? renderer->getTextDimensions(Battery_pct_c,  false, fontsize).first : 0;
-                    item_layout.total_width = item_layout.label_width + layout.label_data_gap + std::max(draw_w, pct_w);
+                    const uint32_t maxW = std::max(draw_w, pct_w);
+                    item_layout.total_width = item_layout.label_width + layout.label_data_gap + maxW;
+                    item_layout.data_width  = maxW;
                 }
 
                 // DTC split: width = label + gap + max(topHalf, botHalf) computed from the
@@ -1111,7 +1117,6 @@ public:
                 item_layout.total_width = dampItemWidth(item.type, item_layout.total_width);
 
                 item_layouts.push_back(item_layout);
-                total_main_width += item_layout.total_width;
             }
             
 
@@ -1142,12 +1147,6 @@ public:
             //    all_items_ordered.push_back(*battery_item);
             //    all_layouts_ordered.push_back(battery_layout);
             //}
-            
-            // Calculate total width of all items
-            uint32_t total_all_width = 0;
-            for (const auto& item_layout : all_layouts_ordered) {
-                total_all_width += item_layout.total_width;
-            }
             
             // Calculate available space for distribution
             //uint32_t available_width = tsl::cfg::FramebufferWidth - (2 * layout.side_margin);

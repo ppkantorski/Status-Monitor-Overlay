@@ -605,7 +605,6 @@ public:
             static bool needsRecalc = true;
             static std::vector<std::string> labelLines; // Store individual label lines
             static std::string lastVariables; // Track changes in Variables content
-            static size_t entryCount = 0;
             static uint32_t cachedHeight = 0;
             static int cachedBaseX = 0, cachedBaseY = 0;
             static bool lastGameRunning = false; // Track game state changes
@@ -1175,7 +1174,6 @@ public:
             if (needsRecalc) {
                 // Build label lines array for individual centering
                 labelLines.clear();
-                entryCount = 0;
                 uint16_t flags = 0;
                 
                 bool shouldAdd;
@@ -1190,11 +1188,9 @@ public:
                         if (wantCPUFullSplit) {
                             labelLines.push_back("CPU_SFULL");
                             labelLines.push_back("CPU_SFREQ");
-                            entryCount++;
                         } else if (wantCPUSplit) {
                             labelLines.push_back("CPU_SVOLT");
                             labelLines.push_back("CPU_STEMP");
-                            entryCount++;
                         } else {
                             shouldAdd = true;
                             labelText = "CPU";
@@ -1205,7 +1201,6 @@ public:
                         if (wantGPUSplit) {
                             labelLines.push_back("GPU_SVOLT");
                             labelLines.push_back("GPU_STEMP");
-                            entryCount++;
                         } else {
                             shouldAdd = true;
                             labelText = "GPU";
@@ -1240,15 +1235,12 @@ public:
                             // BW-stacked with VDDQ/temp split on the right side.
                             labelLines.push_back("RAM_SLOAD_TOP");
                             labelLines.push_back("RAM_SLOAD_BOT");
-                            entryCount++;
                         } else if (wantSplitVDDQ) {
                             labelLines.push_back("RAM_SVDD2");
                             labelLines.push_back("RAM_SVDDQ");
-                            entryCount++;  // two rows count as one extra
                         } else if (wantRAMTempSplit) {
                             labelLines.push_back("RAM_SVDDQ_ONLY");
                             labelLines.push_back("RAM_STEMP");
-                            entryCount++;
                         } else {
                             shouldAdd = true;
                             labelText = "RAM";
@@ -1274,7 +1266,6 @@ public:
                         } else if (settings.showComponentTemps) {
                             // Only component temps: single row with HIGH gradient
                             labelLines.push_back("TMP_COMP");
-                            entryCount++;
                         } else {
                             // Only SOC/PCB/Skin (default): single row
                             shouldAdd = true;
@@ -1285,7 +1276,6 @@ public:
                         if (settings.showStackedBAT) {
                             labelLines.push_back("BAT_STOP");
                             labelLines.push_back("BAT_SBOT");
-                            entryCount += 2;
                         } else {
                             shouldAdd = true;
                             labelText = "BAT";
@@ -1308,7 +1298,6 @@ public:
                         if (settings.showStackedDTC) {
                             labelLines.push_back("DTC_STOP");
                             labelLines.push_back("DTC_SBOT");
-                            entryCount += 2;
                         } else {
                             shouldAdd = true;
                             labelText = settings.useDTCSymbol ? "\uE007" : "DTC";
@@ -1323,11 +1312,9 @@ public:
                     
                     if (shouldAdd) {
                         labelLines.push_back(labelText);
-                        entryCount++;
                         
                         //if (settings.realVolts && key != "BAT" && key != "DRAW" && key != "FPS" && key != "RES") {
                         //    labelLines.push_back(""); // Empty line for voltage info
-                        //    entryCount++;
                         //}
                     }
                 }

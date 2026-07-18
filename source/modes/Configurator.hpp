@@ -1113,11 +1113,10 @@ public:
 
 // Returns the per-mode default border thickness in tenths of a space (sp),
 // used as the fallback when the ini key is absent.
-// Mini: 10 (1.0 sp)  FPS Counter/Graph: 6 (0.6 sp)  Game Resolutions: 8 (0.8 sp)
+// All modes: 6 (0.6 sp)
 inline int defaultBorderThickness(const std::string& mode) {
-    if (mode == "FPS Counter" || mode == "FPS Graph") return 6;
-    if (mode == "Game Resolutions") return 8;
-    return 10; // Mini (and any other mode)
+    (void)mode;
+    return 6; // 0.6 sp for all modes
 }
 
 // Border thickness for the configurable Switch 2 frame border. Stored in tenths

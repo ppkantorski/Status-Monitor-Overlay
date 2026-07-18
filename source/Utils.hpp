@@ -2889,7 +2889,7 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
     settings->frameOffsetY = 0;
     settings->framePadding = 0;
     initBorderDefaults(settings);
-    settings->borderThickness = 10; // 1.0 sp (Mini default)
+    settings->borderThickness = 6; // 0.6 sp (Mini default)
 
     // Open and read file efficiently
     FILE* configFile = fopen(configIniPath, "r");
@@ -4425,7 +4425,7 @@ ALWAYS_INLINE void GetConfigSettings(ResolutionSettings* settings) {
     settings->frameOffsetY = 0;
     settings->framePadding = 0;
     initBorderDefaults(settings);
-    settings->borderThickness = 8;  // 0.8 sp (Game Resolutions default)
+    settings->borderThickness = 6;  // 0.6 sp (Game Resolutions default)
 
 
     // Open and read file efficiently
