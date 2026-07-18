@@ -2582,7 +2582,7 @@ public:
             list->addItem(refreshRate);
         }
 
-        if (flags.isMini) {
+        if (flags.isMini || flags.isFPSCounter || flags.isFPSGraph || flags.isGameRes) {
             auto* touchMoveDelay = new tsl::elm::ListItem("Touch Move Delay");
             touchMoveDelay->setValue(std::to_string(getCurrentMoveDelay("touch")) + " ms");
             touchMoveDelay->setClickListener([this](uint64_t keys) {

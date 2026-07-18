@@ -2687,6 +2687,8 @@ struct FpsCounterSettings {
     int frameOffsetX;
     int frameOffsetY;
     size_t framePadding;
+    uint16_t touchMoveDelayMs;
+    uint16_t buttonMoveDelayMs;
     // Configurable Switch 2 frame border (see MiniSettings for field semantics).
     bool useBorder;
     bool useDynamicBorder;
@@ -2726,6 +2728,8 @@ struct FpsGraphSettings {
     int frameOffsetX;
     int frameOffsetY;
     size_t framePadding;
+    uint16_t touchMoveDelayMs;
+    uint16_t buttonMoveDelayMs;
     // Configurable Switch 2 frame border. borderColor (declared above) is reused
     // as the flat fallback colour for both the outer frame border and the inner
     // plot-region border. See MiniSettings for the shared field semantics.
@@ -2758,6 +2762,8 @@ struct ResolutionSettings {
     int frameOffsetX;
     int frameOffsetY;
     size_t framePadding;
+    uint16_t touchMoveDelayMs;
+    uint16_t buttonMoveDelayMs;
     // Configurable Switch 2 frame border (see MiniSettings for field semantics).
     bool useBorder;
     bool useDynamicBorder;
@@ -3936,6 +3942,8 @@ ALWAYS_INLINE void GetConfigSettings(FpsCounterSettings* settings) {
     settings->frameOffsetX = 0;
     settings->frameOffsetY = 0;
     settings->framePadding = 0;
+    settings->touchMoveDelayMs = 500;
+    settings->buttonMoveDelayMs = 1000;
     initBorderDefaults(settings);
     settings->borderThickness = 8;  // 0.8 sp (FPS Counter default)
 
@@ -4088,6 +4096,16 @@ ALWAYS_INLINE void GetConfigSettings(FpsCounterSettings* settings) {
         settings->cornerRadiusSp = (uint8_t)std::clamp(atoi(it->second.c_str()), 0, 80);
     }
 
+    it = section.find("touch_move_delay");
+    if (it != section.end()) {
+        settings->touchMoveDelayMs = atol(it->second.c_str());
+    }
+
+    it = section.find("button_move_delay");
+    if (it != section.end()) {
+        settings->buttonMoveDelayMs = atol(it->second.c_str());
+    }
+
     parseBorderSettings(settings, section);
 }
 
@@ -4119,6 +4137,8 @@ ALWAYS_INLINE void GetConfigSettings(FpsGraphSettings* settings) {
     settings->frameOffsetX = 0;
     settings->frameOffsetY = 0;
     settings->framePadding = 0;
+    settings->touchMoveDelayMs = 500;
+    settings->buttonMoveDelayMs = 1000;
     initBorderDefaults(settings);
     settings->borderThickness = 8;  // 0.8 sp (FPS Graph default)
     settings->useGraphBorder = false;   // inner plot-region border (FPS Graph only)
@@ -4278,6 +4298,16 @@ ALWAYS_INLINE void GetConfigSettings(FpsGraphSettings* settings) {
         key = it->second;
         convertToUpper(key);
         settings->useGraphBackground = (key != "FALSE");
+    }
+
+    it = section.find("touch_move_delay");
+    if (it != section.end()) {
+        settings->touchMoveDelayMs = atol(it->second.c_str());
+    }
+
+    it = section.find("button_move_delay");
+    if (it != section.end()) {
+        settings->buttonMoveDelayMs = atol(it->second.c_str());
     }
 
     parseBorderSettings(settings, section);
@@ -4464,6 +4494,8 @@ ALWAYS_INLINE void GetConfigSettings(ResolutionSettings* settings) {
     settings->frameOffsetX = 0;
     settings->frameOffsetY = 0;
     settings->framePadding = 0;
+    settings->touchMoveDelayMs = 500;
+    settings->buttonMoveDelayMs = 1000;
     initBorderDefaults(settings);
     settings->borderThickness = 8;  // 0.8 sp (Game Resolutions default)
 
@@ -4561,6 +4593,16 @@ ALWAYS_INLINE void GetConfigSettings(ResolutionSettings* settings) {
     it = section.find("frame_padding");
     if (it != section.end()) {
         settings->framePadding = atol(it->second.c_str());
+    }
+
+    it = section.find("touch_move_delay");
+    if (it != section.end()) {
+        settings->touchMoveDelayMs = atol(it->second.c_str());
+    }
+
+    it = section.find("button_move_delay");
+    if (it != section.end()) {
+        settings->buttonMoveDelayMs = atol(it->second.c_str());
     }
 
     // Process alignment settings
