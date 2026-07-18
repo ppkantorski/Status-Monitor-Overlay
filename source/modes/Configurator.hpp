@@ -947,6 +947,64 @@ public:
     }
 };
 
+class MoveDelayConfig : public tsl::Gui {
+private:
+    std::string modeName;
+    ModeFlags   flags;
+    std::string kind;
+    std::string keyName;
+    std::string title;
+    int         currentDelay;
+
+public:
+    MoveDelayConfig(const std::string& mode, const std::string& delayKind)
+        : modeName(mode), flags(mode), kind(delayKind) {
+        keyName = (kind == "touch") ? "touch_move_delay" : "button_move_delay";
+        title   = (kind == "touch") ? "Touch Move Delay" : "Button Move Delay";
+        const int defaultDelay = (kind == "touch") ? 500 : 1000;
+        const std::string section = modeToSection(mode);
+        const std::string value = ult::parseValueFromIniSection(configIniPath, section, keyName);
+        currentDelay = value.empty() ? defaultDelay : std::clamp(atoi(value.c_str()), 0, 1000);
+    }
+    ~MoveDelayConfig() { lastSelectedListItem = nullptr; }
+
+    virtual tsl::elm::Element* createUI() override {
+        auto* list = new tsl::elm::List();
+        list->addItem(new tsl::elm::CategoryHeader(title));
+
+        const std::string section = modeToSection(modeName);
+        for (int delay = 0; delay <= 1000; delay += 50) {
+            auto* delayItem = new tsl::elm::MiniListItem(std::to_string(delay) + " ms");
+            delayItem->setRadioSelector();
+            if (delay == currentDelay)
+                selectItem(lastSelectedListItem, delayItem, ult::CHECKMARK_SYMBOL);
+            delayItem->setClickListener([this, delayItem, delay, section](uint64_t keys) {
+                if (keys & KEY_A) {
+                    ult::setIniFileValue(configIniPath, section, keyName, std::to_string(delay));
+                    selectItem(lastSelectedListItem, delayItem, ult::CHECKMARK_SYMBOL);
+                    return true;
+                }
+                return false;
+            });
+            list->addItem(delayItem);
+        }
+
+        list->jumpToItem("", ult::CHECKMARK_SYMBOL, false);
+        return makeFrame(modeName + " " + std::string(ult::DIVIDER_SYMBOL) + " Configuration", list);
+    }
+
+    virtual bool handleInput(u64 keysDown, u64 keysHeld, const HidTouchState &touchPos,
+                             HidAnalogStickState joyStickPosLeft, HidAnalogStickState joyStickPosRight) override {
+        if (keysDown & KEY_B) {
+            triggerExitFeedback();
+            jumpItemName = title; jumpItemValue = ""; jumpItemExactMatch = false;
+            tsl::swapTo<ConfiguratorOverlay>(SwapDepth(2), modeName);
+            return true;
+        }
+        return false;
+    }
+};
+
 // =============================================================================
 // Refresh Rate Configuration
 // =============================================================================
@@ -2289,6 +2347,14 @@ private:
         return value.empty() ? 0 : atoi(value.c_str());
     }
 
+    int getCurrentMoveDelay(const std::string& kind) const {
+        const std::string section = modeToSection(modeName);
+        const std::string keyName = (kind == "touch") ? "touch_move_delay" : "button_move_delay";
+        const int defaultDelay = (kind == "touch") ? 500 : 1000;
+        const std::string value = ult::parseValueFromIniSection(configIniPath, section, keyName);
+        return value.empty() ? defaultDelay : std::clamp(atoi(value.c_str()), 0, 1000);
+    }
+
     int getCurrentMicroHPadding() const {
         const std::string value = ult::parseValueFromIniSection(configIniPath, "micro", "horizontal_padding");
         return value.empty() ? 14 : std::clamp(atoi(value.c_str()), 2, 30);
@@ -2514,6 +2580,24 @@ public:
                 return false;
             });
             list->addItem(refreshRate);
+        }
+
+        if (flags.isMini) {
+            auto* touchMoveDelay = new tsl::elm::ListItem("Touch Move Delay");
+            touchMoveDelay->setValue(std::to_string(getCurrentMoveDelay("touch")) + " ms");
+            touchMoveDelay->setClickListener([this](uint64_t keys) {
+                if (keys & KEY_A) { tsl::changeTo<MoveDelayConfig>(modeName, "touch"); return true; }
+                return false;
+            });
+            list->addItem(touchMoveDelay);
+
+            auto* buttonMoveDelay = new tsl::elm::ListItem("Button Move Delay");
+            buttonMoveDelay->setValue(std::to_string(getCurrentMoveDelay("button")) + " ms");
+            buttonMoveDelay->setClickListener([this](uint64_t keys) {
+                if (keys & KEY_A) { tsl::changeTo<MoveDelayConfig>(modeName, "button"); return true; }
+                return false;
+            });
+            list->addItem(buttonMoveDelay);
         }
 
         // DTC Format (Mini/Micro only)
