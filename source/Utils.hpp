@@ -2537,6 +2537,7 @@ struct MiniSettings {
     bool decimalVDD2;
     bool showDTC;
     bool useDTCSymbol;
+    bool showStopwatch;        // DTC datetime <-> elapsed stopwatch toggled via ZL+L / ZL+R
     bool useIntegerFPS;
     bool showFpsGraph;         // true = replace FPS row with embedded FPS graph
     std::string dtcFormat;   // derived at load time: format1 + DIVIDER + format2 (or just format1 when format2 is "None")
@@ -2595,6 +2596,7 @@ struct MiniSettings {
 
 struct MicroSettings {
     uint8_t refreshRate;
+    uint8_t sampleRate;  // how often sensor values are re-polled; always <= refreshRate
     bool realFrequencies;
     bool realVolts; 
     bool showFullCPU;
@@ -2622,6 +2624,7 @@ struct MicroSettings {
     bool decimalVDD2;
     bool showDTC;
     bool useDTCSymbol;
+    bool showStopwatch;        // DTC datetime <-> elapsed stopwatch toggled via ZL+L / ZL+R
     bool useIntegerFPS;
     std::string dtcFormat;   // derived at load time: format1 + DIVIDER + format2 (or just format1 when format2 is "None")
     std::string dtcFormat1;  // top half (always present)
@@ -2851,6 +2854,7 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
     settings->decimalVDD2 = false;
     settings->showDTC = true;
     settings->useDTCSymbol = true;
+    settings->showStopwatch = true;
     settings->useIntegerFPS = false;
     settings->showFpsGraph = true;
     settings->dtcFormat1 = "%a, %b %d";
@@ -3186,6 +3190,13 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
         settings->useDTCSymbol = !(key == "FALSE");
     }
 
+    it = section.find("show_stopwatch");
+    if (it != section.end()) {
+        key = it->second;
+        convertToUpper(key);
+        settings->showStopwatch = !(key == "FALSE");
+    }
+
     it = section.find("integer_fps");
     if (it != section.end()) {
         key = it->second;
@@ -3396,6 +3407,7 @@ ALWAYS_INLINE void GetConfigSettings(MicroSettings* settings) {
     settings->decimalVDD2 = false;
     settings->showDTC = true;
     settings->useDTCSymbol = true;
+    settings->showStopwatch = true;
     settings->useIntegerFPS = true;
     settings->dtcFormat1 = "%a, %b %d";
     settings->dtcFormat2 = "%H:%M:%S";
@@ -3424,7 +3436,8 @@ ALWAYS_INLINE void GetConfigSettings(MicroSettings* settings) {
     settings->showStackedTemps = true;
     settings->setPosBottom = false;
     settings->disableScreenshots = false;
-    settings->refreshRate = 3;
+    settings->refreshRate = 30;  // matches Mini
+    settings->sampleRate = 2;    // re-poll sensors 2x/sec by default (matches Mini)
     settings->horizontalPadding = 14;  // 1.4 sp
     settings->verticalPadding   = 8;   // 0.8 sp
     settings->labelPadding      = 14;  // 1.4 sp
@@ -3460,7 +3473,13 @@ ALWAYS_INLINE void GetConfigSettings(MicroSettings* settings) {
     if (it != section.end()) {
         settings->refreshRate = std::clamp(atol(it->second.c_str()), 1L, 60L);
     }
-    
+
+    // Process sample_rate: how often sensor values are re-polled; always <= refreshRate.
+    it = section.find("sample_rate");
+    if (it != section.end()) {
+        settings->sampleRate = std::clamp(atol(it->second.c_str()), 1L, (long)settings->refreshRate);
+    }
+
     // Process boolean flags
     it = section.find("real_freqs");
     if (it != section.end()) {
@@ -3623,6 +3642,13 @@ ALWAYS_INLINE void GetConfigSettings(MicroSettings* settings) {
         key = it->second;
         convertToUpper(key);
         settings->useDTCSymbol = !(key == "FALSE");
+    }
+
+    it = section.find("show_stopwatch");
+    if (it != section.end()) {
+        key = it->second;
+        convertToUpper(key);
+        settings->showStopwatch = !(key == "FALSE");
     }
 
     it = section.find("integer_fps");

@@ -105,7 +105,82 @@ private:
 
     Thread graphSampleThread;
     std::atomic<bool> graphSampleRunning{false};
-    
+
+    // ── Stop Watch ────────────────────────────────────────────────────────────
+    // Temporary (never persisted): turns the DTC datetime cell into an elapsed
+    // seconds timer (1 decimal). All state is per-overlay-instance, so a fresh
+    // overlay always opens on the datetime and exiting resets everything.
+    // Input edges are detected in touchPollThread (the 32 ms background poller),
+    // NOT handleInput, because the frame limiter can throttle handleInput and drop
+    // ZL+L / ZR+R presses.
+    std::atomic<bool>     swMode{false};       // false = DTC datetime, true = timer
+    std::atomic<bool>     swRunning{false};    // timer counting up
+    std::atomic<uint64_t> swAccumNs{0};        // elapsed accumulated while stopped
+    std::atomic<uint64_t> swStartNs{0};        // arm-ns captured when timer last started
+    std::atomic<bool>     swPrevComboL{false}; // ZL+L edge state (poll thread)
+    std::atomic<bool>     swPrevComboR{false}; // ZR+R edge state (poll thread)
+
+    inline uint64_t swElapsedNs(uint64_t nowNs) const {
+        uint64_t acc = swAccumNs.load(std::memory_order_acquire);
+        if (swRunning.load(std::memory_order_acquire)) {
+            const uint64_t st = swStartNs.load(std::memory_order_acquire);
+            if (nowNs > st) acc += (nowNs - st);
+        }
+        return acc;
+    }
+    // ZL+L: DTC -> timer(reset); timer(running or non-zero) -> reset; timer(reset) -> DTC.
+    inline void swOnComboL(uint64_t nowNs) {
+        if (!swMode.load(std::memory_order_acquire)) {
+            swRunning.store(false, std::memory_order_release);
+            swAccumNs.store(0, std::memory_order_release);
+            swStartNs.store(0, std::memory_order_release);
+            swMode.store(true, std::memory_order_release);
+        } else if (swRunning.load(std::memory_order_acquire) || swElapsedNs(nowNs) != 0) {
+            swRunning.store(false, std::memory_order_release);
+            swAccumNs.store(0, std::memory_order_release);
+            swStartNs.store(0, std::memory_order_release);
+        } else {
+            swMode.store(false, std::memory_order_release);
+        }
+    }
+    // ZR+R: start/stop the timer (only meaningful in timer mode).
+    inline void swOnComboR(uint64_t nowNs) {
+        if (!swMode.load(std::memory_order_acquire)) return;
+        if (swRunning.load(std::memory_order_acquire)) {
+            swAccumNs.store(swElapsedNs(nowNs), std::memory_order_release);
+            swStartNs.store(0, std::memory_order_release);
+            swRunning.store(false, std::memory_order_release);
+        } else {
+            swStartNs.store(nowNs, std::memory_order_release);
+            swRunning.store(true, std::memory_order_release);
+        }
+    }
+    // Called every poll from the background thread with the combined held keys.
+    inline void swPollInput(uint64_t keysHeld, uint64_t nowNs) {
+        const bool active = settings.showStopwatch && settings.showDTC &&
+                            settings.show.find("DTC") != std::string::npos;
+        const bool cl = (keysHeld & KEY_ZL) && (keysHeld & KEY_L);
+        const bool cr = (keysHeld & KEY_ZR) && (keysHeld & KEY_R);
+        if (active) {
+            if (cl && !swPrevComboL.load(std::memory_order_acquire)) swOnComboL(nowNs);
+            if (cr && !swPrevComboR.load(std::memory_order_acquire)) swOnComboR(nowNs);
+        }
+        // Track edges regardless so re-enabling the feature never double-fires.
+        swPrevComboL.store(cl, std::memory_order_release);
+        swPrevComboR.store(cr, std::memory_order_release);
+    }
+    // True when the DTC cell should render the timer instead of the datetime.
+    // Honors the Stop Watch toggle so disabling it reverts to the datetime at once.
+    inline bool swTimerActive() const { return swMode.load(std::memory_order_acquire) && settings.showStopwatch; }
+    // Writes "SS.SS s" (two-decimal elapsed seconds, truncated) into buf.
+    inline void swFormat(char* buf, size_t n) const {
+        const uint64_t el = swElapsedNs(armTicksToNs(armGetSystemTick()));
+        const uint64_t hundredths = el / 10'000'000ULL;   // ns -> 0.01 s units
+        snprintf(buf, n, "%llu.%02llu s",
+                 (unsigned long long)(hundredths / 100ULL),
+                 (unsigned long long)(hundredths % 100ULL));
+    }
+
     // Width (in pixels) of a single space glyph at the current font size. This is the
     // unit for Mini's space-based paddings (spacing / horizontal / vertical / corner),
     // so they stay visually consistent across font sizes without a displayScale factor.
@@ -487,7 +562,12 @@ public:
                         plusHoldStart = 0;
                         overlay->buttonState.plusDragActive.exchange(false, std::memory_order_acq_rel);
                     }
-                    
+
+                    // Stop Watch: ZL+L toggles/resets, ZR+R starts/stops. Handled here
+                    // (not in handleInput) so the frame limiter can never drop a press.
+                    // Deliberately does NOT set inputDetected — the timer keeps rendering.
+                    overlay->swPollInput(keysHeld, now);
+
                     // Disable rendering on any input, re-enable when no input
                     static bool resetOnce = true;
                     if (inputDetected) {
@@ -1295,7 +1375,8 @@ public:
                         labelText = "READ";
                         flags |= 512;
                     } else if (key == "DTC" && !(flags & 256) && settings.showDTC) {
-                        if (settings.showStackedDTC) {
+                        // Stop Watch timer is always a single value \u2192 force one row.
+                        if (settings.showStackedDTC && !swTimerActive()) {
                             labelLines.push_back("DTC_STOP");
                             labelLines.push_back("DTC_SBOT");
                         } else {
@@ -4907,28 +4988,36 @@ public:
             }
             else if (key == "DTC" && !(flags & 256) && settings.showDTC) {
                 if (Temp[0]) strcat(Temp, "\n");
-                char dateTimeStr[64];
-                time_t rawtime = time(NULL);
-                struct tm *timeinfo = localtime(&rawtime);
-                strftime(dateTimeStr, sizeof(dateTimeStr), settings.dtcFormat.c_str(), timeinfo);
-                if (settings.showStackedDTC) {
-                    // Split at DIVIDER_SYMBOL: top half goes on row 1, bottom half on row 2.
-                    // If the user's format has no DIVIDER_SYMBOL, fall back to the whole
-                    // string on the top row + empty bottom row (still 2 label slots).
-                    const std::string dtStr(dateTimeStr);
-                    const size_t divPos = dtStr.find(ult::DIVIDER_SYMBOL);
-                    if (divPos != std::string::npos) {
-                        const std::string topHalf = dtStr.substr(0, divPos);
-                        const std::string botHalf = dtStr.substr(divPos + ult::DIVIDER_SYMBOL.length());
-                        strcat(Temp, topHalf.c_str());
-                        strcat(Temp, "\n");
-                        strcat(Temp, botHalf.c_str());
+                if (swTimerActive()) {
+                    // Stop Watch: single-line elapsed timer replaces the datetime.
+                    // Layout is forced single-row above (labelLines gate on swTimerActive).
+                    char swStr[24];
+                    swFormat(swStr, sizeof(swStr));
+                    strcat(Temp, swStr);
+                } else {
+                    char dateTimeStr[64];
+                    time_t rawtime = time(NULL);
+                    struct tm *timeinfo = localtime(&rawtime);
+                    strftime(dateTimeStr, sizeof(dateTimeStr), settings.dtcFormat.c_str(), timeinfo);
+                    if (settings.showStackedDTC) {
+                        // Split at DIVIDER_SYMBOL: top half goes on row 1, bottom half on row 2.
+                        // If the user's format has no DIVIDER_SYMBOL, fall back to the whole
+                        // string on the top row + empty bottom row (still 2 label slots).
+                        const std::string dtStr(dateTimeStr);
+                        const size_t divPos = dtStr.find(ult::DIVIDER_SYMBOL);
+                        if (divPos != std::string::npos) {
+                            const std::string topHalf = dtStr.substr(0, divPos);
+                            const std::string botHalf = dtStr.substr(divPos + ult::DIVIDER_SYMBOL.length());
+                            strcat(Temp, topHalf.c_str());
+                            strcat(Temp, "\n");
+                            strcat(Temp, botHalf.c_str());
+                        } else {
+                            strcat(Temp, dateTimeStr);
+                            strcat(Temp, "\n");
+                        }
                     } else {
                         strcat(Temp, dateTimeStr);
-                        strcat(Temp, "\n");
                     }
-                } else {
-                    strcat(Temp, dateTimeStr);
                 }
                 flags |= 256;
             }

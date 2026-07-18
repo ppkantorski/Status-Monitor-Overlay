@@ -118,7 +118,82 @@ private:
     // the VI layer moves before the buffer has been redrawn.
     bool pendingLayerPos = false;
     Thread swipePollThread;
-    
+
+    // ── Stop Watch ────────────────────────────────────────────────────────────
+    // Temporary (never persisted): turns the DTC datetime cell into an elapsed
+    // seconds timer (1 decimal). Per-overlay-instance state, so a fresh overlay
+    // always opens on the datetime and exiting resets everything. Input edges are
+    // detected in swipePollThread (the 32 ms background poller), NOT handleInput,
+    // because the frame limiter can throttle handleInput and drop ZL+L / ZR+R.
+    std::atomic<bool>     swMode{false};       // false = DTC datetime, true = timer
+    std::atomic<bool>     swRunning{false};    // timer counting up
+    std::atomic<uint64_t> swAccumNs{0};        // elapsed accumulated while stopped
+    std::atomic<uint64_t> swStartNs{0};        // arm-ns captured when timer last started
+    std::atomic<bool>     swPrevComboL{false}; // ZL+L edge state (poll thread)
+    std::atomic<bool>     swPrevComboR{false}; // ZR+R edge state (poll thread)
+    bool                  swModePrev{false};   // update()-thread: last mode, to nudge layout rebuild
+
+    inline uint64_t swElapsedNs(uint64_t nowNs) const {
+        uint64_t acc = swAccumNs.load(std::memory_order_acquire);
+        if (swRunning.load(std::memory_order_acquire)) {
+            const uint64_t st = swStartNs.load(std::memory_order_acquire);
+            if (nowNs > st) acc += (nowNs - st);
+        }
+        return acc;
+    }
+    // ZL+L: DTC -> timer(reset); timer(running or non-zero) -> reset; timer(reset) -> DTC.
+    inline void swOnComboL(uint64_t nowNs) {
+        if (!swMode.load(std::memory_order_acquire)) {
+            swRunning.store(false, std::memory_order_release);
+            swAccumNs.store(0, std::memory_order_release);
+            swStartNs.store(0, std::memory_order_release);
+            swMode.store(true, std::memory_order_release);
+        } else if (swRunning.load(std::memory_order_acquire) || swElapsedNs(nowNs) != 0) {
+            swRunning.store(false, std::memory_order_release);
+            swAccumNs.store(0, std::memory_order_release);
+            swStartNs.store(0, std::memory_order_release);
+        } else {
+            swMode.store(false, std::memory_order_release);
+        }
+    }
+    // ZR+R: start/stop the timer (only meaningful in timer mode).
+    inline void swOnComboR(uint64_t nowNs) {
+        if (!swMode.load(std::memory_order_acquire)) return;
+        if (swRunning.load(std::memory_order_acquire)) {
+            swAccumNs.store(swElapsedNs(nowNs), std::memory_order_release);
+            swStartNs.store(0, std::memory_order_release);
+            swRunning.store(false, std::memory_order_release);
+        } else {
+            swStartNs.store(nowNs, std::memory_order_release);
+            swRunning.store(true, std::memory_order_release);
+        }
+    }
+    // Called every poll from the background thread with the combined held keys.
+    inline void swPollInput(uint64_t keysHeld, uint64_t nowNs) {
+        const bool active = settings.showStopwatch && settings.showDTC &&
+                            settings.show.find("DTC") != std::string::npos;
+        const bool cl = (keysHeld & KEY_ZL) && (keysHeld & KEY_L);
+        const bool cr = (keysHeld & KEY_ZR) && (keysHeld & KEY_R);
+        if (active) {
+            if (cl && !swPrevComboL.load(std::memory_order_acquire)) swOnComboL(nowNs);
+            if (cr && !swPrevComboR.load(std::memory_order_acquire)) swOnComboR(nowNs);
+        }
+        // Track edges regardless so re-enabling the feature never double-fires.
+        swPrevComboL.store(cl, std::memory_order_release);
+        swPrevComboR.store(cr, std::memory_order_release);
+    }
+    // True when the DTC cell should render the timer instead of the datetime.
+    // Honors the Stop Watch toggle so disabling it reverts to the datetime at once.
+    inline bool swTimerActive() const { return swMode.load(std::memory_order_acquire) && settings.showStopwatch; }
+    // Writes "SS.SS s" (two-decimal elapsed seconds, truncated) into buf.
+    inline void swFormat(char* buf, size_t n) const {
+        const uint64_t el = swElapsedNs(armTicksToNs(armGetSystemTick()));
+        const uint64_t hundredths = el / 10'000'000ULL;   // ns -> 0.01 s units
+        snprintf(buf, n, "%llu.%02llu s",
+                 (unsigned long long)(hundredths / 100ULL),
+                 (unsigned long long)(hundredths % 100ULL));
+    }
+
     // Fixed spacing system - calculate actual widths at render time
     struct LayoutMetrics {
         uint32_t label_data_gap = 8;      // label-value gap (derived from labelPadding spaces)
@@ -152,7 +227,7 @@ private:
     };
     static constexpr size_t kNumItemTypes = 10;        // item.type values 0..9
     // Hold the max width for ~1.5 real seconds before allowing shrink.
-    // Computed from TeslaFPS (the actual overlay refresh rate, e.g. 3 Hz default)
+    // Computed from TeslaFPS (the actual overlay refresh rate, e.g. 30 Hz default)
     // so the window is always ~1.5s regardless of the user's refresh rate setting.
     static constexpr float kDampWindowSeconds = 1.5f;
     inline uint16_t dampWindowFrames() const {
@@ -395,6 +470,11 @@ private:
                 }
                 plusHoldStart = 0;
             }
+
+            // ── Stop Watch input ──────────────────────────────────────────────
+            // ZL+L toggles/resets, ZR+R starts/stops. Handled here (not in
+            // handleInput) so the frame limiter can never drop a press.
+            self->swPollInput(keysHeld, nowNs);
 
             // ── Underscan-change layer-position correction ────────────────────
             // When underscan engages/changes while Micro is open, tesla.hpp's
@@ -721,8 +801,9 @@ public:
         cpuFullIsSplit = hasCpu && settings.showFullCPU && settings.showStackedFullCPU;
         // BAT stacked: power draw on top row, pct+estimate on bottom row
         batIsSplit = hasBat && settings.showStackedBAT;
-        // DTC stacked: split user's dtcFormat at DIVIDER_SYMBOL into 2 rows
-        dtcIsSplit = hasDtc && settings.showDTC && settings.showStackedDTC;
+        // DTC stacked: split user's dtcFormat at DIVIDER_SYMBOL into 2 rows.
+        // The Stop Watch timer is a single value, so it always renders one row.
+        dtcIsSplit = hasDtc && settings.showDTC && settings.showStackedDTC && !swTimerActive();
         ramLoadIsSplit = hasRam && settings.showRAMLoad && settings.showRAMLoadCPUGPU && settings.showStackedRAMLoadCPUGPU;
         // GPU die temp split: volt on top row, GPU temp on bottom row
         gpuIsSplit = hasGpu && settings.showGPUTemp && settings.showStackedGPUTemp && settings.realVolts;
@@ -2532,9 +2613,9 @@ public:
         // Throttle data formatting to the user-specified refresh rate even when
         // the frame limiter is off (e.g. during drag/reposition).  The render
         // loop may call update() at vsync speed (~60 fps) while repositioning,
-        // but we only rebuild the display strings at 1/refreshRate intervals.
+        // but we only rebuild the display strings at 1/sampleRate intervals.
         const u64 nowTick = armGetSystemTick();
-        const u64 pollIntervalTicks = systemtickfrequency / settings.refreshRate;
+        const u64 pollIntervalTicks = systemtickfrequency / settings.sampleRate;
         const bool shouldUpdateData = (nowTick - lastDataUpdateTick) >= pollIntervalTicks;
         if (shouldUpdateData) lastDataUpdateTick = nowTick;
 
@@ -2924,14 +3005,6 @@ public:
 
         mutexUnlock(&mutex_BatteryChecker);
 
-
-        // Format current datetime for DTC
-        if (settings.showDTC) {
-            time_t rawtime = time(NULL);
-            struct tm *timeinfo = localtime(&rawtime);
-            strftime(DTC_c, sizeof(DTC_c), settings.dtcFormat.c_str(), timeinfo);
-        }
-
         // Thermal info
         const int duty = safeFanDuty((int)Rotation_Duty);
 
@@ -3221,6 +3294,23 @@ public:
 
         mutexUnlock(&mutex_Misc);
         } // end shouldUpdateData
+
+        // Format current datetime for DTC — or the Stop Watch elapsed timer when active.
+        // Kept OUTSIDE the sampleRate gate so the timer advances at the overlay refresh
+        // rate (smooth for the 2-decimal display) while sensor data stays on sampleRate.
+        if (settings.showDTC) {
+            const bool timer = swTimerActive();
+            // A mode flip changes dtcIsSplit (single vs stacked), computed in
+            // prepareRenderItems — force a rebuild so the row layout matches this frame.
+            if (timer != swModePrev) { renderDataDirty = true; swModePrev = timer; }
+            if (timer) {
+                swFormat(DTC_c, sizeof(DTC_c));
+            } else {
+                time_t rawtime = time(NULL);
+                struct tm *timeinfo = localtime(&rawtime);
+                strftime(DTC_c, sizeof(DTC_c), settings.dtcFormat.c_str(), timeinfo);
+            }
+        }
 
         //static bool skipOnce = true;
     
