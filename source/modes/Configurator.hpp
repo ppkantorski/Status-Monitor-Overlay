@@ -1137,10 +1137,10 @@ public:
 
 // Returns the per-mode default border thickness in tenths of a space (sp),
 // used as the fallback when the ini key is absent.
-// All modes: 6 (0.6 sp)
+// All modes: 8 (0.8 sp)
 inline int defaultBorderThickness(const std::string& mode) {
     (void)mode;
-    return 6; // 0.6 sp for all modes
+    return 8; // 0.8 sp for all modes
 }
 
 // Border thickness for the configurable Switch 2 frame border. Stored in tenths

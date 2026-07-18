@@ -2889,7 +2889,7 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
     settings->frameOffsetY = 0;
     settings->framePadding = 0;
     initBorderDefaults(settings);
-    settings->borderThickness = 6; // 0.6 sp (Mini default)
+    settings->borderThickness = 8; // 0.8 sp (Mini default)
 
     // Open and read file efficiently
     FILE* configFile = fopen(configIniPath, "r");
@@ -3897,7 +3897,7 @@ ALWAYS_INLINE void GetConfigSettings(FpsCounterSettings* settings) {
     settings->frameOffsetY = 0;
     settings->framePadding = 0;
     initBorderDefaults(settings);
-    settings->borderThickness = 6;  // 0.6 sp (FPS Counter default)
+    settings->borderThickness = 8;  // 0.8 sp (FPS Counter default)
 
     // Open and read file efficiently
     FILE* configFile = fopen(configIniPath, "r");
@@ -4080,7 +4080,7 @@ ALWAYS_INLINE void GetConfigSettings(FpsGraphSettings* settings) {
     settings->frameOffsetY = 0;
     settings->framePadding = 0;
     initBorderDefaults(settings);
-    settings->borderThickness = 6;  // 0.6 sp (FPS Graph default)
+    settings->borderThickness = 8;  // 0.8 sp (FPS Graph default)
     settings->useGraphBorder = false;   // inner plot-region border (FPS Graph only)
     settings->useGraphBackground = false; // inner plot-region background (FPS Graph only)
     settings->cornerRadiusSp = 36;     // 3.6 sp
@@ -4425,7 +4425,7 @@ ALWAYS_INLINE void GetConfigSettings(ResolutionSettings* settings) {
     settings->frameOffsetY = 0;
     settings->framePadding = 0;
     initBorderDefaults(settings);
-    settings->borderThickness = 6;  // 0.6 sp (Game Resolutions default)
+    settings->borderThickness = 8;  // 0.8 sp (Game Resolutions default)
 
 
     // Open and read file efficiently
