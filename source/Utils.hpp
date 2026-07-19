@@ -2504,6 +2504,10 @@ struct FullSettings {
     uint16_t catColor1;
     uint16_t catColor2;
     uint16_t textColor;
+    // Hold duration (ms) for PLUS to enter focus/reposition mode. Full has no
+    // touch_move_delay counterpart because its touch reposition is a swipe
+    // gesture, not a press-and-hold.
+    uint16_t buttonMoveDelayMs;
 };
 
 struct MiniSettings {
@@ -2668,6 +2672,10 @@ struct MicroSettings {
                                 // when aligned left or right; default 50 (5 sp)
     uint8_t stackedSpacing;     // extra vertical gap between the two rows of a stacked/split
                                 // metric (beyond glyph height); tenths of a space; default 7 (0.7 sp)
+    // Hold duration (ms) for PLUS to enter focus/reposition mode. Micro has no
+    // touch_move_delay counterpart because its touch reposition is a swipe
+    // gesture, not a press-and-hold.
+    uint16_t buttonMoveDelayMs;
 };
 
 struct FpsCounterSettings {
@@ -3463,6 +3471,7 @@ ALWAYS_INLINE void GetConfigSettings(MicroSettings* settings) {
     settings->labelPadding      = 14;  // 1.4 sp
     settings->elementPadding    = 50;  // 5 sp
     settings->stackedSpacing    = 4;   // 0.4 sp (gap between stacked/split rows)
+    settings->buttonMoveDelayMs = 1000; // same default as every other mode
 
     // Open and read file efficiently
     FILE* configFile = fopen(configIniPath, "r");
@@ -3921,6 +3930,11 @@ ALWAYS_INLINE void GetConfigSettings(MicroSettings* settings) {
         settings->stackedSpacing = (uint8_t)std::clamp(atoi(it->second.c_str()), 0, 30);
     }
 
+    it = section.find("button_move_delay");
+    if (it != section.end()) {
+        settings->buttonMoveDelayMs = (uint16_t)std::clamp(atol(it->second.c_str()), 0L, 1000L);
+    }
+
 }
 
 ALWAYS_INLINE void GetConfigSettings(FpsCounterSettings* settings) {
@@ -4326,6 +4340,7 @@ ALWAYS_INLINE void GetConfigSettings(FullSettings* settings) {
     settings->showRDSD = true;
     settings->useDynamicColors = true;
     settings->disableScreenshots = false;
+    settings->buttonMoveDelayMs = 1000;  // same default as every other mode
     convertStrToRGBA4444("#0009", &(settings->backgroundColor));
     convertStrToRGBA4444("#000F", &(settings->focusBackgroundColor));
     convertStrToRGBA4444("#2DFF", &(settings->separatorColor));
@@ -4475,6 +4490,11 @@ ALWAYS_INLINE void GetConfigSettings(FullSettings* settings) {
         temp = 0;
         if (convertStrToRGBA4444(it->second, &temp))
             settings->textColor = temp;
+    }
+
+    it = section.find("button_move_delay");
+    if (it != section.end()) {
+        settings->buttonMoveDelayMs = (uint16_t)std::clamp(atol(it->second.c_str()), 0L, 1000L);
     }
 }
 

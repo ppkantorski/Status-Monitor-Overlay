@@ -155,6 +155,13 @@ public:
             
             u64 plusHoldStart = 0;
             u64 touchHoldStart = 0;
+            // Touch must ORIGINATE inside the overlay bounds to arm repositioning.
+            // wasTouching tracks finger-down state across polls so we can detect the
+            // press edge; touchSequenceValid latches whether that press landed in bounds.
+            // A finger that starts elsewhere and slides onto the overlay stays invalid
+            // for the whole contact, so it can never trigger an accidental move.
+            bool wasTouching = false;
+            bool touchSequenceValid = false;
             const u64 TOUCH_HOLD_THRESHOLD_NS = (u64)overlay->settings.touchMoveDelayMs * 1'000'000ULL;
             const u64 PLUS_HOLD_THRESHOLD_NS  = (u64)overlay->settings.buttonMoveDelayMs * 1'000'000ULL;
         
@@ -206,9 +213,18 @@ public:
                         const int touchableWidth = totalWidth + (touchPadding * 2);
                         const int touchableHeight = totalHeight + (touchPadding * 2);
                         
-                        // Check if touch is within bounds — 500ms hold required
-                        if (touchX >= touchableX && touchX <= touchableX + touchableWidth &&
-                            touchY >= touchableY && touchY <= touchableY + touchableHeight) {
+                        // Check if touch is within bounds — hold required.
+                        const bool inBounds = (
+                            touchX >= touchableX && touchX <= touchableX + touchableWidth &&
+                            touchY >= touchableY && touchY <= touchableY + touchableHeight);
+                        
+                        // Latch validity on the press edge only. If the finger went down
+                        // outside the overlay, this contact can never arm repositioning,
+                        // even if it is later dragged over the overlay.
+                        if (!wasTouching) touchSequenceValid = inBounds;
+                        wasTouching = true;
+                        
+                        if (inBounds && touchSequenceValid) {
                             if (overlay->buttonState.touchDragActive.load(std::memory_order_acquire)) {
                                 // Drag already confirmed — keep input signalled
                                 inputDetected = true;
@@ -225,8 +241,11 @@ public:
                             overlay->buttonState.touchDragActive.exchange(false, std::memory_order_acq_rel);
                         }
                     } else {
-                        // No touch detected — reset hold timer and drag-ready flag
+                        // No touch detected — finger lifted. Reset hold timer, the
+                        // drag-ready flag, and the origin latch for the next contact.
                         touchHoldStart = 0;
+                        wasTouching = false;
+                        touchSequenceValid = false;
                         overlay->buttonState.touchDragActive.exchange(false, std::memory_order_acq_rel);
                     }
                     
@@ -675,7 +694,15 @@ public:
             static constexpr int JOYSTICK_DEADZONE = 20;
             
             // Choose the appropriate joystick based on which button is held
-            const HidAnalogStickState& activeJoystick = joyStickPosLeft;
+            // Accept EITHER stick while PLUS is held: use whichever is deflected
+            // further from center, so PLUS + left stick and PLUS + right stick both
+            // reposition the overlay identically.
+            const long leftMag2  = (long)joyStickPosLeft.x  * (long)joyStickPosLeft.x  +
+                                   (long)joyStickPosLeft.y  * (long)joyStickPosLeft.y;
+            const long rightMag2 = (long)joyStickPosRight.x * (long)joyStickPosRight.x +
+                                   (long)joyStickPosRight.y * (long)joyStickPosRight.y;
+            const HidAnalogStickState& activeJoystick =
+                (rightMag2 > leftMag2) ? joyStickPosRight : joyStickPosLeft;
             
             // Only move if joystick is outside deadzone
             if (abs(activeJoystick.x) > JOYSTICK_DEADZONE || abs(activeJoystick.y) > JOYSTICK_DEADZONE) {

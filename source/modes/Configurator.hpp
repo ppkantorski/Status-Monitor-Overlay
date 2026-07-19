@@ -2582,6 +2582,9 @@ public:
             list->addItem(refreshRate);
         }
 
+        // Touch Move Delay — only for modes whose touch reposition is a
+        // press-and-hold. Full and Micro reposition by swipe gesture, so they
+        // have no touch delay to configure.
         if (flags.isMini || flags.isFPSCounter || flags.isFPSGraph || flags.isGameRes) {
             auto* touchMoveDelay = new tsl::elm::ListItem("Touch Move Delay");
             touchMoveDelay->setValue(std::to_string(getCurrentMoveDelay("touch")) + " ms");
@@ -2590,7 +2593,12 @@ public:
                 return false;
             });
             list->addItem(touchMoveDelay);
+        }
 
+        // Button Move Delay — every mode holds PLUS to enter reposition mode,
+        // including Full and Micro.
+        if (flags.isMini || flags.isFPSCounter || flags.isFPSGraph || flags.isGameRes ||
+            flags.isFull || flags.isMicro) {
             auto* buttonMoveDelay = new tsl::elm::ListItem("Button Move Delay");
             buttonMoveDelay->setValue(std::to_string(getCurrentMoveDelay("button")) + " ms");
             buttonMoveDelay->setClickListener([this](uint64_t keys) {

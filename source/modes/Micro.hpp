@@ -370,7 +370,8 @@ private:
     // signalled → thread exits immediately.
     // On swipe trigger: stops the frame limiter (isRendering=false + leventSignal) and
     // sets swipeFlipPending. handleInput re-enables the limiter via swipeClearOnRelease.
-    // Plus-hold focus mode: sets plusFocusActive after a 1-second hold; cleared on release.
+    // Plus-hold focus mode: sets plusFocusActive after a configurable hold
+    // ("Button Move Delay", default 1000 ms); cleared on release.
     // While active, handleInput switches to focusBackgroundColor and handles joystick flips.
     static void swipePollFunc(void* arg) {
         auto* self = static_cast<MicroOverlay*>(arg);
@@ -380,7 +381,12 @@ private:
         static constexpr int SWIPE_DIST_PX        = 84;              // framebuffer pixels
         static constexpr int SWIPE_EDGE_PX        = 32;              // touch must start within 16 px of top/bottom edge
         static constexpr int SCREEN_HEIGHT_PX     = 720;             // framebuffer height
-        static constexpr u64 PLUS_HOLD_NS         = 1'000'000'000ULL; // 1 s hold to activate
+        // Plus-hold threshold is user-configurable ("Button Move Delay").
+        // settings is fully populated by GetConfigSettings() in the constructor,
+        // which runs before this thread is created, so reading it here is safe.
+        // Note: there is no touch_move_delay for this mode — touch repositioning
+        // is a swipe gesture, not a press-and-hold.
+        const u64 PLUS_HOLD_NS = (u64)self->settings.buttonMoveDelayMs * 1'000'000ULL;
 
         // HID setup — same as Mini's touch poll thread: allow P1 + Handheld.
         const HidNpadIdType id_list[2] = { HidNpadIdType_No1, HidNpadIdType_Handheld };
@@ -3346,7 +3352,7 @@ public:
         // The poll thread sets plusFocusActive after a 1-second Plus hold and
         // stops the frame limiter. Here we:
         //   1. Re-enable the frame limiter the frame after focus mode ends.
-        //   2. While active, map left-joystick full-up/down to position flips
+        //   2. While active, map either-joystick full-up/down to position flips
         //      (same logic as swipeFlipPending: toggle setPosBottom, move layer,
         //       force re-init, then wait for one drawn frame before re-enabling).
         {
@@ -3354,11 +3360,15 @@ public:
 
             if (focusNow) {
                 // Frame limiter is already stopped by the poll thread.
-                // Check left joystick for top/bottom snap.
+                // Check both joysticks for top/bottom snap.
                 static constexpr int JOYSTICK_SNAP_THRESHOLD = 28000; // ~85 % of 32767
                 static bool joystickFlipArmed = true; // re-arm once stick returns to center
 
-                const int jy = joyStickPosLeft.y;
+                // Accept EITHER stick: use whichever Y axis is deflected further, so
+                // PLUS + left stick and PLUS + right stick both flip the position.
+                const int jyL = joyStickPosLeft.y;
+                const int jyR = joyStickPosRight.y;
+                const int jy  = (abs(jyR) > abs(jyL)) ? jyR : jyL;
                 const bool stickAtBottom = (jy <= -JOYSTICK_SNAP_THRESHOLD);
                 const bool stickAtTop    = (jy >=  JOYSTICK_SNAP_THRESHOLD);
                 const bool stickNeutral  = (abs(jy) < JOYSTICK_SNAP_THRESHOLD / 2);
