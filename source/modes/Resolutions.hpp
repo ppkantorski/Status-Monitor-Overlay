@@ -80,8 +80,8 @@ public:
             
             u64 plusHoldStart = 0;
             u64 touchHoldStart = 0;
-            static constexpr u64 TOUCH_HOLD_THRESHOLD_NS = 500'000'000ULL;  // 500ms
-            static constexpr u64 PLUS_HOLD_THRESHOLD_NS  = 1'000'000'000ULL; // 1s
+            const u64 TOUCH_HOLD_THRESHOLD_NS = (u64)overlay->settings.touchMoveDelayMs * 1'000'000ULL;
+            const u64 PLUS_HOLD_THRESHOLD_NS  = (u64)overlay->settings.buttonMoveDelayMs * 1'000'000ULL;
         
             HidTouchScreenState state = {0};
             
