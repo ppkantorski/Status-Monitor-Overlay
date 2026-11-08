@@ -22,9 +22,25 @@ private:
     int frameOffsetY = 0;
     bool isDragging = false;
     size_t framePadding = 10;
-    static constexpr int screenWidth = 1280;
-    static constexpr int screenHeight = 720;
-    static constexpr int border = 8;
+    // Framebuffer coordinate space: 1280x720 normally, 832x1080 (full) or 832x554
+    // (limited) in 1080p pixel-perfect docked mode. Set in the constructor.
+    int screenWidth  = 1280;
+    int screenHeight = 720;
+    static constexpr int border = 8;   // base (720p) inner padding
+    int    borderPx       = border;    // border scaled by displayScale
+
+    // ── 1080p pixel-perfect docked mode (mirrors FPS Counter / Mini) ──
+    float  displayScale      = 1.0f;   // 1.5 in 1080p pixel-perfect mode, 1.0 otherwise
+    int    _frameOffsetX1080 = 0;      // content X offset within 832px buffer (updated by updateLayerPos)
+    int    _frameOffsetY1080 = 0;      // content Y offset within buffer (updated by updateLayerPos)
+    ApmPerformanceMode performanceMode = ApmPerformanceMode_Invalid;
+    bool wasDockedAtLaunch = false;    // dock-state-change auto-relaunch guard
+    bool relaunchRequested = false;
+    size_t drawCachedHeight = 0;       // authoritative rendered height (set each draw)
+
+    // Scale a base (720p) pixel distance into framebuffer pixels.
+    // Identity at displayScale == 1.0, so 720p geometry is unchanged.
+    inline int sc(float v) const { return (int)lround(v * displayScale); }
 
     bool originalUseRightAlignment = ult::useRightAlignment;
 
@@ -44,6 +60,37 @@ private:
     size_t actualTotalHeight = 0;
 
     void updateLayerPos() {
+        if (ult::windowedLayerPixelPerfect) {
+            // X: sliding-window — mirrors FPS Counter / Mini exactly.
+            const int contentViX = (int)(frameOffsetX * 1.5f + 0.5f);
+            const int maxLayerX  = (int)tsl::cfg::ScreenWidth - (int)tsl::cfg::LayerWidth;
+            const int layerViX   = std::max(0, std::min(contentViX - (int)framePadding, maxLayerX));
+            _frameOffsetX1080    = contentViX - layerViX;
+
+            if (!ult::limitedMemory) {
+                // Full 1080p: 832x1080 layer pinned at Y=0 — always top+bottom anchored.
+                tsl::gfx::Renderer::get().setLayerPos(layerViX, 0);
+                return;
+            }
+
+            // Limited 1080p: 832x554 framebuffer, layer slides vertically.
+            const int maxLayerY      = (int)tsl::cfg::ScreenHeight - (int)tsl::cfg::LayerHeight;
+            const int centeredLayerY = std::max(0, maxLayerY / 2);
+            const int contentViY     = (int)(frameOffsetY * 1.5f + 0.5f);
+            int layerViY;
+            const int contentH   = (int)drawCachedHeight + 2 * (int)framePadding;
+            const bool fitsInBuffer = (contentH <= 554);
+            if (!fitsInBuffer) {
+                layerViY          = centeredLayerY;
+                _frameOffsetY1080 = contentViY - centeredLayerY;
+            } else {
+                layerViY          = std::max(0, std::min(contentViY - (int)framePadding, maxLayerY));
+                _frameOffsetY1080 = contentViY - layerViY;
+            }
+            _frameOffsetY1080 = std::max(0, std::min(_frameOffsetY1080, 553));
+            tsl::gfx::Renderer::get().setLayerPos(layerViX, layerViY);
+            return;
+        }
         if (!ult::limitedMemory) return;
         const int pos = std::max(std::min(
             (int)(frameOffsetX * 1.5f + 0.5f) - tsl::impl::currentUnderscanPixels.first,
@@ -58,6 +105,34 @@ public:
         disableJumpTo = true;
         GetConfigSettings(&settings);
 
+        // Determine 1080p mode — mirrors FPS Counter / Mini constructor logic.
+        // ult::windowedLayerPixelPerfect is set by main() via setup1080pIfEnabled
+        // before tsl::loop<> is called.
+        const bool is1080p        = ult::windowedLayerPixelPerfect;
+        const bool isLimited1080p = is1080p && ult::limitedMemory;
+        displayScale = is1080p ? 1.5f : 1.0f;
+        screenWidth  = is1080p ?  832 : 1280;
+        screenHeight = isLimited1080p ? 554 : (is1080p ? 1080 : 720);
+        borderPx     = sc(border);
+
+        apmGetPerformanceMode(&performanceMode);
+        if (is1080p) performanceMode = ApmPerformanceMode_Boost;
+        // Capture dock state for the auto-relaunch guard in update().
+        wasDockedAtLaunch = is1080p || (performanceMode == ApmPerformanceMode_Boost);
+
+        // Graph geometry in framebuffer pixels (base 720p values x displayScale).
+        // Set before the sampler thread starts (it caps readings at rectangle_width + 1).
+        rectangle_width  = (s16)sc(180);
+        rectangle_height = (s16)sc(60);
+        rectangle_x      = (s16)sc(15);
+        rectangle_y      = (s16)sc(5);
+        x_end            = rectangle_x + rectangle_width;
+        y_30FPS          = rectangle_y + (rectangle_height / 2);
+        y_60FPS          = rectangle_y;
+        // Row where a 30-of-60 reading actually lands via the data formula (used for the
+        // "perfect" line colour). Equals y_30FPS at 720p; can differ by 1px at 1.5x.
+        y_30_color       = rectangle_y + (s16)std::lround((float)rectangle_height * ((float)(range - 31) / (float)range));
+
         if (R_SUCCEEDED(SaltySD_Connect())) {
             if (R_FAILED(SaltySD_GetDisplayRefreshRate(&refreshRate)))
                 refreshRate = 0;
@@ -68,7 +143,8 @@ public:
         // Load saved frame offsets
         frameOffsetX = settings.frameOffsetX;
         frameOffsetY = settings.frameOffsetY;
-        framePadding = settings.framePadding;
+        // Scale framePadding so it represents the same visual size across modes.
+        framePadding = (size_t)(settings.framePadding * displayScale + 0.5f);
         
        
         updateLayerPos();
@@ -330,6 +406,12 @@ public:
     s16 rectangle_height = 60;
     s16 rectangle_x = 15;
     s16 rectangle_y = 5;
+    // The plot is always drawn at the 60 Hz reference geometry (60 px tall,
+    // 61-step range) regardless of the display refresh rate / FPS cap.
+    // Readings are mapped into that space via fpsToGraphScale = 60 / refreshRate,
+    // so the graph height never changes while the max legend still shows the cap.
+    static constexpr s16 GRAPH_REF_FPS = 60;
+    float fpsToGraphScale = 1.0f;
     s16 rectangle_range_max = 60;
     s16 rectangle_range_min = 0;
     char legend_max[4] = "60";
@@ -338,6 +420,7 @@ public:
     s16 x_end = rectangle_x + rectangle_width;
     s16 y_30FPS = rectangle_y+(rectangle_height / 2);
     s16 y_60FPS = rectangle_y;
+    s16 y_30_color = rectangle_y+(rectangle_height / 2);
 
     Mutex readings_mutex;  // guards 'readings' (per-frame push in update() and the draw loop)
 
@@ -346,52 +429,92 @@ public:
         auto* Status = new tsl::elm::CustomDrawer([this](tsl::gfx::Renderer *renderer, u16 x, u16 y, u16 w, u16 h) {
 
             // Calculate content dimensions (what goes inside the border)
-            const s16 refresh_rate_offset = (refreshRate < 100) ? 21 : 28;
-            const s16 info_width = settings.showInfo ? (6 + rectangle_width/2 - 4) : 6;
+            const s16 refresh_rate_offset = (s16)sc((refreshRate < 100) ? 21 : 28);
+            const s16 info_width = settings.showInfo ? (s16)(sc(2) + rectangle_width/2) : (s16)sc(6);
             const s16 content_width = rectangle_width + refresh_rate_offset + info_width + 1;
-            const s16 content_height = rectangle_height + 12;
+            const s16 content_height = rectangle_height + (s16)sc(12);
             
             // Total dimensions including border
             // Space width at fixed reference size — used for both borderThicknessPx and
             // cornerRadius below, so we compute it once here before bExpand.
-            const float _crSpW = (float)renderer->getTextDimensions(" ", false, 16).first;
+            const float _crSpW = (float)renderer->getTextDimensions(" ", false, sc(16)).first;
             const float _crSpace = (_crSpW > 0.5f) ? _crSpW : 4.0f;
             const int borderThicknessPx = std::max(1, (int)(_crSpace * (float)settings.borderThickness / 10.0f + 0.5f));
 
             // Expand by borderThicknessPx on each side when the border is on so the
             // border stroke never overlaps the interior content (mirrors Mini fix).
             const int bExpand = settings.useBorder ? borderThicknessPx : 0;
-            const size_t totalWidth = content_width + (2 * border) + bExpand;
-            const size_t totalHeight = content_height + (2 * border) + (2 * bExpand);
+            const size_t totalWidth = content_width + (2 * borderPx) + bExpand;
+            const size_t totalHeight = content_height + (2 * borderPx) + (2 * bExpand);
             
             // Store actual dimensions for input handling
             actualTotalWidth = totalWidth;
             actualTotalHeight = totalHeight;
+            drawCachedHeight = totalHeight;
 
             if (refreshRate && refreshRate < 240) {
-                rectangle_height = refreshRate;
-                rectangle_range_max = refreshRate;
+                // Height and range stay fixed at the 60 Hz reference; only the
+                // value->graph mapping and the max legend follow the refresh rate.
+                fpsToGraphScale = (float)GRAPH_REF_FPS / (float)refreshRate;
                 if (refreshRate < 100) {
-                    rectangle_x = 15;
+                    rectangle_x = (s16)sc(15);
                     legend_max[0] = 0x30 + (refreshRate / 10);
                     legend_max[1] = 0x30 + (refreshRate % 10);
                     legend_max[2] = 0;
                 }
                 else {
-                    rectangle_x = 22;
+                    rectangle_x = (s16)sc(22);
                     legend_max[0] = 0x30 + (refreshRate / 100);
                     legend_max[1] = 0x30 + ((refreshRate / 10) % 10);
                     legend_max[2] = 0x30 + (refreshRate % 10);
                 }
-                y_30FPS = rectangle_y+(rectangle_height / 2);
-                range = std::abs(rectangle_range_max - rectangle_range_min) + 1;
-            };
+                x_end = rectangle_x + rectangle_width; // keep the data line inside the plot box
+            } else {
+                fpsToGraphScale = 1.0f;
+            }
 
             int _frameOffsetX;
             int posX, posY;
             
+            if (ult::windowedLayerPixelPerfect) {
+                // 1080p pixel-perfect mode (mirrors FPS Counter).
+                // updateLayerPos() computes _frameOffsetX1080 / _frameOffsetY1080 so
+                // screenPos = layerViPos + bufferOffset = contentViPos (seamless).
+                // frameOffsetX is the box's left edge in 720-logical space.
+                const int minFrameX = (int)((framePadding * 2 + 2) / 3);
+                const int maxLayerX1080 = (int)tsl::cfg::ScreenWidth - (int)tsl::cfg::LayerWidth;
+                const int maxBufX1080   = screenWidth - (int)totalWidth - (int)framePadding;
+                const int maxFrameX = std::max(minFrameX,
+                    (int)((maxLayerX1080 + std::max(0, maxBufX1080)) / 1.5f));
+                frameOffsetX = std::max(minFrameX, std::min(maxFrameX, frameOffsetX));
+
+                if (!ult::limitedMemory) {
+                    // Full 1080p: Y runs 0..1080 in framebuffer space.
+                    const int minFrameY = (int)framePadding;
+                    const int maxFrameY = screenHeight - (int)framePadding - (int)totalHeight;
+                    frameOffsetY = std::max(minFrameY, std::min(maxFrameY, frameOffsetY));
+                } else {
+                    // Limited 1080p: Y is in 720-logical space, updateLayerPos maps to buffer.
+                    const int maxLayerY1080 = (int)tsl::cfg::ScreenHeight - (int)tsl::cfg::LayerHeight;
+                    const int maxBufY1080   = screenHeight - (int)framePadding - (int)totalHeight;
+                    const int minFrameY720  = (int)(framePadding / 1.5f + 0.5f);
+                    const int maxFrameY720  = std::max(minFrameY720,
+                        (int)((maxLayerY1080 + std::max(0, maxBufY1080)) / 1.5f));
+                    frameOffsetY = std::max(minFrameY720, std::min(maxFrameY720, frameOffsetY));
+                }
+
+                updateLayerPos();
+
+                posX = std::max((int)framePadding,
+                    std::min(_frameOffsetX1080, screenWidth - (int)totalWidth - (int)framePadding));
+                if (!ult::limitedMemory) {
+                    posY = frameOffsetY; // 1:1 with framebuffer in full 1080p
+                } else {
+                    posY = std::max((int)framePadding,
+                        std::min(_frameOffsetY1080, screenHeight - (int)totalHeight - (int)framePadding));
+                }
             // In limited memory mode, correct frameOffsetX first, then calculate display position
-            if (ult::limitedMemory) {
+            } else if (ult::limitedMemory) {
                 // Calculate valid range for frameOffsetX (in full 1280px coordinate space)
                 // Matches Mini: minFrameX = framePadding - cachedBaseX (cachedBaseX==base_x==0)
                 const int minFrameX = framePadding - base_x;
@@ -464,15 +587,17 @@ public:
                     settings.useDynamicBorder ? &w2 : nullptr);
             }
             
-            posX += 4;
+            posX += sc(4);
 
             // Content drawing position (inside the border).
             // bExpand shifts origin right/down to account for the extra space
             // added by border compensation, keeping content clear of the stroke.
-            const int final_base_x = posX + border + bExpand;
-            const int final_base_y = posY + border + bExpand;
+            const int final_base_x = posX + borderPx + bExpand;
+            const int final_base_y = posY + borderPx + bExpand;
 
-            const s16 size = (refreshRate > 60 || !refreshRate) ? 63 : (s32)(63.0/(60.0/refreshRate));
+            // Graph height is fixed at the 60 Hz reference, so the centred FPS text
+            // uses the 60 Hz size at every refresh rate.
+            const s16 size = (s16)sc(63);
             const auto width = renderer->getTextDimensions(FPSavg_c, false, size).first;
 
             const s16 pos_y = size + final_base_y + rectangle_y + ((rectangle_height - size) / 2);
@@ -490,8 +615,9 @@ public:
                     rectangle_height + 2,
                     aWithOpacity(settings.plotBackgroundColor));
 
-            renderer->drawDashedLine(final_base_x+rectangle_x+2 +3, final_base_y+y_30FPS, final_base_x+rectangle_x+rectangle_width+2 -3, final_base_y+y_30FPS, 6, aWithOpacity(settings.dashedLineColor));
-            renderer->drawString(&legend_max[0], false, final_base_x+(rectangle_x-((refreshRate < 100) ? 15 : 22)), final_base_y+(rectangle_y+7), 10, (settings.maxFPSTextColor));
+            renderer->drawDashedLine(final_base_x+rectangle_x+2 +sc(3), final_base_y+y_30FPS, final_base_x+rectangle_x+rectangle_width+2 -sc(3), final_base_y+y_30FPS, 6, aWithOpacity(settings.dashedLineColor));
+            const int legendFontSize = sc(10);
+            renderer->drawString(&legend_max[0], false, final_base_x+(rectangle_x-sc((refreshRate < 100) ? 15 : 22)), final_base_y+(rectangle_y+sc(7)), legendFontSize, (settings.maxFPSTextColor));
             // Right-align the min "0" with the trailing '0' of the max label:
             // place its cursor at the same x as the final '0' in legend_max so both
             // glyphs occupy the exact same pixel columns at any refresh rate.
@@ -499,16 +625,16 @@ public:
             // path as maxAdvanceFps — so both cursor offsets round identically.
             // (lround(xAdvance * currFontSize) can differ by 1 px, causing misalignment.)
             {
-                const int zeroAdvanceFps  = renderer->getTextDimensions("0", false, 10).first;
-                const int maxAdvanceFps   = renderer->getTextDimensions(&legend_max[0], false, 10).first;
+                const int zeroAdvanceFps  = renderer->getTextDimensions("0", false, legendFontSize).first;
+                const int maxAdvanceFps   = renderer->getTextDimensions(&legend_max[0], false, legendFontSize).first;
                 renderer->drawString(&legend_min[0], false,
-                    final_base_x + (rectangle_x - ((refreshRate < 100) ? 15 : 22)) + maxAdvanceFps - zeroAdvanceFps,
-                    final_base_y+(rectangle_y+rectangle_height+3), 10, settings.minFPSTextColor);
+                    final_base_x + (rectangle_x - sc((refreshRate < 100) ? 15 : 22)) + maxAdvanceFps - zeroAdvanceFps,
+                    final_base_y+(rectangle_y+rectangle_height+sc(3)), legendFontSize, settings.minFPSTextColor);
             }
 
             // FPS counter drawn above the dashed line but below the data line.
             if (FPSavg != 254.0)
-                renderer->drawString(FPSavg_c, false, pos_x, pos_y-5, size, settings.fpsColor);
+                renderer->drawString(FPSavg_c, false, pos_x, pos_y-sc(5), size, settings.fpsColor);
 
             mutexLock(&readings_mutex);
             const size_t nReadings = readings.size();
@@ -528,16 +654,17 @@ public:
 
             for (s16 x = x_end; x > static_cast<s16>(x_end - (s16)nReadings); x--) {
                 const size_t idx = nReadings - 1 - (size_t)(x_end - x);
-                s32 y_on_range = readings[idx].value + std::abs(rectangle_range_min) + 1;
-                if (y_on_range < 0) {
-                    y_on_range = 0;
-                } else if (y_on_range > range) {
+                // Map the reading into the fixed 60 Hz reference space (identity at 60 Hz).
+                float y_on_range = (float)readings[idx].value * fpsToGraphScale + (float)(std::abs(rectangle_range_min) + 1);
+                if (y_on_range < 0.0f) {
+                    y_on_range = 0.0f;
+                } else if (y_on_range > (float)range) {
                     isAboveLocal = true;
-                    y_on_range = range;
+                    y_on_range = (float)range;
                 }
 
                 const s16 y = rectangle_y + static_cast<s16>(std::lround(
-                    (float)rectangle_height * ((float)(range - y_on_range) / (float)range)));
+                    (float)rectangle_height * (((float)range - y_on_range) / (float)range)));
 
                 // Snap y_old_local on the rightmost column BEFORE evaluating color
                 // so the first segment is zero-length (a point) and the color check
@@ -548,7 +675,7 @@ public:
 
                 tsl::Color color = settings.mainLineColor;
                 if (y == y_old_local && !isAboveLocal && readings[idx].zero_rounded) {
-                    if (y == y_30FPS || y == y_60FPS)
+                    if (y == y_30_color || y == y_60FPS)
                         color = settings.perfectLineColor;
                     else
                         color = settings.roundedLineColor;
@@ -576,21 +703,24 @@ public:
             mutexUnlock(&readings_mutex);
 
             if (settings.showInfo) {
-                const s16 info_x = final_base_x+rectangle_width+rectangle_x + 6 +8 +1; // +1: follow the 1px-wider border
-                const s16 info_y = final_base_y + 3;
-                const s16 fontSize = 11;
-                
-                // Get line height from font size (we'll use the actual rendered height)
-                const auto testDimensions = renderer->getTextDimensions("A", false, fontSize);
-                const s16 lineHeight = testDimensions.second;
-                
-                // Starting Y position for first line
-                const s16 startY = info_y + lineHeight;
+                const s16 info_x = final_base_x+rectangle_width+rectangle_x + sc(6 +8) +1; // +1: follow the 1px-wider border
+                const s16 fontSize = (s16)sc(11);
+
+                // Row baselines are laid out in 720p units and scaled once, so 1080p is an
+                // exact 1.5x of the 720p layout. Measuring the line height at the scaled
+                // font (17, not 16.5 — and stb truncates ascent/descent separately) and
+                // adding separately-rounded offsets (sc(3), sc(1) per gap) accumulated a
+                // downward drift over 6 rows: big gap above the block, small gap below.
+                // At 720p (displayScale 1) this yields exactly the previous positions:
+                //   row n baseline = final_base_y + 3 + lh + n * (lh + 1)
+                const int lineHeight720 = renderer->getTextDimensions("A", false, 11).second;
+                auto rowY = [&](int n) -> s16 {
+                    const float y720 = 3.0f + (float)lineHeight720 + (float)n * ((float)lineHeight720 + 1.0f);
+                    return (s16)(final_base_y + (int)lround(y720 * displayScale));
+                };
                 
                 // Value X position (offset from labels)
-                const s16 value_x = info_x + 40;
-
-                static constexpr s16 SPACING = 1;
+                const s16 value_x = info_x + sc(40);
                 
                 // Compute gradient colors for temperatures
                 const tsl::Color socColor = settings.useDynamicColors ? tsl::GradientColor(SOC_temperatureF) : settings.textColor;
@@ -599,28 +729,28 @@ public:
                 
                 // Draw each label and value pair on the same baseline
                 // Line 0: CPU
-                renderer->drawString("CPU", false, info_x, startY, fontSize, settings.catColor);
-                renderer->drawString(CPU_Load_c, false, value_x, startY, fontSize, settings.textColor);
+                renderer->drawString("CPU", false, info_x, rowY(0), fontSize, settings.catColor);
+                renderer->drawString(CPU_Load_c, false, value_x, rowY(0), fontSize, settings.textColor);
                 
                 // Line 1: GPU
-                renderer->drawString("GPU", false, info_x, startY + lineHeight+SPACING, fontSize, settings.catColor);
-                renderer->drawString(GPU_Load_c, false, value_x, startY + lineHeight+SPACING, fontSize, settings.textColor);
+                renderer->drawString("GPU", false, info_x, rowY(1), fontSize, settings.catColor);
+                renderer->drawString(GPU_Load_c, false, value_x, rowY(1), fontSize, settings.textColor);
                 
                 // Line 2: RAM
-                renderer->drawString("RAM", false, info_x, startY + lineHeight * 2+2*SPACING, fontSize, settings.catColor);
-                renderer->drawString(RAM_Load_c, false, value_x, startY + lineHeight * 2+2*SPACING, fontSize, settings.textColor);
+                renderer->drawString("RAM", false, info_x, rowY(2), fontSize, settings.catColor);
+                renderer->drawString(RAM_Load_c, false, value_x, rowY(2), fontSize, settings.textColor);
                 
                 // Line 3: SOC (with gradient color)
-                renderer->drawString("SOC", false, info_x, startY + lineHeight * 3+3*SPACING, fontSize, settings.catColor);
-                renderer->drawString(SOC_TEMP_c, false, value_x, startY + lineHeight * 3+3*SPACING, fontSize, socColor);
+                renderer->drawString("SOC", false, info_x, rowY(3), fontSize, settings.catColor);
+                renderer->drawString(SOC_TEMP_c, false, value_x, rowY(3), fontSize, socColor);
                 
                 // Line 4: PCB (with gradient color)
-                renderer->drawString("PCB", false, info_x, startY + lineHeight * 4+4*SPACING, fontSize, settings.catColor);
-                renderer->drawString(PCB_TEMP_c, false, value_x, startY + lineHeight * 4+4*SPACING, fontSize, pcbColor);
+                renderer->drawString("PCB", false, info_x, rowY(4), fontSize, settings.catColor);
+                renderer->drawString(PCB_TEMP_c, false, value_x, rowY(4), fontSize, pcbColor);
                 
                 // Line 5: SKIN (with gradient color)
-                renderer->drawString("Skin", false, info_x, startY + lineHeight * 5+5*SPACING, fontSize, settings.catColor);
-                renderer->drawString(SKIN_TEMP_c, false, value_x, startY + lineHeight * 5+5*SPACING, fontSize, skinColor);
+                renderer->drawString("Skin", false, info_x, rowY(5), fontSize, settings.catColor);
+                renderer->drawString(SKIN_TEMP_c, false, value_x, rowY(5), fontSize, skinColor);
             }
         });
 
@@ -631,6 +761,44 @@ public:
     }
 
     virtual void update() override {
+        apmGetPerformanceMode(&performanceMode);
+
+        // ── Dock-state-change auto-relaunch (mirrors FPS Counter / Mini) ──
+        // The framebuffer size is chosen at launch, so when 1080p docked is enabled
+        // a dock/undock transition relaunches silently to pick the right layout.
+        if (!relaunchRequested &&
+            (performanceMode == ApmPerformanceMode_Normal ||
+             performanceMode == ApmPerformanceMode_Boost)) {
+            const bool isDockedNow = (performanceMode == ApmPerformanceMode_Boost);
+            if (isDockedNow != wasDockedAtLaunch) {
+                const std::string val = ult::parseValueFromIniSection(
+                    configIniPath, "fps-graph", "use_1080p_docked");
+                // Missing key defaults to true (matches setup1080pIfEnabled).
+                bool wants1080p = true;
+                if (!val.empty()) {
+                    std::string upper = val;
+                    for (char& c : upper) c = (char)std::toupper((unsigned char)c);
+                    wants1080p = (upper != "FALSE");
+                }
+                if (wants1080p) {
+                    relaunchRequested = true;
+                    std::string ovlPath = filepath;
+                    if (ovlPath.empty()) ovlPath = folderpath + filename;
+                    std::string newArgs;
+                    if (!originalLaunchArgs.empty())
+                        newArgs = originalLaunchArgs + " --silentLaunch";
+                    else
+                        newArgs = "--silentLaunch";
+                    tsl::setNextOverlay(ovlPath, newArgs);
+                    skipClosingExitFeedback = true;
+                    launchComboHasTriggered.store(true, std::memory_order_release);
+                    ult::launchingOverlay.store(true, std::memory_order_release);
+                    tsl::Overlay::get()->close();
+                    return;
+                }
+            }
+        }
+
         const u64 _nowTick = armGetSystemTick();
 
         // --- Info / value text: refresh at the SAMPLE rate (<= refresh rate) --
@@ -726,8 +894,8 @@ public:
         static bool hasMoved = false;
     
         // Touch detection
-        const bool currentTouchDetected = (touchPos.x > 0 && touchPos.y > 0 && 
-                                    touchPos.x < screenWidth && touchPos.y < screenHeight);
+        const bool currentTouchDetected = ((int)touchPos.x > 0 && (int)touchPos.y > 0 && 
+                                    (int)touchPos.x < screenWidth && (int)touchPos.y < screenHeight);
         
         static bool clearOnRelease = false;
         
@@ -747,26 +915,53 @@ public:
         
         if (totalWidth == 0) {
             // Fallback calculation if not yet rendered (no renderer available)
-            const s16 refresh_rate_offset = (refreshRate < 100) ? 21 : 28;
-            const s16 info_width = settings.showInfo ? (6 + rectangle_width/2 - 4) : 0;
+            const s16 refresh_rate_offset = (s16)sc((refreshRate < 100) ? 21 : 28);
+            const s16 info_width = settings.showInfo ? (s16)(sc(2) + rectangle_width/2) : 0;
             const s16 content_width = rectangle_width + refresh_rate_offset + info_width + 1;
-            const s16 content_height = rectangle_height + 12;
+            const s16 content_height = rectangle_height + (s16)sc(12);
             // Estimate space width from graph height (proxy for font size).
             const float spaceEst = (float)rectangle_height * 0.25f;
             const int btPx = std::max(1, (int)(spaceEst * (float)settings.borderThickness / 10.0f + 0.5f));
             const int bExpandFb = settings.useBorder ? btPx : 0;
-            totalWidth = content_width + (2 * border) + bExpandFb;
-            totalHeight = content_height + (2 * border) + (2 * bExpandFb);
+            totalWidth = content_width + (2 * borderPx) + bExpandFb;
+            totalHeight = content_height + (2 * borderPx) + (2 * bExpandFb);
         }
         
         // Screen boundaries for clamping.
-        // limitedMemory: posX = _frameOffsetX (no border offset), frameOffsetX range = [framePadding, screenWidth-totalWidth-framePadding]
-        // non-limited:   posX = frameOffsetX - border, so add border to both ends of the range
-        const int borderOffset = ult::limitedMemory ? 0 : border;
-        const int minX = framePadding - base_x + borderOffset;
-        const int maxX = screenWidth - totalWidth - base_x - framePadding + borderOffset;
-        const int minY = framePadding - base_y + borderOffset;
-        const int maxY = screenHeight - totalHeight - base_y - framePadding + borderOffset;
+        int minX, maxX, minY, maxY;
+        if (ult::windowedLayerPixelPerfect) {
+            // 1080p: sliding-window-aware bounds — mirrors FPS Counter / Mini.
+            const int maxLayerX1080 = (int)tsl::cfg::ScreenWidth - (int)tsl::cfg::LayerWidth;
+            const int maxBufX1080   = screenWidth - (int)totalWidth - (int)framePadding;
+            minX = (int)(framePadding * 2 + 2) / 3;
+            maxX = std::max(minX, (int)((maxLayerX1080 + std::max(0, maxBufX1080)) / 1.5f));
+
+            const int overlayHeight = (drawCachedHeight > 0) ? (int)drawCachedHeight : (int)totalHeight;
+            if (ult::limitedMemory) {
+                // Limited 1080p: Y in 720-logical space.
+                const int maxLayerY1080 = (int)tsl::cfg::ScreenHeight - (int)tsl::cfg::LayerHeight;
+                const int maxBufY1080   = screenHeight - (int)framePadding - overlayHeight;
+                minY = (int)(framePadding / 1.5f + 0.5f);
+                maxY = std::max(minY, (int)((maxLayerY1080 + std::max(0, maxBufY1080)) / 1.5f));
+            } else {
+                // Full 1080p: Y in framebuffer space (0..1080).
+                minY = (int)framePadding;
+                maxY = screenHeight - overlayHeight - (int)framePadding;
+            }
+        } else {
+            // limitedMemory: posX = _frameOffsetX (no border offset), frameOffsetX range = [framePadding, screenWidth-totalWidth-framePadding]
+            // non-limited:   posX = frameOffsetX - border, so add border to both ends of the range
+            const int borderOffset = ult::limitedMemory ? 0 : border;
+            minX = framePadding - base_x + borderOffset;
+            maxX = screenWidth - totalWidth - base_x - framePadding + borderOffset;
+            minY = framePadding - base_y + borderOffset;
+            maxY = screenHeight - totalHeight - base_y - framePadding + borderOffset;
+        }
+
+        // Y-movement rate normalisation (mirrors FPS Counter / Mini). Full 1080p is 1:1
+        // with VI (1 frameOffsetY unit = 1 display px) while every other mode moves
+        // 1.5 display px per unit, so scale Y by 1.5 in full 1080p only.
+        const float yMovementScale = (ult::windowedLayerPixelPerfect && !ult::limitedMemory) ? 1.5f : 1.0f;
 
         const bool plusDragReady = buttonState.plusDragActive.load(std::memory_order_acquire);
 
@@ -780,7 +975,7 @@ public:
         if (currentTouchDetected && !isDragging && touchDragReady && !oldTouchDragReady) {
             // Poll thread confirmed 500ms in-bounds hold — start drag now
             isDragging = true;
-            triggerOnFeedback();
+            triggerRepositionOnFeedback();
             hasMoved = false;
             initialTouchPos = touchPos;
             initialFrameOffsetX = frameOffsetX;
@@ -790,7 +985,10 @@ public:
             const int touchX = touchPos.x;
             const int touchY = touchPos.y;
             const int deltaX = touchX - initialTouchPos.x;
-            const int deltaY = touchY - initialTouchPos.y;
+            const int rawDeltaY = touchY - initialTouchPos.y;
+            const int deltaY    = (yMovementScale == 1.0f)
+                                ? rawDeltaY
+                                : (int)(rawDeltaY * yMovementScale + (rawDeltaY >= 0 ? 0.5f : -0.5f));
             
             // Check if we've moved enough to consider this a drag
             if (!hasMoved) {
@@ -821,7 +1019,7 @@ public:
             isDragging = false;
             hasMoved = false;
             clearOnRelease = true;
-            triggerOffFeedback(true);
+            triggerRepositionOffFeedback(true);
         }
         oldTouchDragReady = touchDragReady && currentTouchDetected;
     
@@ -829,7 +1027,7 @@ public:
         if (currentPlusHeld && !isDragging) {
             // Start joystick dragging
             isDragging = true;
-            triggerOnFeedback();
+            triggerRepositionOnFeedback();
         } else if (currentPlusHeld && isDragging) {
             // Continue joystick dragging
             static constexpr int JOYSTICK_DEADZONE = 20;
@@ -863,7 +1061,7 @@ public:
                 static float accumulatedY = 0.0f;
                 
                 accumulatedX += (float)activeJoystick.x * currentSensitivity;
-                accumulatedY += -(float)activeJoystick.y * currentSensitivity;
+                accumulatedY += -(float)activeJoystick.y * currentSensitivity * yMovementScale;
                 
                 const int deltaX = (int)accumulatedX;
                 const int deltaY = (int)accumulatedY;
@@ -884,7 +1082,7 @@ public:
             ult::saveIniFileData(configIniPath, iniData);
             isDragging = false;
             clearOnRelease = true;
-            triggerOffFeedback(true);
+            triggerRepositionOffFeedback(true);
         }
         
         // Update state for next frame

@@ -82,6 +82,15 @@ private:
     uint8_t resolutionLookup = 0;
     bool resolutionShow = false;
 
+    // Game-data item visibility decided by the most recent update(), from ONE read
+    // of the cross-thread GameRunning flag. The draw pass filters FPS/RES/READ by
+    // these instead of the live globals, so item filtering, widths and text always
+    // come from the same snapshot (update() and draw run back-to-back on one thread).
+    bool gameItemFps  = false;
+    bool gameItemRes  = false;
+    bool gameItemRead = false;
+    bool lastGameRunningSnap = false; // detects a game-state flip to force a data refresh
+
     std::vector<RenderItem> renderItems;
     uint32_t cachedMargin = 0;
     int32_t  cachedAscent = 0;      // pixels above baseline
@@ -466,13 +475,13 @@ private:
                         isRendering = false;
                         leventSignal(&renderingStopEvent);
                     }
-                    triggerOnFeedback();
+                    triggerRepositionOnFeedback();
                 }
             } else {
                 if (self->plusFocusActive.load(std::memory_order_acquire)) {
                     // Plus released while focus mode was active — deactivate.
                     self->plusFocusActive.store(false, std::memory_order_release);
-                    triggerOffFeedback(true);
+                    triggerRepositionOffFeedback(true);
                 }
                 plusHoldStart = 0;
             }
@@ -607,7 +616,9 @@ public:
             } else {
                 Max17050ReadReg(MAX17050_TTE, &data);
                 const float batteryTimeEstimateInMinutes = (5.625 * data) / 60;
-                if (batteryTimeEstimateInMinutes > (99.0*60.0)+59.0) {
+                if (data == 0xFFFF || data == 0) {
+                    batTimeEstimate = -1; // gauge has no real estimate yet (just unplugged)
+                } else if (batteryTimeEstimateInMinutes > (99.0*60.0)+59.0) {
                     batTimeEstimate = (99*60)+59;
                 } else {
                     batTimeEstimate = (int16_t)batteryTimeEstimateInMinutes;
@@ -895,16 +906,16 @@ public:
             for (auto& item : renderItems) {
                 //if (item.type == 6) { // BAT
                 //    battery_item = &item;
-                if (item.type == 5 && (!GameRunning || (strcmp(FPS_var_compressed_c, "254.0") == 0) || (strcmp(FPS_var_compressed_c, "254") == 0))) {
+                if (item.type == 5 && !gameItemFps) {
                     // Skip FPS if no game running
                     continue;
-                } else if (item.type == 7 && (!GameRunning || !m_resolutionOutput[0].width)) {
+                } else if (item.type == 7 && !gameItemRes) {
                     // Skip RES if no game running or no resolution data yet
                     continue;
                 } else if (item.type == 8 && !settings.showDTC) {
                     // Skip DTC if disabled in settings
                     continue;
-                } else if (item.type == 9 && (!GameRunning || !NxFps)) {
+                } else if (item.type == 9 && !gameItemRead) {
                     // Skip READ if no game running or no NxFps available
                     continue;
                 } else {
@@ -2622,7 +2633,13 @@ public:
         // but we only rebuild the display strings at 1/sampleRate intervals.
         const u64 nowTick = armGetSystemTick();
         const u64 pollIntervalTicks = systemtickfrequency / settings.sampleRate;
-        const bool shouldUpdateData = (nowTick - lastDataUpdateTick) >= pollIntervalTicks;
+        // Snapshot the game state once for this update. A flip (game start/exit,
+        // HOME / return) forces an immediate data refresh so the strings match the
+        // new visibility on this very frame instead of up to one sample later.
+        const bool gameRunningSnap = GameRunning;
+        const bool gameStateFlipped = (gameRunningSnap != lastGameRunningSnap);
+        lastGameRunningSnap = gameRunningSnap;
+        const bool shouldUpdateData = gameStateFlipped || (nowTick - lastDataUpdateTick) >= pollIntervalTicks;
         if (shouldUpdateData) lastDataUpdateTick = nowTick;
 
         if (shouldUpdateData) {
@@ -3129,7 +3146,7 @@ public:
 
         // Resolution processing
         //char RES_var_compressed_c[32] = "";
-        if (GameRunning && NxFps && resolutionShow) {
+        if (gameRunningSnap && NxFps && resolutionShow) {
             if (!resolutionLookup) {
                 if (NxFps && SharedMemoryUsed) {
                     (NxFps -> renderCalls[0].calls) = 0xFFFF;
@@ -3149,8 +3166,8 @@ public:
                     memset(&m_resolutionRenderCalls, 0, sizeof(m_resolutionRenderCalls));
                     memset(&m_resolutionViewportCalls, 0, sizeof(m_resolutionViewportCalls));
                 }
-                qsort(m_resolutionRenderCalls, 8, sizeof(resolutionCalls), compare);
-                qsort(m_resolutionViewportCalls, 8, sizeof(resolutionCalls), compare);
+                qsort(m_resolutionRenderCalls, 8, sizeof(resolutionCalls), settings.prioritizeMax169 ? compare : compareOriginal);
+                qsort(m_resolutionViewportCalls, 8, sizeof(resolutionCalls), settings.prioritizeMax169 ? compare : compareOriginal);
                 memset(&m_resolutionOutput, 0, sizeof(m_resolutionOutput));
                 size_t out_iter = 0;
                 bool found = false;
@@ -3199,12 +3216,15 @@ public:
                         if (out_iter == 8) break;
                     }
                 }
-                qsort(m_resolutionOutput, 8, sizeof(resolutionCalls), compare);
+                if (settings.prioritizeMax169) qsort(m_resolutionOutput, 8, sizeof(resolutionCalls), compare);
+                else sortResolutionsClassic(m_resolutionOutput, 8); // stable: ties keep merge order
 
                 // Prioritize 16:9 aspect ratios (e.g. 1280x720, 1920x1080) so the
                 // actual game render resolution appears before UI/buffer resolutions.
                 // stable_partition moves all 16:9 entries to the front while keeping
                 // non-16:9 entries after them; both groups retain their call-count order.
+                // Only with "Prioritize Max 16:9" on; off (default) = original Status Monitor order.
+                if (settings.prioritizeMax169) {
                 std::stable_partition(m_resolutionOutput, m_resolutionOutput + 8,
                     [](const resolutionCalls& r) {
                         return r.width != 0 && (r.width * 9 == r.height * 16);
@@ -3221,6 +3241,7 @@ public:
                     [](const resolutionCalls& a, const resolutionCalls& b) {
                         return (uint32_t)a.width * a.height > (uint32_t)b.width * b.height;
                     });
+                }
 
                 // Anti-flicker swap logic
                 static std::pair<uint16_t, uint16_t> old_res[2];
@@ -3233,7 +3254,8 @@ public:
                     const uint16_t sw1 = m_resolutionOutput[1].width, sh1 = m_resolutionOutput[1].height;
                     const bool slot0is169 = (sw0 * 9 == sh0 * 16);
                     const bool slot1is169 = (sw1 * 9 == sh1 * 16);
-                    const bool swapWouldDemote169 = slot0is169 && !slot1is169;
+                    // (Prioritize Max 16:9 off: original unconditional swap, no 16:9 guard.)
+                    const bool swapWouldDemote169 = settings.prioritizeMax169 && slot0is169 && !slot1is169;
                     if (!swapWouldDemote169 &&
                         ((sw0 == old_res[1].first && sh0 == old_res[1].second) ||
                          (sw1 == old_res[0].first && sh1 == old_res[0].second))) {
@@ -3274,7 +3296,7 @@ public:
                 old_res[1] = std::make_pair(m_resolutionOutput[1].width, m_resolutionOutput[1].height);
             }
         }
-        else if (!GameRunning && resolutionLookup != 0) {
+        else if (!gameRunningSnap && resolutionLookup != 0) {
             resolutionLookup = 0;
         }
 
@@ -3286,7 +3308,7 @@ public:
 
 
         // Read Speed
-        if (GameRunning && NxFps && SharedMemoryUsed) {
+        if (gameRunningSnap && NxFps && SharedMemoryUsed) {
             float readSpeed = 0.0f;
             memcpy(&readSpeed, &(NxFps->readSpeedPerSecond), sizeof(float));
             if (readSpeed != 0.f) {
@@ -3300,6 +3322,13 @@ public:
 
         mutexUnlock(&mutex_Misc);
         } // end shouldUpdateData
+
+        // Publish this frame's game-item visibility (consumed by the draw pass).
+        gameItemFps  = gameRunningSnap &&
+                       (strcmp(FPS_var_compressed_c, "254.0") != 0) &&
+                       (strcmp(FPS_var_compressed_c, "254") != 0);
+        gameItemRes  = gameRunningSnap && m_resolutionOutput[0].width;
+        gameItemRead = gameRunningSnap && NxFps;
 
         // Format current datetime for DTC — or the Stop Watch elapsed timer when active.
         // Kept OUTSIDE the sampleRate gate so the timer advances at the overlay refresh

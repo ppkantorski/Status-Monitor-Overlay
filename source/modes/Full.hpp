@@ -178,13 +178,13 @@ private:
                         isRendering = false;
                         leventSignal(&renderingStopEvent);
                     }
-                    triggerOnFeedback();
+                    triggerRepositionOnFeedback();
                 }
             } else {
                 if (self->plusFocusActive.load(std::memory_order_acquire)) {
                     // Plus released while focus mode was active - deactivate.
                     self->plusFocusActive.store(false, std::memory_order_release);
-                    triggerOffFeedback(true);
+                    triggerRepositionOffFeedback(true);
                 }
                 plusHoldStart = 0;
             }
@@ -552,7 +552,7 @@ public:
             renderer->drawString(" to Exit", false, baseX + pressWidth + keyComboWidth, baseY, fontSize, (tsl::bottomTextColor));
         });
         
-        auto rootFrame = new tsl::elm::HeaderOverlayFrame("Status Monitor", APP_VERSION);
+        auto rootFrame = new tsl::elm::HeaderOverlayFrame("Status Monitor", versionSubtitle());
         rootFrame->setContent(Status);
 
         return rootFrame;
@@ -711,8 +711,8 @@ public:
                     memset(&m_resolutionRenderCalls, 0, sizeof(m_resolutionRenderCalls));
                     memset(&m_resolutionViewportCalls, 0, sizeof(m_resolutionViewportCalls));
                 }
-                qsort(m_resolutionRenderCalls, 8, sizeof(resolutionCalls), compare);
-                qsort(m_resolutionViewportCalls, 8, sizeof(resolutionCalls), compare);
+                qsort(m_resolutionRenderCalls, 8, sizeof(resolutionCalls), settings.prioritizeMax169 ? compare : compareOriginal);
+                qsort(m_resolutionViewportCalls, 8, sizeof(resolutionCalls), settings.prioritizeMax169 ? compare : compareOriginal);
                 memset(&m_resolutionOutput, 0, sizeof(m_resolutionOutput));
                 size_t out_iter = 0;
                 bool found = false;
@@ -761,13 +761,21 @@ public:
                         if (out_iter == 8) break;
                     }
                 }
-                qsort(m_resolutionOutput, 8, sizeof(resolutionCalls), compare);
+                if (settings.prioritizeMax169) qsort(m_resolutionOutput, 8, sizeof(resolutionCalls), compare);
+                else sortResolutionsClassic(m_resolutionOutput, 8); // stable: ties keep merge order
+                if (settings.prioritizeMax169) prioritizeMax169Order(m_resolutionOutput, 8);
                 static std::pair<uint16_t, uint16_t> old_res[2];
                 
-                // Only swap if BOTH resolutions exist (prevent swapping with empty slot)
+                // Only swap if BOTH resolutions exist (prevent swapping with empty slot).
+                // With Prioritize Max 16:9 on, never swap a 16:9 entry behind a non-16:9
+                // one (same guard as Mini/Micro).
                 if (m_resolutionOutput[0].width && m_resolutionOutput[1].width) {
-                    if ((m_resolutionOutput[0].width == old_res[1].first && m_resolutionOutput[0].height == old_res[1].second) || 
-                        (m_resolutionOutput[1].width == old_res[0].first && m_resolutionOutput[1].height == old_res[0].second)) {
+                    const bool swapWouldDemote169 = settings.prioritizeMax169 &&
+                        (m_resolutionOutput[0].width * 9 == m_resolutionOutput[0].height * 16) &&
+                        !(m_resolutionOutput[1].width * 9 == m_resolutionOutput[1].height * 16);
+                    if (!swapWouldDemote169 &&
+                        ((m_resolutionOutput[0].width == old_res[1].first && m_resolutionOutput[0].height == old_res[1].second) || 
+                        (m_resolutionOutput[1].width == old_res[0].first && m_resolutionOutput[1].height == old_res[0].second))) {
                         const uint16_t swap_width = m_resolutionOutput[0].width;
                         const uint16_t swap_height = m_resolutionOutput[0].height;
                         m_resolutionOutput[0].width = m_resolutionOutput[1].width;

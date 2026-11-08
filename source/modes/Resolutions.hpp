@@ -14,8 +14,25 @@ private:
     int frameOffsetY = 0;
     bool isDragging = false;
     size_t framePadding = 10;
-    static constexpr int screenWidth = 1280;
-    static constexpr int screenHeight = 720;
+    // Framebuffer coordinate space: 1280x720 normally, 832x1080 (full) or 832x554
+    // (limited) in 1080p pixel-perfect docked mode. Set in the constructor.
+    int screenWidth  = 1280;
+    int screenHeight = 720;
+
+    // ── 1080p pixel-perfect docked mode (mirrors FPS Counter / Mini) ──
+    float  displayScale      = 1.0f;   // 1.5 in 1080p pixel-perfect mode, 1.0 otherwise
+    int    _frameOffsetX1080 = 0;      // content X offset within 832px buffer (updated by updateLayerPos)
+    int    _frameOffsetY1080 = 0;      // content Y offset within buffer (updated by updateLayerPos)
+    ApmPerformanceMode performanceMode = ApmPerformanceMode_Invalid;
+    bool wasDockedAtLaunch = false;    // dock-state-change auto-relaunch guard
+    bool relaunchRequested = false;
+    size_t drawCachedHeight = 0;       // authoritative rendered height (set each draw)
+    int    actualTotalWidth  = 0;      // rendered box size (incl. border expansion), for input clamping
+    int    actualTotalHeight = 0;
+
+    // Scale a base (720p) pixel distance into framebuffer pixels.
+    // Identity at displayScale == 1.0, so 720p geometry is unchanged.
+    inline int sc(float v) const { return (int)lround(v * displayScale); }
 
     bool originalUseRightAlignment = ult::useRightAlignment;
 
@@ -30,6 +47,37 @@ private:
     std::atomic<bool> inputDetected{false};
 
     void updateLayerPos() {
+        if (ult::windowedLayerPixelPerfect) {
+            // X: sliding-window — mirrors FPS Counter / Mini exactly.
+            const int contentViX = (int)(frameOffsetX * 1.5f + 0.5f);
+            const int maxLayerX  = (int)tsl::cfg::ScreenWidth - (int)tsl::cfg::LayerWidth;
+            const int layerViX   = std::max(0, std::min(contentViX - (int)framePadding, maxLayerX));
+            _frameOffsetX1080    = contentViX - layerViX;
+
+            if (!ult::limitedMemory) {
+                // Full 1080p: 832x1080 layer pinned at Y=0 — always top+bottom anchored.
+                tsl::gfx::Renderer::get().setLayerPos(layerViX, 0);
+                return;
+            }
+
+            // Limited 1080p: 832x554 framebuffer, layer slides vertically.
+            const int maxLayerY      = (int)tsl::cfg::ScreenHeight - (int)tsl::cfg::LayerHeight;
+            const int centeredLayerY = std::max(0, maxLayerY / 2);
+            const int contentViY     = (int)(frameOffsetY * 1.5f + 0.5f);
+            int layerViY;
+            const int contentH   = (int)drawCachedHeight + 2 * (int)framePadding;
+            const bool fitsInBuffer = (contentH <= 554);
+            if (!fitsInBuffer) {
+                layerViY          = centeredLayerY;
+                _frameOffsetY1080 = contentViY - centeredLayerY;
+            } else {
+                layerViY          = std::max(0, std::min(contentViY - (int)framePadding, maxLayerY));
+                _frameOffsetY1080 = contentViY - layerViY;
+            }
+            _frameOffsetY1080 = std::max(0, std::min(_frameOffsetY1080, 553));
+            tsl::gfx::Renderer::get().setLayerPos(layerViX, layerViY);
+            return;
+        }
         if (!ult::limitedMemory) return;
         const int pos = std::max(std::min(
             (int)(frameOffsetX * 1.5f + 0.5f) - tsl::impl::currentUnderscanPixels.first,
@@ -42,11 +90,26 @@ public:
         tsl::hlp::requestForeground(false);
         disableJumpTo = true;
         GetConfigSettings(&settings);
+
+        // Determine 1080p mode — mirrors FPS Counter / Mini constructor logic.
+        // ult::windowedLayerPixelPerfect is set by main() via setup1080pIfEnabled
+        // before tsl::loop<> is called.
+        const bool is1080p        = ult::windowedLayerPixelPerfect;
+        const bool isLimited1080p = is1080p && ult::limitedMemory;
+        displayScale = is1080p ? 1.5f : 1.0f;
+        screenWidth  = is1080p ?  832 : 1280;
+        screenHeight = isLimited1080p ? 554 : (is1080p ? 1080 : 720);
+
+        apmGetPerformanceMode(&performanceMode);
+        if (is1080p) performanceMode = ApmPerformanceMode_Boost;
+        // Capture dock state for the auto-relaunch guard in update().
+        wasDockedAtLaunch = is1080p || (performanceMode == ApmPerformanceMode_Boost);
         
         // Load saved frame offsets
         frameOffsetX = settings.frameOffsetX;
         frameOffsetY = settings.frameOffsetY;
-        framePadding = settings.framePadding;
+        // Scale framePadding so it represents the same visual size across modes.
+        framePadding = (size_t)(settings.framePadding * displayScale + 0.5f);
         
         updateLayerPos();
 
@@ -257,12 +320,12 @@ public:
             int base_x = 0;
             int clippingOffsetX = 0, clippingOffsetY = 0;
         
-            int total_width = 360 - 20;
-            int total_height = 200;
+            int total_width = sc(360 - 20);
+            int total_height = sc(200);
 
             // Space width at fixed reference size — used for both borderThicknessPx and
             // cornerRadius below, so we compute it once here before bExpand.
-            const float _crSpW = (float)renderer->getTextDimensions(" ", false, 16).first;
+            const float _crSpW = (float)renderer->getTextDimensions(" ", false, sc(16)).first;
             const float _crSpace = (_crSpW > 0.5f) ? _crSpW : 4.0f;
             const int borderThicknessPx = std::max(1, (int)(_crSpace * (float)settings.borderThickness / 10.0f + 0.5f));
 
@@ -273,11 +336,57 @@ public:
             const int bExpand = settings.useBorder ? borderThicknessPx : 0;
             total_width  += bExpand;
             total_height += 2 * bExpand;
+
+            // Store rendered size for handleInput clamping / limited-1080p layer fit.
+            actualTotalWidth  = total_width;
+            actualTotalHeight = total_height;
+            drawCachedHeight  = total_height;
             
             int _frameOffsetX;
             
+            if (ult::windowedLayerPixelPerfect) {
+                // 1080p pixel-perfect mode (mirrors FPS Counter).
+                // updateLayerPos() computes _frameOffsetX1080 / _frameOffsetY1080 so
+                // screenPos = layerViPos + bufferOffset = contentViPos (seamless).
+                // frameOffsetX is the box's left edge in 720-logical space.
+                const int minFrameX = (int)((framePadding * 2 + 2) / 3);
+                const int maxLayerX1080 = (int)tsl::cfg::ScreenWidth - (int)tsl::cfg::LayerWidth;
+                const int maxBufX1080   = screenWidth - total_width - (int)framePadding;
+                const int maxFrameX = std::max(minFrameX,
+                    (int)((maxLayerX1080 + std::max(0, maxBufX1080)) / 1.5f));
+                frameOffsetX = std::max(minFrameX, std::min(maxFrameX, frameOffsetX));
+
+                if (!ult::limitedMemory) {
+                    // Full 1080p: Y runs 0..1080 in framebuffer space.
+                    const int minFrameY = (int)framePadding;
+                    const int maxFrameY = screenHeight - (int)framePadding - total_height;
+                    frameOffsetY = std::max(minFrameY, std::min(maxFrameY, frameOffsetY));
+                } else {
+                    // Limited 1080p: Y is in 720-logical space, updateLayerPos maps to buffer.
+                    const int maxLayerY1080 = (int)tsl::cfg::ScreenHeight - (int)tsl::cfg::LayerHeight;
+                    const int maxBufY1080   = screenHeight - (int)framePadding - total_height;
+                    const int minFrameY720  = (int)(framePadding / 1.5f + 0.5f);
+                    const int maxFrameY720  = std::max(minFrameY720,
+                        (int)((maxLayerY1080 + std::max(0, maxBufY1080)) / 1.5f));
+                    frameOffsetY = std::max(minFrameY720, std::min(maxFrameY720, frameOffsetY));
+                }
+
+                updateLayerPos();
+
+                // Draw position inside the 832px buffer. Expressed via clippingOffset so the
+                // shared final_base_x/y computation below is unchanged:
+                //   final_base = base(0) + _frameOffsetX + clippingOffset.
+                _frameOffsetX = std::max((int)framePadding,
+                    std::min(_frameOffsetX1080, screenWidth - total_width - (int)framePadding));
+                if (!ult::limitedMemory) {
+                    clippingOffsetY = 0; // frameOffsetY is 1:1 with the framebuffer
+                } else {
+                    const int bufY = std::max((int)framePadding,
+                        std::min(_frameOffsetY1080, screenHeight - total_height - (int)framePadding));
+                    clippingOffsetY = bufY - frameOffsetY;
+                }
             // In limited memory mode, correct frameOffsetX first, then calculate _frameOffsetX
-            if (ult::limitedMemory) {
+            } else if (ult::limitedMemory) {
                 // Calculate valid range for frameOffsetX (in full 1280px coordinate space)
                 const int minFrameX = framePadding - base_x;
                 const int maxFrameX = screenWidth - framePadding - total_width - base_x;
@@ -344,12 +453,12 @@ public:
                 waitingForGame = true; // reset waiting state so next missing cycle shows "Checking..."
                 renderer->drawRoundedRectSingleThreaded(final_base_x + borderOffset, final_base_y + borderOffset, total_width - (2*borderOffset), total_height - (2*borderOffset), cornerRadius, aWithOpacity(bgColor));
         
-                int xOffset = 10;
-                int yOffset = 10 + bExpand; // shift down by bExpand to stay clear of expanded top border
-                renderer->drawString("Depth", false, xOffset + final_base_x + 20, yOffset + final_base_y + 20, 20, settings.catColor);
-                renderer->drawString(Resolutions_c, false, xOffset + final_base_x + 20, yOffset + final_base_y + 55, 18, settings.textColor);
-                renderer->drawString("Viewport", false, xOffset + final_base_x + 180, yOffset + final_base_y + 20, 20, settings.catColor);
-                renderer->drawString(Resolutions2_c, false, xOffset + final_base_x + 180, yOffset + final_base_y + 55, 18, settings.textColor);
+                int xOffset = sc(10);
+                int yOffset = sc(10) + bExpand; // shift down by bExpand to stay clear of expanded top border
+                renderer->drawString("Depth", false, xOffset + final_base_x + sc(20), yOffset + final_base_y + sc(20), sc(20), settings.catColor);
+                renderer->drawString(Resolutions_c, false, xOffset + final_base_x + sc(20), yOffset + final_base_y + sc(55), sc(18), settings.textColor);
+                renderer->drawString("Viewport", false, xOffset + final_base_x + sc(180), yOffset + final_base_y + sc(20), sc(20), settings.catColor);
+                renderer->drawString(Resolutions2_c, false, xOffset + final_base_x + sc(180), yOffset + final_base_y + sc(55), sc(18), settings.textColor);
             }
             // Game not detected
             else {
@@ -367,11 +476,12 @@ public:
                     waitingForGame = false;
                 }
         
-                const auto [textWidth, textHeight] = renderer->getTextDimensions(msg, false, 20);
+                const int msgFontSize = sc(20);
+                const auto [textWidth, textHeight] = renderer->getTextDimensions(msg, false, msgFontSize);
                 const int text_x = final_base_x + (total_width - textWidth) / 2;
                 const int text_y = final_base_y + (total_height) / 2;
                 
-                renderer->drawString(msg, false, text_x, (under100ms && waitingForGame) ? text_y+textHeight/2 : text_y, 20, (under100ms && waitingForGame) ? 0xFFFF : 0xF00F);
+                renderer->drawString(msg, false, text_x, (under100ms && waitingForGame) ? text_y+textHeight/2 : text_y, msgFontSize, (under100ms && waitingForGame) ? 0xFFFF : 0xF00F);
             }
 
             if (settings.useBorder) {
@@ -390,6 +500,43 @@ public:
     }
 
     virtual void update() override {
+        apmGetPerformanceMode(&performanceMode);
+
+        // ── Dock-state-change auto-relaunch (mirrors FPS Counter / Mini) ──
+        // The framebuffer size is chosen at launch, so when 1080p docked is enabled
+        // a dock/undock transition relaunches silently to pick the right layout.
+        if (!relaunchRequested &&
+            (performanceMode == ApmPerformanceMode_Normal ||
+             performanceMode == ApmPerformanceMode_Boost)) {
+            const bool isDockedNow = (performanceMode == ApmPerformanceMode_Boost);
+            if (isDockedNow != wasDockedAtLaunch) {
+                const std::string val = ult::parseValueFromIniSection(
+                    configIniPath, "game_resolutions", "use_1080p_docked");
+                // Missing key defaults to true (matches setup1080pIfEnabled).
+                bool wants1080p = true;
+                if (!val.empty()) {
+                    std::string upper = val;
+                    for (char& c : upper) c = (char)std::toupper((unsigned char)c);
+                    wants1080p = (upper != "FALSE");
+                }
+                if (wants1080p) {
+                    relaunchRequested = true;
+                    std::string ovlPath = filepath;
+                    if (ovlPath.empty()) ovlPath = folderpath + filename;
+                    std::string newArgs;
+                    if (!originalLaunchArgs.empty())
+                        newArgs = originalLaunchArgs + " --silentLaunch";
+                    else
+                        newArgs = "--silentLaunch";
+                    tsl::setNextOverlay(ovlPath, newArgs);
+                    skipClosingExitFeedback = true;
+                    launchComboHasTriggered.store(true, std::memory_order_release);
+                    ult::launchingOverlay.store(true, std::memory_order_release);
+                    tsl::Overlay::get()->close();
+                    return;
+                }
+            }
+        }
 
         const u64 _nowTick = armGetSystemTick();
         const bool shouldUpdateData = (_nowTick - lastDataUpdateTick) >= (systemtickfrequency / settings.sampleRate);
@@ -407,8 +554,12 @@ public:
             }
             memcpy(&m_resolutionRenderCalls, &(NxFps -> renderCalls), sizeof(m_resolutionRenderCalls));
             memcpy(&m_resolutionViewportCalls, &(NxFps -> viewportCalls), sizeof(m_resolutionViewportCalls));
-            qsort(m_resolutionRenderCalls, 8, sizeof(resolutionCalls), compare);
-            qsort(m_resolutionViewportCalls, 8, sizeof(resolutionCalls), compare);
+            qsort(m_resolutionRenderCalls, 8, sizeof(resolutionCalls), settings.prioritizeMax169 ? compare : compareOriginal);
+            qsort(m_resolutionViewportCalls, 8, sizeof(resolutionCalls), settings.prioritizeMax169 ? compare : compareOriginal);
+            if (settings.prioritizeMax169) {
+                prioritizeMax169Order(m_resolutionRenderCalls, 8);
+                prioritizeMax169Order(m_resolutionViewportCalls, 8);
+            }
             snprintf(Resolutions_c, sizeof Resolutions_c,
                 "%dx%d, %d\n"
                 "%dx%d, %d\n"
@@ -480,8 +631,8 @@ public:
         static bool hasMoved = false;
     
         // Better touch detection - check if coordinates are within reasonable screen bounds
-        const bool currentTouchDetected = (touchPos.x > 0 && touchPos.y > 0 && 
-                                    touchPos.x < screenWidth && touchPos.y < screenHeight);
+        const bool currentTouchDetected = ((int)touchPos.x > 0 && (int)touchPos.y > 0 && 
+                                    (int)touchPos.x < screenWidth && (int)touchPos.y < screenHeight);
         
         static bool clearOnRelease = false;
 
@@ -510,22 +661,53 @@ public:
         
         // Overlay dimensions based on game state
         int overlayWidth, overlayHeight;
-        overlayWidth = 360-20;
-        overlayHeight = 200;
-        // Expand to match draw path when border is on
-        if (settings.useBorder) {
-            // Fixed reference space width (4.0px at size 16), same fallback as _crSpace floor.
-            const float spaceRef = 4.0f;
-            const int btPx = std::max(1, (int)(spaceRef * (float)settings.borderThickness / 10.0f + 0.5f));
-            overlayWidth  += btPx;
-            overlayHeight += 2 * btPx;
+        if (actualTotalWidth > 0) {
+            // Exact size from the last draw (already scaled + border-expanded).
+            overlayWidth  = actualTotalWidth;
+            overlayHeight = actualTotalHeight;
+        } else {
+            overlayWidth = sc(360-20);
+            overlayHeight = sc(200);
+            // Expand to match draw path when border is on
+            if (settings.useBorder) {
+                // Fixed reference space width (4.0px at size 16), same fallback as _crSpace floor.
+                const float spaceRef = 4.0f * displayScale;
+                const int btPx = std::max(1, (int)(spaceRef * (float)settings.borderThickness / 10.0f + 0.5f));
+                overlayWidth  += btPx;
+                overlayHeight += 2 * btPx;
+            }
         }
         
         // Screen boundaries for clamping
-        const int minX = -cachedBaseX + framePadding;
-        const int maxX = screenWidth - overlayWidth - cachedBaseX - framePadding;
-        const int minY = -cachedBaseY + framePadding;
-        const int maxY = screenHeight - overlayHeight - cachedBaseY - framePadding;
+        int minX, maxX, minY, maxY;
+        if (ult::windowedLayerPixelPerfect) {
+            // 1080p: sliding-window-aware bounds — mirrors FPS Counter / Mini.
+            const int maxLayerX1080 = (int)tsl::cfg::ScreenWidth - (int)tsl::cfg::LayerWidth;
+            const int maxBufX1080   = screenWidth - overlayWidth - (int)framePadding;
+            minX = (int)(framePadding * 2 + 2) / 3;
+            maxX = std::max(minX, (int)((maxLayerX1080 + std::max(0, maxBufX1080)) / 1.5f));
+            if (ult::limitedMemory) {
+                // Limited 1080p: Y in 720-logical space.
+                const int maxLayerY1080 = (int)tsl::cfg::ScreenHeight - (int)tsl::cfg::LayerHeight;
+                const int maxBufY1080   = screenHeight - (int)framePadding - overlayHeight;
+                minY = (int)(framePadding / 1.5f + 0.5f);
+                maxY = std::max(minY, (int)((maxLayerY1080 + std::max(0, maxBufY1080)) / 1.5f));
+            } else {
+                // Full 1080p: Y in framebuffer space (0..1080).
+                minY = (int)framePadding;
+                maxY = screenHeight - overlayHeight - (int)framePadding;
+            }
+        } else {
+            minX = -cachedBaseX + framePadding;
+            maxX = screenWidth - overlayWidth - cachedBaseX - framePadding;
+            minY = -cachedBaseY + framePadding;
+            maxY = screenHeight - overlayHeight - cachedBaseY - framePadding;
+        }
+
+        // Y-movement rate normalisation (mirrors FPS Counter / Mini). Full 1080p is 1:1
+        // with VI (1 frameOffsetY unit = 1 display px) while every other mode moves
+        // 1.5 display px per unit, so scale Y by 1.5 in full 1080p only.
+        const float yMovementScale = (ult::windowedLayerPixelPerfect && !ult::limitedMemory) ? 1.5f : 1.0f;
 
         const bool plusDragReady = buttonState.plusDragActive.load(std::memory_order_acquire);
 
@@ -539,7 +721,7 @@ public:
         if (currentTouchDetected && !isDragging && touchDragReady && !oldTouchDragReady) {
             // Poll thread confirmed 500ms in-bounds hold — start drag now
             isDragging = true;
-            triggerOnFeedback();
+            triggerRepositionOnFeedback();
             hasMoved = false;
             initialTouchPos = touchPos;
             initialFrameOffsetX = frameOffsetX;
@@ -549,7 +731,10 @@ public:
             const int touchX = touchPos.x;
             const int touchY = touchPos.y;
             const int deltaX = touchX - initialTouchPos.x;
-            const int deltaY = touchY - initialTouchPos.y;
+            const int rawDeltaY = touchY - initialTouchPos.y;
+            const int deltaY    = (yMovementScale == 1.0f)
+                                ? rawDeltaY
+                                : (int)(rawDeltaY * yMovementScale + (rawDeltaY >= 0 ? 0.5f : -0.5f));
             
             // Check if we've moved enough to consider this a drag
             if (!hasMoved) {
@@ -585,7 +770,7 @@ public:
             isDragging = false;
             hasMoved = false;
             clearOnRelease = true;
-            triggerOffFeedback(true);
+            triggerRepositionOffFeedback(true);
         }
         oldTouchDragReady = touchDragReady && currentTouchDetected;
     
@@ -593,7 +778,7 @@ public:
         if (currentPlusHeld && !isDragging) {
             // Start joystick dragging
             isDragging = true;
-            triggerOnFeedback();
+            triggerRepositionOnFeedback();
         } else if (currentPlusHeld && isDragging) {
             // Continue joystick dragging
             static constexpr int JOYSTICK_DEADZONE = 20;
@@ -627,7 +812,7 @@ public:
                 static float accumulatedY = 0.0f;
                 
                 accumulatedX += (float)activeJoystick.x * currentSensitivity;
-                accumulatedY += -(float)activeJoystick.y * currentSensitivity;
+                accumulatedY += -(float)activeJoystick.y * currentSensitivity * yMovementScale;
                 
                 const int deltaX = (int)accumulatedX;
                 const int deltaY = (int)accumulatedY;
@@ -653,7 +838,7 @@ public:
             ult::saveIniFileData(configIniPath, iniData);
             isDragging = false;
             clearOnRelease = true;
-            triggerOffFeedback(true);
+            triggerRepositionOffFeedback(true);
         }
         
         // Update state for next frame

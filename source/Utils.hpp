@@ -61,6 +61,61 @@ constexpr const char* directoryPath = "sdmc:/config/status-monitor/";
 constexpr const char* configIniPath = "sdmc:/config/status-monitor/config.ini";
 constexpr const char* ultrahandConfigIniPath = "sdmc:/config/ultrahand/config.ini";
 constexpr const char* teslaConfigIniPath = "sdmc:/config/tesla/config.ini";
+constexpr const char* saltyNXToolboxPath = "sdmc:/atmosphere/contents/0000000000534C56/toolbox.json";
+
+// SaltyNX version from its toolbox.json ({"name":"SaltyNX", ..., "version":"2.1.4"}),
+// cleaned the same way Ultrahand cleans the nx-ovlloader version (digits/dots/'+').
+// Returns "" if the file is missing or has no version. Read once and cached.
+inline const std::string& getSaltyNXVersion() {
+    static bool loaded = false;
+    static std::string version;
+    if (loaded) return version;
+    loaded = true;
+
+    FILE* f = fopen(saltyNXToolboxPath, "r");
+    if (!f) return version;
+    char buf[1024];
+    const size_t n = fread(buf, 1, sizeof(buf) - 1, f);
+    fclose(f);
+    buf[n] = '\0';
+
+    // Minimal extraction of the "version" string value (file is a tiny flat object).
+    const std::string s(buf);
+    size_t p = s.find("\"version\"");
+    if (p == std::string::npos) return version;
+    p = s.find(':', p);
+    if (p == std::string::npos) return version;
+    p = s.find('"', p);
+    if (p == std::string::npos) return version;
+    const size_t e = s.find('"', p + 1);
+    if (e == std::string::npos) return version;
+    version = ult::cleanVersionLabel(s.substr(p + 1, e - p - 1));
+    return version;
+}
+
+// Localize the OverlayFrame subtitle before it is handed to the frame.
+// OverlayFrame draws the subtitle with drawStringWithColoredSections (which only
+// colors the DIVIDER_SYMBOL segments and does NOT consult the translation cache),
+// so unless we translate here the subtitle would always render in English.
+// Mirrors tsl::elm::CategoryHeader's set-time logic: try a full-string cache hit
+// first (covers plain subtitles like "Alpha" / "DTC Format 1"), otherwise translate
+// each divider-separated segment individually (covers composites like
+// "Full <DIV> Configuration <DIV> Paddings"). Divider glyphs are preserved verbatim.
+inline std::string localizeSubtitle(const std::string& subtitle) {
+    std::string sub = subtitle;
+    bool fullHit = false;
+    {
+        std::shared_lock<std::shared_mutex> readLock(tsl::gfx::s_translationCacheMutex);
+        auto it = ult::translationCache.find(sub);
+        if (it != ult::translationCache.end() && it->second != sub) {
+            sub = it->second;
+            fullHit = true;
+        }
+    }
+    if (!fullHit)
+        tsl::gfx::translateStringSegments(sub, tsl::s_dividerSpecialChars);
+    return sub;
+}
 
 std::string filename;
 std::string filepath;
@@ -231,6 +286,20 @@ SharedMemory _sharedmemory = {};
 std::atomic<bool> SharedMemoryUsed{false};
 Handle remoteSharedMemory = 1;
 uint64_t lastFrameNumber = 0;
+
+// Header subtitle for the main menu and Full mode: "<version>  SaltyNX X.X.X"
+// when SaltyNX is running and its toolbox.json has a version (same layout as
+// Ultrahand's "<version>  nx-ovlloader+ X.X.X"); otherwise just "<version>".
+// The divider is drawn in text_separator_color, the rest in banner_version_text_color.
+inline std::string versionSubtitle() {
+    std::string subtitle = APP_VERSION;
+    if (SaltySD) {
+        const std::string& saltyVer = getSaltyNXVersion();
+        if (!saltyVer.empty())
+            subtitle += " " + ult::DIVIDER_SYMBOL + " SaltyNX " + saltyVer;
+    }
+    return subtitle;
+}
 
 //Read real freqs from sys-clk sysmodule
 uint32_t realCPU_Hz = 0;
@@ -1023,6 +1092,44 @@ int compare (const void* elem1, const void* elem2) {
     return 0;
 }
 
+// Resolution comparator from the ORIGINAL Status Monitor (masagrator), used by
+// default (prioritize_max_16_9 off). Kept verbatim: descending by call count, ties
+// (and empty slots) fall wherever qsort leaves them — that exact ordering is what
+// users of the classic layout expect for certain games.
+int compareOriginal (const void* elem1, const void* elem2) {
+    if ((((const resolutionCalls*)(elem1)) -> calls) > (((const resolutionCalls*)(elem2)) -> calls)) return -1;
+    else return 1;
+}
+
+// Classic ordering of the MERGED render+viewport list (Mini / Micro / Full RES).
+// Same key as the original (descending call count), but STABLE: when two entries
+// tie — common, since NX-FPS call counters are 16-bit and busy targets saturate at
+// the same value — they keep merge order (render/Depth-list order, then viewport-only
+// entries), matching Game Resolutions. Sorting the merged list with qsort +
+// compareOriginal left tie order to the C library's unstable qsort internals, so e.g.
+// 2560x1440 could land ahead of 1920x1080 depending on the toolchain's newlib.
+inline void sortResolutionsClassic(resolutionCalls* arr, size_t n) {
+    std::stable_sort(arr, arr + n, [](const resolutionCalls& a, const resolutionCalls& b) {
+        return a.calls > b.calls;
+    });
+}
+
+// "Prioritize Max 16:9" (prioritize_max_16_9): move every 16:9 entry to the front
+// (both groups keep their call-count order), then sort the 16:9 group by pixel
+// area, largest first, so e.g. 1920x1080 precedes 1280x720 regardless of calls.
+// Same ordering Mini/Micro apply inline; shared here for Full / Game Resolutions.
+inline void prioritizeMax169Order(resolutionCalls* arr, size_t n) {
+    std::stable_partition(arr, arr + n, [](const resolutionCalls& r) {
+        return r.width != 0 && (r.width * 9 == r.height * 16);
+    });
+    resolutionCalls* end169 = arr;
+    while (end169 < arr + n && end169->width != 0 && end169->width * 9 == end169->height * 16)
+        ++end169;
+    std::stable_sort(arr, end169, [](const resolutionCalls& a, const resolutionCalls& b) {
+        return (uint32_t)a.width * a.height > (uint32_t)b.width * b.height;
+    });
+}
+
 void LoadSharedMemoryAndRefreshRate() {
     if (SaltySD_Connect())
         return;
@@ -1050,32 +1157,52 @@ void LoadSharedMemory() {
     else FPS = 1234;
 }
 
-void searchSharedMemoryBlock(uintptr_t base) {
-    if (!base || !SharedMemoryUsed) {
-        NxFps = 0;
-        return;
-    }
+// Retry mapping SaltyNX's shared memory after the one-shot load at launch failed
+// (e.g. the SaltySD port was momentarily busy, so SaltySD_Connect gave up).
+// Without this, SharedMemoryUsed stayed false for the whole session and a game
+// started while the overlay was open was never detected until a relaunch.
+// Called only from the CheckIfGameRunning thread, outside mutex_Misc (it does IPC).
+bool TryReloadSharedMemory() {
+    if (SharedMemoryUsed) return true;
+    if (SaltySD_Connect()) return false;
+    Handle h = 0;
+    const Result rc = SaltySD_GetSharedMemoryHandle(&h);
+    SaltySD_Term();
+    if (R_FAILED(rc) || !h) return false;
 
-    ptrdiff_t search_offset = 0;
+    shmemClose(&_sharedmemory); // release any handle left loaded by a failed earlier map
+    shmemLoadRemote(&_sharedmemory, h, 0x1000, Perm_Rw);
+    if (R_FAILED(shmemMap(&_sharedmemory))) {
+        shmemClose(&_sharedmemory);
+        return false;
+    }
+    remoteSharedMemory = h;
+    SharedMemoryUsed = true;
+    return true;
+}
+
+// Collect every NX-FPS block (MAGIC match) in the shared memory, in address order.
+// Returns the number found (at most maxOut). Never touches the global NxFps.
+size_t findSharedMemoryBlocks(uintptr_t base, NxFpsSharedBlock** out, size_t maxOut) {
+    if (!base || !SharedMemoryUsed) return 0;
+    size_t count = 0;
     const uintptr_t memory_end = base + 0x1000;
-
-    while (search_offset < 0x1000) {
+    for (ptrdiff_t search_offset = 0; search_offset < 0x1000 && count < maxOut; search_offset += 4) {
         const uintptr_t current_addr = base + search_offset;
-
         // Ensure we don't read past the end of shared memory
-        if (current_addr + sizeof(NxFpsSharedBlock) > memory_end) {
-            break;
-        }
-
-        NxFps = (NxFpsSharedBlock*)current_addr;
-
-        // Add bounds checking and magic validation
-        if (NxFps && current_addr >= base && NxFps->MAGIC == 0x465053) {
-            return;
-        }
-        search_offset += 4;
+        if (current_addr + sizeof(NxFpsSharedBlock) > memory_end) break;
+        NxFpsSharedBlock* blk = (NxFpsSharedBlock*)current_addr;
+        if (blk->MAGIC == 0x465053) out[count++] = blk;
     }
-    NxFps = 0;
+    return count;
+}
+
+void searchSharedMemoryBlock(uintptr_t base) {
+    // Publish the result in a single store — never leave NxFps pointing at a
+    // non-matching address mid-scan (other threads read it concurrently).
+    NxFpsSharedBlock* found = 0;
+    findSharedMemoryBlocks(base, &found, 1);
+    NxFps = found;
 }
 
 //Check if SaltyNX is working
@@ -1104,36 +1231,263 @@ bool CheckPort() {
 
 Mutex mutex_Misc = {0};
 
+// ── Reposition / focus-mode haptics ──────────────────────────────────────────
+// Rumble feedback for touch-hold / PLUS-hold repositioning (and PLUS focus mode)
+// is ALWAYS given, even when haptic feedback is disabled in Ultrahand/libultrahand.
+// Those are "you are now moving the overlay" cues, not menu-navigation clicks.
+//
+// When haptics are enabled, the library's own haptics thread handles the rumble
+// exactly as before. When they are disabled, libultrahand's poller drops rumble
+// triggers, so a tiny worker thread here plays them instead. The library's poller
+// still runs ult::initHaptics() at startup regardless of the setting, so the
+// vibration device handles are valid; the worker only re-checks controllers
+// (checkAndReinitHaptics) right before it rumbles. The two never drive the motors
+// concurrently: the worker is used only while the library path is disabled.
+// Sound feedback continues to follow the user's sound setting.
+namespace repoHaptics {
+    inline Thread            thread;
+    inline LEvent            event;               // zero-initialised
+    inline std::atomic<int>  pending{0};          // 0 none, 1 click, 2 double click
+    inline std::atomic<bool> started{false};
+    inline std::atomic<bool> stopping{false};
+    inline Mutex             startMutex = {0};    // guards lazy thread creation
+
+    inline void worker(void*) {
+        while (true) {
+            leventWait(&event, UINT64_MAX);
+            leventClear(&event);
+            if (stopping.load(std::memory_order_acquire)) break;
+            const int p = pending.exchange(0, std::memory_order_acq_rel);
+            if (!p) continue;
+            ult::checkAndReinitHaptics();
+            if (p == 2) ult::rumbleDoubleClickStandalone();
+            else        ult::rumbleClickStandalone();
+        }
+    }
+
+    // Queue a rumble on the worker (started lazily on first use). Non-blocking.
+    inline void rumble(bool doubleClick) {
+        if (stopping.load(std::memory_order_acquire)) return;
+        if (!started.load(std::memory_order_acquire)) {
+            // Callers may be the UI thread or a mode's input-poll thread.
+            mutexLock(&startMutex);
+            if (!started.load(std::memory_order_acquire) && !stopping.load(std::memory_order_acquire)) {
+                leventClear(&event);
+                if (R_SUCCEEDED(threadCreate(&thread, worker, nullptr, nullptr, 0x1000, 0x2C, -2))) {
+                    if (R_SUCCEEDED(threadStart(&thread))) started.store(true, std::memory_order_release);
+                    else threadClose(&thread);
+                }
+            }
+            mutexUnlock(&startMutex);
+            if (!started.load(std::memory_order_acquire)) return;
+        }
+        // A double click supersedes a not-yet-played single click.
+        int expected = pending.load(std::memory_order_acquire);
+        const int want = doubleClick ? 2 : 1;
+        while (want > expected &&
+               !pending.compare_exchange_weak(expected, want, std::memory_order_acq_rel)) {}
+        leventSignal(&event);
+    }
+
+    // Call from exitServices: joins the worker if it was ever started.
+    inline void shutdown() {
+        mutexLock(&startMutex);
+        stopping.store(true, std::memory_order_release);
+        const bool wasStarted = started.exchange(false, std::memory_order_acq_rel);
+        mutexUnlock(&startMutex);
+        if (wasStarted) {
+            leventSignal(&event);
+            threadWaitForExit(&thread);
+            threadClose(&thread);
+        }
+    }
+}
+
+// Drop-in replacements for triggerOnFeedback()/triggerOffFeedback() at the
+// reposition / focus-mode call sites.
+inline void triggerRepositionOnFeedback() {
+    triggerOnFeedback();                                  // sound (+ rumble if enabled)
+    if (!ult::useHapticFeedback) repoHaptics::rumble(false);
+}
+inline void triggerRepositionOffFeedback(bool doubleClick = false) {
+    triggerOffFeedback(doubleClick);                      // sound (+ rumble if enabled)
+    if (!ult::useHapticFeedback) repoHaptics::rumble(doubleClick);
+}
+
+// ── Game focus detection (HOME menu vs. in-game) ─────────────────────────────
+// pmdmnt only reports the application *process*; when HOME is pressed the game
+// is suspended, not closed, so the process stays alive. pdm:qry's play-event log
+// records InFocus/OutOfFocus applet transitions, which lets us hide SaltyNX data
+// while the game is backgrounded and restore it when the user returns.
+// Approach from sys-tune (ppkantorski/sys-tune, credit: masagrator).
+std::atomic<bool> focusQueryAvailable{false};
+
+// Call inside doWithSmSession in initServices. Best effort: if pdm:qry has no
+// free session, focus-awareness is simply disabled (old behaviour).
+void focusQueryInit() {
+    if (focusQueryAvailable) return;
+    if (R_SUCCEEDED(pdmqryInitialize())) focusQueryAvailable = true;
+}
+
+// Call in exitServices AFTER CloseThreads() (the poll thread must be stopped).
+void focusQueryExit() {
+    if (!focusQueryAvailable) return;
+    focusQueryAvailable = false;
+    pdmqryExit();
+}
+
+// Returns 0 and sets *outOfFocus when the play-event log has a recent applet
+// focus event for TIDnow; non-zero otherwise (*outOfFocus left unchanged).
+// Cached on (event count, tid): steady state is one cheap IPC round-trip.
+Result isApplicationOutOfFocus(u64 TIDnow, bool* outOfFocus) {
+    static s32    s_last_total_entries = -1;
+    static u64    s_last_queried_tid   = 0;
+    static bool   s_last_is_out        = false;
+    static Result s_last_rc            = 1;
+
+    s32 total_entries = 0, start_entry_index = 0, end_entry_index = 0;
+    Result rc = pdmqryGetAvailablePlayEventRange(&total_entries, &start_entry_index, &end_entry_index);
+    if (R_FAILED(rc)) return rc;
+
+    if (total_entries == s_last_total_entries && TIDnow == s_last_queried_tid) {
+        if (R_SUCCEEDED(s_last_rc)) *outOfFocus = s_last_is_out;
+        return s_last_rc;
+    }
+    s_last_total_entries = total_entries;
+    s_last_queried_tid   = TIDnow;
+
+    // Pull only the latest 16 events — bounded tail read.
+    static constexpr s32 EVENT_COUNT = 16;
+    PdmPlayEvent events[EVENT_COUNT];
+    s32 out = 0;
+    s32 start = end_entry_index - (EVENT_COUNT - 1);
+    if (start < 0) start = 0;
+
+    rc = pdmqryQueryPlayEvent(start, events, EVENT_COUNT, &out);
+    if (R_FAILED(rc)) { s_last_rc = rc; return rc; }
+    if (out == 0)     { s_last_rc = 1;  return 1;  }
+
+    // Newest -> oldest: most recent applet focus event for this title.
+    // Mask the low 12 bits so updates/DLC match the base program id.
+    int itr = -1;
+    for (int i = out - 1; i >= 0; --i) {
+        const PdmPlayEvent* event = &events[i];
+        if (event->play_event_type != PdmPlayEventType_Applet) continue;
+        if (event->event_data.applet.applet_id != AppletId_application) continue;
+        union { u32 parts[2]; u64 full; } TID;
+        TID.parts[0] = event->event_data.applet.program_id[1];
+        TID.parts[1] = event->event_data.applet.program_id[0];
+        if (TID.full != TIDnow && TID.full != (TIDnow & ~0xFFFULL)) continue;
+        itr = i;
+        break;
+    }
+    if (itr == -1) { s_last_rc = 1; return 1; }
+
+    const auto event_type = events[itr].event_data.applet.event_type;
+    const bool isOut = (event_type == PdmAppletEventType_OutOfFocus)
+                    || (event_type == PdmAppletEventType_OutOfFocus4);
+    *outOfFocus   = isOut;
+    s_last_is_out = isOut;
+    s_last_rc     = 0;
+    return 0;
+}
+
 void CheckIfGameRunning(void*) {
+    // State of the application NX-FPS was last confirmed for.
+    bool detected    = false; // block validated for detectedPid
+    u64  detectedPid = 0;
+    u64  detectedTid = 0;
+    bool outOfFocus  = false; // game backgrounded (HOME / other applet)
+    // pdm:qry's log can lag. Right after detection the game is provably in
+    // focus (it is presenting frames), so ignore "out" reports until the log
+    // has shown "in" once — or until ~2 s pass (user really went HOME).
+    bool pdmSynced   = false;
+    int  staleTicks  = 0;
+    static constexpr int MAX_STALE_TICKS = 8; // 8 x 250 ms
+
     do {
         // Halt during shallow sleep — the foreground application cannot
         // change while the system is asleep, so pmdmnt IPC + shared-memory
         // scan are pure waste.
         if (tsl::hlp::waitWhileSleeping()) continue;
 
-        mutexLock(&mutex_Misc);
-        if (!check && R_FAILED(pmdmntGetApplicationProcessId(&PID))) {
-            GameRunning = false;
-            check = true;
+        // Self-heal a failed launch-time SaltyNX connection / shared-memory map.
+        // Done outside mutex_Misc because it performs IPC (can block ~200 ms).
+        if (!SharedMemoryUsed) {
+            if (!SaltySD) SaltySD = CheckPort();
+            if (SaltySD) TryReloadSharedMemory();
         }
-        else if (!GameRunning && SharedMemoryUsed) {
+
+        mutexLock(&mutex_Misc);
+        if (detected) {
+            if (R_FAILED(pmdmntGetApplicationProcessId(&PID)) || PID != detectedPid) {
+                // Game closed, or a different game replaced it — re-detect.
+                detected    = false;
+                outOfFocus  = false;
+                GameRunning = false;
+                check       = true;
+            } else if (focusQueryAvailable && detectedTid) {
+                bool out = outOfFocus;
+                if (R_SUCCEEDED(isApplicationOutOfFocus(detectedTid, &out))) {
+                    if (!pdmSynced) {
+                        if (!out)                                pdmSynced = true;
+                        else if (++staleTicks >= MAX_STALE_TICKS) pdmSynced = true;
+                        else                                     out = outOfFocus; // treat as stale
+                    }
+                    if (out != outOfFocus) {
+                        outOfFocus  = out;
+                        // Hide SaltyNX-driven data while backgrounded; the NX-FPS block
+                        // stays valid (shared memory), so returning restores instantly.
+                        GameRunning = !out;
+                    }
+                }
+            }
+        }
+        if (!detected && SharedMemoryUsed) {
             const uintptr_t base = (uintptr_t)shmemGetAddr(&_sharedmemory);
-            searchSharedMemoryBlock(base);
-            if (NxFps) {
-                (NxFps->pluginActive) = false;
-                mutexUnlock(&mutex_Misc);  // ← Fix: Unlock before return
+            // Validate EVERY block carrying the NX-FPS magic, not just the first:
+            // a stale block left by a previous game at a lower offset would
+            // otherwise shadow the live one forever.
+            static constexpr size_t MAX_CANDIDATES = 16;
+            NxFpsSharedBlock* candidates[MAX_CANDIDATES];
+            const size_t count = findSharedMemoryBlocks(base, candidates, MAX_CANDIDATES);
+            if (count) {
+                for (size_t i = 0; i < count; i++)
+                    candidates[i]->pluginActive = false;
+                mutexUnlock(&mutex_Misc);  // don't hold the lock across the wait
                 if (leventWait(&threadexit, 100'000'000)) {
                     return;
                 }
                 mutexLock(&mutex_Misc);
-                if ((NxFps->pluginActive)) {
-                    GameRunning = true;
-                    check = false;
+                NxFpsSharedBlock* active = 0;
+                for (size_t i = 0; i < count; i++) {
+                    if (candidates[i]->pluginActive) { active = candidates[i]; break; }
                 }
+                if (active) {
+                    NxFps       = active;
+                    detected    = true;
+                    outOfFocus  = false;
+                    pdmSynced   = false;
+                    staleTicks  = 0;
+                    detectedPid = R_SUCCEEDED(pmdmntGetApplicationProcessId(&PID)) ? PID : 0;
+                    detectedTid = 0;
+                    if (detectedPid && R_FAILED(pmdmntGetProgramId(&detectedTid, detectedPid)))
+                        detectedTid = 0;
+                    GameRunning = true;
+                    check       = false;
+                } else {
+                    // Same as before: keep the first match published (used by
+                    // NxFps-gated readers), retry next poll.
+                    NxFps = candidates[0];
+                }
+            } else {
+                NxFps = 0;
             }
         }
         mutexUnlock(&mutex_Misc);
-    } while (!leventWait(&threadexit, 1'000'000'000ULL));
+        // Poll faster while a game is tracked so HOME / return feel immediate;
+        // otherwise 1 s, as before.
+    } while (!leventWait(&threadexit, detected ? 250'000'000ULL : 1'000'000'000ULL));
 }
 
 // Utils.hpp or your relevant header
@@ -1172,28 +1526,68 @@ void BatteryChecker(void*) {
         Max17050ReadReg(MAX17050_DesignCap, &data);
         designedFullBatCapacity = data * (BASE_SNS_UOHM / MAX17050_BOARD_SNS_RESISTOR_UOHM) / MAX17050_BOARD_CGAIN;
     }
+    // MAX17050 TTE register: 5.625 s per LSB. It reads 0xFFFF ("infinite") while
+    // AvgCurrent is not yet negative — e.g. for a few seconds after unplugging — so
+    // such readings (and 0) are not real estimates and must not be shown/averaged.
+    static constexpr float TTE_MAX_MINUTES = (99.0f * 60.0f) + 59.0f;
+    auto tteValid   = [](uint16_t raw) { return raw != 0xFFFF && raw != 0; };
+    auto tteMinutes = [](uint16_t raw) {
+        const float m = (5.625f * raw) / 60.0f;
+        return (m > TTE_MAX_MINUTES) ? TTE_MAX_MINUTES : m;
+    };
+
     if (readingsAmp[0] >= 0) {
         batTimeEstimate = -1;
     }
     else {
         Max17050ReadReg(MAX17050_TTE, &data);
-        float batteryTimeEstimateInMinutes = (5.625 * data) / 60;
-        if (batteryTimeEstimateInMinutes > (99.0*60.0)+59.0) {
-            batTimeEstimate = (99*60)+59;
-        }
-        else batTimeEstimate = (int16_t)batteryTimeEstimateInMinutes;
+        batTimeEstimate = tteValid(data) ? (int16_t)tteMinutes(data) : -1;
     }
 
     size_t counter = 0;
     uint64_t tick_TTE = svcGetSystemTick();
     uint64_t nanoseconds = 1000;
+
+    // ── Time-left estimation ──────────────────────────────────────────────
+    // time_left = remaining capacity (RepCap) / average discharge current.
+    //
+    // We average the CURRENT ourselves and divide once, instead of averaging the
+    // gauge's TTE readings. TTE = RepCap / AvgCurrent is a reciprocal of current,
+    // so a plain mean of TTE samples is dominated by low-current moments — e.g.
+    // right after unplugging, while the gauge's internal AvgCurrent is still near
+    // zero, TTE reads many hours (or 0xFFFF) and those samples skewed the minute-
+    // long mean for up to ~2 min. Averaging current is the physically correct
+    // (harmonic) mean and our raw current samples react immediately on unplug.
+    //
+    // Samples are scoped to ONE discharge session: a session starts on thread start,
+    // charging -> discharging, and wake from sleep, and starting one discards all
+    // older samples (previously only an overlay relaunch cleared them).
+    static constexpr size_t DISCHARGE_WINDOW = 120;  // 60 s at 2 Hz
+    float  dischargeCurrent[DISCHARGE_WINDOW];       // mA, negative while discharging
+    bool   dischargeSessionActive = false;
+    size_t dischargeCount = 0;   // samples in window (<= DISCHARGE_WINDOW)
+    size_t dischargeNext  = 0;   // ring write index
+    bool   dischargePublished = false; // estimate published in this session yet?
+    // Publishing cadence within a session:
+    //  - first value once ~5 s of samples exist (a 1-2 sample mean of raw current
+    //    swings wildly with load spikes),
+    //  - then, while the 60 s window is still filling, every
+    //    min(battery_time_left_refreshrate, 10) s so it converges without
+    //    holding a 5 s-based value for a full minute,
+    //  - then every battery_time_left_refreshrate s, as before.
+    static constexpr size_t   DISCHARGE_MIN_SAMPLES = 10; // ~5 s at 2 Hz
+    static constexpr uint64_t WARMUP_INTERVAL_S     = 10;
+
     do {
         // Halt during shallow sleep — I2C reads to MAX17050 and PSM IPC are
         // slow even when awake; doing them every 500ms during sleep is
         // wasted I2C bus activity and PSM sysmodule wakes for no display.
         // Battery readings during sleep aren't useful since the overlay can't
         // render them anyway.  Resumes on wake via libultrahand's PSC handler.
-        if (tsl::hlp::waitWhileSleeping()) continue;
+        if (tsl::hlp::waitWhileSleeping()) {
+            dischargeSessionActive = false; // woke up: load/charge state may differ, start fresh
+            continue;
+        }
 
         mutexLock(&mutex_BatteryChecker);
         // Re-check after acquiring the lock: sleep can be entered in the
@@ -1243,22 +1637,56 @@ void BatteryChecker(void*) {
 
         if (batCurrentAvg >= 0) {
             batTimeEstimate = -1;
+            dischargeSessionActive = false; // charging / not draining: next discharge starts fresh
         }
         else {
-            static float batteryTimeEstimateInMinutes = 0;
-            Max17050ReadReg(MAX17050_TTE, &data);
-            batteryTimeEstimateInMinutes = (5.625 * data) / 60;
-            if (batteryTimeEstimateInMinutes > (99.0*60.0)+59.0) {
-                batteryTimeEstimateInMinutes = (99.0*60.0)+59.0;
+            const uint64_t now_tick = svcGetSystemTick();
+            if (!dischargeSessionActive) {
+                // New discharge session: drop all samples from earlier sessions.
+                dischargeSessionActive = true;
+                dischargeCount = 0;
+                dischargeNext  = 0;
+                dischargePublished = false;
+                tick_TTE = now_tick;
             }
-            static int itr = 0;
-            const int cacheElements = (sizeof(BatteryTimeCache) / sizeof(BatteryTimeCache[0]));
-            BatteryTimeCache[itr++ % cacheElements] = (int32_t)batteryTimeEstimateInMinutes;
-            const uint64_t new_tick_TTE = svcGetSystemTick();
-            if (armTicksToNs(new_tick_TTE - tick_TTE) / 1'000'000'000 >= batteryTimeLeftRefreshRate) {
-                const size_t to_divide = itr < cacheElements ? itr : cacheElements;
-                batTimeEstimate = (int16_t)(std::accumulate(&BatteryTimeCache[0], &BatteryTimeCache[to_divide], 0) / to_divide);
-                tick_TTE = new_tick_TTE;
+
+            // Only real discharge samples enter the window. batCurrentAvg is a 5 s
+            // mean, so right after unplugging a few raw samples may still be >= 0.
+            if (tempA < 0) {
+                dischargeCurrent[dischargeNext] = tempA;
+                dischargeNext = (dischargeNext + 1) % DISCHARGE_WINDOW;
+                if (dischargeCount < DISCHARGE_WINDOW) dischargeCount++;
+            }
+
+            const uint64_t sinceLastS = armTicksToNs(now_tick - tick_TTE) / 1'000'000'000;
+            const bool windowFilling  = (dischargeCount < DISCHARGE_WINDOW);
+            const uint64_t interval   = windowFilling
+                ? std::min<uint64_t>(batteryTimeLeftRefreshRate, WARMUP_INTERVAL_S)
+                : (uint64_t)batteryTimeLeftRefreshRate;
+            bool publish;
+            if (dischargeCount < DISCHARGE_MIN_SAMPLES) publish = false;
+            else if (!dischargePublished)               publish = true;
+            else                                        publish = (sinceLastS >= interval);
+            if (publish) {
+                dischargePublished = true;
+                float sum = 0.0f;
+                for (size_t i = 0; i < dischargeCount; i++) sum += dischargeCurrent[i];
+                const float avgDrain_mA = -sum / (float)dischargeCount; // > 0
+
+                // RepCap: same scaling as FullCAP above (mAh).
+                Max17050ReadReg(MAX17050_RepCap, &data);
+                const float repCap_mAh = data * (BASE_SNS_UOHM / MAX17050_BOARD_SNS_RESISTOR_UOHM) / MAX17050_BOARD_CGAIN;
+
+                if (repCap_mAh > 0.0f && avgDrain_mA > 1.0f) {
+                    float minutes = (repCap_mAh / avgDrain_mA) * 60.0f;
+                    if (minutes > TTE_MAX_MINUTES) minutes = TTE_MAX_MINUTES;
+                    batTimeEstimate = (int16_t)minutes;
+                } else {
+                    // Fallback: the gauge's own estimate, if it has a real one.
+                    Max17050ReadReg(MAX17050_TTE, &data);
+                    if (tteValid(data)) batTimeEstimate = (int16_t)tteMinutes(data);
+                }
+                tick_TTE = now_tick;
             }
         }
 
@@ -2495,6 +2923,7 @@ struct FullSettings {
     bool showTargetFreqs;
     bool showFPS;
     bool showRES;
+    bool prioritizeMax169;   // RES: 16:9 first, largest first (off = original Status Monitor order)
     bool showRDSD;
     bool useDynamicColors;
     bool disableScreenshots;
@@ -2521,6 +2950,7 @@ struct MiniSettings {
     bool showStackedFullCPU; // true = brackets top, freq bottom (stacked); false = [brackets]@freq inline
     bool showFullResolution;
     bool showPrimaryResolution;
+    bool prioritizeMax169;   // RES: 16:9 first, largest first (off = original Status Monitor order)
     bool showFanPercentage;
     bool showSOCVoltage;
     bool showStackedFanSOC;  // true = fan row1, volt row2 (stacked); false = fan+volt inline
@@ -2598,6 +3028,7 @@ struct MiniSettings {
     uint16_t borderWheelColor3Deep; // wheel anchor1 deep
     uint16_t borderWheelColor4;     // wheel anchor3 bright (UL)
     uint16_t borderWheelColor4Deep; // wheel anchor3 deep
+    uint8_t  wheelPeriod;    // border wheel: seconds per full rotation (8..20, default 16)
 };
 
 struct MicroSettings {
@@ -2610,6 +3041,7 @@ struct MicroSettings {
     bool showStackedFullCPU; // true = brackets top, freq bottom (stacked); false = [brackets]@freq inline
     bool showFullResolution;
     bool showPrimaryResolution;
+    bool prioritizeMax169;   // RES: 16:9 first, largest first (off = original Status Monitor order)
     bool showSOCVoltage;
     bool showStackedFanSOC;  // true = fan row1, volt row2 (stacked); false = fan+volt inline
     bool showStackedVDDQ;   // true = VDD2 row1, VDDQ row2 stacked (Mariko only); false = VDD2+VDDQ inline
@@ -2709,6 +3141,7 @@ struct FpsCounterSettings {
     uint16_t borderWheelColor3Deep;
     uint16_t borderWheelColor4;
     uint16_t borderWheelColor4Deep;
+    uint8_t  wheelPeriod;    // border wheel: seconds per full rotation (8..20, default 16)
 };
 
 struct FpsGraphSettings {
@@ -2753,10 +3186,12 @@ struct FpsGraphSettings {
     uint16_t borderWheelColor3Deep;
     uint16_t borderWheelColor4;
     uint16_t borderWheelColor4Deep;
+    uint8_t  wheelPeriod;    // border wheel: seconds per full rotation (8..20, default 16)
 };
 
 struct ResolutionSettings {
     uint8_t refreshRate;
+    bool prioritizeMax169;       // lists: 16:9 first, largest first (off = original order)
     uint8_t sampleRate;          // how often resolution data is re-polled; <= refreshRate
     uint8_t cornerRadiusSp;      // background box corner radius; tenths of a space
     uint16_t backgroundColor;
@@ -2784,6 +3219,7 @@ struct ResolutionSettings {
     uint16_t borderWheelColor3Deep;
     uint16_t borderWheelColor4;
     uint16_t borderWheelColor4Deep;
+    uint8_t  wheelPeriod;    // border wheel: seconds per full rotation (8..20, default 16)
 };
 
 // Shared initialiser for the configurable Switch 2 frame border. Every overlay
@@ -2798,12 +3234,14 @@ ALWAYS_INLINE void initBorderDefaults(S* s) {
     s->useBorderCW = true;
     // borderThickness is set per-mode by the caller immediately after this call.
     convertStrToRGBA4444("#04AF", &(s->borderColor));           // Cobalt
-    convertStrToRGBA4444("#0C0F", &(s->borderWheelColor1));     // anchor0 UR
-    convertStrToRGBA4444("#64FF", &(s->borderWheelColor2));     // anchor2 LL  (Deep Slate)
-    convertStrToRGBA4444("#08AF", &(s->borderWheelColor3));     // anchor1 bright
-    convertStrToRGBA4444("#657F", &(s->borderWheelColor3Deep)); // anchor1 deep  (Slate Navy)
-    convertStrToRGBA4444("#A98F", &(s->borderWheelColor4));     // anchor3 bright (Periwinkle)
-    convertStrToRGBA4444("#C8FF", &(s->borderWheelColor4Deep)); // anchor3 deep
+    // Values are the configurator palette entries of the same names (full opacity).
+    convertStrToRGBA4444("#008F", &(s->borderWheelColor1));     // anchor0 UR            (Navy)
+    convertStrToRGBA4444("#802F", &(s->borderWheelColor2));     // anchor2 LL            (Burgundy)
+    convertStrToRGBA4444("#06FF", &(s->borderWheelColor3));     // anchor1 bright        (Royal Blue)
+    convertStrToRGBA4444("#B22F", &(s->borderWheelColor3Deep)); // anchor1 deep          (Crimson)
+    convertStrToRGBA4444("#404F", &(s->borderWheelColor4));     // anchor3 bright        (Deep Purple)
+    convertStrToRGBA4444("#93CF", &(s->borderWheelColor4Deep)); // anchor3 deep          (Amethyst)
+    s->wheelPeriod = 16;  // seconds per full wheel rotation (pulse is locked at 4 per turn)
 }
 
 // Shared parser for the configurable Switch 2 frame border. Reads the same keys
@@ -2825,6 +3263,9 @@ ALWAYS_INLINE void parseBorderSettings(S* settings, const SectionT& section) {
 
     it = section.find("border_thickness");
     if (it != section.end()) settings->borderThickness = (uint8_t)std::clamp(atol(it->second.c_str()), 0L, 30L);
+
+    it = section.find("wheel_period");
+    if (it != section.end()) settings->wheelPeriod = (uint8_t)std::clamp(atol(it->second.c_str()), 8L, 20L);
 
     struct { const char* k; uint16_t* t; } m[] = {
         {"border_color",             &settings->borderColor},
@@ -2851,6 +3292,7 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
     settings->showFullResolution = true;
     settings->showPrimaryResolution = false;
     settings->showFanPercentage = true;
+    settings->prioritizeMax169 = false;
     settings->useDynamicColors = true;
     settings->showSOCVoltage = true;
     settings->showStackedFanSOC = true;
@@ -2883,7 +3325,7 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
     settings->spacing = 15;            // 1.5 sp
     settings->horizontalPadding = 34;  // 3.4 sp (trailing/right-side text padding)
     settings->verticalPadding = 34;    // 3.4 sp (top/bottom interior padding)
-    settings->cornerRadiusSp = 36;     // 3.6 sp
+    settings->cornerRadiusSp = 50;     // 5.0 sp
     settings->stackedSpacing = 4;      // 0.4 sp (gap between stacked/split rows)
     convertStrToRGBA4444("#000A", &(settings->backgroundColor));
     convertStrToRGBA4444("#000F", &(settings->focusBackgroundColor));
@@ -3092,6 +3534,13 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
         key = it->second;
         convertToUpper(key);
         settings->showPrimaryResolution = (key == "TRUE");
+    }
+
+    it = section.find("prioritize_max_16_9");
+    if (it != section.end()) {
+        key = it->second;
+        convertToUpper(key);
+        settings->prioritizeMax169 = (key == "TRUE");
     }
 
     it = section.find("show_soc_voltage");
@@ -3416,6 +3865,7 @@ ALWAYS_INLINE void GetConfigSettings(MicroSettings* settings) {
     settings->showFullResolution = false;
     settings->showPrimaryResolution = true;
     settings->showSOCVoltage = true;
+    settings->prioritizeMax169 = false;
     settings->showStackedFanSOC = true;  // default: fan+volt stacked
     settings->showStackedVDDQ = true;   // default: VDD2+VDDQ stacked
     settings->showCPUTemp = true;
@@ -3557,6 +4007,13 @@ ALWAYS_INLINE void GetConfigSettings(MicroSettings* settings) {
         key = it->second;
         convertToUpper(key);
         settings->showPrimaryResolution = (key == "TRUE");
+    }
+
+    it = section.find("prioritize_max_16_9");
+    if (it != section.end()) {
+        key = it->second;
+        convertToUpper(key);
+        settings->prioritizeMax169 = (key == "TRUE");
     }
 
     it = section.find("show_soc_voltage");
@@ -3949,7 +4406,7 @@ ALWAYS_INLINE void GetConfigSettings(FpsCounterSettings* settings) {
     //settings->setPos = 0;
     settings->refreshRate = 30;
     settings->sampleRate = 30;   // re-poll FPS data at the same rate by default
-    settings->cornerRadiusSp = 36;     // 3.6 sp
+    settings->cornerRadiusSp = 46;     // 4.6 sp
     settings->useIntegerFPS = true;
     settings->disableScreenshots = false;
 
@@ -3959,7 +4416,7 @@ ALWAYS_INLINE void GetConfigSettings(FpsCounterSettings* settings) {
     settings->touchMoveDelayMs = 500;
     settings->buttonMoveDelayMs = 1000;
     initBorderDefaults(settings);
-    settings->borderThickness = 8;  // 0.8 sp (FPS Counter default)
+    settings->borderThickness = 6;  // 0.6 sp (FPS Counter default)
 
     // Open and read file efficiently
     FILE* configFile = fopen(configIniPath, "r");
@@ -4154,10 +4611,10 @@ ALWAYS_INLINE void GetConfigSettings(FpsGraphSettings* settings) {
     settings->touchMoveDelayMs = 500;
     settings->buttonMoveDelayMs = 1000;
     initBorderDefaults(settings);
-    settings->borderThickness = 8;  // 0.8 sp (FPS Graph default)
+    settings->borderThickness = 6;  // 0.6 sp (FPS Graph default)
     settings->useGraphBorder = false;   // inner plot-region border (FPS Graph only)
     settings->useGraphBackground = false; // inner plot-region background (FPS Graph only)
-    settings->cornerRadiusSp = 36;     // 3.6 sp
+    settings->cornerRadiusSp = 46;     // 4.6 sp
 
 
     // Open and read file efficiently
@@ -4337,6 +4794,7 @@ ALWAYS_INLINE void GetConfigSettings(FullSettings* settings) {
     settings->showTargetFreqs = true;
     settings->showFPS = true;
     settings->showRES = true;
+    settings->prioritizeMax169 = false;
     settings->showRDSD = true;
     settings->useDynamicColors = true;
     settings->disableScreenshots = false;
@@ -4428,6 +4886,13 @@ ALWAYS_INLINE void GetConfigSettings(FullSettings* settings) {
         settings->showRES = !(key == "FALSE");
     }
 
+    it = section.find("prioritize_max_16_9");
+    if (it != section.end()) {
+        key = it->second;
+        convertToUpper(key);
+        settings->prioritizeMax169 = (key == "TRUE");
+    }
+
     it = section.find("show_read_speed");
     if (it != section.end()) {
         key = it->second;
@@ -4507,7 +4972,7 @@ ALWAYS_INLINE void GetConfigSettings(ResolutionSettings* settings) {
     convertStrToRGBA4444("#FFFF", &(settings->textColor));
     settings->refreshRate = 30;        // smooth redraw / border animation (matches Mini)
     settings->sampleRate = 2;          // resolution rarely changes; poll 2x/sec (matches Mini)
-    settings->cornerRadiusSp = 36;     // 3.6 sp
+    settings->cornerRadiusSp = 46;     // 4.6 sp
     //ettings->setPos = 0;
     settings->disableScreenshots = false;
 
@@ -4517,7 +4982,8 @@ ALWAYS_INLINE void GetConfigSettings(ResolutionSettings* settings) {
     settings->touchMoveDelayMs = 500;
     settings->buttonMoveDelayMs = 1000;
     initBorderDefaults(settings);
-    settings->borderThickness = 8;  // 0.8 sp (Game Resolutions default)
+    settings->borderThickness = 6;  // 0.6 sp (Game Resolutions default)
+    settings->prioritizeMax169 = false;
 
 
     // Open and read file efficiently
@@ -4654,6 +5120,13 @@ ALWAYS_INLINE void GetConfigSettings(ResolutionSettings* settings) {
         key = it->second;
         convertToUpper(key);
         settings->disableScreenshots = (key != "FALSE");
+    }
+
+    it = section.find("prioritize_max_16_9");
+    if (it != section.end()) {
+        key = it->second;
+        convertToUpper(key);
+        settings->prioritizeMax169 = (key == "TRUE");
     }
 
     parseBorderSettings(settings, section);
@@ -4815,5 +5288,5 @@ static inline tsl::Switch2Wheel makeBorderWheel(const SettingsT& s) {
         tsl::Color(s.borderWheelColor3Deep),
         tsl::Color(s.borderWheelColor4),
         tsl::Color(s.borderWheelColor4Deep),
-        10.0, !s.useBorderCW);
+        (float)(s.wheelPeriod ? s.wheelPeriod : 16), !s.useBorderCW);
 }

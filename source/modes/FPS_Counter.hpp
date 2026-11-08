@@ -636,7 +636,7 @@ public:
         if (currentTouchDetected && !isDragging && touchDragReady && !oldTouchDragReady) {
             // Poll thread confirmed 500ms in-bounds hold — start drag now
             isDragging = true;
-            triggerOnFeedback();
+            triggerRepositionOnFeedback();
             hasMoved = false;
             initialTouchPos = touchPos;
             initialFrameOffsetX = frameOffsetX;
@@ -680,7 +680,7 @@ public:
             isDragging = false;
             hasMoved = false;
             clearOnRelease = true;
-            triggerOffFeedback(true);
+            triggerRepositionOffFeedback(true);
         }
         oldTouchDragReady = touchDragReady && currentTouchDetected;
     
@@ -688,7 +688,7 @@ public:
         if (currentPlusHeld && !isDragging) {
             // Start joystick dragging
             isDragging = true;
-            triggerOnFeedback();
+            triggerRepositionOnFeedback();
         } else if (currentPlusHeld && isDragging) {
             // Continue joystick dragging
             static constexpr int JOYSTICK_DEADZONE = 20;
@@ -743,7 +743,7 @@ public:
             ult::saveIniFileData(configIniPath, iniData);
             isDragging = false;
             clearOnRelease = true;
-            triggerOffFeedback(true);
+            triggerRepositionOffFeedback(true);
         }
         
         // Update state for next frame

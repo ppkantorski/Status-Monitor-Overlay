@@ -391,7 +391,8 @@ public:
 
 
         //list->disableCaching();
-        tsl::elm::HeaderOverlayFrame* rootFrame = new tsl::elm::HeaderOverlayFrame("Status Monitor", APP_VERSION);
+        // "<version>  SaltyNX X.X.X" when SaltyNX is running (see versionSubtitle()).
+        tsl::elm::HeaderOverlayFrame* rootFrame = new tsl::elm::HeaderOverlayFrame("Status Monitor", versionSubtitle());
         rootFrame->setContent(list);
 
         return rootFrame;
@@ -454,6 +455,7 @@ public:
     virtual void initServices() override {
         //Initialize services
         tsl::hlp::doWithSmSession([this]{
+            focusQueryInit(); // pdm:qry for HOME/in-game focus detection
 
             apmInitialize();
             if (hosversionAtLeast(8,0,0)) clkrstCheck = clkrstInitialize();
@@ -521,6 +523,8 @@ public:
             hocclkCheck = 1;
         }
         shmemClose(&_sharedmemory);
+        focusQueryExit(); // after CloseThreads(): poll thread is stopped
+        repoHaptics::shutdown(); // join reposition-haptics worker if used
         //Exit services
         clkrstExit();
         pcvExit();
@@ -550,6 +554,7 @@ public:
         //tsl::hlp::requestForeground(false);
         //Initialize services
         tsl::hlp::doWithSmSession([this]{
+            focusQueryInit(); // pdm:qry for HOME/in-game focus detection
             apmInitialize();
             if (hosversionAtLeast(8,0,0)) clkrstCheck = clkrstInitialize();
             else pcvCheck = pcvInitialize();
@@ -609,6 +614,8 @@ public:
     virtual void exitServices() override {
         CloseThreads();
         shmemClose(&_sharedmemory);
+        focusQueryExit(); // after CloseThreads(): poll thread is stopped
+        repoHaptics::shutdown(); // join reposition-haptics worker if used
         if (R_SUCCEEDED(sysclkCheck)) {
             sysclkIpcExit();
         }
@@ -649,6 +656,7 @@ public:
         //tsl::hlp::requestForeground(false);
         // Same service‐init as before
         tsl::hlp::doWithSmSession([this]{
+            focusQueryInit(); // pdm:qry for HOME/in-game focus detection
             apmInitialize();
             if (hosversionAtLeast(8,0,0)) clkrstCheck = clkrstInitialize();
             else pcvCheck = pcvInitialize();
@@ -705,6 +713,8 @@ public:
     virtual void exitServices() override {
         CloseThreads();
         shmemClose(&_sharedmemory);
+        focusQueryExit(); // after CloseThreads(): poll thread is stopped
+        repoHaptics::shutdown(); // join reposition-haptics worker if used
         if (R_SUCCEEDED(sysclkCheck)) {
             sysclkIpcExit();
         }
@@ -747,6 +757,7 @@ public:
 
     virtual void initServices() override {
         tsl::hlp::doWithSmSession([this]{
+            focusQueryInit(); // pdm:qry for HOME/in-game focus detection
             apmInitialize();
             if (hosversionAtLeast(8,0,0)) clkrstCheck = clkrstInitialize();
             else pcvCheck = pcvInitialize();
@@ -806,6 +817,8 @@ public:
     virtual void exitServices() override {
         CloseThreads();
         shmemClose(&_sharedmemory);
+        focusQueryExit(); // after CloseThreads(): poll thread is stopped
+        repoHaptics::shutdown(); // join reposition-haptics worker if used
         if (R_SUCCEEDED(sysclkCheck)) {
             sysclkIpcExit();
         }
@@ -842,6 +855,7 @@ public:
 
     virtual void initServices() override {
         tsl::hlp::doWithSmSession([this]{
+            focusQueryInit(); // pdm:qry for HOME/in-game focus detection
             apmInitialize();
             if (hosversionAtLeast(8,0,0)) clkrstCheck = clkrstInitialize();
             else pcvCheck = pcvInitialize();
@@ -901,6 +915,8 @@ public:
     virtual void exitServices() override {
         CloseThreads();
         shmemClose(&_sharedmemory);
+        focusQueryExit(); // after CloseThreads(): poll thread is stopped
+        repoHaptics::shutdown(); // join reposition-haptics worker if used
         if (R_SUCCEEDED(sysclkCheck)) {
             sysclkIpcExit();
         }
@@ -937,6 +953,7 @@ public:
 
     virtual void initServices() override {
         tsl::hlp::doWithSmSession([this]{
+            focusQueryInit(); // pdm:qry for HOME/in-game focus detection
             apmInitialize();
             if (hosversionAtLeast(8,0,0)) clkrstCheck = clkrstInitialize();
             else pcvCheck = pcvInitialize();
@@ -996,6 +1013,8 @@ public:
     virtual void exitServices() override {
         CloseThreads();
         shmemClose(&_sharedmemory);
+        focusQueryExit(); // after CloseThreads(): poll thread is stopped
+        repoHaptics::shutdown(); // join reposition-haptics worker if used
         if (R_SUCCEEDED(sysclkCheck)) {
             sysclkIpcExit();
         }
@@ -1033,6 +1052,7 @@ public:
 
     virtual void initServices() override {
         tsl::hlp::doWithSmSession([this]{
+            focusQueryInit(); // pdm:qry for HOME/in-game focus detection
             apmInitialize();
             if (hosversionAtLeast(8,0,0)) clkrstCheck = clkrstInitialize();
             else pcvCheck = pcvInitialize();
@@ -1092,6 +1112,8 @@ public:
     virtual void exitServices() override {
         CloseThreads();
         shmemClose(&_sharedmemory);
+        focusQueryExit(); // after CloseThreads(): poll thread is stopped
+        repoHaptics::shutdown(); // join reposition-haptics worker if used
         if (R_SUCCEEDED(sysclkCheck)) {
             sysclkIpcExit();
         }
@@ -1155,7 +1177,8 @@ bool checkOverlayFile(const std::string& filename) {
 //   (1920 − 832).  frameOffsetX (stored in 0..1280 logical space) maps to
 //   VI x via:  viX = round(frameOffsetX × 1.5)  clamped to [0, 1088].
 // Optional width/height overrides let modes like Micro request different
-// 1080p dimensions (1920x480 / 1920x240) without affecting mini/fps-counter.
+// 1080p dimensions (1920x480 / 1920x240) without affecting mini/fps-counter/
+// fps-graph/game_resolutions.
 // Pass 0,0 (the defaults) to use the standard 832×1080 / 832×554 dimensions.
 static bool setup1080pIfEnabled(const std::string& iniSection,
                                  uint32_t fullWidth  = 0, uint32_t fullHeight  = 0,
@@ -1209,6 +1232,22 @@ inline void setupMode(const std::string& modeType = "") {
     } else if (modeType == "fps_counter") {
         ult::windowedLayerPixelPerfect = false; // reset; setup1080pIfEnabled sets true if eligible
         if (!setup1080pIfEnabled("fps-counter")) {
+            if (!ult::limitedMemory) {
+                ult::DefaultFramebufferWidth = 1280;
+                ult::DefaultFramebufferHeight = 720;
+            }
+        } // else 1080p dims set by setup1080pIfEnabled
+    } else if (modeType == "fps_graph") {
+        ult::windowedLayerPixelPerfect = false; // reset; setup1080pIfEnabled sets true if eligible
+        if (!setup1080pIfEnabled("fps-graph")) {
+            if (!ult::limitedMemory) {
+                ult::DefaultFramebufferWidth = 1280;
+                ult::DefaultFramebufferHeight = 720;
+            }
+        } // else 1080p dims set by setup1080pIfEnabled
+    } else if (modeType == "game_resolutions") {
+        ult::windowedLayerPixelPerfect = false; // reset; setup1080pIfEnabled sets true if eligible
+        if (!setup1080pIfEnabled("game_resolutions")) {
             if (!ult::limitedMemory) {
                 ult::DefaultFramebufferWidth = 1280;
                 ult::DefaultFramebufferHeight = 720;
@@ -1413,12 +1452,15 @@ int main(int argc, char **argv) {
                 FullMode = false;
                 lastMode = "fps_graph";
                 if (!directLaunch) {
-                    setupMode();
+                    setupMode("fps_graph");
                 } else {
                     skipMain = true;
-                    if (!ult::limitedMemory) {
-                        ult::DefaultFramebufferWidth = 1280;
-                        ult::DefaultFramebufferHeight = 720;
+                    ult::windowedLayerPixelPerfect = false; // reset before 1080p check
+                    if (!setup1080pIfEnabled("fps-graph")) {
+                        if (!ult::limitedMemory) {
+                            ult::DefaultFramebufferWidth = 1280;
+                            ult::DefaultFramebufferHeight = 720;
+                        }
                     }
                 }
                 return tsl::loop<FPSGraphEntryOverlay>(argc, argv);
@@ -1446,12 +1488,15 @@ int main(int argc, char **argv) {
                 FullMode = false;
                 lastMode = "game_resolutions";
                 if (!directLaunch) {
-                    setupMode();
+                    setupMode("game_resolutions");
                 } else {
                     skipMain = true;
-                    if (!ult::limitedMemory) {
-                        ult::DefaultFramebufferWidth = 1280;
-                        ult::DefaultFramebufferHeight = 720;
+                    ult::windowedLayerPixelPerfect = false; // reset before 1080p check
+                    if (!setup1080pIfEnabled("game_resolutions")) {
+                        if (!ult::limitedMemory) {
+                            ult::DefaultFramebufferWidth = 1280;
+                            ult::DefaultFramebufferHeight = 720;
+                        }
                     }
                 }
                 return tsl::loop<GameResolutionsEntryOverlay>(argc, argv);

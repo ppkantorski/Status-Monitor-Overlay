@@ -401,7 +401,9 @@ public:
             } else {
                 Max17050ReadReg(MAX17050_TTE, &data);
                 const float batteryTimeEstimateInMinutes = (5.625 * data) / 60;
-                if (batteryTimeEstimateInMinutes > (99.0*60.0)+59.0) {
+                if (data == 0xFFFF || data == 0) {
+                    batTimeEstimate = -1; // gauge has no real estimate yet (just unplugged)
+                } else if (batteryTimeEstimateInMinutes > (99.0*60.0)+59.0) {
                     batTimeEstimate = (99*60)+59;
                 } else {
                     batTimeEstimate = (int16_t)batteryTimeEstimateInMinutes;
@@ -691,6 +693,16 @@ public:
     uint8_t resolutionLookup = 0;
     bool resolutionShow = false;
 
+    // Game-data rows actually emitted into Variables by the most recent update().
+    // The draw-side layout (labelLines / cachedHeight / FPS-graph height) keys off
+    // THESE instead of the live GameRunning / FPSavg / NxFps globals, which other
+    // threads flip at arbitrary times. update() and the draw run on the same thread
+    // (update first), so layout and text always come from one consistent snapshot —
+    // no frame where the box keeps the old size while showing the new rows.
+    bool varsFpsShown  = false;
+    bool varsResShown  = false;
+    bool varsReadShown = false;
+
     virtual tsl::elm::Element* createUI() override {
 
         auto* Status = new tsl::elm::CustomDrawer([this](tsl::gfx::Renderer *renderer, u16 x, u16 y, u16 w, u16 h) {
@@ -704,11 +716,12 @@ public:
             static std::string lastVariables; // Track changes in Variables content
             static uint32_t cachedHeight = 0;
             static int cachedBaseX = 0, cachedBaseY = 0;
-            static bool lastGameRunning = false; // Track game state changes
+            static uint8_t lastGameRowsMask = 0; // Track game-row visibility changes (update() snapshot)
+            const uint8_t gameRowsMask = (varsFpsShown ? 1 : 0) | (varsResShown ? 2 : 0) | (varsReadShown ? 4 : 0);
             
             // Check if we need to recalculate due to content changes
             const bool contentChanged = (std::string(Variables) != lastVariables) || 
-                                (GameRunning != lastGameRunning);
+                                (gameRowsMask != lastGameRowsMask);
             
             // Only recalculate if settings changed or content changed
             if (settings.show != lastShowSetting || !Initialized || contentChanged) {
@@ -727,7 +740,7 @@ public:
                 
                 lastShowSetting = settings.show;
                 lastVariables = Variables;
-                lastGameRunning = GameRunning;
+                lastGameRowsMask = gameRowsMask;
                 needsRecalc = true;
             }
             
@@ -1378,16 +1391,16 @@ public:
                             labelText = "BAT";
                         }
                         flags |= 32;
-                    } else if (key == "FPS" && !(flags & 64) && GameRunning && FPSavg != 254) {
+                    } else if (key == "FPS" && !(flags & 64) && varsFpsShown) {
                         shouldAdd = true;
                         labelText = settings.showFpsGraph ? "FPS_GRAPH" : "FPS";
                         flags |= 64;
-                    } else if (key == "RES" && !(flags & 128) && GameRunning && m_resolutionOutput[0].width) {
+                    } else if (key == "RES" && !(flags & 128) && varsResShown) {
                         shouldAdd = true;
                         labelText = "RES";
                         flags |= 128;
                         resolutionShow = true;
-                    } else if (key == "READ" && !(flags & 512) && GameRunning && NxFps) {
+                    } else if (key == "READ" && !(flags & 512) && varsReadShown) {
                         shouldAdd = true;
                         labelText = "READ";
                         flags |= 512;
@@ -1607,18 +1620,19 @@ public:
                     //
                     // The graph row is taller than a normal text row (fontsize px).
                     // graphRowHeightPx is the total pixel height of the graph content
-                    // (graphRefreshRate + 12, scaled to framebuffer space). The base
+                    // (fixed 60 Hz reference height + 4, scaled to framebuffer space). The base
                     // cachedHeight formula already budgets fontsize px for this row;
                     // add the difference to account for the real height.
-                    if (settings.showFpsGraph && hasKey("FPS") && FPSavg != 254.0f) {
+                    if (settings.showFpsGraph && hasKey("FPS") && varsFpsShown) {
                         // Treat the FPS graph as a single line whose height IS the border box:
                         // its top edge pixel is the line's top, its bottom edge pixel the line's
                         // bottom. The box is drawn as drawEmptyRect(.., rect_h + 4) tall, with
-                        //   rect_h = round(refreshRate * displayScale)   (matches the draw section)
+                        //   rect_h = round(60 * displayScale)   (fixed reference; matches the draw section)
                         // so the line/slot height is rect_h + 4. Substituting that for the usual
                         // fontsize slot lets the normal padding/spacing logic place the box exactly
                         // like any other line — no manual gaps.
-                        const int rectH  = (int)lround(graphRefreshRate * displayScale);
+                        // Fixed 60 Hz reference height — independent of the refresh rate / FPS cap.
+                        const int rectH  = (int)lround(60 * displayScale);
                         graphRowHeightPx = rectH + 4;                       // box top..bottom edge, px
 
                         // The closed-form cachedHeight uses fontsize slots for interior rows and
@@ -3693,7 +3707,7 @@ public:
                         //   rect_x_s  = getTextDimensions(legend_max, legendFontSize).width + 1 scaled px
                         //               (font-metric-driven; matches the layout width calculation exactly)
                         //   rect_w    = lround(180 * displayScale)
-                        //   rect_h    = lround(graphRefreshRate * displayScale)
+                        //   rect_h    = lround(60 * displayScale)  (fixed; independent of refresh rate)
                         //   rect_y_s  = lround(5 * displayScale)
                         //   x_end     = rect_x_s + rect_w
                         //   lineOffset = 1
@@ -3718,7 +3732,9 @@ public:
                         const uint32_t legendWG = renderer->getTextDimensions(legendStrG, false, legendFontSizeG).first;
                         const s16 rect_x_s = (s16)(legendWG + (uint32_t)lround(1.0f * displayScale));
                         const s16 rect_w   = (s16)lround(180 * displayScale);
-                        const s16 rect_h   = (s16)lround(graphRefreshRate * displayScale);
+                        // Plot height is fixed at the 60 Hz reference regardless of the
+                        // refresh rate / FPS cap (must match rectH in the layout pass).
+                        const s16 rect_h   = (s16)lround(60 * displayScale);
                         const s16 rect_y_s = (s16)lround(5 * displayScale);
                         // Anchor the border box's TOP EDGE pixel on the slot top, so the FPS section's
                         // start IS the box top edge (and its end the box bottom edge). The box is drawn
@@ -3744,7 +3760,10 @@ public:
                         // scaled by displayScale, so we must use the refresh rate directly. (At 720p
                         // displayScale == 1, so rect_h + 1 == refreshRate + 1 and both agree; at 1080p
                         // rect_h + 1 would be wrong, e.g. 91 vs 61 for a 60 Hz panel.)
-                        const s16 range     = (s16)graphRefreshRate + 1; // FPS units, scale-independent
+                        // The plot always uses the 60 Hz reference range; readings are scaled
+                        // into it by graphFpsScale = 60 / refreshRate (identity at 60 Hz).
+                        const s16 range     = 60 + 1; // reference FPS units, scale-independent
+                        const float graphFpsScale = graphRefreshRate ? (60.0f / (float)graphRefreshRate) : 1.0f;
 
                         // Y positions for reference lines.
                         // y_30_line: visual midpoint used for the dashed reference line and label
@@ -3856,8 +3875,7 @@ public:
                         // FPS average text centred inside the plot
                         if (graphFpsAvg_c[0]) {
                             const int avgFontSize = (int)lround(
-                                ((graphRefreshRate > 60 || !graphRefreshRate) ? 63 : (int)(63.0f / (60.0f / graphRefreshRate)))
-                                * displayScale);
+                                63 * displayScale); // fixed 60 Hz reference size (plot height is fixed)
                             const auto avgDim = renderer->getTextDimensions(graphFpsAvg_c, false, avgFontSize);
                             const int avg_px = gx + rect_x_s + (((int)rect_w + 1 - (int)avgDim.first) / 2);
                             const int avg_py = gTopY + rect_y_s + (rect_h / 2) + (avgFontSize / 2) - (int)lround(5 * displayScale);
@@ -3876,12 +3894,12 @@ public:
 
                             for (s16 xi = x_end; xi > (s16)(x_end - (s16)nReadings); xi--) {
                                 const size_t idx = nReadings - 1 - (size_t)(x_end - xi);
-                                s32 y_on_range = graphReadings[idx].value + 1;
-                                if (y_on_range < 0)             y_on_range = 0;
-                                else if (y_on_range > range) { isAboveLocal = true; y_on_range = range; }
+                                float y_on_range = (float)graphReadings[idx].value * graphFpsScale + 1.0f;
+                                if (y_on_range < 0.0f)                 y_on_range = 0.0f;
+                                else if (y_on_range > (float)range) { isAboveLocal = true; y_on_range = (float)range; }
 
                                 const s16 y = rect_y_s + (s16)std::lround(
-                                    (float)rect_h * ((float)(range - y_on_range) / (float)range));
+                                    (float)rect_h * (((float)range - y_on_range) / (float)range));
 
                                 // First (rightmost) column: snap y_old to y BEFORE evaluating
                                 // color so the color check y == y_old_local fires correctly
@@ -4633,8 +4651,8 @@ public:
             } else {
                 memcpy(&m_resolutionRenderCalls, &(NxFps->renderCalls), sizeof(m_resolutionRenderCalls));
                 memcpy(&m_resolutionViewportCalls, &(NxFps->viewportCalls), sizeof(m_resolutionViewportCalls));
-                qsort(m_resolutionRenderCalls, 8, sizeof(resolutionCalls), compare);
-                qsort(m_resolutionViewportCalls, 8, sizeof(resolutionCalls), compare);
+                qsort(m_resolutionRenderCalls, 8, sizeof(resolutionCalls), settings.prioritizeMax169 ? compare : compareOriginal);
+                qsort(m_resolutionViewportCalls, 8, sizeof(resolutionCalls), settings.prioritizeMax169 ? compare : compareOriginal);
                 memset(&m_resolutionOutput, 0, sizeof(m_resolutionOutput));
                 size_t out_iter = 0;
                 bool found = false;
@@ -4682,12 +4700,15 @@ public:
                         if (out_iter == 8) break;
                     }
                 }
-                qsort(m_resolutionOutput, 8, sizeof(resolutionCalls), compare);
+                if (settings.prioritizeMax169) qsort(m_resolutionOutput, 8, sizeof(resolutionCalls), compare);
+                else sortResolutionsClassic(m_resolutionOutput, 8); // stable: ties keep merge order
 
                 // Prioritize 16:9 aspect ratios (e.g. 1280x720, 1920x1080) so the
                 // actual game render resolution appears before UI/buffer resolutions.
                 // stable_partition moves all 16:9 entries to the front while keeping
                 // non-16:9 entries after them; both groups retain their call-count order.
+                // Only with "Prioritize Max 16:9" on; off (default) = original Status Monitor order.
+                if (settings.prioritizeMax169) {
                 std::stable_partition(m_resolutionOutput, m_resolutionOutput + 8,
                     [](const resolutionCalls& r) {
                         return r.width != 0 && (r.width * 9 == r.height * 16);
@@ -4705,6 +4726,7 @@ public:
                     [](const resolutionCalls& a, const resolutionCalls& b) {
                         return (uint32_t)a.width * a.height > (uint32_t)b.width * b.height;
                     });
+                }
             }
         } else if (!GameRunning && resolutionLookup != 0) {
             resolutionLookup = 0;
@@ -4750,6 +4772,12 @@ public:
         // Build Variables string
         char Temp[512] = "";
         uint16_t flags = 0;
+
+        // Snapshot the cross-thread game state ONCE so every row decision below,
+        // and the layout (via varsFpsShown/varsResShown/varsReadShown), agree.
+        const bool  gameRunningSnap = GameRunning;
+        const float fpsAvgSnap      = FPSavg;
+        bool fpsEmitted = false, resEmitted = false, readEmitted = false;
         
         for (const auto& key : showKeys) {
             if (key == "CPU" && !(flags & 1)) {
@@ -4893,21 +4921,22 @@ public:
                 }
                 flags |= 32;
             }
-            else if (key == "FPS" && !(flags & 64) && GameRunning) {
+            else if (key == "FPS" && !(flags & 64) && gameRunningSnap) {
                 // Emit the FPS row into Variables ONLY when there is a valid reading,
                 // matching the layout's labelLines gate (key=="FPS" && GameRunning &&
                 // FPSavg != 254). The drawer pairs Variables lines to labelLines by
                 // index, so writing a placeholder "254 [..]" row here while the layout
                 // omits it shifts every row below for a frame -- the brief "rows
                 // un-stack then snap back" flicker seen as the FPS graph first appears.
-                if (FPSavg != 254.0f) {
+                if (fpsAvgSnap != 254.0f) {
                     if (Temp[0]) strcat(Temp, "\n");
                     char Temp_s[24];
                     if (settings.useIntegerFPS)
-                        snprintf(Temp_s, sizeof(Temp_s), "%d [%d - %d]", (int)round(FPSavg), (int)round(FPSmin), (int)round(FPSmax));
+                        snprintf(Temp_s, sizeof(Temp_s), "%d [%d - %d]", (int)round(fpsAvgSnap), (int)round(FPSmin), (int)round(FPSmax));
                     else
-                        snprintf(Temp_s, sizeof(Temp_s), "%2.1f [%2.1f - %2.1f]", FPSavg, FPSmin, FPSmax);
+                        snprintf(Temp_s, sizeof(Temp_s), "%2.1f [%2.1f - %2.1f]", fpsAvgSnap, FPSmin, FPSmax);
                     strcat(Temp, Temp_s);
+                    fpsEmitted = true;
                 }
 
                 // ── Graph readings update ──────────────────────────────────────
@@ -4942,7 +4971,7 @@ public:
 
                 flags |= 64;
             }
-            else if (key == "RES" && !(flags & 128) && GameRunning && m_resolutionOutput[0].width) {
+            else if (key == "RES" && !(flags & 128) && gameRunningSnap && m_resolutionOutput[0].width) {
                 if (Temp[0]) strcat(Temp, "\n");
                 char Temp_s[32] = "";
                 static std::pair<uint16_t, uint16_t> old_res[2];
@@ -4960,7 +4989,8 @@ public:
                         // non-16:9 — 16:9 priority must always win over flicker suppression.
                         const bool slot0is169 = (w0 * 9 == h0 * 16);
                         const bool slot1is169 = (w1 * 9 == h1 * 16);
-                        const bool swapWouldDemote169 = slot0is169 && !slot1is169;
+                        // (Prioritize Max 16:9 off: original unconditional swap, no 16:9 guard.)
+                        const bool swapWouldDemote169 = settings.prioritizeMax169 && slot0is169 && !slot1is169;
                         if (!swapWouldDemote169 &&
                             ((w0 == old_res[1].first && h0 == old_res[1].second) ||
                              (w1 == old_res[0].first && h1 == old_res[0].second))) {
@@ -4984,16 +5014,21 @@ public:
                             snprintf(Temp_s, sizeof(Temp_s), "%dp%dp", h0, h1);
                     }
                     
-                    // Update last-frame cache
-                    old_res[0] = {m_resolutionOutput[0].width, m_resolutionOutput[0].height};
-                    old_res[1] = {m_resolutionOutput[1].width, m_resolutionOutput[1].height};
+                    // Update last-frame cache with the DISPLAYED order (post-swap), like the
+                    // original Status Monitor, Micro and Full. Caching the sorted order instead
+                    // made the anti-flicker swap hold for only one frame: the next frame no
+                    // longer matched and the order flipped anyway on every sample.
+                    old_res[0] = {w0, h0};
+                    old_res[1] = {w1, h1};
         
                     strcat(Temp, Temp_s);
                     flags |= 128;
+                    resEmitted = true;
                 }
             }
-            else if (key == "READ" && !(flags & 512) && GameRunning && NxFps) {
+            else if (key == "READ" && !(flags & 512) && gameRunningSnap && NxFps) {
                 if (Temp[0]) strcat(Temp, "\n");
+                readEmitted = true;
                 char Temp_s[24];
                 if ((NxFps->readSpeedPerSecond) != 0.f) {
                     snprintf(Temp_s, sizeof(Temp_s), "%.2f MiB/s", (NxFps->readSpeedPerSecond) / 1048576.f);
@@ -5046,6 +5081,9 @@ public:
         }
         
         strcpy(Variables, Temp);
+        varsFpsShown  = fpsEmitted;
+        varsResShown  = resEmitted;
+        varsReadShown = readEmitted;
     
         // Enable rendering if needed
         if (!skipOnce) {
@@ -5220,7 +5258,7 @@ public:
         if (currentTouchDetected && !isDragging && touchDragReady && !oldTouchDragReady) {
             // Poll thread confirmed 500ms in-bounds hold — start drag now
             isDragging = true;
-            triggerOnFeedback();
+            triggerRepositionOnFeedback();
             hasMoved = false;
             initialTouchPos = touchPos;
             initialFrameOffsetX = frameOffsetX;
@@ -5272,7 +5310,7 @@ public:
             //isRendering = true;
             //leventClear(&renderingStopEvent);
             clearOnRelease = true;
-            triggerOffFeedback(true);
+            triggerRepositionOffFeedback(true);
         }
         oldTouchDragReady = touchDragReady && currentTouchDetected;
         
@@ -5283,7 +5321,7 @@ public:
             isDragging = true;
             //isRendering = false;
             //leventSignal(&renderingStopEvent);
-            triggerOnFeedback();
+            triggerRepositionOnFeedback();
         } else if (currentPlusHeld && isDragging) {
             // Continue joystick dragging
             static constexpr int JOYSTICK_DEADZONE = 20;
@@ -5352,7 +5390,7 @@ public:
             //isRendering = true;
             //leventClear(&renderingStopEvent);
             clearOnRelease = true;
-            triggerOffFeedback(true);
+            triggerRepositionOffFeedback(true);
         }
         
         // Update state for next frame
